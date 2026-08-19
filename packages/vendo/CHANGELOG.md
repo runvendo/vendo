@@ -1,5 +1,506 @@
 # @vendoai/vendo
 
+## 0.29.0
+
+### Minor Changes
+
+- 6bc5cc8: A file your user drops in chat is now theirs to keep. It is saved into their own
+  `/user/files/`, private to them, and it is still there in next week's
+  conversation — where the agent can list it, read it, and build on it. Until now
+  an attachment rode one message and ended with it.
+
+  The message that follows a drop carries only a reference to the file, which is
+  what keeps a transcript light: a spreadsheet is stored once instead of being
+  repeated in full on every turn of the conversation about it. Images are the
+  deliberate exception and still ride inline, because that is how a model sees a
+  picture at all. On the way to the model a saved file becomes a line of text
+  naming it and where it landed — a provider handed a workspace path where it
+  expects file data would read the path as base64 and think about garbage.
+
+  Two read-only tools come with every deployment, no adapter and no key:
+  `vendo_user_files_list` and `vendo_user_files_read`. They are on the one
+  registry, so they are guarded, audited and searchable exactly like a host tool,
+  with no privileged side door. Neither takes a path — only a file NAME, from
+  which the path is built server-side — so there is no caller-supplied path for a
+  `..` to climb out of the drawer with, and the name check that refuses separators
+  and dot-segments is the same one the write doors use. A long file is read 200
+  lines at a time so a spreadsheet is walked rather than cut off mid-row, and a
+  file that is not text answers with its type and size instead of mojibake.
+
+  Building an app from a file COPIES what it needs — the rows of a table become
+  the app's own saved items. That copy is a snapshot, not a live link, and there
+  is no watcher and no background sync anywhere in this design: when a newer
+  version of the file arrives the AGENT is what notices, says the file was
+  replaced, and updates what it built. Uploading the same name replaces the file,
+  because re-sending a corrected export is the common case and a drawer that
+  quietly accumulated four near-identical spreadsheets would serve nobody. In this
+  release a PDF or an image lands in the drawer and can be described, but does not
+  reach an app.
+
+  `POST /files` is the door — the file's raw bytes under its own media type, no
+  multipart, capped at 5 MiB — and `vendo.putUserFile({ principal, name, content })`
+  is the same server-side write called from host code, for pushing a file at a
+  user without waiting for them to bring one. It delivers nothing and starts no
+  turn; the file is simply there next time they chat, and the door's cap does not
+  bind it. In the browser it is one call: `client.files.upload(file)`.
+
+  Because an upload's body is bytes rather than JSON, that door sits outside the
+  wire's json-mutation CSRF floor, and the tolls the other exempt doors pay do not
+  transfer: an upload's Content-Type is the file's own, and real files are
+  `text/plain`, which is CORS-safelisted. So it requires a custom request header
+  instead (`UPLOAD_HEADER`, sent by the client). A browser cannot set one on a
+  cross-origin request without winning a preflight this wire never answers, which
+  is what keeps a hostile page from pushing files into a signed-in user's drawer
+  on their ambient session cookie.
+
+  Storage is the ordinary BYO seam. Unset, files live in your store's own blobs;
+  `createVendo({ files })` takes any S3-compatible bucket to raise that, `vendo
+doctor` reports where a deployment's uploads land, and the boot block adds a
+  `files` row when you have wired an adapter of your own.
+
+- 6bc5cc8: Any REST API with a spec becomes agent tools. `openApiConnector({ spec, baseUrl,
+headers, name })` takes an OpenAPI document — JSON or YAML text, or an
+  already-parsed object — and hands the agent one guarded tool per operation,
+  named `openapi_<name>_<operationId>`.
+
+  It brings nothing new to do it. The document goes through the SAME extractor
+  `vendo sync` runs over a spec in your repo, so path parameters, query
+  parameters, the JSON request body and the declared response schema arrive
+  exactly as they would from `.vendo/tools.json` — and risk comes from the method,
+  `DELETE` destructive and everything else `ungraded` until something authorized
+  grades it. The call then executes through the SAME HTTP dispatch a host tool
+  executes through. A spec behaves identically whichever door it comes in, which
+  is the point: there is no second code path to keep in step.
+
+  `spec` is the document, never a path and never a URL. Reading and fetching stay
+  the caller's business, so the connector works on every runtime and no argument
+  of it can be steered into a request.
+
+  Two factorings paid for that sharing, and together they delete far more than
+  they add. `extractOpenApi`'s document half is the pure `openapi-document.ts`
+  now, with `sync/openapi.ts` keeping node:fs and the spec-file entry points — the
+  connector could not import from `sync/`, whose graph carries the TypeScript
+  compiler the portability gate forbids in a Worker bundle outright. And
+  `registry.ts`'s HTTP leg — argument binding, path substitution, the tRPC
+  envelope, the fetch, the JSON envelope — is `runtime/http-dispatch.ts`, used by
+  the registry and the connector both.
+
+  `headers` takes static headers or a per-call resolver, the shape `mcpConnector`
+  already had. That resolver's context was never MCP's, so it is
+  `ConnectorAuthContext` now; `McpAuthContext` and `McpHeadersResolver` keep
+  working as deprecated aliases of the connector-wide names.
+
+  Both connectors are exported from `@vendoai/vendo/server` — and so from
+  `vendoai/server` — so bringing an outside API in is one import from the
+  umbrella, and both are documented at `/capabilities/connectors`, which is
+  `mcpConnector`'s first page.
+
+- 06b352b: An automation armed from a phone can now be allowed to run from that phone. On
+  2026-08-18 a user set up "check my checking balance every 15 minutes and text
+  me" entirely over iMessage. The arming approval worked — the card went out as a
+  text, their YES decided it — but arming also minted four pending standing-grant
+  captures, and those asks are approval ROWS the engine writes during
+  `vendo_automate`, never stream parts, so the mid-turn card watcher could not see
+  them and their only surface was the host app's web approvals feed. A person who
+  only texts can never reach it: every firing then ran without the Text me
+  permission, and the agent could only report that "there are still some
+  permissions pending approval" with nothing the person could do about it.
+
+  After a channel turn finishes, one automation's outstanding permissions now go
+  out as ONE more text — the automation named the way every other surface names it,
+  one line per thing to allow, each line the descriptor's own human title:
+
+      check my checking balance and text me — needs your permission to run on its own:
+      - Text me
+      - Look it up in the docs
+      Reply YES to allow all of these, or NO to cancel it.
+
+  YES decides the whole set in one batch call on the same guard door the web feed
+  uses — all-or-none, never a half-granted set — and each approval settles into its
+  standing grant through the automations engine's own decision subscriber. NO is
+  the bare no it has always been: nothing is minted and the automation is turned
+  off, and the reply says which of the two happened. The consent model is
+  unchanged — the same captures, the same grants, the same one decision that
+  settles them; only the delivery is new.
+
+  One question at a time, the discipline the cards already keep: nothing goes out
+  while the conversation is holding a card or a set ask it has not answered, the
+  row is written only after the text lands, and a set is never asked twice. The
+  store's pending feed is the source of truth rather than "did this turn arm
+  something", so a set minted from the web is asked on the next texted turn too.
+
+- df0b4cb: A tool you write by hand is now three lines of typing, not a hand-built descriptor.
+
+  The `tools:` slot has always taken a `ToolDefinition` — a descriptor plus an
+  `execute` — but writing one meant authoring JSON Schema by hand beside a
+  TypeScript function, and then keeping the two honest about each other forever.
+  Nothing checked that they agreed. A schema that said `id` was required while the
+  function read `taskId` was a tool the model could only call wrong.
+
+  `defineTool` takes the schema once, as zod, and derives both halves from it: the
+  JSON Schema the model is shown, and the parse that runs before `execute`. A call
+  whose arguments the schema rejects is refused with a message naming the field,
+  and the body never runs. `risk` is required and graded — you wrote the tool, so
+  you know what it does; `ungraded` stays the answer only extraction is allowed to
+  give.
+
+  What comes back is a plain `ToolDefinition`, so nothing is hidden behind the
+  helper: every descriptor field it does not ask for is a spread away
+  (`{ ...defineTool({ … }), confirmEach: true }`), and the tool joins the one
+  registry under the name it declared, guarded, audited and projected exactly like
+  an extracted one.
+
+  Schemas are read in zod 4's shape. On zod 3.25 or later that is the `zod/v4`
+  import; a zod 3 schema is refused at definition time with the import that fixes
+  it, rather than crashing somewhere inside schema conversion.
+
+- 7e78031: Arming an automation is ONE page and ONE yes. Live 2026-08-18 on production
+  Maple: a user armed "check my checking balance every 15 minutes and text me"
+  entirely over iMessage, their YES to the job landed — and arming then minted four
+  MORE per-tool asks (Text me, knowledge search, request a connection, list
+  connections). Three were reads nobody needs a second opinion about, and the
+  fourth was literally in the sentence they had just typed. Consent was framed
+  per-tool while the person was thinking per-job.
+
+  The authoring call's own approval now NAMES what the automation will hold, and
+  that one yes mints all of it. The powers ride on the approval record
+  (`ApprovalRequest.powers`, additive and optional, human titles only), computed
+  once at park time by the composition and rendered verbatim by whoever reads it —
+  the text channel today, any other surface without further work. They are grouped
+  the way a person reads them: the tools that DO something named one by one, and
+  every read folded into a single trailing "Read-only access to your data", because
+  naming reads individually is exactly what turned a yes to a job into a wall of
+  tool names.
+
+  What an automation is granted has NOT changed, and neither has how it runs. The
+  surface is as wide as it ever was, every away call is still grant-backed, and 05
+  §6's away authority is untouched — the guard's law suites pass unmodified. Two
+  kinds are excluded from standing powers because a grant could never satisfy them
+  and the card would be promising what the run will not honour: `destructive` and
+  `ungraded` (§12's pair, now closed on the two branches that leaked — a steps
+  record's declared destructive tool, and a connector slug the risk resolver grades
+  destructive), and `confirmEach`, which needs a person every time.
+
+  Minting is gated on a person having actually been asked. `enable()` takes the
+  authoring call (`armedBy`); when the host's policy would have asked about it, the
+  call reaching the engine proves the ask was answered, so the powers are minted on
+  the spot. When policy would have run it unasked — `vendo_make` is read-graded —
+  nobody saw a powers page, so nothing is minted and each power is captured as a
+  pending ask exactly as before, delivered by the grant-set text.
+
+- 6bc5cc8: One tenant brings its own tools, and only that tenant's users get them.
+
+  A customer with its own MCP server or OpenAPI spec had one way in: you add the
+  connector to `createVendo({ connectors })` and redeploy — and then every tenant
+  on the deployment has it, because there was only ever one tool registry.
+
+  `vendo.tenantConnectors` is the dev-side API that ends that. `register` takes an
+  org, an MCP URL or an OpenAPI spec, and the token the customer pasted; it
+  validates by ACTUALLY CONNECTING and answers with the tools the server really
+  advertised, or a typed error. `list`, `test` and `remove` are the rest of the
+  admin screen you were going to build anyway. There is no Vendo-hosted UI here,
+  and no console step: the surface is yours.
+
+  Visibility follows the orgs your host already asserts (`memberships`), and it is
+  STRUCTURAL. A run that asserts `acme` is served the shared registry plus Acme's
+  own; a run that asserts `globex` is served a registry Acme's connector was never
+  in. There is no filter over a combined set, so there is no filter to get wrong.
+
+  Registrations ride the generic records collection — no store schema change, no
+  migration — stamped with the org that owns them, so the existing erase cascade
+  reaches them like every other row that names a subject. The pasted token never
+  lands in a row: it is vaulted in the store's encrypted secrets under a
+  tenant-scoped name, and no public surface reads it back.
+
+  The erase cascade learned one new thing to make that whole. `vendo_secrets` sat
+  outside every selector for a stated reason — its rows were name-keyed HOST
+  config, which no subject could reach — and a tenant connector's vault name
+  breaks that premise by carrying the org that owns it. So erasing an org now
+  takes its connector tokens with its registrations, and nothing else: a
+  deployment's own `API_TOKEN` still belongs to the deployment, not to any person.
+  One name builder in `@vendoai/core` serves both the write side and the sweep, so
+  they cannot drift.
+
+  `vendo doctor` gains `E-TENANT-001`: a host whose source reaches
+  `vendo.tenantConnectors` with no `VENDO_STORE_ENCRYPTION_KEY` and no
+  `VENDO_API_KEY` is warned that a pasted token is stored in the clear locally and
+  refused outright in production — a failure that would otherwise only appear on
+  the first credentialed registration after a deploy. Static, like every other
+  doctor check: a source marker and two env names, no store opened and no tenant
+  server dialled.
+
+- f06b033: An org the host already asserts is a usage pool, with nothing wired for it. A
+  host that answers `memberships` for a request — the same assertion app grants
+  are matched against — now gets one pool per org, named and keyed `org:<orgId>`
+  by core's own principal encoding, so a limits policy can cap a whole team the
+  day it can name one:
+
+  ```ts
+  limits: async ({ user, count }) => {
+    // Guard on `user.pools`: an identity with no asserted membership — a signed-out
+    // guest, an inbound text — is in no org pool, and counting one denies the turn.
+    if (!user.pools?.includes("org:maple")) return true;
+    return (await count("message", { days: 30, pool: "org:maple" })) < 200;
+  },
+  ```
+
+  One grammar, not two: the string a policy counts is the string a grant names
+  that org by. Teams stay out of it — a team is a slice of an org's allowance, not
+  a bucket the host asked to meter. A pool the host asserts itself still wins on a
+  name collision, so metering an org by the host's own key keeps working — override
+  it for every member of that org, because half an org on `org:<orgId>` and half on
+  your own key is one allowance split across two meters that each under-count. A
+  policy naming an org nobody asserted still fails closed rather than reading zero.
+  An inbound text asks the same seam for the linked subject — it is keyed on the
+  principal, not a request — so a member who texts draws on the org's allowance
+  instead of quietly outside it. Maple demonstrates it: the branch shares 200
+  messages a month, on top of a per-person daily cap.
+
+### Patch Changes
+
+- ebf101a: A slow turn now says WHERE it was slow. `agent_run` carried one wall-clock
+  number and a `steps` field hardcoded to `0`, so the only honest answer to "why
+  did that take nine seconds" was to guess. It now carries `ttftMs` — how long
+  the person waited for the first word — plus the five phase marks the wall time
+  splits into (`storeMs`, `promptMs`, `modelMs`, `toolsMs`, `guardMs`), and
+  `steps` is the turn's real model-call count. `durationMs` starts at the top of
+  the turn rather than after the opening store reads, which is why a slow store
+  used to be invisible in it. Durations and counts only: a breakdown says how
+  long, never what was read, prompted, thought, called or judged.
+- 0484a15: The approval ask words its schedule and survives a verb-phrase title. Live
+  2026-08-18, arming a balance check over text asked as "Set this to run on its
+  own needs your approval: - when: _/15 _ \* \* _" — a sentence collision for a
+  header and a cron expression as the one thing the person must understand
+  before saying yes. The header gains an em dash ("Set this to run on its own —
+  needs your approval:"), a schedule-shaped value is worded beside its verbatim
+  self ("every 15 minutes (_/15 \* \* \* \*)" — beside, never instead: the ask is
+  the consent boundary), argument labels cut at the first comma as well as the
+  first period, and the automate tool's `when` property leads with the label
+  consent surfaces show ("When it runs") while keeping its format teaching.
+- 3ba3e73: A parked call's one line says what is waiting, not what state it is in. The tool
+  pack minted it as "Awaiting user approval: List your todos — host_getTodos
+  {…}", and `<VendoApprovalEmbed>` titles the card with that line for the rest of
+  the request's life — so after the person pressed Approve, the receipt read
+  "Awaiting user approval: List your todos" directly over its own "Approved —
+  ran". The mint now describes only the call; the state stays with the surface
+  that knows it, which was already saying it on the line underneath. The line
+  keeps the guard's preview vocabulary, so a BYO loop reads the same call it
+  always did.
+- 3d85eb5: The approval text reads like a text, not like machinery. The channel's ask
+  rendered the guard's raw preview — tool identifier and JSON blob included —
+  so a live $25.00 send asked for consent as
+  `host_transferMoney {"amount":2500,"recipient_name":"Jordan Avery"}`: a
+  voice-rule violation (the identifier reached the person) and a genuinely
+  dangerous read (2500 cents scans as twenty-five hundred dollars, in the one
+  message whose whole job is informed consent). The ask now renders one plain
+  line per argument, labelled from the host schema's own property description
+  when it has one ("Amount in cents: 2500") and the spaced-out key when it
+  does not; values stay verbatim — the ask is the safety boundary, so nothing
+  is paraphrased — capped only so one huge argument cannot flood a text. The
+  header also stops saying "needs your OK": the decider matches only YES/NO,
+  so a header that says OK teaches the one reply that would not decide it —
+  it now reads "needs your approval … Reply YES to approve, or NO to cancel."
+- 401ecc4: An inbound text is claimed in one round trip, not two. The delivery log decided
+  a claim by reading the row and then writing it, so every text on a hosted store
+  waited through two serial store calls before anything else could start — and two
+  genuinely concurrent copies of one delivery could each read the absence and both
+  run the person's turn, with a second tool call and a second charge behind it.
+  The claim is now the adapter's own guarded insert where there is one, which
+  answers both. An adapter that omits `atomic` keeps the read-then-write it always
+  had: slower, never different.
+- ebf101a: A texted reply arrives the way a person texts. The channel used to buffer the
+  whole turn and send one message at the end, so the answer landed as a wall well
+  after the model had written its first sentence. The model now decides where one
+  text ends and the next begins — the texting style note teaches a line containing
+  only `---` as the cut point — and each segment is sent the moment its divider
+  passes, with the divider itself stripped and never delivered. A reply with no
+  divider in it is simply one text; there is no structural fallback.
+
+  Four latency and reliability fixes ride with it:
+
+  - **Prompt-cache warming for texts.** The web has warmed the provider prefix
+    since a chat surface opens; a texted conversation never did, so every text in
+    a back-and-forth paid a cold prefix. The channel now warms after the reply is
+    out — never something the person waits behind.
+  - **Fewer store trips before the turn starts.** Delivery dedupe and the phone
+    lookup are independent questions, so they are asked together instead of one
+    after the other, and the delivery-row prune stops running on every single
+    message — it re-listed and re-deleted the whole conversation before the turn
+    could start, and is now a sweep.
+  - **A dropped reply is retried, and its loss is said out loud.** The channel
+    adapter now uses the same keep-alive connection pool as every other Cloud
+    adapter (Node drops an idle socket after ~4s, so a conversation's second text
+    paid a fresh TCP+TLS handshake) and retries a failed call three times. A reply
+    that still cannot be delivered logs `vendo.channel-reply-lost` at error level
+    rather than vanishing; the delivery claim is deliberately not released,
+    because replaying the turn would re-run the tool calls it already made.
+  - **Two rapid texts stay on one thread.** They used to run as concurrent turns
+    that each read the link before either wrote its thread back, so each minted
+    its own thread and one was orphaned — a forked conversation whose second reply
+    had no idea what the person had just said. Turns are now serialized per
+    conversation in-process, and the second runs on the thread the first left.
+    A YES/NO answering a card deliberately skips that queue: the turn it releases
+    is the one holding it.
+
+- 1dce317: `vendo init` stops deciding things for you in silence, and the install it leaves
+  behind can compile what it wrote.
+
+  A run that cannot ask no longer answers. Piped stdin and CI used to settle the
+  use case doctor grades against, the auth the agent acts as, the model story and
+  the dev origin, then print the same success frame an attended install prints —
+  so nothing said a decision had been made and the first sign was a tool call
+  failing days later. Such a run now prints the defaults it would take, each
+  naming the flag that answers it, and exits non-zero; `--yes` proceeds and still
+  says what it settled.
+
+  `--agent` grades. Judgment was "delegated to you" on the grounds that the caller
+  is a model, but the pass is a scripted engine run with a verbatim quote behind
+  every proposal and an independent skeptic over each one, so every agent install
+  shipped a catalog whose every tool asked on each call. It now runs the pass with
+  whatever engine resolves, asking nothing; with no engine on the machine at all
+  the receipt hands the checklist back as REQUIRED work and says so out loud.
+
+  The use-case question reads the evidence the scanner already had: a host whose
+  own API runs an agent loop gets "through your own agent loop" recommended, with
+  the route named, in both the interactive select and the `--agent` question form.
+  The `--agent` auth question gained the same detection interactive mode has, so
+  `none` is recommended — and says why — when no auth dependency is there.
+
+  Repairs to the rest of the install:
+
+  - A re-run over an existing composition no longer refuses the MCP door with
+    "wire an auth preset". Init never re-decides auth for a file it did not write,
+    so the file itself is read instead.
+  - `VENDO_SERVICE_KEY` is reused when the host already has a well-formed one,
+    instead of being reminted and written over the key every backend caller was
+    already exchanging.
+  - Every package the generated files import is now a declared host dependency:
+    the backend path's docs never install `@vendoai/vendo`, so a host following
+    them got a `lib/vendo.ts` importing a package its build could not resolve.
+  - `VENDO_BASE_URL` reaches `.env.local` from any attended terminal. The question
+    borrowed the run-wide interactivity flag, which folds in "a package script
+    launched this" — and npm sets that for every `npm run …` — so the same person
+    in the same terminal was asked by `npx vendo init` and not asked at all
+    through a wrapper script.
+  - No `<VendoProvider>` / `<VendoOverlay>` paste for an agent-loop or MCP
+    install, which mount no Vendo UI by design (the rule doctor already grades by).
+  - The agent-loop snippets compile as printed: they declare the `principal` they
+    pass — resolved from the preset the composition wires, or the same anonymous
+    literal the composition resolves — name the host's real chat-route path under
+    `src/`, and name the Mastra agent file the host actually has.
+  - Five stale docs URLs, and a test that maps every docs.vendo.run URL the CLI
+    can print to a file under `docs-site/`. Doctor's `fix_ref` now lands on the
+    code's own troubleshooting page instead of a retired playbook with the code in
+    a fragment the server never sees.
+  - The judgment receipt names the file the grades landed in and the merge that
+    keeps `tools.json` saying `ungraded` — three auditors read the old receipt and
+    concluded the pass had done nothing — and tells you to restart the dev server,
+    which read the judgments once, at boot.
+  - `vendo ready` and the hosted-store notice are latched per PROCESS, not per
+    module. Next's dev server re-instantiates the module graph, so both came back
+    every couple of seconds and flooded the log.
+
+- ebf101a: A tool call is decided once instead of twice. Every guarded call ran the whole
+  policy pipeline twice for one logical call: the harness previews with
+  `previewCheck` before it dispatches, and the guard-bound registry then evaluated
+  the same call again from scratch moments later — the grants read, the approvals
+  read, the rules, the org layer and, worst of all, the judge (up to 15 seconds,
+  paid twice). The preview's verdict now carries to the dispatch that follows it,
+  single-use and pinned to that exact call: same id, same arguments, same
+  descriptor, same subject, venue, presence and app, or it is decided fresh.
+
+  Nothing the guard refused before gets through. The preview was always the whole
+  evaluation — it just never SPENT anything — so the dispatch is what commits, and
+  a verdict only answers for the dispatch moments behind it: it expires after five
+  seconds, and every gate that can still stop the call is re-read before anything
+  is spent. The kill switch is read first, so a freeze landing between the two
+  passes no longer burns the human's single-use yes on a call it then blocks. The
+  call-rate window and the write budget are read live and can still park a
+  previewed "run" that a concurrent call has since put over budget. The org-admin
+  layer is consulted again, so an admin who tightens the layer while a call sits
+  previewed clamps that call. The risk GRADE is re-resolved rather than remembered,
+  so a tool that previewed as `read` and re-grades to `destructive` cannot reach an
+  away run on the old label — THE LAW's unattended gate never reads a stale grade.
+  A standing grant is re-read and the single-use yes is claimed last, after every
+  gate above, so a call that does not proceed spends nothing. Any of these voids
+  the verdict and the full pipeline decides again. An "ask" is never carried
+  forward at all — the tap that answers it IS the fresh verdict the dispatch reads.
+
+  The judge is asked once per call, so a subject's outstanding previewed verdicts
+  are voided the moment ANY call for that subject lands — at any risk grade, in any
+  run or session. The judge decides on the audit trail, and that trail is the
+  subject's, not the run's: a step whose tools were all previewed before any of them
+  dispatched would otherwise let the second call run on a verdict taken before the
+  first one existed, and a landed read or a landed connector call is exactly the
+  shape a judge most wants to weigh. Sequential calls — preview, then dispatch with
+  nothing in between — have no outstanding verdict to void and keep the single pass.
+
+  Host-API calls also ride the keep-alive connection pool the store already uses.
+  Node's stock dispatcher drops an idle socket after ~4s — shorter than the gap
+  between two of an agent's tool calls — so nearly every host round trip was paying
+  a fresh TCP+TLS handshake. Inference rides the same pool: the composed model
+  seats now dial the Cloud gateway through it, so a turn does not re-handshake
+  after every idle gap. A host that passes its own `fetch` — or its own ai-SDK
+  model object — still wins.
+
+  A refused connect check costs one broker lookup instead of two. The connect gate
+  runs twice for one tool call — the harness preflight rules a call to an
+  unconnected service out before an approval can be minted for it, and the
+  gate-wrapped registry rules it out again on the doors that never preview — and
+  only the CONNECTED answer was cached, so every unconnected call asked the broker
+  twice to say the same no. A negative answer is now trusted for one second: long
+  enough for the two checks of one call, far short of an OAuth round trip, so a
+  user who just connected is never told otherwise.
+
+- ebf101a: A turn stops doing its setup one thing at a time. The system prompt is now
+  assembled BESIDE the turn's opening store reads instead of after them, and the
+  two independent waits inside it — the guard's directions and the knowledge index
+  — run together rather than in sequence; the assembled bytes are unchanged,
+  because section order comes from the assembler and not from which read settles
+  first. The runtime no longer re-validates the composed turn's transcript against
+  itself: composition hands it the very array it just read and validated, and one
+  array cannot differ from itself, so an O(n) double stringify per turn was
+  spent proving a tautology. `vendo()` projects the host's catalog once to set a
+  turn up instead of twice, and re-projects it after a tool call only when that
+  call could actually change what is reachable — the connector door — rather than
+  after every call.
+
+  Fixes a compaction accounting bug in the same pass: the prompt estimate billed
+  every equipped tool while the call only ever carries the active loadout, so a
+  curated surface was charged for a catalog it never sent — the trigger fired on
+  tokens that were never there, and the shed floor was handed a figure the prompt
+  had never reached. The estimate bills the active set now. The characters-per-token
+  ratio is unchanged.
+
+- Updated dependencies [6bc5cc8]
+- Updated dependencies [ebf101a]
+- Updated dependencies [ebf101a]
+- Updated dependencies [6bc5cc8]
+- Updated dependencies [0484a15]
+- Updated dependencies [5fa346d]
+- Updated dependencies [3ba3e73]
+- Updated dependencies [06b352b]
+- Updated dependencies [df0b4cb]
+- Updated dependencies [7e78031]
+- Updated dependencies [7e78031]
+- Updated dependencies [ebf101a]
+- Updated dependencies [ebf101a]
+- Updated dependencies [6bc5cc8]
+- Updated dependencies [f06b033]
+- Updated dependencies [1dce317]
+- Updated dependencies [ebf101a]
+  - @vendoai/core@0.29.0
+  - @vendoai/ui@0.29.0
+  - @vendoai/harnesses@0.29.0
+  - @vendoai/actions@0.29.0
+  - @vendoai/apps@0.29.0
+  - @vendoai/automations@0.29.0
+  - @vendoai/guard@0.29.0
+  - @vendoai/knowledge@0.29.0
+  - @vendoai/store@0.29.0
+  - @vendoai/agents@0.29.0
+  - @vendoai/mcp@0.29.0
+
 ## 0.28.0
 
 ### Minor Changes

@@ -1,5 +1,201 @@
 # @vendoai/core
 
+## 0.29.0
+
+### Minor Changes
+
+- 6bc5cc8: A file your user drops in chat is now theirs to keep. It is saved into their own
+  `/user/files/`, private to them, and it is still there in next week's
+  conversation — where the agent can list it, read it, and build on it. Until now
+  an attachment rode one message and ended with it.
+
+  The message that follows a drop carries only a reference to the file, which is
+  what keeps a transcript light: a spreadsheet is stored once instead of being
+  repeated in full on every turn of the conversation about it. Images are the
+  deliberate exception and still ride inline, because that is how a model sees a
+  picture at all. On the way to the model a saved file becomes a line of text
+  naming it and where it landed — a provider handed a workspace path where it
+  expects file data would read the path as base64 and think about garbage.
+
+  Two read-only tools come with every deployment, no adapter and no key:
+  `vendo_user_files_list` and `vendo_user_files_read`. They are on the one
+  registry, so they are guarded, audited and searchable exactly like a host tool,
+  with no privileged side door. Neither takes a path — only a file NAME, from
+  which the path is built server-side — so there is no caller-supplied path for a
+  `..` to climb out of the drawer with, and the name check that refuses separators
+  and dot-segments is the same one the write doors use. A long file is read 200
+  lines at a time so a spreadsheet is walked rather than cut off mid-row, and a
+  file that is not text answers with its type and size instead of mojibake.
+
+  Building an app from a file COPIES what it needs — the rows of a table become
+  the app's own saved items. That copy is a snapshot, not a live link, and there
+  is no watcher and no background sync anywhere in this design: when a newer
+  version of the file arrives the AGENT is what notices, says the file was
+  replaced, and updates what it built. Uploading the same name replaces the file,
+  because re-sending a corrected export is the common case and a drawer that
+  quietly accumulated four near-identical spreadsheets would serve nobody. In this
+  release a PDF or an image lands in the drawer and can be described, but does not
+  reach an app.
+
+  `POST /files` is the door — the file's raw bytes under its own media type, no
+  multipart, capped at 5 MiB — and `vendo.putUserFile({ principal, name, content })`
+  is the same server-side write called from host code, for pushing a file at a
+  user without waiting for them to bring one. It delivers nothing and starts no
+  turn; the file is simply there next time they chat, and the door's cap does not
+  bind it. In the browser it is one call: `client.files.upload(file)`.
+
+  Because an upload's body is bytes rather than JSON, that door sits outside the
+  wire's json-mutation CSRF floor, and the tolls the other exempt doors pay do not
+  transfer: an upload's Content-Type is the file's own, and real files are
+  `text/plain`, which is CORS-safelisted. So it requires a custom request header
+  instead (`UPLOAD_HEADER`, sent by the client). A browser cannot set one on a
+  cross-origin request without winning a preflight this wire never answers, which
+  is what keeps a hostile page from pushing files into a signed-in user's drawer
+  on their ambient session cookie.
+
+  Storage is the ordinary BYO seam. Unset, files live in your store's own blobs;
+  `createVendo({ files })` takes any S3-compatible bucket to raise that, `vendo
+doctor` reports where a deployment's uploads land, and the boot block adds a
+  `files` row when you have wired an adapter of your own.
+
+- df0b4cb: A tool you write by hand is now three lines of typing, not a hand-built descriptor.
+
+  The `tools:` slot has always taken a `ToolDefinition` — a descriptor plus an
+  `execute` — but writing one meant authoring JSON Schema by hand beside a
+  TypeScript function, and then keeping the two honest about each other forever.
+  Nothing checked that they agreed. A schema that said `id` was required while the
+  function read `taskId` was a tool the model could only call wrong.
+
+  `defineTool` takes the schema once, as zod, and derives both halves from it: the
+  JSON Schema the model is shown, and the parse that runs before `execute`. A call
+  whose arguments the schema rejects is refused with a message naming the field,
+  and the body never runs. `risk` is required and graded — you wrote the tool, so
+  you know what it does; `ungraded` stays the answer only extraction is allowed to
+  give.
+
+  What comes back is a plain `ToolDefinition`, so nothing is hidden behind the
+  helper: every descriptor field it does not ask for is a spread away
+  (`{ ...defineTool({ … }), confirmEach: true }`), and the tool joins the one
+  registry under the name it declared, guarded, audited and projected exactly like
+  an extracted one.
+
+  Schemas are read in zod 4's shape. On zod 3.25 or later that is the `zod/v4`
+  import; a zod 3 schema is refused at definition time with the import that fixes
+  it, rather than crashing somewhere inside schema conversion.
+
+### Patch Changes
+
+- ebf101a: A slow turn now says WHERE it was slow. `agent_run` carried one wall-clock
+  number and a `steps` field hardcoded to `0`, so the only honest answer to "why
+  did that take nine seconds" was to guess. It now carries `ttftMs` — how long
+  the person waited for the first word — plus the five phase marks the wall time
+  splits into (`storeMs`, `promptMs`, `modelMs`, `toolsMs`, `guardMs`), and
+  `steps` is the turn's real model-call count. `durationMs` starts at the top of
+  the turn rather than after the opening store reads, which is why a slow store
+  used to be invisible in it. Durations and counts only: a breakdown says how
+  long, never what was read, prompted, thought, called or judged.
+- 7e78031: Arming an automation is ONE page and ONE yes. Live 2026-08-18 on production
+  Maple: a user armed "check my checking balance every 15 minutes and text me"
+  entirely over iMessage, their YES to the job landed — and arming then minted four
+  MORE per-tool asks (Text me, knowledge search, request a connection, list
+  connections). Three were reads nobody needs a second opinion about, and the
+  fourth was literally in the sentence they had just typed. Consent was framed
+  per-tool while the person was thinking per-job.
+
+  The authoring call's own approval now NAMES what the automation will hold, and
+  that one yes mints all of it. The powers ride on the approval record
+  (`ApprovalRequest.powers`, additive and optional, human titles only), computed
+  once at park time by the composition and rendered verbatim by whoever reads it —
+  the text channel today, any other surface without further work. They are grouped
+  the way a person reads them: the tools that DO something named one by one, and
+  every read folded into a single trailing "Read-only access to your data", because
+  naming reads individually is exactly what turned a yes to a job into a wall of
+  tool names.
+
+  What an automation is granted has NOT changed, and neither has how it runs. The
+  surface is as wide as it ever was, every away call is still grant-backed, and 05
+  §6's away authority is untouched — the guard's law suites pass unmodified. Two
+  kinds are excluded from standing powers because a grant could never satisfy them
+  and the card would be promising what the run will not honour: `destructive` and
+  `ungraded` (§12's pair, now closed on the two branches that leaked — a steps
+  record's declared destructive tool, and a connector slug the risk resolver grades
+  destructive), and `confirmEach`, which needs a person every time.
+
+  Minting is gated on a person having actually been asked. `enable()` takes the
+  authoring call (`armedBy`); when the host's policy would have asked about it, the
+  call reaching the engine proves the ask was answered, so the powers are minted on
+  the spot. When policy would have run it unasked — `vendo_make` is read-graded —
+  nobody saw a powers page, so nothing is minted and each power is captured as a
+  pending ask exactly as before, delivered by the grant-set text.
+
+- 6bc5cc8: One tenant brings its own tools, and only that tenant's users get them.
+
+  A customer with its own MCP server or OpenAPI spec had one way in: you add the
+  connector to `createVendo({ connectors })` and redeploy — and then every tenant
+  on the deployment has it, because there was only ever one tool registry.
+
+  `vendo.tenantConnectors` is the dev-side API that ends that. `register` takes an
+  org, an MCP URL or an OpenAPI spec, and the token the customer pasted; it
+  validates by ACTUALLY CONNECTING and answers with the tools the server really
+  advertised, or a typed error. `list`, `test` and `remove` are the rest of the
+  admin screen you were going to build anyway. There is no Vendo-hosted UI here,
+  and no console step: the surface is yours.
+
+  Visibility follows the orgs your host already asserts (`memberships`), and it is
+  STRUCTURAL. A run that asserts `acme` is served the shared registry plus Acme's
+  own; a run that asserts `globex` is served a registry Acme's connector was never
+  in. There is no filter over a combined set, so there is no filter to get wrong.
+
+  Registrations ride the generic records collection — no store schema change, no
+  migration — stamped with the org that owns them, so the existing erase cascade
+  reaches them like every other row that names a subject. The pasted token never
+  lands in a row: it is vaulted in the store's encrypted secrets under a
+  tenant-scoped name, and no public surface reads it back.
+
+  The erase cascade learned one new thing to make that whole. `vendo_secrets` sat
+  outside every selector for a stated reason — its rows were name-keyed HOST
+  config, which no subject could reach — and a tenant connector's vault name
+  breaks that premise by carrying the org that owns it. So erasing an org now
+  takes its connector tokens with its registrations, and nothing else: a
+  deployment's own `API_TOKEN` still belongs to the deployment, not to any person.
+  One name builder in `@vendoai/core` serves both the write side and the sweep, so
+  they cannot drift.
+
+  `vendo doctor` gains `E-TENANT-001`: a host whose source reaches
+  `vendo.tenantConnectors` with no `VENDO_STORE_ENCRYPTION_KEY` and no
+  `VENDO_API_KEY` is warned that a pasted token is stored in the clear locally and
+  refused outright in production — a failure that would otherwise only appear on
+  the first credentialed registration after a deploy. Static, like every other
+  doctor check: a source marker and two env names, no store opened and no tenant
+  server dialled.
+
+- f06b033: An org the host already asserts is a usage pool, with nothing wired for it. A
+  host that answers `memberships` for a request — the same assertion app grants
+  are matched against — now gets one pool per org, named and keyed `org:<orgId>`
+  by core's own principal encoding, so a limits policy can cap a whole team the
+  day it can name one:
+
+  ```ts
+  limits: async ({ user, count }) => {
+    // Guard on `user.pools`: an identity with no asserted membership — a signed-out
+    // guest, an inbound text — is in no org pool, and counting one denies the turn.
+    if (!user.pools?.includes("org:maple")) return true;
+    return (await count("message", { days: 30, pool: "org:maple" })) < 200;
+  },
+  ```
+
+  One grammar, not two: the string a policy counts is the string a grant names
+  that org by. Teams stay out of it — a team is a slice of an org's allowance, not
+  a bucket the host asked to meter. A pool the host asserts itself still wins on a
+  name collision, so metering an org by the host's own key keeps working — override
+  it for every member of that org, because half an org on `org:<orgId>` and half on
+  your own key is one allowance split across two meters that each under-count. A
+  policy naming an org nobody asserted still fails closed rather than reading zero.
+  An inbound text asks the same seam for the linked subject — it is keyed on the
+  principal, not a request — so a member who texts draws on the org's allowance
+  instead of quietly outside it. Maple demonstrates it: the branch shares 200
+  messages a month, on top of a per-person daily cap.
+
 ## 0.28.0
 
 ### Minor Changes

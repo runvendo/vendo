@@ -1,5 +1,104 @@
 # @vendoai/automations
 
+## 0.29.0
+
+### Minor Changes
+
+- 7e78031: Arming an automation is ONE page and ONE yes. Live 2026-08-18 on production
+  Maple: a user armed "check my checking balance every 15 minutes and text me"
+  entirely over iMessage, their YES to the job landed — and arming then minted four
+  MORE per-tool asks (Text me, knowledge search, request a connection, list
+  connections). Three were reads nobody needs a second opinion about, and the
+  fourth was literally in the sentence they had just typed. Consent was framed
+  per-tool while the person was thinking per-job.
+
+  The authoring call's own approval now NAMES what the automation will hold, and
+  that one yes mints all of it. The powers ride on the approval record
+  (`ApprovalRequest.powers`, additive and optional, human titles only), computed
+  once at park time by the composition and rendered verbatim by whoever reads it —
+  the text channel today, any other surface without further work. They are grouped
+  the way a person reads them: the tools that DO something named one by one, and
+  every read folded into a single trailing "Read-only access to your data", because
+  naming reads individually is exactly what turned a yes to a job into a wall of
+  tool names.
+
+  What an automation is granted has NOT changed, and neither has how it runs. The
+  surface is as wide as it ever was, every away call is still grant-backed, and 05
+  §6's away authority is untouched — the guard's law suites pass unmodified. Two
+  kinds are excluded from standing powers because a grant could never satisfy them
+  and the card would be promising what the run will not honour: `destructive` and
+  `ungraded` (§12's pair, now closed on the two branches that leaked — a steps
+  record's declared destructive tool, and a connector slug the risk resolver grades
+  destructive), and `confirmEach`, which needs a person every time.
+
+  Minting is gated on a person having actually been asked. `enable()` takes the
+  authoring call (`armedBy`); when the host's policy would have asked about it, the
+  call reaching the engine proves the ask was answered, so the powers are minted on
+  the spot. When policy would have run it unasked — `vendo_make` is read-graded —
+  nobody saw a powers page, so nothing is minted and each power is captured as a
+  pending ask exactly as before, delivered by the grant-set text.
+
+### Patch Changes
+
+- 06b352b: An automation armed from a phone can now be allowed to run from that phone. On
+  2026-08-18 a user set up "check my checking balance every 15 minutes and text
+  me" entirely over iMessage. The arming approval worked — the card went out as a
+  text, their YES decided it — but arming also minted four pending standing-grant
+  captures, and those asks are approval ROWS the engine writes during
+  `vendo_automate`, never stream parts, so the mid-turn card watcher could not see
+  them and their only surface was the host app's web approvals feed. A person who
+  only texts can never reach it: every firing then ran without the Text me
+  permission, and the agent could only report that "there are still some
+  permissions pending approval" with nothing the person could do about it.
+
+  After a channel turn finishes, one automation's outstanding permissions now go
+  out as ONE more text — the automation named the way every other surface names it,
+  one line per thing to allow, each line the descriptor's own human title:
+
+      check my checking balance and text me — needs your permission to run on its own:
+      - Text me
+      - Look it up in the docs
+      Reply YES to allow all of these, or NO to cancel it.
+
+  YES decides the whole set in one batch call on the same guard door the web feed
+  uses — all-or-none, never a half-granted set — and each approval settles into its
+  standing grant through the automations engine's own decision subscriber. NO is
+  the bare no it has always been: nothing is minted and the automation is turned
+  off, and the reply says which of the two happened. The consent model is
+  unchanged — the same captures, the same grants, the same one decision that
+  settles them; only the delivery is new.
+
+  One question at a time, the discipline the cards already keep: nothing goes out
+  while the conversation is holding a card or a set ask it has not answered, the
+  row is written only after the text lands, and a set is never asked twice. The
+  store's pending feed is the source of truth rather than "did this turn arm
+  something", so a set minted from the web is asked on the next texted turn too.
+
+- 7e78031: An expired arming ask no longer turns the automation off. Live 2026-08-18 on
+  production Maple, automation atm_d50cd48e: 33 arming asks were created at 11:26,
+  all 33 were denied at 12:27 — createdAt plus exactly the parked-call TTL — and
+  the record flipped to armed=false at 12:27:37, with not one human decision ever
+  recorded. The person's automation turned itself off an hour after they set it up,
+  silently.
+
+  The guard's hour-long sweep denies an abandoned ask as `"system"`, and the
+  decision subscriber read any deny as a person's "no" and disarmed a consent
+  moment that had granted nothing. It now reads WHO said no off the approval row —
+  the provenance the guard already stamps, and which the decision callback (id,
+  approved) cannot carry — and disarms only for a human. The guard already draws
+  this line for standing denials, where it enforces only `deniedBy: "human"`; this
+  was the one place that did not. A guard that stamps nothing keeps today's
+  behaviour, and a human NO still disarms, so the text channel's "Okay — I turned
+  it off." stays true.
+
+- Updated dependencies [6bc5cc8]
+- Updated dependencies [ebf101a]
+- Updated dependencies [df0b4cb]
+- Updated dependencies [7e78031]
+- Updated dependencies [6bc5cc8]
+- Updated dependencies [f06b033]
+  - @vendoai/core@0.29.0
+
 ## 0.28.0
 
 ### Patch Changes

@@ -1,5 +1,113 @@
 # @vendoai/harnesses
 
+## 0.29.0
+
+### Patch Changes
+
+- ebf101a: `agent_run`'s `guardMs` and `toolsMs` now carry real numbers. The breakdown
+  shipped with both hardcoded to `0` because the tool bridge — the one place that
+  stands in front of the guard's evaluation and the tool's own run — had no way to
+  reach the turn's collector, so a turn whose nine seconds went into a judge and a
+  slow host tool reported them as thinking time. The bridge now takes the same
+  `TurnTimings` the runtime already holds and marks the two phases it owns, summed
+  over the turn's calls. They are disjoint — the preview decides, the dispatch runs
+  on that verdict — so neither is counted into the other and `modelMs`, which is
+  whatever the other four leave over, stays honest. Durations only: a mark says how
+  long the guard took to decide and how long the tool took to run, never what was
+  called, argued or judged.
+- ebf101a: A slow turn now says WHERE it was slow. `agent_run` carried one wall-clock
+  number and a `steps` field hardcoded to `0`, so the only honest answer to "why
+  did that take nine seconds" was to guess. It now carries `ttftMs` — how long
+  the person waited for the first word — plus the five phase marks the wall time
+  splits into (`storeMs`, `promptMs`, `modelMs`, `toolsMs`, `guardMs`), and
+  `steps` is the turn's real model-call count. `durationMs` starts at the top of
+  the turn rather than after the opening store reads, which is why a slow store
+  used to be invisible in it. Durations and counts only: a breakdown says how
+  long, never what was read, prompted, thought, called or judged.
+- ebf101a: A tool call is decided once instead of twice. Every guarded call ran the whole
+  policy pipeline twice for one logical call: the harness previews with
+  `previewCheck` before it dispatches, and the guard-bound registry then evaluated
+  the same call again from scratch moments later — the grants read, the approvals
+  read, the rules, the org layer and, worst of all, the judge (up to 15 seconds,
+  paid twice). The preview's verdict now carries to the dispatch that follows it,
+  single-use and pinned to that exact call: same id, same arguments, same
+  descriptor, same subject, venue, presence and app, or it is decided fresh.
+
+  Nothing the guard refused before gets through. The preview was always the whole
+  evaluation — it just never SPENT anything — so the dispatch is what commits, and
+  a verdict only answers for the dispatch moments behind it: it expires after five
+  seconds, and every gate that can still stop the call is re-read before anything
+  is spent. The kill switch is read first, so a freeze landing between the two
+  passes no longer burns the human's single-use yes on a call it then blocks. The
+  call-rate window and the write budget are read live and can still park a
+  previewed "run" that a concurrent call has since put over budget. The org-admin
+  layer is consulted again, so an admin who tightens the layer while a call sits
+  previewed clamps that call. The risk GRADE is re-resolved rather than remembered,
+  so a tool that previewed as `read` and re-grades to `destructive` cannot reach an
+  away run on the old label — THE LAW's unattended gate never reads a stale grade.
+  A standing grant is re-read and the single-use yes is claimed last, after every
+  gate above, so a call that does not proceed spends nothing. Any of these voids
+  the verdict and the full pipeline decides again. An "ask" is never carried
+  forward at all — the tap that answers it IS the fresh verdict the dispatch reads.
+
+  The judge is asked once per call, so a subject's outstanding previewed verdicts
+  are voided the moment ANY call for that subject lands — at any risk grade, in any
+  run or session. The judge decides on the audit trail, and that trail is the
+  subject's, not the run's: a step whose tools were all previewed before any of them
+  dispatched would otherwise let the second call run on a verdict taken before the
+  first one existed, and a landed read or a landed connector call is exactly the
+  shape a judge most wants to weigh. Sequential calls — preview, then dispatch with
+  nothing in between — have no outstanding verdict to void and keep the single pass.
+
+  Host-API calls also ride the keep-alive connection pool the store already uses.
+  Node's stock dispatcher drops an idle socket after ~4s — shorter than the gap
+  between two of an agent's tool calls — so nearly every host round trip was paying
+  a fresh TCP+TLS handshake. Inference rides the same pool: the composed model
+  seats now dial the Cloud gateway through it, so a turn does not re-handshake
+  after every idle gap. A host that passes its own `fetch` — or its own ai-SDK
+  model object — still wins.
+
+  A refused connect check costs one broker lookup instead of two. The connect gate
+  runs twice for one tool call — the harness preflight rules a call to an
+  unconnected service out before an approval can be minted for it, and the
+  gate-wrapped registry rules it out again on the doors that never preview — and
+  only the CONNECTED answer was cached, so every unconnected call asked the broker
+  twice to say the same no. A negative answer is now trusted for one second: long
+  enough for the two checks of one call, far short of an OAuth round trip, so a
+  user who just connected is never told otherwise.
+
+- ebf101a: A turn stops doing its setup one thing at a time. The system prompt is now
+  assembled BESIDE the turn's opening store reads instead of after them, and the
+  two independent waits inside it — the guard's directions and the knowledge index
+  — run together rather than in sequence; the assembled bytes are unchanged,
+  because section order comes from the assembler and not from which read settles
+  first. The runtime no longer re-validates the composed turn's transcript against
+  itself: composition hands it the very array it just read and validated, and one
+  array cannot differ from itself, so an O(n) double stringify per turn was
+  spent proving a tautology. `vendo()` projects the host's catalog once to set a
+  turn up instead of twice, and re-projects it after a tool call only when that
+  call could actually change what is reachable — the connector door — rather than
+  after every call.
+
+  Fixes a compaction accounting bug in the same pass: the prompt estimate billed
+  every equipped tool while the call only ever carries the active loadout, so a
+  curated surface was charged for a catalog it never sent — the trigger fired on
+  tokens that were never there, and the shed floor was handed a figure the prompt
+  had never reached. The estimate bills the active set now. The characters-per-token
+  ratio is unchanged.
+
+- Updated dependencies [6bc5cc8]
+- Updated dependencies [ebf101a]
+- Updated dependencies [0484a15]
+- Updated dependencies [df0b4cb]
+- Updated dependencies [7e78031]
+- Updated dependencies [ebf101a]
+- Updated dependencies [6bc5cc8]
+- Updated dependencies [f06b033]
+  - @vendoai/core@0.29.0
+  - @vendoai/apps@0.29.0
+  - @vendoai/guard@0.29.0
+
 ## 0.28.0
 
 ### Patch Changes
