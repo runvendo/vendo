@@ -75,7 +75,12 @@ export async function serve({ agents }: ServeOptions): Promise<VendoRuntime> {
   // Two agents wearing one name throw HERE, at boot, rather than at 2am once the
   // wrong brain has already run.
   for (const [agent, composition] of composed) {
-    internals.runners.register(agent.name, awayRunner(composition));
+    // The brain is the agent's; the store, its blobs and the guard are the
+    // DEPLOYMENT's — the half of the rule above that only the engine got. Left on
+    // its own composition, a secondary parked its cards and wrote its threads into
+    // its OWN store, where neither the run ledger naming the firing nor the mount a
+    // person answers from can reach them.
+    internals.runners.register(agent.name, awayRunner({ ...composition, store: primary.store, files: primary.files, guard: primary.guard }));
   }
   const ctx: RunContext = {
     principal: OWNER,

@@ -10,6 +10,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { VendoAgent } from "../src/agent.js";
 import { agent } from "../src/agent.js";
 import { serve } from "../src/serve.js";
+import { tool } from "../src/tools.js";
 
 let stores = 0;
 const memoryStore = (): VendoStore => createStore({ dataDir: `memory://agents-serve-${stores++}` });
@@ -125,6 +126,61 @@ describe("serve()", () => {
     await vi.advanceTimersByTimeAsync(60_000);
 
     await expect.poll(() => fired, { timeout: 20_000 }).toEqual(["billing"]);
+    await runtime.close();
+  });
+
+  it("a secondary's firing parks on the DEPLOYMENT's guard, so the card is collected", async () => {
+    fakeTicker();
+    const store = memoryStore();
+    // The deployment's composition is the FIRST agent's, tools included. Billing
+    // brings a brain and its own store, and reaches support's tool.
+    const support = agent({
+      name: "support",
+      store,
+      tools: [tool({
+        name: "invoices_list",
+        description: "List invoices",
+        risk: "read",
+        inputSchema: { type: "object" },
+        execute: () => ({ invoices: 2 }),
+      })],
+      harness: defineHarness({
+        name: "idle",
+        async *run() {
+          yield { type: "text" as const, delta: "support ran." };
+        },
+      }),
+    });
+    const billing = agent({
+      name: "billing",
+      store: memoryStore(),
+      harness: defineHarness({
+        name: "caller",
+        async *run(turn) {
+          await turn.tools.call("invoices_list", {});
+          yield { type: "text" as const, delta: "billing asked." };
+        },
+      }),
+    });
+    billing.on({ at: "2020-01-01T00:00:00.000Z" }, "chase the overdue invoices");
+
+    const runtime = await serve({ agents: [support, billing] });
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    // An away call the guard cannot trace to a grant parks, and the card lands in
+    // the store of whichever guard parked it. Parked on billing's own, the
+    // deployment's queue — the one a host's permission mount answers from — is
+    // empty, and nobody is ever shown the card.
+    await expect.poll(() => rows(store, "vendo_approvals"), { timeout: 20_000 }).toMatchObject([{
+      status: "pending",
+      request: { call: { tool: "invoices_list" } },
+    }]);
+    // One firing, one store: the ledger row that names it and the thread it thought
+    // in are beside the card, not in an agent-private store nobody reads.
+    expect(await rows(store, "vendo_runs")).toMatchObject([{
+      record: { agent: "billing", steps: [{ tool: "invoices_list", outcome: "pending-approval" }] },
+    }]);
+    expect(await rows(store, "vendo_threads")).toHaveLength(1);
     await runtime.close();
   });
 
