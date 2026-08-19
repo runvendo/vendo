@@ -196,6 +196,10 @@ function harness(options: {
    *  own v3→v4 adapter (`asLanguageModelV4`) is exactly this relabel, so the
    *  label is the whole of the difference on either major. */
   spec?: "v3" | "v4";
+  /** Compose with NO checks floor, which is a deployment carrying no screen
+   *  engine: the seam has no door to paint through, so every save lands its bytes
+   *  and reaches nobody. */
+  screenEngine?: false;
 }): Harness {
   const guard = testGuard(options.guardPolicy);
   const descriptors = options.tools
@@ -264,7 +268,7 @@ function harness(options: {
       if (options.conflict === true) workspace.conflictOn = ["*"];
       return workspace;
     },
-    render: () => ({ floor }),
+    render: () => (options.screenEngine === false ? {} : { floor }),
     ...(options.remember === undefined ? {} : { remember: options.remember }),
   });
 
@@ -572,6 +576,54 @@ describe("assembly writes through the real path and the seam paints it", () => {
     const result = await screen.assemble("show me my spending");
     expect(screen.emitted).toHaveLength(0);
     expect(result.kind).toBe("unavailable");
+  });
+});
+
+/**
+ * "assembly produced nothing that renders" was the answer to THREE different
+ * questions — a run that never saved, a deployment with no screen engine, and a
+ * screen that compiled but could not be described — and the sentence naming which
+ * one existed only on the operator's console. A person reading the chat learned
+ * nothing they could act on, and the run above them reported `failed` over a
+ * screen that was, in the ported case, sitting there painted.
+ */
+describe("what a run that painted nothing actually says", () => {
+  it("names the run that never saved a screen, rather than blaming the assembly", async () => {
+    // The model talks and never writes. Nothing landed, so there is no paint to
+    // explain — but "produced nothing that renders" describes a screen that
+    // failed, and no screen was ever written.
+    const screen = harness({ turns: [textTurn("I had a think about it")] });
+    const result = await screen.assemble("show me my spending");
+
+    expect(screen.workspace.commits).toHaveLength(0);
+    expect(result.kind).toBe("unavailable");
+    expect(result.why).toContain("never saved a screen");
+    expect(result.why).not.toContain("produced nothing that renders");
+  });
+
+  it("names the DEPLOYMENT when no screen engine is wired, in words an operator can act on", async () => {
+    // The save is good and its bytes land. There is simply no door to paint
+    // through, which no rewrite of the screen can fix — so the run must say that
+    // rather than send the model back to repair a screen that was never the
+    // problem.
+    const screen = harness({ turns: [saveApp(GOOD_APP), textTurn("done")], screenEngine: false });
+    const result = await screen.assemble("show me my spending");
+
+    expect(screen.workspace.commits).toHaveLength(1);
+    expect(screen.emitted).toHaveLength(0);
+    expect(result.kind).toBe("unavailable");
+    expect(result.why).toContain("screen engine");
+    expect(result.why).not.toContain("produced nothing that renders");
+  });
+
+  it("still prefers the floor's own words when the floor is the one that refused", async () => {
+    // The seam's reason is a FALLBACK for the exits where the floor never spoke.
+    // A floor that did speak keeps the sentence, because it is the one that names
+    // what to fix in the screen.
+    const screen = harness({ turns: [saveApp(BROKEN_APP), textTurn("done")] });
+    const result = await screen.assemble("show me my spending");
+
+    expect(result.why).toContain("does not compile as TSX");
   });
 });
 

@@ -72,6 +72,7 @@ import {
 import {
   buildingAppsSkill,
   paintedIn,
+  unpaintedIn,
   SCREEN_FILE,
   screenName,
   VALIDATE_TOOL,
@@ -911,7 +912,15 @@ export async function assembleScreen(
      */
     record.painted = paintedIn(committed)?.includes(input.appId);
     if (record.painted === false) {
-      const { blocking, environment } = surface.screenIssues?.() ?? { blocking: [] };
+      const floorSaid = surface.screenIssues?.() ?? { blocking: [] };
+      // The floor's own words WIN. The seam speaks only for the exits where the
+      // floor never did — no screen engine, a compiled screen that is not a valid
+      // description, a view that threw — which reached the operator's console and
+      // nobody else, leaving this run to answer "produced nothing that renders"
+      // for three different reasons.
+      const { blocking, environment } = floorSaid.blocking.length > 0
+        ? floorSaid
+        : unpaintedIn(committed, input.appId) ?? floorSaid;
       // A refusal about the DEPLOYMENT is not a screen this loop can fix: no
       // compiler where the checks run refuses every screen, so handing these
       // sentences over as repair instructions spends the whole budget rewriting a
@@ -1319,8 +1328,16 @@ export async function assembleScreen(
     };
   }
   // The floor's own sentences first: they name what is wrong with the screen the
-  // person asked for, which no sentence about the loop can.
-  return { kind: "unavailable", why: record.refused || failure || "assembly produced nothing that renders" };
+  // person asked for, which no sentence about the loop can. Last comes the run's
+  // own shape, and a run that never saved is not a screen that failed to render:
+  // saying so sent people looking for a broken screen that was never written.
+  // WHY the model did not save is not knowable here — that is the model's
+  // behaviour, not the seam's state — so this says only what happened.
+  return {
+    kind: "unavailable",
+    why: record.refused || failure
+      || (record.assembled ? "assembly produced nothing that renders" : "this run never saved a screen"),
+  };
 }
 
 // ─── The `vendo_make` route ──────────────────────────────────────────────────

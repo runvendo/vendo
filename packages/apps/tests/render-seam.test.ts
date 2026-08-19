@@ -18,7 +18,7 @@ import { vendoViewPartSchema, vendoViewStreamId, type AppId, type UIPayload, typ
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { warmScreenEngine } from "../src/contract/index.js";
 import { createAppFloor } from "../src/server/checking/floor.js";
-import { HOT_PATH_FILES, HOT_PATH_WATCH, hotPathAppId, paintedIn, viewForWrite, wrapWorkspaceForRender } from "../src/server/generation/render-seam.js";
+import { HOT_PATH_FILES, HOT_PATH_WATCH, hotPathAppId, paintedIn, unpaintedIn, viewForWrite, wrapWorkspaceForRender } from "../src/server/generation/render-seam.js";
 import { testWorkspace } from "./test-doubles.test-util.js";
 
 const APP = "app_1";
@@ -255,6 +255,65 @@ describe("a save the floor refuses", () => {
   });
 });
 
+/**
+ * The seam knows WHY a landed write never reached the screen, and used to tell
+ * only the operator's console — so the hand that wrote the screen had "nothing
+ * painted" and no reason, and the sentence a person finally read was the loop's
+ * last-resort "assembly produced nothing that renders". The reason travels
+ * beside the commit now, exactly as the painted list does.
+ */
+describe("the reason a landed write did not paint", () => {
+  it("says the DEPLOYMENT could not paint when no screen engine is wired", async () => {
+    const workspace = wrapWorkspaceForRender(testWorkspace(), { emit: () => undefined });
+    await workspace.writeFile(APP_TSX, GOOD_APP);
+    const result = await workspace.commit();
+
+    const reason = unpaintedIn(result, APP as AppId);
+    // `environment` is the difference between "fix your screen" and "fix this
+    // deployment": nothing the writer saves can put a screen engine here, so the
+    // loop must stop rather than spend its repair budget rewriting a good screen.
+    expect(reason?.environment).toBe(true);
+    expect(reason?.blocking.join(" ")).toContain("screen engine");
+  });
+
+  it("carries the floor's own words when the floor refused", async () => {
+    const { workspace } = seam();
+    await workspace.writeFile(APP_TSX, "just some prose, no components at all");
+    const result = await workspace.commit();
+
+    expect(unpaintedIn(result, APP as AppId)?.blocking.join(" ")).toContain("does not compile as TSX");
+    expect(unpaintedIn(result, APP as AppId)?.environment).toBeUndefined();
+  });
+
+  it("survives an emit that throws — the commit still lands, and the throw is the reason", async () => {
+    // A view is a courtesy on top of a landed commit and can never fail one. That
+    // is why the seam swallows this — but swallowing the REASON with it made a
+    // throw indistinguishable from a clean no-paint.
+    const workspace = wrapWorkspaceForRender(testWorkspace(), {
+      emit: () => { throw new Error("the host's view channel is closed"); },
+      floor: floor(),
+    });
+    await workspace.writeFile(APP_TSX, GOOD_APP);
+    const result = await workspace.commit();
+
+    expect(result.status).toBe("ok");
+    expect(paintedIn(result)).toEqual([]);
+    expect(unpaintedIn(result, APP as AppId)?.blocking.join(" ")).toContain("the host's view channel is closed");
+  });
+
+  it("says nothing about an app that painted, and nothing about a commit it never saw", async () => {
+    const { workspace } = seam();
+    await workspace.writeFile(APP_TSX, GOOD_APP);
+    const painted = await workspace.commit();
+    expect(unpaintedIn(painted, APP as AppId)).toBeUndefined();
+
+    // "Not known", never "nothing painted" — the same reading `paintedIn` has for
+    // a result this seam did not produce.
+    expect(unpaintedIn({ status: "ok", changed: [] } as unknown as Parameters<typeof unpaintedIn>[0], APP as AppId))
+      .toBeUndefined();
+  });
+});
+
 describe("saves that are not hot paths", () => {
   it("emit nothing", async () => {
     const { emitted, save } = seam();
@@ -445,17 +504,23 @@ describe("the wrapper", () => {
 describe("the seam's payload settles", () => {
   const OTHER_TSX = "/user/apps/app_5/app.tsx";
 
+  /** The painted part, or a failure that names why the paint never happened —
+   *  which is the whole point of the attempt carrying its reason. */
+  const paintedPart = async (): Promise<VendoViewPart> => {
+    const attempt = await viewForWrite(OTHER_TSX, GOOD_APP, { emit: () => undefined, floor: floor() });
+    if (!attempt.painted) throw new Error(attempt.reason?.blocking.join("; ") ?? "nothing painted, and no reason");
+    return attempt.part;
+  };
+
   it("settles the finished paint, so the app leaves \"building\" and can reach a verdict", async () => {
-    const view = await viewForWrite(OTHER_TSX, GOOD_APP, { emit: () => undefined, floor: floor() });
-    expect((view?.part.payload as { streaming?: boolean }).streaming).toBe(false);
+    expect(((await paintedPart()).payload as { streaming?: boolean }).streaming).toBe(false);
   });
 
   it("carries what the renderer re-boots the screen from", async () => {
     // The gauntlet already ran the screen's queries, so the paint is final — and
     // the compiled screen and its answers ride along, which is what makes the
     // emitted view a LIVE screen rather than a snapshot of one.
-    const view = await viewForWrite(OTHER_TSX, GOOD_APP, { emit: () => undefined, floor: floor() });
-    const interactive = (view?.part.payload as { interactive?: { compiledSource?: string } }).interactive;
+    const interactive = ((await paintedPart()).payload as { interactive?: { compiledSource?: string } }).interactive;
     expect(interactive?.compiledSource).toContain("require(");
   });
 });
