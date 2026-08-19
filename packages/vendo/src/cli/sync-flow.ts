@@ -605,11 +605,15 @@ async function runGradingStages(input: {
 async function probeImpact(input: {
   report: SyncReportWithWarnings;
   options: SyncFlowOptions;
+  /** The dotenv-aware environment: init wrote the host's real dev port here as
+      VENDO_BASE_URL, so 3000 is the last resort rather than the assumption. */
+  env: Record<string, string | undefined>;
   output: SyncFlowOptions["output"];
   note: (message: string) => void;
 }): Promise<ToolImpact[] | null> {
-  const { report, options, output, note } = input;
-  const wireUrl = (options.url ?? process.env.VENDO_URL ?? "http://localhost:3000/api/vendo").replace(/\/+$/, "");
+  const { report, options, env, output, note } = input;
+  const base = (env.VENDO_BASE_URL ?? "http://localhost:3000").replace(/\/+$/, "");
+  const wireUrl = (options.url ?? env.VENDO_URL ?? `${base}/api/vendo`).replace(/\/+$/, "");
   const tools = [...new Set([
     ...report.breaking.map((breaking) => breaking.tool),
     ...report.tools.changed,
@@ -753,7 +757,7 @@ export async function runSyncFlow(options: SyncFlowOptions): Promise<SyncFlowRes
   const notes_ = { note, noteError };
   const { themeSummary, themeMs, theme } = await resolveTheme({ root, vendoDir, mode, options, note });
   const { judged, themeDraft } = await runGradingStages({ root, vendoDir, mode, env, options, output, themeSummary, notes: notes_ });
-  const impact = await probeImpact({ report, options, output, note });
+  const impact = await probeImpact({ report, options, env, output, note });
 
   // Pin baselines → Vendo Cloud (decision 4). Part of a NORMAL keyed run, not
   // something `--report` gates: the console's Remix reviews screen cannot show

@@ -357,13 +357,16 @@ export async function ensureVendoPackage(options: { root: string; output: Output
 
 /** Every BARE package a generated module imports, deduped: `@scope/name` or
  *  `name`, subpath dropped. Relative and absolute specifiers are not packages,
- *  and neither are node builtins. */
+ *  and neither are node builtins — nor `@/…`, the tsconfig path alias whose
+ *  empty scope segment makes it no package name at all (installing it wrote
+ *  `"lib": "link:@/lib"` into the host manifest and npm then died on
+ *  EUNSUPPORTEDPROTOCOL). */
 function importedPackages(source: string): string[] {
   const found = new Set<string>();
   const specifiers = /(?:^|[\s;}])(?:import|export)\s[^;]*?from\s*["']([^"']+)["']|\bimport\s*\(\s*["']([^"']+)["']/g;
   for (const match of source.matchAll(specifiers)) {
     const specifier = match[1] ?? match[2] ?? "";
-    if (specifier === "" || specifier.startsWith(".") || specifier.startsWith("/") || specifier.startsWith("node:")) continue;
+    if (specifier === "" || specifier.startsWith(".") || specifier.startsWith("/") || specifier.startsWith("node:") || specifier.startsWith("@/")) continue;
     const parts = specifier.split("/");
     found.add(specifier.startsWith("@") ? parts.slice(0, 2).join("/") : parts[0]!);
   }

@@ -748,10 +748,13 @@ export function createPrettyOutput(options: PrettyOptions = {}): PrettyOutput {
     return stdout.columns ?? Number.POSITIVE_INFINITY;
   };
   /** One logical line — and the number of terminal ROWS it took, which is what
-      a cursor-up redraw has to rewind. */
+      a cursor-up redraw has to rewind. Each row ends at the erase: a redraw
+      rewinds by the rows this renderer BELIEVES it drew, and wherever that
+      disagrees with the terminal's own wrap, a shorter line lands on a longer
+      one and keeps its tail. Clearing to end of line makes that impossible. */
   const line = (text: string): number => {
     const rows = wrapRail(text, columns());
-    for (const row of rows) write(`${row}\n`);
+    for (const row of rows) write(`${row}${ESC}[K\n`);
     lastWasBar = text === BAR;
     return rows.length;
   };

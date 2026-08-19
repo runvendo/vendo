@@ -1080,6 +1080,26 @@ describe("createPrettyOutput (80 columns — the width most people run)", () => 
     expect(settled).not.toContain("○");
   });
 
+  /** A redraw rewinds by the rows the renderer BELIEVES it drew. Where that
+      count and the terminal's own wrap disagree, the erase lands on the wrong
+      row and a shorter line is painted over a longer one — leaving its tail
+      attached ("…any MCP agent (experimental)p/api/chat)"). Ending every row
+      at the erase makes the residue impossible however the rewind landed. */
+  it("select: every row it draws is cleared to end of line", async () => {
+    const chunks: string[] = [];
+    const keys = fakeInput();
+    const pretty = createPrettyOutput({
+      write: (chunk) => chunks.push(chunk), input: keys.input, banner: false, columns: 80,
+    });
+    const choice = pretty.select("How will people use your agent?", [...USE_CASE_OPTIONS]);
+    keys.press("[B"); // redraw: the option list is painted a second time
+    keys.press("1");
+    expect(await choice).toBe("embedded");
+    const rows = chunks.join("").split("\n").filter((row) => row.includes("Embedded in my app"));
+    expect(rows.length).toBeGreaterThan(1);
+    expect(rows.every((row) => row.endsWith(`${ESC}[K`))).toBe(true);
+  });
+
   it("select: the settled long answer stays on the rail and still reads whole", async () => {
     const term = screen(80);
     const keys = fakeInput();

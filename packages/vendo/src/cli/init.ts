@@ -377,6 +377,31 @@ export async function stackLines(
   ];
 }
 
+/** The read-back, before the first question. Owed to EVERY run a human
+    watches — the rail is only how it is dressed, and gating on the rail is
+    what let a `CI=`/`NO_COLOR` terminal open with a question about an app it
+    never said it had read. Detect first, print second: the banner's arrival
+    plays over the detection, and the reveal then narrates it — a beat per
+    fact, so the wave reads as detection time rather than a burst after it. */
+async function printStack(input: {
+  root: string;
+  options: InitOptions;
+  output: Output;
+  pretty: PrettyOutput | null;
+}): Promise<void> {
+  const { root, options, output, pretty } = input;
+  const stack = await stackLines(root, await resolveFramework(root, options));
+  if (pretty === null) {
+    for (const fact of stack) output.log(fact);
+    return;
+  }
+  const facts = stack.map((text, index) => ({
+    beat: index === 0 ? "Detecting your framework…" : index === 1 ? "Checking auth…" : undefined,
+    text,
+  }));
+  await pretty.revealBlock("Your stack", facts, { beat: "Reading your app…" });
+}
+
 /** Telemetry `router` enum (init_completed): app | pages | none, from the
     same directory evidence appDirectory rides. Express hosts are "none". */
 async function detectRouter(root: string, framework: Exclude<HostFramework, "unknown"> | "custom"): Promise<"app" | "pages" | "none"> {
@@ -2295,22 +2320,7 @@ const explainedPlanFailure = (error: unknown): boolean => {
     }
   }
 
-  // The read-back first: every fact below is already detected for other
-  // reasons, and showing it is the moment the tool proves it looked.
-  if (pretty !== null) {
-    // Detect FIRST, print second: the banner's arrival plays over this work.
-    // The reveal then narrates it — a beat of "Reading your app…" and the
-    // facts landing one by one — so the wave reads as detection time, and the
-    // section arrives as a rhythm instead of a burst after the arrival.
-    const stack = await stackLines(root, await resolveFramework(root, options));
-    // Each fact gets a labeled beat — the scan narrates what it is looking at
-    // while it lands the answer it already has.
-    const facts = stack.map((text, index) => ({
-      beat: index === 0 ? "Detecting your framework…" : index === 1 ? "Checking auth…" : undefined,
-      text,
-    }));
-    await pretty.revealBlock("Your stack", facts, { beat: "Reading your app…" });
-  }
+  await printStack({ root, options, output, pretty });
   const useCase = await resolveUseCase({ root, options, pretty, interactive });
 
   // (No stdin-TTY guard on these defaults: an unshown auth confirm resolving
