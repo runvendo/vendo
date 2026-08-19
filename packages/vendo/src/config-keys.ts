@@ -33,6 +33,7 @@ export const CREATE_VENDO_CONFIG_KEYS = [
   "models",
   "auth",
   "principal",
+  "memberships",
   "tools",
   "skills",
   "catalog",

@@ -36,6 +36,7 @@ import {
   KIT_SLOT_PROPS,
   SAFE_STYLE_PROPERTIES,
   SLOT_PROP_DESCRIPTION,
+  TEXT_SLOT_DESCRIPTION,
   kitSpec,
   type KitComponentSpec,
   type NormalizedCatalog,
@@ -128,6 +129,28 @@ const ROW_SLOT_DECLARATION =
   `declare type ${ROW_SLOT_TYPE} = ${SLOT_TYPE} | ((row: any, index: number) => ${SLOT_TYPE});`;
 
 /**
+ * What a FORMATTER may hold — the same law as a slot, at a text arity.
+ *
+ * A chart's figures are the screen's own text now, so the two aliases below are
+ * {@link SLOT_TYPE}'s siblings with the one thing narrowed that matters: the
+ * return is a STRING. A formatter that hands back a component compiles clean
+ * against a slot type and then paints `[object Object]` on an axis, which is
+ * exactly the class of silent breakage this printer exists to refuse.
+ *
+ * The per-row alias is the one every Kit formatter actually uses; the base is what
+ * a text slot painted ONCE would print, and the substitution between them is the
+ * same one the slots take ({@link componentPropsText}).
+ */
+export const TEXT_TYPE = "VendoText";
+const TEXT_DECLARATION = `declare type ${TEXT_TYPE} = string | (() => string);`;
+export const ROW_TEXT_TYPE = "VendoRowText";
+const ROW_TEXT_DECLARATION =
+  `declare type ${ROW_TEXT_TYPE} = readonly string[] | ((row: any, index: number) => string);`;
+/** The wire printer's copy: a STORED screen carries the resolved text, and JSON
+ *  cannot carry a closure, so neither function form reaches it. */
+const WIRE_TEXT_DECLARATION = `declare type ${TEXT_TYPE} = any;`;
+
+/**
  * Every glyph the Kit ships, as a closed union of literals.
  *
  * `<Icon name="invented-glyph"/>` paints an EMPTY SPAN — the renderer draws a
@@ -167,12 +190,14 @@ export const zodTypeText = (schema: ZodTypeAny | undefined, depth = 0, note?: Ty
     case "number": return "number";
     case "boolean": return "boolean";
     case "null": return "null";
-    // `any` is these two's FAITHFUL type, not a degradation — no note. A SLOT is
-    // the one exception: it holds an element, and `any` admitted the closure that
-    // cannot work — see {@link SLOT_TYPE}.
+    // `any` is these two's FAITHFUL type, not a degradation — no note. The two
+    // described schemas are the exceptions: a SLOT holds an element and a
+    // FORMATTER holds text, and `any` admitted every closure that cannot work —
+    // see {@link SLOT_TYPE} and {@link TEXT_TYPE}.
     case "unknown":
     case "any":
-      return schema?.description === SLOT_PROP_DESCRIPTION ? SLOT_TYPE : "any";
+      if (schema?.description === SLOT_PROP_DESCRIPTION) return SLOT_TYPE;
+      return schema?.description === TEXT_SLOT_DESCRIPTION ? TEXT_TYPE : "any";
     // One case for both: a literal is an enum of one, and zod 4 spells it as a
     // list either way.
     case "enum":
@@ -365,6 +390,7 @@ export function screenTypings(input: ScreenTypingsInput): string {
     "}",
     BINDING_DECLARATION,
     WIRE_SLOT_DECLARATION,
+    WIRE_TEXT_DECLARATION,
   ];
 
   const push = (name: string, propsText: string): void => {
@@ -548,8 +574,13 @@ ${SAFE_STYLE_PROPERTIES.map((property) => `  ${property}?: string | number;`).jo
  *  display bricks and NOTHING else — that is what keeps `<img>` and `<script>`
  *  errors while `<div>` compiles — and each one takes only children and an
  *  inline style, so `className`, `onClick` and `dangerouslySetInnerHTML` are
- *  type errors on the tag itself. `IntrinsicAttributes` carries `key`, because a
- *  list rendered with `.map()` writes one and it is React's, not the tag's.
+ *  type errors on the tag itself — plus `key`, because a list rendered with
+ *  `.map()` writes one on whatever it maps to. `IntrinsicAttributes` says the
+ *  same thing for a COMPONENT, and only for a component: TypeScript intersects
+ *  it into a value-based element's props and never into an intrinsic tag's,
+ *  which take `IntrinsicElements[tag]` verbatim. Declaring `key` in one place
+ *  only made `key={i}` on `<div>` a hard error while the format skill was
+ *  telling the model to write exactly that.
  *
  *  THE ONE EXCEPTION, and it is a whole DIALECT rather than a prop: a screen the
  *  splitter PORTED out of real host source carries the host's own classes, and
@@ -574,7 +605,7 @@ const jsxFrame = (ported: boolean): string => `declare namespace JSX {
   interface ElementChildrenAttribute { children: {} }
   interface IntrinsicAttributes { key?: string | number }
   interface IntrinsicElements {
-${DISPLAY_TAG_NAMES.map((tag) => `    ${tag}: { children?: any; style?: ${SAFE_STYLE_TYPE}${ported ? "; className?: string; key?: string | number" : ""} };`).join("\n")}
+${DISPLAY_TAG_NAMES.map((tag) => `    ${tag}: { children?: any; style?: ${SAFE_STYLE_TYPE}${ported ? "; className?: string" : ""}; key?: string | number };`).join("\n")}
   }
 }`;
 
@@ -626,7 +657,10 @@ const componentPropsText = (spec: KitComponentSpec, note?: TypeNote, ported = fa
     // Every slot this prop prints is a PER-ROW slot when the prop's slot maps over
     // rows — `rowActions` is the slot itself, `columns[].cell` is a field of one — so
     // the substitution is over the printed text rather than threaded through the walk.
-    const typed = slots?.[name]?.rows === undefined ? text : text.replaceAll(SLOT_TYPE, ROW_SLOT_TYPE);
+    // A formatter takes the same substitution at its own arity (`series[].format`).
+    const typed = slots?.[name]?.rows === undefined
+      ? text
+      : text.replaceAll(SLOT_TYPE, ROW_SLOT_TYPE).replaceAll(TEXT_TYPE, ROW_TEXT_TYPE);
     const required = prop.required === true && !(portedButton && name === "label");
     return `${name}${required ? "" : "?"}: ${typed}`;
   });
@@ -673,6 +707,8 @@ export function componentScreenTypings(input: ComponentScreenTypingsInput): stri
     jsxFrame(input.ported === true),
     SLOT_DECLARATION,
     ROW_SLOT_DECLARATION,
+    TEXT_DECLARATION,
+    ROW_TEXT_DECLARATION,
     REACT_MODULE,
     `declare module ${JSON.stringify(SCREEN_MODULE)} {`,
   ];

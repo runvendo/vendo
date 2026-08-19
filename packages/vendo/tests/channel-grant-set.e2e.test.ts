@@ -69,7 +69,7 @@ afterEach(async () => {
 
 interface FakeConsole {
   baseUrl: string;
-  sent: Array<{ conversationId: string; text: string }>;
+  sent: Array<{ conversationId: string; text: string; final?: boolean }>;
 }
 
 async function fakeConsole(): Promise<FakeConsole> {
@@ -89,7 +89,7 @@ async function fakeConsole(): Promise<FakeConsole> {
         return;
       }
       if (req.url === "/api/v1/channels/text/send") {
-        state.sent.push(JSON.parse(body) as { conversationId: string; text: string });
+        state.sent.push(JSON.parse(body) as { conversationId: string; text: string; final?: boolean });
         res.end(JSON.stringify({ ok: true }));
         return;
       }
@@ -311,7 +311,7 @@ describe.sequential("an automation's grant set, asked over text", () => {
       status: "ok",
     });
     expect(cloud.sent.slice(landed)).toEqual([
-      { conversationId: CONVERSATION, text: "Your checking balance is $412.08." },
+      { conversationId: CONVERSATION, text: "Your checking balance is $412.08.", final: true },
     ]);
   }, 120_000);
 
@@ -344,7 +344,7 @@ describe.sequential("an automation's grant set, asked over text", () => {
     let landed = cloud.sent.length;
     await vendo.emit("balance.checked", {}, owner);
     expect(cloud.sent.slice(landed)).toEqual([
-      { conversationId: CONVERSATION, text: "Your checking balance is $412.08." },
+      { conversationId: CONVERSATION, text: "Your checking balance is $412.08.", final: true },
     ]);
 
     // Then the person takes the Text me permission back. THE OTHER HALF of the
@@ -380,7 +380,7 @@ describe.sequential("an automation's grant set, asked over text", () => {
     landed = cloud.sent.length;
     await vendo.emit("balance.checked", {}, owner);
     expect(cloud.sent.slice(landed)).toEqual([
-      { conversationId: CONVERSATION, text: "Your checking balance is $412.08." },
+      { conversationId: CONVERSATION, text: "Your checking balance is $412.08.", final: true },
     ]);
   }, 120_000);
 

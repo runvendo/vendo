@@ -2,14 +2,15 @@
  * The code lane — `agent.run(task)`. Real embedded store, real guard, real
  * runtime; only the thinker is scripted (CLAUDE.md: test the SEAM).
  */
-import { VendoError, agentRunReportSchema } from "@vendoai/core";
+import { VendoError } from "@vendoai/core";
 import type { VendoGuard } from "@vendoai/guard";
 import { defineHarness } from "@vendoai/harnesses";
 import { createStore, threadStore } from "@vendoai/store";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { agent } from "../src/agent.js";
-import { startRun, type RunEvent } from "../src/away.js";
+import { startRun } from "../src/away.js";
+import type { RunEvent } from "../src/turn.js";
 import { tool } from "../src/tools.js";
 
 let stores = 0;
@@ -28,9 +29,9 @@ const readTool = () => tool({
  *
  * The REAL guard parks every away call it cannot trace to an app-bound
  * automation grant (guard.ts:1052) — which is its own test below, and is the
- * whole reason `refs.approvals` exists. The rails under test here (the budget
- * gate, the event lane, the report) sit on the far side of that decision, so
- * they need a run where calls actually execute.
+ * whole reason the `interrupted` arm exists. The rails under test here (the
+ * budget gate, the event lane, the result) sit on the far side of that
+ * decision, so they need a run where calls actually execute.
  */
 const permissive = (): VendoGuard => ({
   check: async () => ({ action: "run", decidedBy: "grant" }),
@@ -56,7 +57,7 @@ const collect = async (events: AsyncIterable<RunEvent>): Promise<RunEvent[]> => 
 };
 
 describe("run()", () => {
-  it("reports what the run left behind: the core report, the thread, the calls and the usage", async () => {
+  it("reports what the run left behind: what it said, the ids, the calls and the usage", async () => {
     const store = memoryStore();
     const support = agent({
       name: "support",
@@ -74,18 +75,21 @@ describe("run()", () => {
     });
 
     const running = support.run("Check the invoices.", { as: "u_42" });
-    // Readable BEFORE the report — a caller can show it or hand it back.
+    // Readable BEFORE the result — a caller can show them or hand them back.
     expect(running.threadId).toMatch(/^thr_/);
-    const report = await running;
+    expect(running.turnId).toMatch(/^trn_/);
+    const result = await running;
 
-    expect(agentRunReportSchema.parse(report)).toBeTruthy();
-    expect(report.status).toBe("ok");
-    expect(report.summary).toBe("Two invoices are outstanding.");
-    expect(report.toolCalls.map(({ call, outcome }) => [call.tool, outcome]))
+    expect(result).toMatchObject({
+      status: "ok",
+      text: "Two invoices are outstanding.",
+      threadId: running.threadId,
+      turnId: running.turnId,
+      usage: { inputTokens: 11, outputTokens: 7, model: "fake-1" },
+      output: undefined,
+    });
+    expect(result.status === "ok" && result.toolCalls.map(({ call, outcome }) => [call.tool, outcome]))
       .toEqual([["invoices_list", "ok"]]);
-    expect(report.refs).toEqual({ threadId: running.threadId, approvals: [] });
-    expect(report.usage).toEqual({ inputTokens: 11, outputTokens: 7, model: "fake-1" });
-    expect(report.output).toBeUndefined();
     // The thread is real and belongs to the subject that ran.
     expect(await threadStore(store).get({ kind: "user", subject: "u_42" }, running.threadId as never))
       .not.toBeNull();
@@ -237,7 +241,7 @@ describe("run()", () => {
     expect(await replacement).toEqual([{ type: "text", delta: "Two invoices." }]);
   });
 
-  it("a run nobody was there to approve finishes ok, with the cards a person has to answer", async () => {
+  it("a run nobody was there to approve is INTERRUPTED, carrying the calls to answer for", async () => {
     const store = memoryStore();
     const support = agent({
       name: "support",
@@ -253,12 +257,14 @@ describe("run()", () => {
     });
 
     // No grant: the guard wants a person, and nobody is here.
-    const report = await support.run("Check the invoices.", { as: "u_42" });
+    const result = await support.run("Check the invoices.", { as: "u_42" });
 
-    expect(report.status).toBe("ok");
-    expect(report.refs.approvals).toHaveLength(1);
-    expect(report.refs.approvals[0]).toMatch(/^apr_/);
-    expect(report.toolCalls.map(({ outcome }) => outcome)).toEqual(["pending-approval"]);
+    expect(result.status).toBe("interrupted");
+    if (result.status !== "interrupted") return;
+    expect(result.interruptions).toHaveLength(1);
+    expect(result.interruptions[0]).toMatchObject({ type: "approval", toolCall: { tool: "invoices_list" } });
+    expect(result.interruptions[0]?.id).toMatch(/^apr_/);
+    expect(result.toolCalls.map(({ outcome }) => outcome)).toEqual(["pending-approval"]);
   });
 
   it("fills a typed output from the schema, and hands a bad shape back to the model", async () => {
@@ -277,12 +283,12 @@ describe("run()", () => {
       store,
     });
 
-    const report = await support.run("Count the overdue invoices.", {
+    const result = await support.run("Count the overdue invoices.", {
       as: "u_42",
       output: z.object({ overdue: z.number() }),
     });
 
-    expect(report.output).toEqual({ overdue: 2 });
+    expect(result).toMatchObject({ status: "ok", output: { overdue: 2 } });
     expect(attempts[0]).toMatchObject({ status: "error" });
     expect(attempts[1]).toMatchObject({ status: "ok" });
   });
@@ -327,10 +333,10 @@ describe("run()", () => {
       store,
     });
 
-    const report = await support.run("Loop.", { as: "u_42" });
+    const result = await support.run("Loop.", { as: "u_42" });
 
     expect(attempted).toBe(20);
-    expect(report.status).toBe("stopped");
+    expect(result).toMatchObject({ status: "stopped", reason: "maxToolCalls" });
   });
 
   it("honors an explicit maxToolCalls", async () => {
@@ -353,10 +359,10 @@ describe("run()", () => {
       store,
     });
 
-    const report = await support.run("Loop.", { as: "u_42", maxToolCalls: 2 });
+    const result = await support.run("Loop.", { as: "u_42", maxToolCalls: 2 });
 
     expect(attempted).toBe(2);
-    expect(report.status).toBe("stopped");
+    expect(result).toMatchObject({ status: "stopped", reason: "maxToolCalls" });
   });
 
   it("stops on the caller's AbortSignal — the only way to stop a run", async () => {
@@ -374,10 +380,9 @@ describe("run()", () => {
       store: memoryStore(),
     });
 
-    const report = await support.run("Stop me.", { as: "u_42", signal: controller.signal });
+    const result = await support.run("Stop me.", { as: "u_42", signal: controller.signal });
 
-    expect(report.status).toBe("stopped");
-    expect(report.summary.trim()).not.toBe("");
+    expect(result).toMatchObject({ status: "stopped", reason: "aborted" });
   });
 
   it("continues a thread this subject owns, and refuses one they do not", async () => {

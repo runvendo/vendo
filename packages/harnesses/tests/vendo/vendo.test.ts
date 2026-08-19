@@ -128,6 +128,35 @@ describe("vendo() — the loop", () => {
     expect(texts(events)).not.toContain("1200");
   });
 
+  // `usage` and `totalUsage` swapped meanings between the AI SDK majors: on ai@6
+  // a result's `usage` is the LAST step's, on ai@7 it is the sum of all of them.
+  // A turn that read the wrong one would bill a ten-step build for its last step
+  // on one major and be right on the other, silently. The `finish` STREAM part
+  // carries `totalUsage` on both, which is what the loop reads — and this is the
+  // number that says so, on whichever major the suite is resolving.
+  it("meters a multi-step turn as the SUM of its steps, on either AI SDK major", async () => {
+    const step = (input: number, output: number) => ({
+      inputTokens: { total: input, noCache: input, cacheRead: 0, cacheWrite: 0 },
+      outputTokens: { total: output, text: output, reasoning: 0 },
+    });
+    const model = scriptedModel([
+      [
+        { type: "tool-call", toolCallId: "call_1", toolName: "maple_invoices_list", input: JSON.stringify({}) },
+        { type: "finish", usage: step(100, 10), finishReason: { unified: "tool-calls", raw: undefined } },
+      ],
+      textTurn("You have 2.", step(200, 20)),
+    ]);
+    const { events } = await drive({
+      harness: vendo({ descriptors: async () => [readTool("maple_invoices_list")] } as VendoHarnessDeps),
+      tools: { maple_invoices_list: { descriptor: readTool("maple_invoices_list"), execute: () => ({ count: 2 }) } },
+      models: seats(model),
+    });
+    expect(model.calls).toBe(2);
+    const metered = events.filter((event) => event.type === "usage");
+    expect(metered).toHaveLength(1);
+    expect(metered[0]).toMatchObject({ inputTokens: 300, outputTokens: 30 });
+  });
+
   it("never yields a view event — §1.6 keeps HarnessEvent closed", async () => {
     const model = scriptedModel([textTurn("hi")]);
     const { events } = await drive({ harness: vendo(), models: seats(model) });

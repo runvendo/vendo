@@ -9,6 +9,21 @@ import { DonutChart } from "../../src/kit/charts/donut.js";
 import { Sparkline } from "../../src/kit/charts/sparkline.js";
 import { Progress } from "../../src/kit/charts/progress.js";
 
+/**
+ * The screen's own helpers, exactly as a generated screen defines them once at the
+ * top of its file — the Kit formats nothing, so every figure a chart prints comes
+ * through one of these. Written as functions of the ROW, which is the arity the
+ * screen VM resolves a chart's `format` at.
+ */
+const money = (cents: unknown): string =>
+  Number(cents).toLocaleString("en-US", { style: "currency", currency: "USD" });
+const seconds = (value: unknown): string => {
+  const total = Math.round(Number(value));
+  return `${Math.floor(total / 60)}m ${total % 60}s`;
+};
+const day = (iso: unknown): string =>
+  new Date(String(iso)).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
+
 describe("sanitize", () => {
   it("nulls non-finite series values so recharts never plots $NaN", () => {
     const rows = [
@@ -54,9 +69,9 @@ describe("chart empty/invalid states (never a broken chart)", () => {
   // dropping the slice took its row out of the LEGEND too — a ring of five
   // categories showed four and never said which one went missing. The zero draws
   // no arc, which is correct, and reads 0 under the ring.
-  it("DonutChart keeps a zero slice in the legend, reading a formatted 0", () => {
+  it("DonutChart keeps a zero slice in the legend, reading the screen's own 0", () => {
     render(
-      <DonutChart data={[{ label: "A", value: 0 }]} categoryKey="label" valueKey="value" format="money" emptyState="Nothing" />,
+      <DonutChart data={[{ label: "A", value: 0 }]} categoryKey="label" valueKey="value" format={(row) => money(row.value)} emptyState="Nothing" />,
     );
     expect(screen.queryByText("Nothing")).toBeNull();
     expect(screen.getByText("A")).toBeTruthy();
@@ -153,7 +168,7 @@ describe("DonutChart legend", () => {
   // the two disagree on the same ring.
   it("names and values every slice by default, in the data's own words", () => {
     // An unlabelled ring says nothing in a screenshot: a tooltip is not a label.
-    render(<DonutChart data={spend} categoryKey="label" valueKey="value" format="money" />);
+    render(<DonutChart data={spend} categoryKey="label" valueKey="value" format={(row) => money(row.value)} />);
     expect(screen.getByText("rent")).toBeTruthy();
     expect(screen.getByText("$1,200.00")).toBeTruthy();
     expect(screen.getByText("ACME Corp")).toBeTruthy();
@@ -169,7 +184,7 @@ describe("DonutChart legend", () => {
         data={[{ status: "past_due", mrr: 12800 }, { status: "active", mrr: 41000 }]}
         categoryKey="status"
         valueKey="mrr"
-        format="money"
+        format={(row) => money(row.mrr)}
         tones={{ past_due: "danger" }}
       />,
     );
@@ -181,7 +196,7 @@ describe("DonutChart legend", () => {
 
   it("legend={false} leaves the bare ring", () => {
     const { container } = render(
-      <DonutChart data={spend} categoryKey="label" valueKey="value" format="money" legend={false} />,
+      <DonutChart data={spend} categoryKey="label" valueKey="value" format={(row) => money(row.value)} legend={false} />,
     );
     expect(container.querySelector('[data-kit="DonutLegend"]')).toBeNull();
     expect(container.textContent).not.toContain("rent");
@@ -199,7 +214,7 @@ describe("DonutChart legend", () => {
         data={[...spend, { label: "refunds", value: -40 }]}
         categoryKey="label"
         valueKey="value"
-        format="money"
+        format={(row) => money(row.value)}
         emptyState="Nothing"
         empty={<p>the author&apos;s own empty state</p>}
       />,
@@ -263,19 +278,17 @@ describe("chart series descriptors", () => {
     { number: "4187", duration_seconds: 46 },
   ];
 
-  it("LineChart reads `name` as the series label, and the series' own format for its value", async () => {
-    // A chart of two series in different units has no ONE chart-level token that
-    // reads both, so the series carries its own — and the LINE chart dropped it
-    // straight through to the engine, where it meant nothing: this tooltip read
-    // "412" while a bar chart said "6m 52s" off the identical prop.
+  it("LineChart reads `name` as the series label, and the series' own formatter for its value", async () => {
+    // The figure in a tooltip is the SCREEN's text, written as a function of the
+    // row — the Kit has no token to interpret a number with any more, so a
+    // duration reads "6m 52s" only because the screen said so.
     const restore = stubChartSize(360, 220);
     try {
       const { container } = render(
         <LineChart
           data={builds}
           xKey="number"
-          series={[{ key: "duration_seconds", name: "Build time", format: "duration" }]}
-          format="number"
+          series={[{ key: "duration_seconds", name: "Build time", format: (row) => seconds(row.duration_seconds) }]}
         />,
       );
       const tip = await hoveredTooltip(container);
@@ -290,9 +303,27 @@ describe("chart series descriptors", () => {
     const restore = stubChartSize(360, 220);
     try {
       const { container } = render(
-        <BarChart data={builds} xKey="number" series={[{ key: "duration_seconds", name: "Build time" }]} format="duration" />,
+        <BarChart data={builds} xKey="number" series={[{ key: "duration_seconds", name: "Build time", format: (row) => seconds(row.duration_seconds) }]} />,
       );
       expect(await hoveredTooltip(container)).toContain("Build time");
+    } finally {
+      restore();
+    }
+  });
+
+  /** The other arrival: a STORED screen carries the text the VM already resolved,
+   *  one string per row in `data` order, because JSON cannot carry the closure. */
+  it("takes a series' formatter as the resolved list a stored screen holds", async () => {
+    const restore = stubChartSize(360, 220);
+    try {
+      const { container } = render(
+        <BarChart
+          data={builds}
+          xKey="number"
+          series={[{ key: "duration_seconds", label: "Build time", format: ["6m 52s", "0m 46s"] }]}
+        />,
+      );
+      expect(await hoveredTooltip(container)).toContain("6m 52s");
     } finally {
       restore();
     }
@@ -301,9 +332,9 @@ describe("chart series descriptors", () => {
 
 
 /**
- * The category axis had no format token at all — the only one the chart owned was
- * the y-axis' — so a trend over days printed the raw "2026-07-30" the host stored
- * under every tick, beside figures that read in the host's own words.
+ * The category axis had no formatter at all — so a trend over days printed the raw
+ * "2026-07-30" the host stored under every tick, beside figures the screen had
+ * written out for a reader everywhere else.
  */
 describe("LineChart x-axis format", () => {
   const ticks = (container: HTMLElement): string[] =>
@@ -318,9 +349,8 @@ describe("LineChart x-axis format", () => {
         <LineChart
           data={[{ day: "2026-07-30", amount: 1200 }, { day: "2026-07-31", amount: 1450 }]}
           xKey="day"
-          series={["amount"]}
-          format="money"
-          xFormat="date"
+          series={[{ key: "amount", format: (row) => money(row.amount) }]}
+          xFormat={(row) => day(row.day)}
         />,
       );
       expect(ticks(dated.container)).toEqual(["Jul 30, 2026", "Jul 31, 2026"]);
@@ -340,9 +370,8 @@ describe("LineChart x-axis format", () => {
         <LineChart
           data={[{ day: "2026-07-30", amount: 1200 }, { day: "2026-07-31", amount: 1450 }]}
           xKey="day"
-          series={["amount"]}
-          format="money"
-          xFormat="date"
+          series={[{ key: "amount", format: (row) => money(row.amount) }]}
+          xFormat={(row) => day(row.day)}
         />,
       );
       const tip = await hoveredTooltip(container);
@@ -384,35 +413,52 @@ describe("BarChart value labels", () => {
   const labels = (container: HTMLElement): string[] =>
     [...container.querySelectorAll(".recharts-label-list text")].map((node) => node.textContent ?? "");
 
-  it("labels every bar with its value, in the chart's own format", () => {
+  it("labels every bar with the text that series' own formatter wrote for its row", () => {
     const restore = stubChartSize(360, 220);
     try {
       const { container } = render(
-        <BarChart data={builds} xKey="number" series={["duration_seconds"]} format="duration" />,
+        <BarChart
+          data={builds}
+          xKey="number"
+          series={[{ key: "duration_seconds", format: (row) => seconds(row.duration_seconds) }]}
+        />,
       );
-      // "0m 46s", not "46s": a duration is floored at the minute wherever it is
-      // printed (`format.ts` formatDuration), and a bar label is one more place.
       expect(labels(container)).toEqual(["6m 52s", "0m 46s"]);
     } finally {
       restore();
     }
   });
 
-  // A chart of two series in different units has no ONE chart-level token that
-  // reads both, so the series carries its own — and the chart used to drop it
-  // straight through to the engine, where it meant nothing.
-  it("reads a series in the format that series declared", () => {
+  // Two series in different units have no ONE text that reads for both, so the
+  // formatter lives on the series — each bar reads as its own function wrote it.
+  it("reads each series through the formatter that series declared", () => {
     const restore = stubChartSize(360, 220);
     try {
       const { container } = render(
         <BarChart
           data={[{ number: "4191", duration_seconds: 412, compute_cost: 18.7 }]}
           xKey="number"
-          series={[{ key: "duration_seconds", format: "duration" }, { key: "compute_cost", format: "money" }]}
-          format="number"
+          series={[
+            { key: "duration_seconds", format: (row) => seconds(row.duration_seconds) },
+            { key: "compute_cost", format: (row) => money(row.compute_cost) },
+          ]}
         />,
       );
       expect(labels(container)).toEqual(["6m 52s", "$18.70"]);
+    } finally {
+      restore();
+    }
+  });
+
+  // No formatter is the "didn't say" case, and it must still be legible: the Kit
+  // groups the digits and claims nothing about what the number MEANS.
+  it("groups the digits of an unformatted bar rather than inventing units", () => {
+    const restore = stubChartSize(360, 220);
+    try {
+      const { container } = render(
+        <BarChart data={[{ number: "4191", spend: 285_000 }]} xKey="number" series={["spend"]} />,
+      );
+      expect(labels(container)).toEqual(["285,000"]);
     } finally {
       restore();
     }
@@ -425,7 +471,7 @@ describe("BarChart value labels", () => {
     const restore = stubChartSize(360, 220);
     try {
       const { container } = render(
-        <BarChart data={builds} xKey="number" series={["duration_seconds"]} format="duration" horizontal />,
+        <BarChart data={builds} xKey="number" series={[{ key: "duration_seconds", format: (row) => seconds(row.duration_seconds) }]} horizontal />,
       );
       const surface = container.querySelector(".recharts-surface")!;
       // The plotted area, which is where a bar STOPS: the gap between its right

@@ -67,9 +67,11 @@ describe("screenTypings", () => {
     // Required is still required where it is load-bearing — a table with no rows
     // is nothing at all, and that is what pins the marker itself.
     expect(dts).toContain("declare const DataTable: (props: { rows: Array<Record<string, any>> | VendoBinding;");
-    // A chart's axis format is the ONE format token left in the Kit, and it is an
-    // enum — the literal union is what makes xFormat=\"huge\" a type error.
-    expect(dts).toContain('xFormat?: "money" | "date" | "datetime" | "time" | "number" | "duration" | "text"');
+    // A chart's formatter is TEXT the screen writes, not a token. The wire printer
+    // keeps the permissive alias for it the same way it does for a slot: a STORED
+    // screen carries the strings the VM already resolved, and JSON has no closure.
+    expect(dts).toContain("xFormat?: VendoText | VendoBinding");
+    expect(dts).toContain("declare type VendoText = any;");
     // A cell slot holds an ELEMENT, which no schema describes. A STORED
     // document's is a serialized one, so the wire's slot stays permissive — the
     // alias, not a shape — and without that the catalog's own DataTable example
@@ -96,8 +98,8 @@ describe("screenTypings", () => {
     // The exact slot the regression hit — Text.text, a string | number (optional
     // since the cell slots landed, where `field` supplies it instead).
     expect(dts).toContain("text?: string | number | VendoBinding");
-    // An enum slot keeps its literal union — format="huge" is still a type error.
-    expect(dts).toContain('format?: "money" | "date" | "datetime" | "time" | "number" | "duration" | "text" | VendoBinding');
+    // An enum slot keeps its literal union — variant="huge" is still a type error.
+    expect(dts).toContain('variant?: "primary" | "secondary" | "danger" | VendoBinding');
   });
 
   /**

@@ -1,11 +1,11 @@
 ---
 title: "Run it like a function"
 sidebarTitle: "Run — run()"
-description: "run() with an output schema returns validated, typed data instead of prose, and the report's usage totals are what you meter and bill on."
+description: "run() with an output schema returns validated, typed data instead of prose, a run that needed consent comes back interrupted, and the usage totals are what you meter and bill on."
 ---
 
 Sometimes the caller is code, not a person, and prose is the wrong answer.
-Hand `run()` a schema and the report comes back with typed `output`.
+Hand `run()` a schema and the result comes back with typed `output`.
 
 ## Typed output
 
@@ -20,37 +20,34 @@ const Triage = z.object({
 });
 
 export async function triage(ticketId: string, ownerId: string) {
-  const report = await support.run(`Triage support ticket ${ticketId}.`, {
+  const result = await support.run(`Triage support ticket ${ticketId}.`, {
     as: `user:${ownerId}`,
     output: Triage,
   });
 
-  if (report.refs.approvals.length > 0) {
-    throw new Error(`triage parked ${report.refs.approvals.length} approvals`);
-  }
-  if (report.status !== "ok" || report.output === undefined) {
-    throw new Error(`triage ${report.status}: ${report.summary}`);
+  if (result.status !== "ok") {
+    throw new Error(`triage ${result.status}: ${result.text}`);
   }
 
-  return report.output; // { category, urgency, reply }, typed
+  return result.output; // { category, urgency, reply }, typed
 }
 ```
 
 `output` takes any AI SDK `FlexibleSchema`, and a zod schema is the usual one.
 The value is validated before it reaches you, and `T` is inferred from the
-schema, so `report.output` is typed without a cast.
+schema, so `result.output` is typed without a cast.
 
-Leave `output` unset and it costs nothing. No schema is sent, and
-`report.output` is simply absent.
+Leave `output` unset and it costs nothing. No schema is sent, and `T` is
+`void`.
 
-A run that parked every call still reports `ok`, because it finished honestly.
-`refs.approvals` is the signal that nothing actually happened.
+Read `status` once and everything you then touch is on the object: `output`
+lives on the `ok` arm alone, so the check above is what types it.
 
 ## What an unattended run may touch
 
-Nobody is watching a `run()`, so nobody can be asked. The guard turns any call
-it would have parked into a refusal, and the card it minted stays standing for a
-person to answer later.
+Nobody is watching a `run()`, so nobody can be tapped mid-turn. A call the
+guard wants a person for parks, and parking ENDS the turn: the result comes
+back `interrupted` with the cards on it, in the time the run actually took.
 
 <div style={{ display: "flex", flexWrap: "wrap", alignItems: "stretch", gap: 10, margin: "1.25rem 0" }}>
   <div style={{ flex: "1 1 190px", border: "1px solid #e9e6f1", borderRadius: 10, padding: "12px 14px", background: "#fdfcff" }}>
@@ -63,16 +60,22 @@ person to answer later.
   </div>
   <div style={{ flex: "1 1 190px", border: "1px solid #ddd0ff", borderRadius: 10, padding: "12px 14px", background: "#f5f1ff" }}>
     <div style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: "#6c3bff", marginBottom: 6 }}>No authority</div>
-    <div style={{ fontSize: 13, lineHeight: 1.55, color: "#7b6fa6" }}>The call is denied and its approval id lands in <code>refs.approvals</code>.</div>
+    <div style={{ fontSize: 13, lineHeight: 1.55, color: "#7b6fa6" }}>The call parks and the run answers <code>interrupted</code>, carrying the card.</div>
   </div>
 </div>
 
-<Warning>
-  A `run()` you drive from your own code holds no captured authority, so a
-  typed run answers from the model and whatever you put in the task. There is
-  no resume: show `refs.approvals`, let a person answer them, then call `run()`
-  again.
-</Warning>
+Put those cards in front of a person, then carry on where the run stopped:
+
+```ts focus={4}
+const result = await support.run(task, { as: subject });
+
+if (result.status === "interrupted") {
+  const done = await result.resume({ [result.interruptions[0]!.id]: "approve" });
+}
+```
+
+`resume()` is not a rerun. The turn picks up byte for byte from where it
+parked, and a denied call is a refusal the model reads and works around.
 
 The result channel is the one exception. It reaches nothing, so it is never
 guarded and never parks, which is what keeps a typed run from stranding on a
@@ -80,24 +83,28 @@ card nobody can answer.
 
 ## Meter on usage
 
-Every report carries the run's token totals. This is the number to bill and
+Every result carries the run's token totals. This is the number to bill and
 budget on.
 
-```ts focus={4-8}
-const report = await support.run(task, { as: subject, output: Triage });
+```ts focus={3,5-9}
+const result = await support.run(task, { as: subject, output: Triage });
 
-await meter.record(ownerId, {
-  input: report.usage.inputTokens,
-  output: report.usage.outputTokens,
-  cacheRead: report.usage.cacheReadTokens ?? 0,
-  cacheWrite: report.usage.cacheWriteTokens ?? 0,
-  model: report.usage.model,
-});
+if (result.status !== "error") {
+  await meter.record(ownerId, {
+    input: result.usage.inputTokens,
+    output: result.usage.outputTokens,
+    cacheRead: result.usage.cacheReadTokens ?? 0,
+    cacheWrite: result.usage.cacheWriteTokens ?? 0,
+    model: result.usage.model,
+  });
+}
 ```
 
-`cacheReadTokens`, `cacheWriteTokens`, and `model` are optional on
-`UsageTotals`; the two token counts are always there. The same figures land on
-the run's audit rows in your Cloud console.
+A turn that broke never reached a model, so `usage` is on the three statuses
+that ran and the `error` check is what types it. `cacheReadTokens`,
+`cacheWriteTokens`, and `model` are optional on `TurnUsage`; the two token
+counts are always there. The same figures land on the run's audit rows in your
+Cloud console.
 
 ## Cancel it
 
@@ -105,37 +112,48 @@ There is no `cancel()`. Cancellation is an `AbortSignal`, the same as
 everywhere else on the platform.
 
 ```ts focus={3}
-const report = await support.run(task, {
+const result = await support.run(task, {
   as: subject,
   signal: AbortSignal.timeout(60_000),
 });
-// report.status === "stopped"
+// result.status === "stopped", result.reason === "aborted"
 ```
 
-An aborted run still returns a report. The summary, the calls it made, and the
-usage it spent are all preserved.
+An aborted run still answers. What it said, the calls it made, and the usage it
+spent are all preserved.
 
-## What the report carries
+## What the result carries
+
+Four ends and no fifth. Read `status` once, and every field you then touch is
+there.
+
+| `status` | Also carries |
+| --- | --- |
+| `ok` | `output`, the typed value when you asked for one |
+| `interrupted` | `interruptions`, and `resume(decisions)` to carry on |
+| `stopped` | `reason`, either `"aborted"` or `"maxToolCalls"` |
+| `error` | `error: { code, message }`, and `text` is empty |
+
+And the run itself:
 
 | Field | Type | What it holds |
 | --- | --- | --- |
-| `status` | `"ok" \| "error" \| "stopped"` | `stopped` means aborted, or out of tool-call budget |
-| `summary` | `string` | The model's own closing account of the run |
+| `text` | `string` | The model's own words — what it actually said |
+| `threadId` | `string` | The conversation this run wrote to |
+| `turnId` | `string` | This turn, stable across a park and a resume |
 | `toolCalls` | `Array<{ call, outcome }>` | Every call attempted, in order, with the guard's outcome |
-| `refs.threadId` | `string` | The conversation this run wrote to |
-| `refs.approvals` | `readonly string[]` | Approval ids this run parked |
-| `output` | `T` | Present only when `output` was asked for and the model filled it |
-| `usage` | `UsageTotals` | Token totals for the whole run |
+| `usage` | `TurnUsage` | Token totals for the whole run |
 
-Check `status` before you trust `output`. A run that was aborted or spent its
-`maxToolCalls` budget comes back `stopped`, and it still returns a report.
+`text`, `threadId` and `turnId` are on all four arms. `toolCalls` and `usage`
+are on the three that ran: a turn that broke never spoke, so `error` carries
+the failure and an empty `text` instead of a sentence in the agent's voice.
 
 ## Options
 
 | Option | Type | Default |
 | --- | --- | --- |
 | `as` | `string` | The agent's own subject, `vendo:agent:<name>` |
-| `output` | `FlexibleSchema<T>` | Unset, and the report has no `output` |
+| `output` | `FlexibleSchema<T>` | Unset, and `T` is `void` |
 | `maxToolCalls` | `number` | `20` |
 | `signal` | `AbortSignal` | Unset, and the run has no time bound |
 | `threadId` | `string` | Unset, and the run mints a fresh thread |

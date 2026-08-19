@@ -65,8 +65,12 @@ const VOCABULARY = [
  *  figures now, so these are names the model must never be shown again. */
 const DEAD_VALUE_COMPONENTS = ["DateTime", "Money", "Num", "Percent"] as const;
 
-/** Who is still TOLD what its figures mean, rather than handed text. */
+/** The three that print a figure the screen wrote for them. */
 const CHARTS = ["LineChart", "BarChart", "DonutChart"] as const;
+
+/** Every word the retired value tier could be TOLD. Not one of them may reach the
+ *  model again: each was a promise that some component would interpret a number. */
+const DEAD_FORMAT_TOKENS = ["money", "number", "duration", "datetime", "time"] as const;
 
 describe("the three bundle limits have ONE definition", () => {
   it("core holds the values this file pins", () => {
@@ -135,11 +139,13 @@ describe("the component vocabulary is ONE list", () => {
  * without complaint. The vocabulary above pins WHICH bricks exist; this pins what
  * the model is offered, which is the half a name list cannot state.
  *
- * The exception is the whole reason this is two assertions instead of one: a chart
- * keeps its axis tokens, because an axis tick is computed HOST-SIDE off a numeric
- * scale — the one displayed value that never passes through the model's own code.
+ * There is NO exception any more. The charts were the last one — an axis tick is
+ * computed host-side off a numeric scale, so a chart could not be handed text for
+ * one — and the trade is settled the other way now: a chart is handed the screen's
+ * text for every figure it PRINTS, and the tick it invents reads as the plotted
+ * number with digit grouping and no claim about what that number means.
  */
-describe("no value tier in the prompts, and one exception", () => {
+describe("no value tier in the prompts, and no exception left", () => {
   it("names none of the four value components anywhere the model reads", () => {
     for (const [which, prompt] of [["kitPrompt", kitPrompt()], ["catalogPrompt", catalogPrompt()]] as const) {
       for (const name of DEAD_VALUE_COMPONENTS) {
@@ -153,18 +159,24 @@ describe("no value tier in the prompts, and one exception", () => {
     expect(kitPrompt()).toContain("YOU format every value");
   });
 
-  it("offers a format token to the charts and to nothing else", () => {
-    // Both prompts render from the specs, so a token is offered to the model
-    // exactly where a spec declares one — and only a chart may.
-    expect(KIT_SPECS.filter((spec) => spec.props["format"] !== undefined).map((spec) => spec.name))
-      .toEqual([...CHARTS]);
-    for (const name of CHARTS) {
-      expect(catalogPrompt({ only: [name], omitPreamble: true }), name).toContain('`format: "money"');
+  it("offers no format TOKEN anywhere, to a chart or to anything else", () => {
+    // Both prompts render from the specs, so a token put back into any spec would
+    // reach the model here. Not one of the retired words may be offered as the
+    // value of a `format`, on any component.
+    for (const [which, prompt] of [["kitPrompt", kitPrompt()], ["catalogPrompt", catalogPrompt()]] as const) {
+      for (const token of DEAD_FORMAT_TOKENS) {
+        expect(prompt, `${which} still offers format="${token}"`)
+          .not.toMatch(new RegExp(`format[=:] *"${token}"`, "u"));
+      }
     }
-    // Including `duration`, which lives on an axis for the same reason the
-    // exception does, and the x axis, which had no token at all until it did.
-    expect(catalogPrompt({ only: ["LineChart"], omitPreamble: true })).toContain('"duration"');
-    expect(catalogPrompt({ only: ["LineChart"], omitPreamble: true })).toContain("`xFormat:");
+    // A chart's formatter is offered as a FUNCTION instead — `fn` in the catalog,
+    // and a worked `(row) =>` in the example under it.
+    for (const name of CHARTS) {
+      const entry = catalogPrompt({ only: [name], omitPreamble: true });
+      expect(entry, name).toMatch(/`(x?[Ff]ormat)[!]?: fn`|format:\(row\) =>|format=\{\(row\) =>/u);
+      expect(entry, name).toMatch(/\(row\) => /u);
+    }
+    expect(catalogPrompt({ only: ["LineChart"], omitPreamble: true })).toContain("`xFormat: fn`");
     // And nothing a CONTAINER holds takes one: a column, a card field and a
     // KeyValue item each show the string the screen prepared. The token used to
     // print as a `format?` field of the description object.

@@ -75,6 +75,7 @@ import {
 import type { VendoToolSearchConfig } from "@vendoai/harnesses/vendo";
 import { createUIMessageStream, createUIMessageStreamResponse, type LanguageModel, type UIMessage } from "ai";
 import { discoveryRail } from "./prompt.js";
+import { finishActiveTurn } from "./turn-liveness.js";
 import { isUserFilePath, userFilePath } from "./user-files.js";
 import type { Limiter } from "./limits.js";
 
@@ -773,6 +774,12 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
           return () => {
             unpublish?.();
             emitRun("ok", null);
+            // The same moment, said to the wire: the thinker is done, so the
+            // client-idle watchdog must not abort what is left (the workspace
+            // commit, the transcript, the audit row). By turn, never by thread —
+            // a sibling turn on this thread is still streaming. The runtime
+            // always resolves one (`started.ctx.turnId ?? mintTurnId()`).
+            finishActiveTurn(published.ctx.turnId!);
           };
         },
         // The turn's closing writes as ONE call, where the store serves it: the

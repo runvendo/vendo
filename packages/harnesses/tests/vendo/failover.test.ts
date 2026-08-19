@@ -15,6 +15,7 @@
 import { APICallError } from "ai";
 import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { failoverModel, type ResolvedModel } from "../../src/vendo/failover.js";
 import { DEFAULT_MAX_RETRIES, startTurn, type TurnLoopOptions } from "../../src/vendo/loop.js";
 import { ZERO_USAGE, type StreamPart } from "../../src/test-doubles.test-util.js";
 
@@ -197,5 +198,57 @@ describe("ordered provider failover", () => {
       context: { maxRetries: 0 },
     });
     expect(attempts).toEqual(["primary"]);
+  });
+});
+
+/**
+ * A ladder is built from RESOLVED models, and which spec version those report
+ * depends on the AI SDK major the host installed: ai@6-era providers say "v3",
+ * ai@7-era ones say "v4". A gate written as "is it v3" turned every ai@7 host's
+ * seat into a refusal — so the gate names the one spec this file does NOT model
+ * instead, and the ladder answers as whatever the primary already is.
+ *
+ * Both assertions run on either major, because the seats here are plain objects:
+ * asking the SDK to DRIVE a v4 model is the ai-dual lane's job, not this file's.
+ */
+describe("either live model spec can be a rung", () => {
+  const seat = (specificationVersion: string) => ({
+    specificationVersion,
+    provider: "test",
+    modelId: `seat-${specificationVersion}`,
+    supportedUrls: {},
+    doGenerate: () => Promise.reject(new Error("unused")),
+    doStream: async () => ({ stream: simulateReadableStream({ chunks: answer("served") }) }),
+  });
+
+  /** What `startTurn` said when it refused, or "" when it got past the gate. */
+  const refusal = async (specificationVersion: string): Promise<string> => {
+    try {
+      await startTurn({
+        system: "system",
+        messages: [{ id: "m1", role: "user", parts: [{ type: "text", text: "hi" }] }],
+        tools: {},
+        model: seat(specificationVersion) as unknown as TurnLoopOptions["model"],
+        fallbacks: [seat(specificationVersion) as unknown as ResolvedModel],
+        context: { maxRetries: 0 },
+      });
+      return "";
+    } catch (error) {
+      return error instanceof Error ? error.message : String(error);
+    }
+  };
+
+  it("refuses a v2 primary by name, and lets both live specs through", async () => {
+    expect(await refusal("v2")).toContain("provider failover needs a resolved model");
+    for (const spec of ["v3", "v4"]) {
+      expect(await refusal(spec), spec).not.toContain("provider failover needs a resolved model");
+    }
+  });
+
+  it("reports the PRIMARY's own spec version, so the SDK calls it in the shape it is", () => {
+    for (const spec of ["v3", "v4"]) {
+      const rungs = [seat(spec), seat(spec)] as unknown as [ResolvedModel, ResolvedModel];
+      expect((failoverModel(rungs) as { specificationVersion: string }).specificationVersion, spec).toBe(spec);
+    }
   });
 });

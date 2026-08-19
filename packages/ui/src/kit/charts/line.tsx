@@ -1,4 +1,4 @@
-/** LineChart — recharts internals, data props only, formatted ticks (W2 §The Kit). */
+/** LineChart — recharts internals, data props only, the screen's own text (W2 §The Kit). */
 import {
   CartesianGrid,
   Line,
@@ -9,9 +9,8 @@ import {
   YAxis,
 } from "recharts";
 import type { ComponentProps, ReactNode } from "react";
-import { applyFormat, type ValueFormat } from "../format.js";
 import { seriesColor, t, type KitStyled, type KitEngine, type KitRendered, given } from "../tokens.js";
-import { ChartEmpty, ChartFrame, sanitizeSeries, seriesIsEmpty, slotTooltip, tooltipSurface } from "./sanitize.js";
+import { ChartEmpty, ChartFrame, chartText, hoveredRow, plainFigure, sanitizeSeries, seriesIsEmpty, slotTooltip, tooltipSurface, type ChartFormat } from "./sanitize.js";
 
 /** A series key, or a descriptor: `label` (or `name`, the same thing) renames it,
  *  `color` paints it, and any other engine prop paints THAT series alone — over
@@ -34,11 +33,15 @@ export type SeriesInput<Engine = ComponentProps<typeof Line>> =
   | string
   | ({ key: string; label?: string; name?: string; color?: string } & Omit<Engine, "dataKey" | "name">);
 
-/** Plus `format`: a line's value is PRINTED in the tooltip, and a chart of two
- *  series in different units (money and a count) has no one chart-level token
- *  that reads both. The chart's own `format` is the default, and the y-axis stays
- *  chart-level — one axis, one unit. */
-type LineSeriesInput = SeriesInput<ComponentProps<typeof Line> & { format?: ValueFormat }>;
+/** Plus `format`: a line's value is PRINTED in the tooltip, so it is the one place
+ *  a series' figure is written out — and the formatter lives on the SERIES rather
+ *  than on the chart, because two lines in different units (an amount and a count)
+ *  have no one text a chart-level formatter could write for both.
+ *
+ *  It is Omit-ed from the engine before ours is added, the same move `dataKey` and
+ *  `name` take: React's SVG attribute list carries a legacy `format?: string`, and
+ *  an un-omitted one INTERSECTS with the Kit's into a type no function satisfies. */
+type LineSeriesInput = SeriesInput<Omit<ComponentProps<typeof Line>, "format"> & { format?: ChartFormat }>;
 
 interface LineChartOwnProps extends KitStyled {
   /** Rows from a tool call. */
@@ -47,13 +50,10 @@ interface LineChartOwnProps extends KitStyled {
   xKey: string;
   /** One or more value series. */
   series: LineSeriesInput[];
-  /** Value-tier format for y-axis ticks and tooltips. */
-  format?: ValueFormat;
-  /** Value-tier format for the x-axis ticks and the tooltip's own heading. The
-   *  category axis had no format token at all, so a trend over days printed the
-   *  raw "2026-07-30" the host stored under every tick while the figures beside
-   *  it read in the host's own words. */
-  xFormat?: ValueFormat;
+  /** The x tick and the hovered point's heading, as a function of the row —
+   *  `(row) => day(row.month)`. Without it the axis prints the raw "2026-07-30"
+   *  the host stored under every tick. */
+  xFormat?: ChartFormat;
   height?: number;
   emptyState?: string;
   /** Kit elements shown in place of `emptyState` when there is nothing to plot. */
@@ -82,15 +82,22 @@ function normalize(series: LineSeriesInput[]) {
 
 const axisTick = { fill: t.muted, fontSize: 11 };
 
-export function LineChart({ data, xKey, series, format = "number", xFormat = "text", height = 220, emptyState = "No data to chart", empty, tooltip, legend, style, children, pending, ...engine }: LineChartProps & KitRendered) {
+export function LineChart({ data, xKey, series, xFormat, height = 220, emptyState = "No data to chart", empty, tooltip, legend, style, children, pending, ...engine }: LineChartProps & KitRendered) {
   const cols = normalize(series);
   const keys = cols.map((c) => c.key);
   const clean = sanitizeSeries(data, keys);
   if (clean.length === 0 || seriesIsEmpty(clean, keys)) {
     return <ChartEmpty height={height} slot={empty} style={style}>{emptyState}</ChartEmpty>;
   }
-  const fmt = (v: unknown) => applyFormat(v, format) ?? "";
-  const xfmt = (v: unknown) => applyFormat(v, xFormat) ?? "";
+  // An x tick is matched back to its row BY VALUE rather than by the index
+  // recharts passes: a crowded axis draws only some of its ticks, and that index
+  // is the tick's place among the ones drawn. A category the data repeats picks
+  // the first row that carries it, which is the same text either row would give.
+  const xAt = (value: unknown) => clean.findIndex((row) => row[xKey] === value);
+  const xfmt = (v: unknown) => {
+    const at = xAt(v);
+    return chartText(xFormat, clean[at], at) ?? plainFigure(v);
+  };
   return (
     <div
       data-kit="LineChart"
@@ -101,17 +108,20 @@ export function LineChart({ data, xKey, series, format = "number", xFormat = "te
           <RLineChart data={clean} margin={{ top: 8, right: 12, bottom: 4, left: 4 }}>
             <CartesianGrid stroke={t.border} strokeDasharray="3 3" vertical={false} />
             <XAxis dataKey={xKey} tick={axisTick} tickLine={false} axisLine={{ stroke: t.border }} tickFormatter={xfmt} />
-            <YAxis tick={axisTick} tickLine={false} axisLine={false} tickFormatter={fmt} width={56} />
+            {/* The y axis is the one place no formatter reaches: these ticks are
+                recharts' own, off the scale, so they read as the plotted numbers
+                are — which is why a screen plots the units it wants read. */}
+            <YAxis tick={axisTick} tickLine={false} axisLine={false} tickFormatter={plainFigure} width={56} />
             <Tooltip
               // The ONE place a line's value is printed, so it is the only place a
-              // series' own `format` can land — and it used to land nowhere: the
-              // word was dropped straight through to the engine, where it meant
-              // nothing, so a duration series read "412" while the bar chart's
-              // read "6m 52s" off the same prop. Recharts hands the formatter the
-              // series' `name`, which is the label the Kit gave it, so the figure
-              // reads in THAT series' units and the chart's own `format` is the
-              // default for the rest.
-              formatter={(v, name) => applyFormat(v, cols.find((c) => c.label === name)?.format ?? format) ?? ""}
+              // series' own formatter lands. Recharts hands the formatter the
+              // series' `name` — the label the Kit gave it — and the hovered row
+              // under `payload`, so the figure reads as THAT series' own function
+              // wrote it for THAT row.
+              formatter={(v, name, item) => {
+                const at = clean.indexOf(hoveredRow(item) as Record<string, unknown>);
+                return chartText(cols.find((c) => c.label === name)?.format, clean[at], at) ?? plainFigure(v);
+              }}
               // The hovered point's HEADING is that same x value, so it reads in
               // the words its own tick does.
               labelFormatter={xfmt}
@@ -120,8 +130,9 @@ export function LineChart({ data, xKey, series, format = "number", xFormat = "te
               content={tooltip === undefined ? undefined : slotTooltip(tooltip, clean)}
               contentStyle={tooltipSurface}
             />
-            {/* `format` is read at the Tooltip and destructured out HERE, so it
-                never reaches the engine as an inert SVG attribute. */}
+            {/* `format` is read at the Tooltip and destructured out HERE, so the
+                screen's own function never reaches the engine as an inert SVG
+                attribute. */}
             {cols.map(({ key, label, color, format: _seriesFormat, ...seriesEngine }, i) => (
               <Line
                 type="monotone"

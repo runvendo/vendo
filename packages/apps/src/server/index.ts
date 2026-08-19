@@ -134,9 +134,12 @@ export {
   HOT_PATH_WATCH,
   hotPathAppId,
   paintedIn,
+  unpaintedIn,
   viewForWrite,
   wrapWorkspaceForRender,
+  type PaintAttempt,
   type RenderSeamOptions,
+  type UnpaintedReason,
 } from "./generation/render-seam.js";
 // The builder's validate gate (§7.1 item 4) — "validate must pass before done",
 // as a function any harness's loop can call. Public because the loop that needs

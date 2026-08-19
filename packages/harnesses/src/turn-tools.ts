@@ -356,10 +356,19 @@ export function createTurnTools(options: TurnToolsOptions): RuntimeTurnTools {
             waiter.raise(approvalId, { standing: !options.interactive });
           }
           if (!options.interactive) {
-            // Nobody is here to tap, so the run fails loudly and the card stands
-            // as the grant "Grant & re-run" will collect.
+            // Nobody is WAITING on this call, so it fails loudly here and the
+            // card stands as the grant "Grant & re-run" (or `turn.resume()`)
+            // will collect.
+            //
+            // Whether anybody is THERE is a different question, and it is the
+            // ctx's: an away run has nobody, but a turn at presence "present" has
+            // a person who simply answers on their own clock rather than inside
+            // this call. Telling that model nobody is around would have the agent
+            // say so to the very person it just asked.
             return refused(
-              "This needs your approval, and nobody is here to give it.",
+              options.ctx.presence === "present"
+                ? "This needs approval and it has been asked for. Stop here and say so — you will be told the answer."
+                : "This needs your approval, and nobody is here to give it.",
               approvalId === undefined ? undefined : { kind: "approval", approvalId },
             );
           }

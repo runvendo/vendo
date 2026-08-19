@@ -1,11 +1,11 @@
 /**
  * `agent.on(...)` — automations authored in code.
  *
- * A DECLARATION, never a write: the call validates and stashes, and the
- * umbrella's boot reconcile is what reaches the store. That split is the layer
- * map, not a preference — this package may not import `@vendoai/automations`
- * (`scripts/dependency-guard.mjs`), so the declaration stops here and
- * `createVendo` carries it the rest of the way.
+ * A DECLARATION, never a write: the call validates and stashes, and a lifecycle
+ * is what reaches the store. A trigger is INERT until `serve({ agents })` — or
+ * `createVendo`'s boot, which runs this same reconcile — so a process that
+ * declares and starts neither has no automations, by design and without a word
+ * about it.
  *
  * Consent for a code-authored automation IS the code, so a redeploy reconciles:
  * new → created, edited → a new identity with the old one disarmed, deleted from
@@ -75,9 +75,8 @@ export function declareAutomation(
 }
 
 /**
- * What the umbrella applies at boot: every declared automation across the
- * agents it composed, diffed against what is stored, through core's one
- * reconcile.
+ * What a lifecycle applies at boot: every declared automation across the agents
+ * it was given, diffed against what is stored, through core's one reconcile.
  *
  * Names ride through VERBATIM. Two agents called "support" produce two sets of
  * declarations both claiming that runner name; collapsing them here would hide

@@ -816,14 +816,28 @@ describe("vendo doctor error codes + fix_refs", () => {
     expect(ownership!.message).toContain("boot-once");
   });
 
-  // #478 short-term — npm installs the ai@7 peer conflict without failing, the
-  // static checks all pass, and then every internal turn throws
-  // AI_InvalidPromptError (v7 removed system-role messages). Doctor reads the
-  // HOST's installed `ai` and fails fast on an unsupported major.
-  it("fails fast with E-DEP-001 when the host has ai@7 installed", async () => {
+  // #478 — Vendo speaks both live AI SDK majors now, so ai@7 is a PASS: the two
+  // prompt shapes v7 refused (system-role messages) are gone from the turn loop
+  // and the generation engine, and the v7 lane runs the suite to prove it.
+  it("passes the ai major check on an ai@7 host", async () => {
     const root = await healthy();
     await mkdir(join(root, "node_modules", "ai"), { recursive: true });
     await writeFile(join(root, "node_modules", "ai", "package.json"), JSON.stringify({ name: "ai", version: "7.0.2" }));
+    const { exit, report } = await jsonChecks({
+      targetDir: root,
+    });
+    expect(exit).toBe(0);
+    const check = report.checks.find((entry) => entry.id === "deps/ai-sdk-major");
+    expect(check).toMatchObject({ status: "ok" });
+    expect(check?.message).toContain("ai@7.0.2");
+  });
+
+  // The ceiling is still fail-fast, one major up: nobody has run Vendo against
+  // ai@8, and the shape that broke on v7 broke silently at runtime.
+  it("fails fast with E-DEP-001 on an ai major above the supported pair", async () => {
+    const root = await healthy();
+    await mkdir(join(root, "node_modules", "ai"), { recursive: true });
+    await writeFile(join(root, "node_modules", "ai", "package.json"), JSON.stringify({ name: "ai", version: "8.0.0" }));
     const { exit, report } = await jsonChecks({
       targetDir: root,
     });
@@ -834,9 +848,8 @@ describe("vendo doctor error codes + fix_refs", () => {
       error_code: "E-DEP-001",
       fix_ref: doctorFixRef("E-DEP-001"),
     });
-    expect(check?.message).toContain("ai@7.0.2");
-    expect(check?.message).toContain("ai@6");
-    expect(check?.message).toContain("npm install ai@^6 @ai-sdk/anthropic@^3 @ai-sdk/react@^3");
+    expect(check?.message).toContain("ai@8.0.0");
+    expect(check?.message).toContain("ai@6 and ai@7");
     expect(check?.message).toContain("github.com/runvendo/vendo/issues/478");
   });
 

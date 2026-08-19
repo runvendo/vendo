@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { aiBelowPeerFloor, defaultRunner, ensureProviderDeps, ensureVendoPackage, ensureZodFloor, installCommandFor, installStderrTail, providerModuleFor, VENDO_PACKAGE_SPEC, zodBelowAiSdkFloor, ZOD_FLOOR_SPEC } from "../../src/cli/provider-deps.js";
+import { aiBelowPeerFloor, defaultRunner, ensureGeneratedImports, ensureProviderDeps, ensureVendoPackage, ensureZodFloor, installCommandFor, installStderrTail, providerModuleFor, VENDO_PACKAGE_SPEC, zodBelowAiSdkFloor, ZOD_FLOOR_SPEC } from "../../src/cli/provider-deps.js";
 
 // Init installs the provider module the resolved credential loads at
 // runtime (0.4.1 E2E cert finding: nothing declares @ai-sdk/*, so a fresh
@@ -556,6 +556,30 @@ describe("defaultRunner", () => {
   });
 });
 
+// A host whose tsconfig maps `@/*` gets `@/lib/vendo` in its generated files.
+// That specifier's scope segment is empty, so it is no npm package at all —
+// installing it wrote `"lib": "link:@/lib"` into the manifest, and the host's
+// next `npm install` died on EUNSUPPORTEDPROTOCOL.
+
+describe("ensureGeneratedImports", () => {
+  it("installs the packages a generated file imports, never its path aliases", async () => {
+    const root = await tempRoot();
+    await installModule(root, "next");
+    await writeFile(join(root, "package.json"), JSON.stringify({ dependencies: { next: "15.0.0" } }));
+    const calls: Array<{ command: string; args: string[] }> = [];
+    const messages = output();
+    await ensureGeneratedImports({
+      root,
+      sources: [`import { vendo } from "@/lib/vendo";\nimport { anthropic } from "@ai-sdk/anthropic";\n`],
+      output: messages.sink,
+      run: async (command, args) => (calls.push({ command, args }), 0),
+    });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.args.join(" ")).toContain("@ai-sdk/anthropic");
+    expect(calls[0]!.args.join(" ")).not.toContain("@/lib");
+  });
+});
+
 describe("install-failure warnings", () => {
   it("a custom runner's failure never carries a stale default-runner tail", async () => {
     // Seed the module tail with a real default-runner failure, then fail via
@@ -586,7 +610,7 @@ describe("aiBelowPeerFloor", () => {
     expect(aiBelowPeerFloor("4.3.19")).toBe(true);
     expect(aiBelowPeerFloor("6.0.0")).toBe(false);
     expect(aiBelowPeerFloor("6.0.230")).toBe(false);
-    // v7 is the E-DEP-001 downgrade story, not the floor's.
+    // v7 is inside the peer contract, so it is not the floor's story either.
     expect(aiBelowPeerFloor("7.0.2")).toBe(false);
     // An unparseable version is not evidence of an old ai.
     expect(aiBelowPeerFloor("not-a-version")).toBe(false);

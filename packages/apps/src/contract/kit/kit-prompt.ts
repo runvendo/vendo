@@ -36,6 +36,11 @@ export const PREAMBLE = [
   "  `new Date(row.due).toLocaleDateString(\"en-US\", { month: \"short\", day: \"numeric\" })`.",
   "  Use the currency the briefing names. Components never format — they display",
   "  and theme what you hand them, so a figure arrives as finished text.",
+  "- A CHART is no exception: it plots the raw numbers and prints your text. Its",
+  "  `format` is a FUNCTION of the row — `format={(row) => money(row.amount_cents)}`",
+  "  on a donut, `series={[{key:\"amount_cents\",format:(row) => money(row.amount_cents)}]}`",
+  "  on a bar or line, `xFormat={(row) => day(row.day)}` for the x axis. Only a",
+  "  value-axis tick is out of your hands: it reads as the plotted number, grouped.",
   "- Identifiers are mono: a sha, branch, id or code is `<Text variant=\"code\"/>`.",
   "",
   "## Two adjectives",
@@ -56,7 +61,14 @@ export const PREAMBLE = [
   "  `rowActions={(row) => <Button label=\"Cancel\" onClick={() => tools.cancel_transfer({ id: row.id })}/>}`.",
   "  Define a `money`/`day` helper once at the top of the file and reuse it, rather",
   "  than spelling `toLocaleString` out in every cell.",
-  "- A status-like enum column is an EnumBadge, never a bare word.",
+  "- A map you hoist to the top of the file for a prop that takes tone or enum",
+  "  words — an `EnumBadge`'s `tones` — needs `as const`: without it the values",
+  "  widen to `string` and the prop refuses them. Written inline in the prop it",
+  "  is already exact.",
+  "- A status-like enum column is an EnumBadge, never a bare word. A slot that",
+  "  only takes a STRING — an Accordion item's label, a Card's title — still says",
+  "  the facts in words (`2026.8 — Open — 4/7 done`): the pill repeats them in",
+  "  the body, and a collapsed row that hides its status said nothing.",
   "- Where a field needs nothing said about it, write the bare KEY:",
   '  `columns={["client.name","amount"]}` is the same list of descriptions, and the',
   "  label comes from the key — the shorthand `Select.options` already takes.",
@@ -69,7 +81,11 @@ export const PREAMBLE = [
   "  stretches says so itself.",
   "- Every form control takes `disabled`, most take `required`, and a `hint`",
   "  line under the field; **style** takes inline CSS on any component's root,",
-  "  yours winning over the theme's.",
+  "  yours winning over the theme's — from a fixed property allowlist, so a fill",
+  "  is `backgroundColor` and never `background`, and `backgroundImage`,",
+  "  `filter`, `backdropFilter`, `cursor` and `content` are not available at all",
+  "  (each of them can fetch). A property off the list is a type error, not a",
+  "  silent drop.",
 ].join("\n");
 
 /**
@@ -99,12 +115,15 @@ const PROMPT_EXAMPLES: Readonly<Record<string, readonly string[]>> = {
   TableRow: ['<TableRow key={row.id}><Text text={row.name}/><Text text={money(row.balance_cents)}/></TableRow>'],
   CardList: ['<CardList items={clients.data} titleField="name" badgeField="status" fields={[{key:"balance_cents",label:"Balance",cell:(item) => <Text text={money(item.balance_cents)}/>},{key:"plan"}]}/>'],
   KeyValue: ['<KeyValue record={invoice.data} items={[{key:"client.name",label:"Client"},{key:"amount_cents",label:"Amount",cell:(record) => <Text text={money(record.amount_cents)}/>}]} dividers/>'],
-  // A chart reads its numbers BY KEY, so there is no cell to divide in: the `/ 100`
-  // moves into the data prep. Both of these used to hand tool rows straight to
-  // `format="money"`, and a screen that copied one rendered cents as dollars.
-  LineChart: ['<LineChart data={revenue.data.map((r) => ({ ...r, amount: r.amount_cents / 100 }))} xKey="month" series={["amount"]} format="money"/>'],
-  DonutChart: ['<DonutChart data={spend.data.map((r) => ({ ...r, amount: r.amount_cents / 100 }))} categoryKey="category" valueKey="amount" format="money"/>'],
-  Timeline: ['<Timeline entries={payments.data} titleField="description" timeField="paidAt" timeAlign="end"/>'],
+  // A chart plots the RAW numbers and prints the screen's own text: `format` is a
+  // function of the row, the same `money` helper the table beside it uses. Both of
+  // these used to hand tool rows to a `format="money"` token, and a screen that
+  // copied one rendered cents as dollars.
+  LineChart: ['<LineChart data={revenue.data} xKey="month" series={[{key:"amount_cents",format:(row) => money(row.amount_cents)}]} xFormat={(row) => month(row.month)}/>'],
+  DonutChart: ['<DonutChart data={spend.data} categoryKey="category" valueKey="amount_cents" format={(row) => money(row.amount_cents)}/>'],
+  // A time field shows as it stands, so the entries are prepared with the day
+  // already written — the Timeline formats nothing either.
+  Timeline: ['<Timeline entries={payments.data.map((p) => ({ ...p, paidAt: day(p.paidAt) }))} titleField="description" timeField="paidAt" timeAlign="end"/>'],
   CodeBlock: ['<CodeBlock language="json" code={webhook.data.payload}/>'],
   // Handlers are functions; every field is controlled.
   Button: ["<Button label=\"Cancel transfer\" tone=\"danger\" onClick={() => tools.cancel_transfer({ id: transfer.id })}/>"],

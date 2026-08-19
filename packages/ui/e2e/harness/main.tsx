@@ -1289,7 +1289,7 @@ const SHAPE_PAYLOAD: UIPayload = {
       props: {
         caption: "Monthly revenue",
         rows: { $path: "/revenue/rows", $reshape: [{ op: "rename", args: ["revenue", "amount"] }] },
-        columns: [{ key: "month", label: "Month" }, { key: "amount", label: "Revenue", format: "money", align: "end" }],
+        columns: [{ key: "month", label: "Month" }, { key: "amount", label: "Revenue", align: "end" }],
       },
     },
   ],
@@ -2010,8 +2010,8 @@ function NarrowTableScenario() {
         columns={[
           { key: "client", label: "Client" },
           { key: "number", label: "Invoice" },
-          { key: "amount", label: "Amount", format: "money", align: "end" },
-          { key: "dueDate", label: "Due", format: "date" },
+          { key: "amount", label: "Amount", align: "end" },
+          { key: "dueDate", label: "Due" },
           { key: "status", label: "Status" },
           { key: "owner", label: "Owner" },
         ]}

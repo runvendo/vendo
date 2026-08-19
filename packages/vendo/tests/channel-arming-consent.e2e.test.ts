@@ -64,7 +64,7 @@ afterEach(async () => {
 
 interface FakeConsole {
   baseUrl: string;
-  sent: Array<{ conversationId: string; text: string }>;
+  sent: Array<{ conversationId: string; text: string; final?: boolean }>;
 }
 
 async function fakeConsole(): Promise<FakeConsole> {
@@ -84,7 +84,7 @@ async function fakeConsole(): Promise<FakeConsole> {
         return;
       }
       if (req.url === "/api/v1/channels/text/send") {
-        state.sent.push(JSON.parse(body) as { conversationId: string; text: string });
+        state.sent.push(JSON.parse(body) as { conversationId: string; text: string; final?: boolean });
         res.end(JSON.stringify({ ok: true }));
         return;
       }
@@ -392,7 +392,7 @@ describe.sequential("job-shaped arming consent, over the channel that armed it",
     });
     expect(host.reads).toBe(before + 1);
     expect(cloud.sent.slice(landed)).toEqual([
-      { conversationId: CONVERSATION, text: "Your checking balance is $412.08." },
+      { conversationId: CONVERSATION, text: "Your checking balance is $412.08.", final: true },
     ]);
   }, 120_000);
 

@@ -255,6 +255,10 @@ describe("the composed facts", () => {
       { label: "models", venue: "cloud", detail: "VENDO_API_KEY (gateway)" },
       { label: "connections", venue: "cloud", detail: "VENDO_API_KEY" },
       { label: "auth", venue: "custom", detail: "createVendo({ principal })" },
+      // The key fills the memberships seam too, and an org can only reach a
+      // request through that seam — so per-org tenant connectors are genuinely
+      // live here, and the block says so rather than staying silent.
+      { label: "tenants", venue: "store", detail: "vendo.tenantConnectors" },
     ]);
   });
 

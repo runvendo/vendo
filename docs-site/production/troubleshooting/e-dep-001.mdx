@@ -1,17 +1,19 @@
 ---
 title: "E-DEP-001"
 sidebarTitle: "E-DEP-001"
-description: "Doctor found an installed ai package outside the major version @vendoai/vendo supports."
+description: "Doctor found an installed ai package outside the major versions @vendoai/vendo supports."
 ---
 
+Vendo speaks **both** live AI SDK majors — `ai@6` and `ai@7` — so this check
+only fires outside that pair. Above it:
+
 ```text deps/ai-sdk-major
-broken: installed ai@<version> is unsupported — Vendo supports ai@6;
-downgrade (npm install ai@^6 @ai-sdk/anthropic@^3 @ai-sdk/react@^3) or track
-github.com/runvendo/vendo/issues/478
+broken: installed ai@<version> is a major Vendo has never been run against —
+Vendo speaks ai@6 and ai@7; pin one (npm install ai@^7 @ai-sdk/anthropic@^4
+@ai-sdk/react@^4) or track github.com/runvendo/vendo/issues/478
 ```
 
-That's the message for `ai@7` and newer. An older-than-6 install gets a
-different message with the same fix underneath:
+Below it, an older-than-6 install gets a different message:
 
 ```text deps/ai-sdk-major
 broken: installed ai@<version> predates the ai@6 peer contract — every turn
@@ -23,26 +25,27 @@ fails at runtime; upgrade: <bump command>
 ## What you're seeing
 
 Every static check passes. Then every internal Vendo turn fails, because
-`@vendoai/vendo` drives your `ai` package with AI SDK v6 calls, and npm
-installs the peer conflict without failing on its own.
+`@vendoai/vendo` drives your `ai` package with call shapes that major does not
+accept — and npm installs the peer conflict without failing on its own.
 
 ## Why
 
-`ai@7` removed system-role messages, so v6 calls throw
-`AI_InvalidPromptError`. A pre-v6 `ai` predates the v6 call shapes entirely.
-The pre-v6 case is usually a hoisted copy: another package in the workspace
-depends on `ai@5`, the workspace root hoists it, and your app resolves that
-copy because it never declared its own.
+Vendo's peer range is `ai >=6 <8`, and its suites run against both majors. A
+major above that pair has never been run at all; a pre-v6 `ai` predates the
+call shapes entirely. The pre-v6 case is usually a hoisted copy: another
+package in the workspace depends on `ai@5`, the workspace root hoists it, and
+your app resolves that copy because it never declared its own.
 
 ## The fix
 
-For `ai@7+`, downgrade to the supported major.
+Pin `ai` to either supported major, with the `@ai-sdk/*` majors that pair with
+it — 4 with `ai@7`, 3 with `ai@6`.
 
 ```bash
-npm install ai@^6 @ai-sdk/anthropic@^3 @ai-sdk/react@^3
+npm install ai@^7 @ai-sdk/anthropic@^4 @ai-sdk/react@^4
 ```
 
-For a pre-v6 `ai`, give the app its own v6.
+For a pre-v6 `ai`, giving the app its own copy is enough.
 
 ```bash
 npm install ai@^6
@@ -50,7 +53,7 @@ npm install ai@^6
 
 In a workspace whose root pins another package's `ai@5`, an override or
 packageExtension (`resolutions`, pnpm `overrides`, yarn `packageExtensions`)
-also works. Re-run `npx vendo doctor` once the resolved version is v6.
+also works. Re-run `npx vendo doctor` once the resolved version is in range.
 
 ## Related errors
 

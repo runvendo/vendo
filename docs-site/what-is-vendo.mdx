@@ -143,9 +143,29 @@ call.
 Each one re-themes from the same token file, so they cannot drift apart. What
 they render is in [mount the surface](/product/mount-the-surface).
 
+## Start with one package
+
+None of the above is the first step. The agent on its own is: install
+`@vendoai/agents`, write one call, and it answers.
+
+```ts
+import { agent } from "@vendoai/agents";
+
+const support = agent({
+  name: "support",
+  instructions: "Answer in the product's voice; never invent account numbers.",
+});
+
+console.log((await support.chat("Where is order A-1001?")).text);
+```
+
+Tools, a route, a schedule, and the guard are each one line from there —
+[backend quickstart](/backend/quickstart).
+
 ## Start where you are
 
-`vendo init` asks which of these you are doing and wires that one.
+The embedded surface is the step after that, and `vendo init` asks which of
+these you are doing and wires that one.
 
 <div className="direction-cards">
   <CardGroup cols={3}>

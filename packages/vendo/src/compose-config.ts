@@ -8,7 +8,9 @@
 import { agentComposition, type AgentComposition } from "@vendoai/agents";
 import { unsupportedRouteParams } from "@vendoai/apps/contract";
 import { VendoError } from "@vendoai/core";
+import { cloudDirectory } from "./cloud-directory.js";
 import type { VendoComposition } from "./compose-context.js";
+import { cloudKeyOptions } from "./compose-selection.js";
 import { rejectRemovedConfigKeys, warnDeprecatedConfigKeys } from "./config-keys.js";
 import type { AppsOptions, CreateVendoConfig } from "./types.js";
 
@@ -91,7 +93,7 @@ function validateSweepConfig(sweep: CreateVendoConfig["sweep"]): ResolvedSweep {
 /** 09-vendo §2 — the config, the identity seams, and the sweep cadence. */
 export const composeConfig = (input: CreateVendoConfig): Pick<VendoComposition,
   "appsMounted" | "automationsMounted" | "config" | "composed" | "resolvePrincipal"
-  | "actAsSeam" | "oauthSeam" | "membershipsSeam" | "userFactsSeam" | "userPoolsSeam"
+  | "actAsSeam" | "oauthSeam" | "membershipsSeam" | "directory" | "userFactsSeam" | "userPoolsSeam"
   | "sweepConfig" | "sweepNow"> => {
   // Whether each subsystem mounts, decided once. `apps: false` is folded away
   // here so the hundred reads below stay `config.apps?.x`: an unmounted
@@ -146,11 +148,21 @@ export const composeConfig = (input: CreateVendoConfig): Pick<VendoComposition,
   }
   const actAsSeam = config.auth === undefined ? config.actAs : config.auth.actAs;
   const oauthSeam = config.auth === undefined ? config.oauth : config.auth.oauth;
-  // Build contract §9.1 — the fourth seam. It rides the preset (there is no
-  // per-seam twin: the org query has no meaning without an identity story) and
-  // is handed to the wire, the automations engine, and the schedule engine, so
-  // an attended request and an unattended fire resolve the SAME answer.
-  const membershipsSeam = config.auth?.memberships;
+  // Build contract §9.1 — the fourth seam, handed to the wire, the automations
+  // engine and the schedule engine, so an attended request and an unattended
+  // fire resolve the SAME answer. It has a per-seam twin like `actAs` and
+  // `oauth` above: once VENDO_API_KEY can FILL this seam, the twin is the only
+  // way a host on the `principal` trio can refuse the Cloud directory, and a
+  // default nobody can refuse is a mandate.
+  const membershipsSeam = config.auth === undefined ? config.memberships : config.auth.memberships;
+  // ADAPTER RULE, memberships seam: an explicitly asserted seam always wins and
+  // short-circuits the whole directory — with it set, no client is constructed
+  // and Cloud is never called. Only a wholly unset seam lets VENDO_API_KEY
+  // default the hosted directory (selectConnections' precedence,
+  // compose-selection.ts). One place, so the wire, the harness, the automations
+  // engine and the MCP door all inherit it.
+  const cloud = membershipsSeam === undefined ? cloudKeyOptions() : undefined;
+  const directory = cloud === undefined ? undefined : cloudDirectory(cloud);
   // Spec 2026-08-05 §1 — the [User] facts seam rides the preset only (decision
   // 5: no seam for raw principal-trio hosts — a hand-rolled `principal` has no
   // facts channel).
@@ -172,7 +184,8 @@ export const composeConfig = (input: CreateVendoConfig): Pick<VendoComposition,
     resolvePrincipal,
     actAsSeam,
     oauthSeam,
-    membershipsSeam,
+    membershipsSeam: membershipsSeam ?? directory?.memberships,
+    directory,
     userFactsSeam,
     userPoolsSeam,
     sweepConfig,

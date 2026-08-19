@@ -24,6 +24,7 @@ import type {
   Json,
   KnowledgeAdapter,
   LimitsCallback,
+  Membership,
   Principal,
   RunContext,
   RunId,
@@ -144,6 +145,15 @@ export interface CreateVendoConfig {
       `forbidden`; give logged-out visitors a principal of your own choosing if
       you want them served. */
   principal?: (req: Request) => Promise<Principal | null>;
+  /** Per-seam escape hatch: the caller's orgs and teams, the twin of
+      `auth.memberships` for a host on the `principal` trio. Same seam, same
+      precedence as `actAs` and `oauth` — set it and it wins outright.
+
+      This is also how a keyed deployment DECLINES the Cloud tenant directory:
+      with `VENDO_API_KEY` set and this seam unset, Vendo resolves memberships
+      from Vendo Cloud, so `memberships: async () => []` is how a host says
+      "this deployment has no orgs" and no directory is ever constructed. */
+  memberships?: (principal: Principal) => Promise<Membership[]>;
   /** Architecture §10 — THE host's own tools, as `vendo init` / `vendo sync`
       extract them: the declarations `.vendo/tools.json` carries, passed in
       memory instead of read from disk.

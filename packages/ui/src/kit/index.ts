@@ -19,7 +19,6 @@ export {
   applyFormat,
   currencyMinorUnits,
   formatDateTime,
-  formatDuration,
   formatMoney,
   formatNum,
   getKitIntl,

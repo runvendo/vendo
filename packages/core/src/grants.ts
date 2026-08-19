@@ -5,10 +5,12 @@ import {
   approvalIdSchema,
   grantIdSchema,
   isoDateTimeSchema,
+  turnIdSchema,
   type AppId,
   type ApprovalId,
   type GrantId,
   type IsoDateTime,
+  type TurnId,
 } from "./ids.js";
 import { principalSchema, type Principal } from "./principal.js";
 import type { RunContext } from "./run-context.js";
@@ -175,6 +177,21 @@ export interface ApprovalRequest {
      *  before it existed can't carry it; every new park writes it, and
      *  scoped consumers fail closed on its absence. */
     sessionId?: string;
+    /** The TURN that parked it (`RunContext.turnId`) — the id
+     *  `turns.resume(turnId, …)` addresses, and the same join key every audit
+     *  row this turn wrote already carries. Without it a parked call is
+     *  findable only as one of a subject's asks, and a caller holding the id
+     *  their interrupted turn returned has nothing to look it up by. Optional
+     *  because a park outside a turn (a door-side check, a row written before
+     *  this field existed) has no turn to name. */
+    turnId?: TurnId;
+    /** The AGENT that parked it (`RunContext.agent`) — the axis a turn is
+     *  answered on. Two agents over one store share this collection and mount
+     *  descriptors that hash identically, so without it a yes to one agent's
+     *  ask dispatched the other's same-named tool. Optional because a park
+     *  outside an agent (a door-side check, a row written before this field
+     *  existed) has none; scoped consumers fail closed on its absence. */
+    agent?: string;
     appId?: AppId;
     trigger?: TriggerRef;
   };
@@ -197,6 +214,8 @@ export const approvalRequestSchema = z.object({
     venue: z.enum(["chat", "app", "automation", "mcp"]),
     presence: z.enum(["present", "away"]),
     sessionId: z.string().optional(),
+    turnId: turnIdSchema.optional(),
+    agent: z.string().optional(),
     appId: appIdSchema.optional(),
     trigger: triggerRefSchema.optional(),
   }).passthrough(),

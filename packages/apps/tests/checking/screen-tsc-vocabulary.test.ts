@@ -104,9 +104,9 @@ const BROAD_SCREEN = `<App name="Cash flow">
     <EnumBadge value="past_due" tones={{ past_due: "danger" }}/>
     <Icon name="trending-up" size={20} label="Trending up"/>
     <Progress value={0.4} max={1} label="Budget" showValue={true} tone="accent"/>
-    <LineChart data={cashflow.data} xKey="label" series={["in", "out"]} format="money" height={220}/>
+    <LineChart data={cashflow.data} xKey="label" series={["in", "out"]} xFormat={["Jan", "Feb"]} height={220}/>
     <BarChart data={cashflow.data} xKey="label" series={[{ key: "in", label: "In" }]} stacked={true} horizontal={false}/>
-    <DonutChart data={cashflow.data} categoryKey="label" valueKey="in" format="money" donut={true}/>
+    <DonutChart data={cashflow.data} categoryKey="label" valueKey="in" format={["$42.00", "$18.00"]} donut={true}/>
     <Sparkline data={[1, 2, 3]} height={24}/>
     <Callout tone="info" title="Note">Numbers are integer cents.</Callout>
     <Accordion items={[{ label: "Terms", content: <Text text="Net 30."/> }]} multiple={false} defaultOpen={[0]}/>

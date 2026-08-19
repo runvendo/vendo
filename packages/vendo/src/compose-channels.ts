@@ -189,6 +189,7 @@ export const composeChannels = (composition: VendoComposition): Pick<VendoCompos
           await channels.send({
             conversationId: event.conversationId,
             text: "You're linked. Text me anything you'd do in the app.",
+            final: true,
           });
           return;
         }

@@ -7,6 +7,7 @@ import {
   chartPaletteFor,
   defaultVendoTheme,
   densityCssVariables,
+  infoColorFor,
   themeDefaults,
 } from "@vendoai/apps/contract";
 import type { CSSProperties, ReactNode } from "react";
@@ -17,21 +18,25 @@ import type { CSSProperties, ReactNode } from "react";
  * fontFamily had lost the brand stack. */
 const d = defaultVendoTheme;
 
+/** Said once because two tokens need it: the accent itself, and the accent hue
+ *  `info` is derived from. */
+const accent = `var(--vendo-color-accent, ${d.colors.accent})`;
+
 export const t = {
   text: `var(--vendo-color-text, ${d.colors.text})`,
   muted: `var(--vendo-color-muted, ${d.colors.muted})`,
   surface: `var(--vendo-color-surface, ${d.colors.surface})`,
   background: `var(--vendo-color-background, ${d.colors.background})`,
-  accent: `var(--vendo-color-accent, ${d.colors.accent})`,
+  accent,
   accentText: `var(--vendo-color-accent-text, ${d.colors.accentText})`,
   danger: `var(--vendo-color-danger, ${d.colors.danger})`,
   success: `var(--vendo-color-success, ${themeDefaults.colors.success})`,
   warning: `var(--vendo-color-warning, ${themeDefaults.colors.warning})`,
-  // The one status color no theme file names, so its fallback is stated here
-  // instead of read off one. NOT the accent: "running" painted in the brand's own
-  // colour reads as the brand, not as a state, which is the whole reason a
-  // fourth status colour exists at all.
-  info: "var(--vendo-color-info, #1f6fb5)",
+  // NOT `themeDefaults.colors.info`, for the same reason as `surfaceRaised`
+  // below: that one derives off a bare `--vendo-color-accent`, which only
+  // resolves inside a host theme scope. The Kit's fallback runs the same
+  // derivation over the accent TOKEN, so it holds unthemed too.
+  info: `var(--vendo-color-info, ${infoColorFor(accent)})`,
   border: `var(--vendo-color-border, ${d.colors.border})`,
   // NOT `themeDefaults.colors.surfaceRaised`: that one mixes two `--vendo-*`
   // variables, which only resolve inside a host theme scope. Unthemed, they make

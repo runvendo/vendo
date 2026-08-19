@@ -62,6 +62,8 @@ export function VendoPart({ part }: { part: UIMessage["parts"][number] }) {
 }
 ```
 
+Render that part outside any `<p>`. The embeds root in a `<div>`, so a chat that wraps every message part in a paragraph puts block markup inside one — the browser reparses it, and React throws a hydration error on the message that held the screen. Use a `<div>`, or no wrapper at all.
+
 `<VendoToolResult>` handles plain data, app refs, and approval refs, so you never branch on the envelope yourself. Full contract: [Embeds in your chat](/existing-agent/embeds).
 
 <Frame>

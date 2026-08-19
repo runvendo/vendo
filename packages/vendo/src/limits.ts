@@ -30,6 +30,7 @@ import {
   type VendoViewStreamingToolCall,
 } from "@vendoai/core";
 import type { VendoComposition } from "./compose-context.js";
+import { tenantLimits } from "./tenant-limits.js";
 
 /** The decision a choke point acts on — `LimitDecision`'s two forms collapsed to
     one, so no caller re-derives the boolean/object grammar. */
@@ -198,9 +199,22 @@ export const limitGenerations = (tools: ToolRegistry, limiter: Limiter): ToolReg
  *  so by omitting the family), so a policy against a meterless store is refused
  *  HERE rather than enforced against counts that are all zero. */
 export const composeLimits = (composition: VendoComposition): Pick<VendoComposition, "limiter"> => {
-  const { config, ops } = composition;
-  if (config.limits === undefined) return { limiter: undefined };
+  const { config, ops, directory } = composition;
+  const callback = config.limits ?? (directory === undefined ? undefined : tenantLimits(directory));
+  if (callback === undefined) return { limiter: undefined };
   if (ops?.usage === undefined) {
+    // The CLOUD DEFAULT must not throw: a host who never asked for limits would
+    // stop booting on a BYO store with no meter, which is not them asking for
+    // one. It simply does not compose, and says so once.
+    if (config.limits === undefined) {
+      log({
+        code: "limits.tenant_caps_unmetered",
+        level: "warn",
+        message: "[vendo] tenant caps are configured in the console but this deployment's store has no meter, "
+          + "so they are not enforced.",
+      });
+      return { limiter: undefined };
+    }
     throw new VendoError(
       "validation",
       "createVendo({ limits }) needs a store that can count, and this deployment's store has no usage meter: "
@@ -209,5 +223,5 @@ export const composeLimits = (composition: VendoComposition): Pick<VendoComposit
       + "or drop `limits`.",
     );
   }
-  return { limiter: createLimiter({ callback: config.limits, ops: ops.usage }) };
+  return { limiter: createLimiter({ callback, ops: ops.usage }) };
 };

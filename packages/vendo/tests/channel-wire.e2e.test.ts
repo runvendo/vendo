@@ -35,7 +35,7 @@ afterEach(async () => {
 /** What the console received, in order. */
 interface FakeConsole {
   baseUrl: string;
-  sent: Array<{ conversationId: string; text: string }>;
+  sent: Array<{ conversationId: string; text: string; final?: boolean }>;
   registered: Array<{ url: string; secret: string }>;
 }
 
@@ -59,7 +59,7 @@ async function fakeConsole(): Promise<FakeConsole> {
         return;
       }
       if (req.url === "/api/v1/channels/text/send") {
-        sent.push(payload as unknown as { conversationId: string; text: string });
+        sent.push(payload as unknown as { conversationId: string; text: string; final?: boolean });
         res.end(JSON.stringify({ ok: true }));
         return;
       }
@@ -233,7 +233,7 @@ describe("the inbound door", () => {
     //    conversation.
     expect((await inbound(vendo, { eventId: "evt_turn", text: "what do I owe?" })).status).toBe(202);
     await waitFor(() => cloud.sent.length === 2);
-    expect(cloud.sent[1]).toEqual({ conversationId: "conv_e2e", text: "Two invoices are due." });
+    expect(cloud.sent[1]).toEqual({ conversationId: "conv_e2e", text: "Two invoices are due.", final: true });
 
     // The turn landed in the SAME thread lifecycle the web chat reads.
     const threads = await vendo.harness.threads.list({
@@ -339,7 +339,7 @@ describe("one-text linking — the router's connect tail, relayed ahead", () => 
     // The message that followed it is served as the linked user, not a stranger.
     expect((await inbound(vendo, { eventId: "evt_first", text: "what do I owe?" })).status).toBe(202);
     await waitFor(() => cloud.sent.length === 1);
-    expect(cloud.sent[0]).toEqual({ conversationId: "conv_e2e", text: "Two invoices are due." });
+    expect(cloud.sent[0]).toEqual({ conversationId: "conv_e2e", text: "Two invoices are due.", final: true });
   }, 120_000);
 
   it("answers the text that arrives immediately behind the link", async () => {
@@ -363,7 +363,7 @@ describe("one-text linking — the router's connect tail, relayed ahead", () => 
 
     await inbound(vendo, { eventId: "evt_text_race", text: "what do I owe?" });
     await waitFor(() => cloud.sent.length === 1);
-    expect(cloud.sent[0]).toEqual({ conversationId: "conv_e2e", text: "Two invoices are due." });
+    expect(cloud.sent[0]).toEqual({ conversationId: "conv_e2e", text: "Two invoices are due.", final: true });
   }, 120_000);
 
   it("ignores a link delivery whose code is not live, and stays a stranger", async () => {

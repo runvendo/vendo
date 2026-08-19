@@ -98,11 +98,19 @@ const paintedScreenSurface = async (
   const inClient = await seams.inClient?.(app);
   if (inClient !== undefined) payload.inClient = inClient as unknown as Json;
   for (const [key, value] of Object.entries(await additionalVenueState(seams.venueState, app, ctx))) {
-    if (key === "inClient" || key === "data" || key === "seedDrift" || key === "dataUnavailable") continue;
+    if (key === "inClient" || key === "data" || key === "seedDrift" || key === "seedUnapplied"
+      || key === "dataUnavailable") continue;
     payload[key] = value as Json;
   }
   const drift = seedDrift(app, seams.seedBaselines);
   if (drift !== null) payload.seedDrift = drift as unknown as Json;
+  // The other half of what the drift notice promises: an update replays every
+  // wish AND says which ones the new version could not take. `reseed` records
+  // them here and the agent tool speaks them, but the ✦ menu's Update is not a
+  // conversation — this payload is the only thing it re-reads, so a report that
+  // does not ride it reaches nobody, and a change the person asked for goes
+  // missing in silence.
+  if (app.seed?.unapplied !== undefined) payload.seedUnapplied = [...app.seed.unapplied];
   // The review-kind gate, for the same reason and with the same teeth as the
   // tree path's: an unapproved review-kind version ships NO executable source.
   // A screen's `interactive` half IS that source — the compiled module plus the

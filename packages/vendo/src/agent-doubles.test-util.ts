@@ -6,6 +6,8 @@
  * test-only subpath, which is surface nobody asked for. The alternative — a
  * shared doubles package — would be a package for two callers.
  */
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import type {
   ApprovalId,
   ApprovalRequest,
@@ -391,6 +393,33 @@ export function testTranscript() {
         .sort((left, right) => left.seq - right.seq)
         .map((row) => structuredClone(row.message));
     },
+  };
+}
+
+/**
+ * A REAL door on loopback, for the suites that compose `claudeCode()`.
+ *
+ * That harness probes the door url it is handed before it boots a machine, so a
+ * composition pointed at a base URL nothing answers on now refuses the turn —
+ * which is the whole point of the probe. `origin` is what goes in
+ * `mcp: { baseUrl }`; the composition appends the mount itself.
+ *
+ * The copy in `@vendoai/harnesses` (`test-doubles.test-util.ts`) is the same
+ * double for the same reason — see this file's header on why it is a copy.
+ */
+export async function liveDoor(status = 401): Promise<{
+  origin: string;
+  close: () => Promise<void>;
+}> {
+  const server = createServer((_request, response) => {
+    response.writeHead(status);
+    response.end();
+  });
+  await new Promise<void>((resolve) => { server.listen(0, "127.0.0.1", resolve); });
+  const { port } = server.address() as AddressInfo;
+  return {
+    origin: `http://127.0.0.1:${port}`,
+    close: () => new Promise<void>((resolve) => { server.close(() => { resolve(); }); }),
   };
 }
 

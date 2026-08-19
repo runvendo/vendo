@@ -15,6 +15,7 @@ One key is required, an identity, as either `principal` or an `auth` preset. `oa
 | `models` | The model seats, keyed by job. See [below](#models) |
 | `auth` | One host-identity preset filling `principal`, `actAs`, and `oauth`. Mutually exclusive with all three |
 | `principal` | `(req) => Promise<Principal \| null>`. Required unless `auth` fills the seam. `null` refuses the request with `forbidden` |
+| `memberships` | `(principal) => Promise<Membership[]>`, the twin of `auth.memberships` for the `principal` trio. Set it and it wins outright. With `VENDO_API_KEY` and this seam unset, memberships come from Vendo Cloud, so `async () => []` is how a deployment with no orgs declines the tenant directory |
 | `tools` | Host tool declarations in memory, the same `ExtractedTool[]` sync writes to `.vendo/tools.json`, and executable tools. The two shapes are told apart by `execute` |
 | `skills` | `Skill[]` mounted at `/host/skills` for the harness to list cheaply and load on demand. A name collision fails at boot naming both |
 | `catalog` | Host components exposed to the generation prompt, merged with `.vendo/catalog.json` with explicit entries winning by name |

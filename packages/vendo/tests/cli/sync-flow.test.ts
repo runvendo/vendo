@@ -177,6 +177,32 @@ describe("runSyncFlow", () => {
  * "Reading your product (…)…" line is the SAME string either way: the label
  * when a renderer is attached, the printed line when there is none.
  */
+/** The impact probe knocks on the dev server the host actually runs, which is
+ *  the port init already wrote to `.env.local` as VENDO_BASE_URL. Hardcoding
+ *  3000 made every `pnpm dev` on any other port report "impact unknown". */
+describe("the impact probe's address", () => {
+  const changed = (async () => ({ ...REPORT, tools: { added: [], removed: [], changed: ["host_a"] } })) as never;
+
+  async function probedUrl(files: Record<string, string>): Promise<string> {
+    const urls: string[] = [];
+    const fetchImpl = (async (url: string | URL) => {
+      urls.push(String(url));
+      throw new Error("offline");
+    }) as unknown as typeof fetch;
+    await flow({ root: await host(files), output: captureOutput().output, sync: changed, ai: false, fetchImpl });
+    return urls[0]!;
+  }
+
+  it("reads the dev port off the env files init wrote", async () => {
+    expect(await probedUrl({ ".env.local": "VENDO_BASE_URL=http://localhost:4321\n" }))
+      .toBe("http://localhost:4321/api/vendo/sync/impact");
+  });
+
+  it("falls back to 3000 when nothing names a base URL", async () => {
+    expect(await probedUrl({})).toBe("http://localhost:3000/api/vendo/sync/impact");
+  });
+});
+
 describe("the slow phases spin when the caller supplies one", () => {
   const scripted = {
     id: "scripted",

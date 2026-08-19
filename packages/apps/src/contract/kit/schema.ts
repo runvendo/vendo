@@ -56,6 +56,13 @@ export interface KitSlotSpec {
    *  function form of this slot takes the ROW, and the screen VM calls it once per
    *  row instead of once (`KIT_SLOT_PROPS`). */
   perRow?: boolean;
+  /** This slot holds FINISHED TEXT rather than elements — a chart's `format`, the
+   *  only shape of slot that does. Everything about the slot law is the same (the
+   *  VM resolves the function, the nesting check admits the path); what differs is
+   *  what may come back out, which is why the schema beside it is `textSlot` and
+   *  why `ui`'s slot-drift sweep probes this one with a string. A formatter that
+   *  handed back a component would paint "[object Object]" on an axis. */
+  text?: boolean;
   /** The prop holding the rows a `perRow` slot is painted once for. Required on
    *  one — it is what the VM maps the slot's function over. */
   rows?: string;

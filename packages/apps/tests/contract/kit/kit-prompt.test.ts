@@ -101,7 +101,11 @@ describe("kitPrompt() — the generated model-facing Kit section", () => {
   it("teaches the one money rule, and no conversion anything performs for you", () => {
     const prompt = kitPrompt();
     expect(prompt).toContain("(row.amount_cents / 100).toLocaleString(");
-    expect(prompt).toContain("converts nothing");
+    // The rule is now UNCONDITIONAL — the charts' `format` tokens were the last
+    // component that formatted anything, and they are the screen's own functions
+    // now, so nothing in the Kit converts or interprets a figure.
+    expect(prompt).toContain("Components never format");
+    expect(prompt).toContain("A CHART is no exception");
     expect(prompt).not.toContain('semantic:"money.cents"');
     expect(prompt).not.toContain("`*_cents` key is money in minor units");
   });
@@ -118,13 +122,13 @@ describe("kitPrompt() — the generated model-facing Kit section", () => {
    * An example is the strongest teaching in the prompt, so one that skips the
    * `/ 100` is a bug the catalog ships to every generation.
    *
-   * The detector names only the places a figure is DISPLAYED as money — a currency
-   * `toLocaleString`, a chart's axis token, a Calendar's amount field — so the
-   * `money` helper is never what makes an example count as one, and an example that
-   * hands a raw cents field to any of them fails.
+   * The detector names the places a figure is DISPLAYED as money — a currency
+   * `toLocaleString`, a Calendar's amount field, and the `money` helper itself,
+   * which is what a chart reaches for now that its `format` is a function rather
+   * than a token. An example that hands a raw cents field to any of them fails.
    */
   it("divides in every example that formats money, so none teaches cents as dollars", () => {
-    const shown = /format[=:]"money"|amountField=|style: "currency"/u;
+    const shown = /money\(|amountField=|style: "currency"/u;
     for (const spec of KIT_SPECS) {
       for (const example of [...spec.examples, ...promptExamples(spec)]) {
         if (!shown.test(example)) continue;
@@ -144,11 +148,15 @@ describe("kitPrompt() — the generated model-facing Kit section", () => {
     }
   });
 
-  // …and every chart SAYS which unit it plots, because the division cannot happen
-  // at a read site the model can see — only in the data it hands over.
-  it("names dollars on the chart props that take money", () => {
+  // …and every chart teaches its formatter as a FUNCTION of the row rather than a
+  // unit token, because there is no longer any unit for a chart to be told: the
+  // text is the screen's, written where the division a reader needs to see is.
+  it("teaches every chart's format as a function of the row", () => {
     for (const name of ["LineChart", "BarChart", "DonutChart"]) {
-      expect(kitPrompt({ only: [name], omitPreamble: true }), name).toContain("DOLLARS");
+      const section = kitPrompt({ only: [name], omitPreamble: true });
+      expect(section, name).toMatch(/\(row\) => /u);
+      // The retired tokens, gone from the one text the model reads.
+      expect(section, name).not.toMatch(/format[=:] *"(money|number|duration|date|datetime|time|text)"/u);
     }
   });
 

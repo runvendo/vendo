@@ -54,9 +54,11 @@ export type ReshapeOp = (typeof RESHAPE_OPS)[number];
 /** v2 spec §3 — chain-length cap: bounded and non-Turing by construction. */
 export const RESHAPE_MAX_STEPS = 8;
 
-/** format's closed kind vocabulary (deterministic en-US / USD / UTC), the same
- *  tokens as the Kit's `ValueFormat`. `money` pretty-prints the value AS IT
- *  STANDS: formatters never convert units, so a minor-unit (cents) field is
+/** format's closed kind vocabulary (deterministic en-US / USD / UTC). These are
+ *  the STORED wire dialect's own words and no longer mirror anything in the Kit —
+ *  `ValueFormat` shrank to the two tokens no model can name once the charts'
+ *  `format` became a function the screen writes. `money` pretty-prints the value
+ *  AS IT STANDS: formatters never convert units, so a minor-unit (cents) field is
  *  divided by 100 in the expression that reads it. */
 const FORMAT_KINDS = ["number", "money", "percent", "date"] as const;
 type FormatKind = (typeof FORMAT_KINDS)[number];
