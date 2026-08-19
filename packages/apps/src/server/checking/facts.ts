@@ -328,7 +328,12 @@ export const kitNestingIssues = (tree: Tree): FactIssue[] => {
   ): void => {
     const anchor = (message: string): FactIssue => at === "" ? atNode(nodeId, message) : atProp(nodeId, at, message);
     const kids: unknown[] = Array.isArray(children) ? children : [];
-    if (kids.length > 0 && CHILDLESS.has(component)) {
+    // A <Button> with no `label` really renders its children (`label ?? children`,
+    // packages/ui kit/forms/button.tsx) — the shape the splitter's <button>
+    // rewrite emits. Unreachable from the authored dialect, whose typings keep
+    // `label` required, so nothing a model writes gains a nesting it never had.
+    const rendersKids = component === "Button" && !(isRecord(props) && props["label"] !== undefined);
+    if (kids.length > 0 && CHILDLESS.has(component) && !rendersKids) {
       issues.push(anchor(`nests ${kids.length === 1 ? "1 node" : `${kids.length} nodes`} inside <${component}>, which renders nothing nested inside it: that content never reaches the screen. Put it beside <${component}> in a <Stack>, or give <${component}> what it showed through its own props.`));
     }
     // WHERE a row sits is the whole of what makes it a row: a <TableRow>'s

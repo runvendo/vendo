@@ -64,6 +64,27 @@ describe("display bricks", () => {
     expect(screen.getByText("Written").closest("section")!.getAttribute("class")).toBeNull();
   });
 
+  it("paints the host's class on a PORTED Kit Button — the <button> rewrite target — and on no other", () => {
+    // The splitter rewrites a host <button className style onClick> to the Kit
+    // Button, and the host's CSS must keep styling it: the class survives on
+    // the ported node exactly as it does on a brick, and on no other source.
+    render(
+      <TreeView
+        tree={tree([
+          { id: "root", component: "div", children: ["port", "wrote"] },
+          { id: "port", component: "Button", source: "ported", props: { className: "range-chip" }, children: ["a"] },
+          { id: "a", component: "#text", props: { text: "1W" } },
+          { id: "wrote", component: "Button", props: { label: "1M", className: "range-chip" } },
+        ])}
+        components={{}}
+        onAction={ok}
+      />,
+    );
+
+    expect(screen.getByText("1W").closest("button")!.getAttribute("class")).toBe("range-chip");
+    expect(screen.getByText("1M").closest("button")!.getAttribute("class")).toBeNull();
+  });
+
   /**
    * THE SEAM. Three parties, none of them stubbed: the real producer flattens a
    * paint and stamps it (`flattenTree`, apps genui/component/flatten.ts), the

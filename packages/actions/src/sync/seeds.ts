@@ -42,6 +42,9 @@ const PLUMBING_HOOK = /^use(?:\w*Context|Router|Pathname|SearchParams|Params)$/u
 export interface PinCaptureResult {
   captured: string[];
   drifted: string[];
+  /** Slots that SPLIT this run — the ones the wiring file covers. Non-empty is
+   *  what makes the report say the two hookup call sites out loud. */
+  ported: string[];
   /** Baselines deleted because no wrapper names their slot this run — a stale
    *  baseline is a forkable zombie (checker round-1 ruling 2026-08-02). */
   pruned: string[];
@@ -365,6 +368,7 @@ function defaultExportName(source: string, file: string): string | null {
 async function portFor(
   input: SplitInput,
   wiring: WiringSlot[],
+  homes: Map<string, string>,
   warnings: string[],
 ): Promise<Pick<SeedBaseline, "ported">> {
   const split = await splitSlot(input);
@@ -376,6 +380,7 @@ async function portFor(
     return {};
   }
   wiring.push(split.wiring);
+  if (split.home !== undefined) homes.set(input.slot, split.home);
   return { ported: split.port };
 }
 
@@ -387,18 +392,38 @@ async function writeWiring(directory: string, slots: readonly WiringSlot[], anyW
   await writeIfChanged(path.join(directory, "remix-wiring.ts"), remixWiringSource(slots));
 }
 
+/** One home module per slot the carver cut — `remix-holes/<Slot>.tsx`, the
+ *  files the wiring imports carved holes from. Regenerated whole, and a slot
+ *  that stopped needing one loses its file, so nothing lingers for the wiring
+ *  to dangle on. */
+async function writeHoles(directory: string, homes: ReadonlyMap<string, string>): Promise<void> {
+  const holesDir = path.join(directory, "remix-holes");
+  for (const [slot, home] of homes) await writeIfChanged(path.join(holesDir, `${slot}.tsx`), home);
+  let existing: string[] = [];
+  try {
+    existing = await fs.readdir(holesDir);
+  } catch {
+    return;
+  }
+  for (const entry of existing) {
+    const slot = entry.replace(/\.tsx$/u, "");
+    if (!homes.has(slot)) await fs.rm(path.join(holesDir, entry), { force: true });
+  }
+}
+
 export async function capturePins(
   root: string,
   out: string,
   ignoreSlots: ReadonlySet<string> = new Set(),
   budgetBytes?: number,
 ): Promise<PinCaptureResult> {
-  const result: PinCaptureResult = { captured: [], drifted: [], pruned: [], errors: [], warnings: [], styles: [] };
+  const result: PinCaptureResult = { captured: [], drifted: [], ported: [], pruned: [], errors: [], warnings: [], styles: [] };
   const realRoot = await fs.realpath(root);
   const files = await walk(root, (relativePath) => /\.(?:[cm]?[jt]sx?)$/u.test(relativePath) && !/\.d\.ts$/u.test(relativePath), MAX_SCAN_FILES);
   const remixableDir = path.join(out, "remixable");
   const generatedDir = path.join(out, "generated");
   const wiring: WiringSlot[] = [];
+  const homes = new Map<string, string>();
 
   result.styles = await captureRootStyles(root, realRoot, files, result.warnings);
 
@@ -468,8 +493,10 @@ export async function capturePins(
     const ported = await portFor(
       { slot, source: primary.source, file: primary.realFile, root, generatedDir },
       wiring,
+      homes,
       result.warnings,
     );
+    if (ported.ported !== undefined) result.ported.push(slot);
     const hash = `sha256:${sha256Hex(primary.source)}`;
     const existing = await readExisting(baselineFile);
     const baseline: SeedBaseline = {
@@ -490,6 +517,7 @@ export async function capturePins(
     (existing.exists ? result.drifted : result.captured).push(slot);
   }
   await writeWiring(generatedDir, wiring, bySlot.size > 0);
+  await writeHoles(generatedDir, homes);
   // A baseline whose slot matches no discovered wrapper is a forkable zombie —
   // delete it. A run with wrapper errors prunes nothing: an unresolvable
   // wrapper's slot is unknowable, and deleting its baseline would turn a loud

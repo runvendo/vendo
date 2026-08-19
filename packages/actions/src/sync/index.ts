@@ -423,6 +423,7 @@ export async function vendoSync(options: {
       captured: pins.captured,
       drifted: pins.drifted,
       ...(pins.pruned.length === 0 ? {} : { pruned: pins.pruned }),
+      ...(pins.ported.length === 0 ? {} : { ported: pins.ported }),
     },
     remixableErrors: pins.errors,
     catalog: { discovered: catalogScan.discovered, registered: catalogScan.registered },

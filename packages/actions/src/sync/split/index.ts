@@ -4,6 +4,7 @@ import type { SeedPort } from "@vendoai/apps/contract";
 import type TS from "typescript";
 import { defaultExportOf } from "../capture.js";
 import { isPackageSpecifier, parseModuleSource, resolveImportSource, visitNodes } from "../common.js";
+import { carveModule } from "./carve.js";
 import { portComponent, renderPort, type PortBinding } from "./port.js";
 import {
   readToolDescription,
@@ -33,7 +34,14 @@ export interface SplitInput {
 }
 
 export type SplitOutcome =
-  | { ok: true; port: SeedPort; wiring: WiringSlot }
+  | {
+    ok: true;
+    port: SeedPort;
+    wiring: WiringSlot;
+    /** The carver's home module — the slot's unportable half, written beside
+     *  the wiring file, which imports this slot's carved holes from it. */
+    home?: string;
+  }
   | { ok: false; issues: string[] };
 
 const withoutExtension = (file: string): string => file.replace(/\.[cm]?[jt]sx?$/u, "");
@@ -236,7 +244,12 @@ function hostSignature(
 }
 
 export async function splitSlot(input: SplitInput): Promise<SplitOutcome> {
-  const port = portComponent(input.slot, input.source, input.file);
+  // The carver first: inline unportable subtrees become holes and `<button>`
+  // becomes the Kit Button, so what the porter reads is already the portable
+  // half. A guard the carver cannot prove is a refusal, never a guess.
+  const carved = carveModule(input.slot, input.source, input.file);
+  if (carved.issues.length > 0) return { ok: false, issues: carved.issues };
+  const port = portComponent(input.slot, carved.source, input.file);
   if (port === null) {
     return { ok: false, issues: ["the host's TypeScript compiler could not read the module"] };
   }
@@ -330,7 +343,7 @@ export async function splitSlot(input: SplitInput): Promise<SplitOutcome> {
 
   const source = renderPort(port, new Map(
     [...toolParameters].map(([name, parameters]) => [name, parameters.map((parameter) => parameter.name)]),
-  ));
+  ), [...(carved.button ? ["Button"] : []), ...carved.holes]);
   const hostTools = [
     ...(port.read === undefined ? [] : [{ name: port.read.tool, description: readToolDescription(input.slot), risk: "read" }]),
     ...port.writes.map(({ tool, binding }) =>
@@ -341,10 +354,11 @@ export async function splitSlot(input: SplitInput): Promise<SplitOutcome> {
     source,
     hostTools,
     // The catalog the RUNTIME will have for this screen: the names the wiring
-    // file registers as holes, and nothing else. Assembled here and emitted
-    // there from the same list, so sync cannot bless a name the floor has never
-    // heard of.
-    catalog: port.holes.map((hole) => hole.name),
+    // file registers as holes — the host's imports and the carver's cuts — plus
+    // the Kit Button when a host <button> was rewritten to it. Assembled here
+    // and emitted there from the same list, so sync cannot bless a name the
+    // floor has never heard of.
+    catalog: [...port.holes.map((hole) => hole.name), ...carved.holes, ...(carved.button ? ["Button"] : [])],
     // Sync holds no host data — the tools it just generated are answered by the
     // host's own session at render time, and there is no session here. So the
     // grade runs the port against the answer every one of them really gives on
@@ -359,7 +373,7 @@ export async function splitSlot(input: SplitInput): Promise<SplitOutcome> {
     port: {
       source,
       tools: [...(port.read === undefined ? [] : [port.read.tool]), ...port.writes.map(({ tool }) => tool)],
-      holes: port.holes.map((hole) => hole.name),
+      holes: [...port.holes.map((hole) => hole.name), ...carved.holes],
     },
     wiring: {
       slot: input.slot,
@@ -368,7 +382,11 @@ export async function splitSlot(input: SplitInput): Promise<SplitOutcome> {
       }),
       writes: (writes as Array<{ tool: string; binding: WiringRef }>).map((write) =>
         ({ ...write, parameters: toolParameters.get(write.binding.name) ?? [] })),
-      holes: holes as WiringRef[],
+      holes: [
+        ...holes as WiringRef[],
+        ...carved.holes.map((name) => ({ name, imported: name, from: `./remix-holes/${input.slot}` })),
+      ],
     },
+    ...(carved.home === undefined ? {} : { home: carved.home }),
   };
 }

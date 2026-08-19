@@ -636,6 +636,32 @@ export default function S() { return <div className="maple-card rounded-lg"><Tex
     expect(text).toContain("className");
   });
 
+  /**
+   * The splitter's `<button>` rewrite target. A ported Button is the host's own
+   * button mechanically rewritten, so it carries exactly what the host tag
+   * carried — its class, its inline style, and its children in place of
+   * `label`. The model-authored dialect keeps Button as it was: `label`
+   * required, no class, no style.
+   */
+  const HOST_BUTTON = `import { Button } from "@vendo/screen";
+export default function S() {
+  return <Button className="chip" style={{ height: 28 }} onClick={() => {}}>1W</Button>;
+}
+`;
+
+  it("takes the host button's class, style and children on a PORTED screen's Button", async () => {
+    const passing = await checkComponentScreen({
+      source: HOST_BUTTON, hostTools: tools, catalog, runQuery: async () => ROWS, ported: true,
+    });
+    expect(passing.issues).toEqual([]);
+    expect(passing.ok).toBe(true);
+  });
+
+  it("keeps Button label-required, class-free and style-free in the dialect a MODEL authors", async () => {
+    const { codes } = await refusal(HOST_BUTTON);
+    expect(codes).toEqual(["types"]);
+  });
+
   it("still refuses a prop no display tag has, in either dialect", async () => {
     const idProp = `import { Text } from "@vendo/screen";
 export default function S() { return <div id="card"><Text text="x" /></div>; }

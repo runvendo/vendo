@@ -14,9 +14,14 @@ export interface ButtonProps extends KitStyled {
   /** Bound host-tool action (renderer-supplied). */
   onClick?: () => void;
   type?: "button" | "submit";
+  /** The host's own class, written by the RENDERER and only on a ported node
+   *  (tree/renderer.tsx, after the props it binds — same containment as the
+   *  display bricks): the splitter rewrites a host <button className> to this
+   *  component, and the host's CSS must keep styling it. */
+  hostClass?: string;
 }
 
-export function Button({ label, variant = "primary", disabled = false, onClick, type = "button", style, children }: PropsWithChildren<ButtonProps>) {
+export function Button({ label, variant = "primary", disabled = false, onClick, type = "button", style, children, hostClass }: PropsWithChildren<ButtonProps>) {
   const primary = variant === "primary";
   const danger = variant === "danger";
   const background = primary ? t.accent : danger ? t.danger : t.surface;
@@ -26,6 +31,7 @@ export function Button({ label, variant = "primary", disabled = false, onClick, 
       type={type}
       data-kit="Button"
       data-variant={variant}
+      className={hostClass}
       disabled={disabled}
       onClick={() => {
         if (!disabled) onClick?.();

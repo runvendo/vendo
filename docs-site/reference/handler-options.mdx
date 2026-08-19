@@ -30,7 +30,7 @@ One key is required, an identity, as either `principal` or an `auth` preset. `oa
 | `connections` | Explicit connected-accounts adapter. Always wins over the composed default |
 | `actAs` | Escape hatch supplying scoped auth material for away host API execution. Mutually exclusive with `auth` |
 | `serverActions` | The map `vendo sync` emits, keyed `"<module>#<exportName>"`. A missing key fails closed at execution |
-| `remixWiring` | The wiring `vendo sync` generates for your `<Remixable>` components, keyed by slot. Its tools join the one registry, guarded and audited like any host tool |
+| `remixWiring` | The wiring `vendo sync` generates for your `<Remixable>` components, keyed by slot. Its tools join the one registry, guarded and audited like any host tool. Pass the same object to `<VendoProvider remixWiring={remixWiring}>` too — the provider renders the ported components' holes, and the ✦ appears only on slots it declares |
 | `guard` | The deployment's choke point as one value. See [below](#guard) |
 | `limits` | Per-user limits in your own logic. See [below](#limits) |
 | `secrets` | `{ get(name) }`. Default is environment-backed lookup |

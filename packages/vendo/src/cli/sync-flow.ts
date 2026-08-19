@@ -195,6 +195,12 @@ export function printSyncReport(report: SyncReportWithWarnings, output: Output):
       ? ""
       : ` — blind: ${blind.slice(0, 6).join(", ")}${blind.length > 6 ? ` +${blind.length - 6} more` : ""}`));
   output.log(`pins: ${report.pins.captured.length} captured, ${report.pins.drifted.length} drifted`);
+  if ((report.pins.ported ?? []).length > 0) {
+    // BOTH call sites, or the feature silently does not exist: the ✦ chrome is
+    // fail-closed on the provider's wiring, so a host that wires only
+    // createVendo gets clean ports and no ✦ anywhere.
+    output.log(`remix wiring: ${report.pins.ported!.join(", ")} — hook .vendo/generated/remix-wiring.ts up in BOTH places: createVendo({ remixWiring }) on the server, and <VendoProvider remixWiring={remixWiring}> around the page. Without the provider, ported components show no ✦ at all.`);
+  }
   for (const slot of report.pins.pruned ?? []) {
     output.log(`pruned: ${slot} — stale baseline deleted (no <Remixable> wrapper names this slot anymore)`);
   }

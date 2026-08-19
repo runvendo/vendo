@@ -498,7 +498,7 @@ const jsxFrame = (ported: boolean): string => `declare namespace JSX {
   interface ElementChildrenAttribute { children: {} }
   interface IntrinsicAttributes { key?: string | number }
   interface IntrinsicElements {
-${DISPLAY_TAG_NAMES.map((tag) => `    ${tag}: { children?: any; style?: Record<string, string | number>${ported ? "; className?: string" : ""} };`).join("\n")}
+${DISPLAY_TAG_NAMES.map((tag) => `    ${tag}: { children?: any; style?: Record<string, string | number>${ported ? "; className?: string; key?: string | number" : ""} };`).join("\n")}
   }
 }`;
 
@@ -523,15 +523,25 @@ const REACT_MODULE = `declare module "react" {
   export default React;
 }`;
 
-const componentPropsText = (spec: KitComponentSpec, note?: TypeNote): string => {
+/** The splitter's `<button>` rewrite target, in the PORTED dialect only: a
+ *  ported Button is the host's own button mechanically rewritten, so it carries
+ *  exactly what the host tag carried — its class, its inline style, and its
+ *  children in place of `label`. The model-authored dialect keeps Button as the
+ *  spec wrote it, for the same reason display tags keep `className` out of that
+ *  dialect: a capability a model cannot write is one it cannot borrow. */
+const PORTED_BUTTON_EXTRAS = ["className?: string", "style?: Record<string, string | number>"];
+
+const componentPropsText = (spec: KitComponentSpec, note?: TypeNote, ported = false): string => {
+  const portedButton = ported && spec.name === "Button";
   const fields = Object.entries(spec.props).map(([name, prop]) => {
     const text = prop.schema.description === ACTION_PROP_DESCRIPTION
       ? HANDLER_TYPE
       : zodTypeText(prop.schema, 0, at(note, `prop "${name}"`));
-    return `${name}${prop.required === true ? "" : "?"}: ${text}`;
+    const required = prop.required === true && !(portedButton && name === "label");
+    return `${name}${required ? "" : "?"}: ${text}`;
   });
   const engine = spec.engine === undefined ? [] : [ENGINE_INDEX];
-  return `{ ${[...fields, "children?: any", ...engine].join("; ")} }`;
+  return `{ ${[...fields, ...(portedButton ? PORTED_BUTTON_EXTRAS : []), "children?: any", ...engine].join("; ")} }`;
 };
 
 /** A HOST component's props, from the one schema the composition derived for it.
@@ -589,7 +599,7 @@ export function componentScreenTypings(input: ComponentScreenTypingsInput): stri
     const spec = kitSpec(name);
     const schema = typeof entry === "string" ? undefined : entry.propsJsonSchema;
     const propsText = spec !== undefined
-      ? componentPropsText(spec, at(note, `<${name}>`))
+      ? componentPropsText(spec, at(note, `<${name}>`), input.ported === true)
       : schema === undefined
         // Schema-less, and legal: the model infers the props and nothing here can
         // check them. The skill's "a guessed prop is a failed app" is true of every

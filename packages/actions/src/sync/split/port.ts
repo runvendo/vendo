@@ -233,10 +233,17 @@ export function portComponent(slot: string, source: string, file: string): Port 
  * `parameters` maps a binding name to the parameter names its tool accepts, in
  * order — exactly as wide as the host component's own widest call.
  */
-export function renderPort(port: Port, parameters: ReadonlyMap<string, readonly string[]>): string {
+export function renderPort(
+  port: Port,
+  parameters: ReadonlyMap<string, readonly string[]>,
+  /** Names the CARVER added to the screen surface: its holes, and the Kit
+   *  Button when a host `<button>` was rewritten to it. */
+  carved: readonly string[] = [],
+): string {
   const imported = [
     ...(port.read === undefined ? [] : ["useQuery"]),
     ...(port.writes.length === 0 ? [] : ["tools"]),
+    ...carved,
     ...port.holes.map((hole) => hole.name),
   ];
   const signature = (binding: string): string =>
