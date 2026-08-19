@@ -92,7 +92,7 @@ describe("agent() boot", () => {
   });
 
   it("two tools claiming one name is a boot error", () => {
-    const same = { name: "x", inputSchema: { type: "object" as const }, execute: () => ({}) };
+    const same = { name: "x", description: "X", inputSchema: { type: "object" as const }, execute: () => ({}) };
     expect(() =>
       agent({ name: "support", harness: inert(), store: memoryStore(), tools: [tool(same), tool(same)] }),
     ).toThrow(/claim the name/);

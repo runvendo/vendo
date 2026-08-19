@@ -12,8 +12,9 @@ import { claudeCode } from "@vendoai/harnesses/claude-code";
 const support = agent({
   name: "support",
   harness: claudeCode({ model: "claude-sonnet-5" }),
-  // `outputSchema` is optional: the result shape the model is told to expect.
-  tools: [api(), tool({ name: "refund", risk: "write", inputSchema, outputSchema, execute })],
+  // `description` is required — it is all the model reads to decide to call the
+  // tool. `outputSchema` is optional: the result shape the model is told to expect.
+  tools: [api(), tool({ name: "refund", description, risk: "write", inputSchema, outputSchema, execute })],
   mcp: [{ url: "https://mcp.example.com", headers: { authorization: "…" } }],
   skills: ["./skills/product-docs"],
   egress: ["api.stripe.com"],

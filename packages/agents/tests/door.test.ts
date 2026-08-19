@@ -138,6 +138,7 @@ const jsonRpcBody = async (response: Response): Promise<string> => response.text
 
 const refund = tool({
   name: "refund_invoice",
+  description: "Refund an invoice",
   risk: "write",
   inputSchema: { type: "object" as const },
   execute: () => ({ ok: true }),
