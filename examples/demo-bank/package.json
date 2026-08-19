@@ -12,6 +12,7 @@
     "mcp:e2e": "tsx scripts/mcp-e2e.ts",
     "mcp:agent": "tsx scripts/mcp-stock-agent.ts",
     "seed:console": "tsx scripts/seed-console.ts",
+    "seed:tenant": "node scripts/seed-tenant.mjs",
     "lint": "eslint",
     "test": "vitest run"
   },
