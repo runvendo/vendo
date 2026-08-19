@@ -74,7 +74,8 @@ This is the whole model, and the rules that fall out of it:
   can never see two different answers.
 - **Never persisted.** There is no orgs table and no members table in the store.
   Removing someone from an org in your tables removes them from Vendo on their
-  very next request — nothing to propagate, no cache to invalidate.
+  very next request — nothing to propagate, and no cache to invalidate when you
+  assert memberships yourself.
 - An **ephemeral visitor is not even asked.** A principal you marked
   `ephemeral: true` belongs to no org by construction — your host issued them
   nothing.

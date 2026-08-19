@@ -20,7 +20,8 @@ once someone is off the roster the grant stops matching them, with nothing for
 the owner to click. Unlike a membership your own host asserts per request, the
 directory answer is [cached 60 seconds per user](/users-orgs/tenants), so that
 lands on their next membership refresh — within a minute, not on the next
-request.
+request. While Cloud is unreachable the last known roster keeps being honoured,
+so a removed member keeps access until Cloud answers again.
 
 ## A share is a grant
 
