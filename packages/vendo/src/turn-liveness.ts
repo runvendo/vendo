@@ -36,6 +36,12 @@ const IDLE = Symbol("idle-abort");
 interface ActiveTurn {
   threadId: string;
   subject: string;
+  /** THIS turn, not merely this thread. Two turns can be in flight on one thread
+   *  for one principal — nothing serializes them, which is why a beat refreshes
+   *  every match below — so the finish signal has to name one of them. Absent
+   *  for a caller that cannot name its turn; such a registration keeps exactly
+   *  the run-to-completion semantics it always had. */
+  turnId?: string;
   abort: () => void;
   idleTimer?: ReturnType<typeof setTimeout>;
   /** The model has spoken and only the turn's own closing work is left, so the
@@ -60,7 +66,12 @@ function idleAbortMs(): number {
 
 /** Track one streaming turn; returns its unregister. Registration alone never
  *  arms the watchdog — only a first heartbeat does. */
-export function registerActiveTurn(turn: { threadId: string; subject: string; abort: () => void }): () => void {
+export function registerActiveTurn(turn: {
+  threadId: string;
+  subject: string;
+  turnId?: string;
+  abort: () => void;
+}): () => void {
   const entry: ActiveTurn = { ...turn };
   activeTurns().add(entry);
   return () => {
@@ -121,12 +132,17 @@ export function touchActiveTurn(threadId: string, subject: string): boolean {
  * loop, and the wire cannot see it — the response body stays open through the
  * whole commit, so the bytes running out is far too late to mean this.
  *
+ * Addressed by TURN and not by thread, unlike the beat: nothing serializes two
+ * turns on one thread, and standing one turn's watchdog down must not stand its
+ * sibling's down with it — that sibling is still streaming, and reaping it if
+ * its client leaves is the whole point of the watchdog.
+ *
  * The registration STAYS: the turn really is still in flight, and a beat should
  * keep saying so until its stream ends.
  */
-export function finishActiveTurn(threadId: string, subject: string): void {
+export function finishActiveTurn(turnId: string): void {
   for (const turn of activeTurns()) {
-    if (turn.threadId !== threadId || turn.subject !== subject) continue;
+    if (turn.turnId !== turnId) continue;
     if (turn.idleTimer !== undefined) clearTimeout(turn.idleTimer);
     turn.finished = true;
   }

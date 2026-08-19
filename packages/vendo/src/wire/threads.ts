@@ -1,4 +1,4 @@
-import { defineOwn, isPlainObject, THREAD_WINDOW_INITIAL, VendoError, vendoViewWirePartSchema, withSseKeepalive } from "@vendoai/core";
+import { defineOwn, isPlainObject, mintTurnId, THREAD_WINDOW_INITIAL, VendoError, vendoViewWirePartSchema, withSseKeepalive } from "@vendoai/core";
 import { UI_MESSAGE_STREAM_HEADERS } from "ai";
 import { registerActiveTurn, steerActiveTurn, touchActiveTurn, trackTurnResponse } from "../turn-liveness.js";
 import { recordResumableTurn, resumableTurnStream } from "../turn-resume.js";
@@ -113,13 +113,20 @@ export const threadRoutes: RouteEntry[] = [
     const turnAbort = new AbortController();
     if (request.signal.aborted) turnAbort.abort();
     else request.signal.addEventListener("abort", () => turnAbort.abort(), { once: true });
+    // Minted HERE, and handed to the door on the ctx: the runtime adopts a
+    // caller's `turnId` (that is how `agent.chat().turnId` stays joinable to the
+    // rows its turn writes), so the registration below and the finish signal
+    // that ends its watchdog name the SAME turn. Nothing serializes two turns on
+    // one thread, so naming only the thread would let either one stand the
+    // other's watchdog down.
+    const turnId = mintTurnId();
     // Architecture §3 — ONE thinker's door. `harness:` when the host named one,
     // `vendo()` when they did not; a store that can keep neither the transcript
     // nor the workspace refuses the turn inside the door, naming what it needs.
     const turn = await deps.harness.stream({
       ...(body["threadId"] === undefined ? {} : { threadId: string(body["threadId"], "threadId") }),
       message: body["message"] as never,
-      ctx: situation === undefined ? ctx : { ...ctx, context: situation },
+      ctx: { ...ctx, turnId, ...(situation === undefined ? {} : { context: situation }) },
       signal: turnAbort.signal,
     });
     const threadId = turn.headers.get(THREAD_ID_HEADER);
@@ -132,6 +139,7 @@ export const threadRoutes: RouteEntry[] = [
     const unregister = registerActiveTurn({
       threadId,
       subject: ctx.principal.subject,
+      turnId,
       abort: () => {
         idleAbort.abort();
         turnAbort.abort();

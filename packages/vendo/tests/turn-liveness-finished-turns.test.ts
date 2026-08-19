@@ -56,10 +56,10 @@ const OUTPUT = new Uint8Array([0, 159, 146, 150, 255]);
 
 interface Deployment {
   vendo: Vendo;
-  /** Let the scripted thinker say its last word and end the turn. */
-  finishThinking: () => void;
-  /** The turn's own abort signal, as the harness received it. */
-  signal: () => AbortSignal;
+  /** Let the nth scripted thinker say its last word and end its turn. */
+  finishThinking: (at?: number) => void;
+  /** The nth turn's own abort signal, as the harness received it. */
+  signal: (at?: number) => AbortSignal;
   /** Resolves once the turn's sync-back is landing the thinker's file: the
    *  runtime commits only after its loop has ended, so being here IS being past
    *  the last token, with the response still open. */
@@ -74,8 +74,13 @@ async function deployment(): Promise<Deployment> {
   const dataDir = await mkdtemp(join(tmpdir(), "vendo-finished-turn-"));
   const store = createStore({ dataDir });
 
-  let finishThinking!: () => void;
-  const thinking = new Promise<void>((resolve) => { finishThinking = resolve; });
+  // One gate per turn a test starts, minted UP FRONT so a test can release a
+  // turn before its thinker has reached the park.
+  const gates = [0, 1].map(() => {
+    let open!: () => void;
+    const opened = new Promise<void>((resolve) => { open = resolve; });
+    return { opened, open: () => open() };
+  });
   let arriveSyncBack!: () => void;
   const syncingBack = new Promise<void>((resolve) => { arriveSyncBack = resolve; });
   let releaseSyncBack!: () => void;
@@ -83,7 +88,7 @@ async function deployment(): Promise<Deployment> {
   cleanups.push(async () => {
     // Nothing parked at teardown: a thinker still awaiting — or a commit still
     // held — keeps the turn, and the suite, from ending.
-    finishThinking();
+    for (const gate of gates) gate.open();
     releaseSyncBack();
     await store.close();
     await rm(dataDir, { recursive: true, force: true });
@@ -107,15 +112,17 @@ async function deployment(): Promise<Deployment> {
     delete: async (key) => { blobs.delete(key); },
   };
 
-  let signal: AbortSignal | undefined;
+  const signals: AbortSignal[] = [];
+  let started = 0;
   const harness = {
     name: "scripted-thinker",
     async *run(turn: { signal: AbortSignal; workspace: { writeFile: (path: string, content: Uint8Array) => Promise<void> } }) {
-      signal = turn.signal;
+      const gate = gates[started++]!;
+      signals.push(turn.signal);
       yield { type: "text" as const, delta: "here it is" };
       // Staged, not durable: the turn's own commit is what lands it.
       await turn.workspace.writeFile("/user/report.bin", OUTPUT);
-      await thinking;
+      await gate.opened;
       yield { type: "text" as const, delta: " — done." };
     },
   };
@@ -129,7 +136,14 @@ async function deployment(): Promise<Deployment> {
     logger: (event) => logged.push(event),
     harness: harness as never,
   });
-  return { vendo, finishThinking, signal: () => signal!, syncingBack, releaseSyncBack, logged };
+  return {
+    vendo,
+    finishThinking: (at = 0) => gates[at]!.open(),
+    signal: (at = 0) => signals[at]!,
+    syncingBack,
+    releaseSyncBack,
+    logged,
+  };
 }
 
 describe("turn liveness — a finished turn's closing work is not the watchdog's to abort", () => {
@@ -180,6 +194,35 @@ describe("turn liveness — a finished turn's closing work is not the watchdog's
 
     await wait(IDLE_MS * 3);
     expect(signal().aborted).toBe(true);
+  });
+
+  it("standing one turn down leaves its sibling on the same thread still watched", async () => {
+    vi.stubEnv("VENDO_TURN_IDLE_ABORT_MS", String(IDLE_MS));
+    const { vendo, finishThinking, signal, releaseSyncBack } = await deployment();
+    // This test is about the sibling, not the commit: let the first turn close.
+    releaseSyncBack();
+
+    // Two turns in flight on ONE thread for one principal. Nothing serializes
+    // them, which is exactly why the finish signal has to name a turn.
+    const first = await vendo.handler(request("POST", "/threads", turnBody));
+    const threadId = first.headers.get("x-vendo-thread-id")!;
+    const second = await vendo.handler(request("POST", "/threads", {
+      threadId,
+      message: { id: "m_ask_again", role: "user", parts: [{ type: "text", text: "and a chart" }] },
+    }));
+    expect(second.headers.get("x-vendo-thread-id")).toBe(threadId);
+
+    // The first turn finishes — thinker done, commit done, stream closed.
+    finishThinking(0);
+    await first.text();
+
+    // The second is still streaming, and the beat still reaches it. Arming it
+    // here rather than earlier keeps the test off the clock: what is being
+    // checked is that this beat can still arm, not how fast the first turn was.
+    expect(await (await beat(vendo, threadId)).json()).toEqual({ active: true });
+
+    await wait(IDLE_MS * 3);
+    expect(signal(1).aborted).toBe(true);
   });
 
   it("an idle abort says so: one log line, and a stream that ends instead of stopping", async () => {

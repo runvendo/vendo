@@ -776,8 +776,10 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
             emitRun("ok", null);
             // The same moment, said to the wire: the thinker is done, so the
             // client-idle watchdog must not abort what is left (the workspace
-            // commit, the transcript, the audit row).
-            finishActiveTurn(published.threadId, published.ctx.principal.subject);
+            // commit, the transcript, the audit row). By turn, never by thread —
+            // a sibling turn on this thread is still streaming. The runtime
+            // always resolves one (`started.ctx.turnId ?? mintTurnId()`).
+            finishActiveTurn(published.ctx.turnId!);
           };
         },
         // The turn's closing writes as ONE call, where the store serves it: the
