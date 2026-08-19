@@ -100,9 +100,13 @@ client discovers your sign-in without being told about it.
 <Note>
 **Checkpoint.** A `401` with a `www-authenticate` header naming your own origin.
 A `404` means the app is not serving `/api/vendo/mcp` — check that init's wire
-route landed. A `200` means something else is answering that path. A `501` means
-the door is open but its Cloud tenant could not be provisioned — the usual cause
-is a `VENDO_BASE_URL` that is not https, which is the pair Step 1 warns about.
+route landed. A `200` means something else is answering that path.
+
+If you are on the Cloud posture, two more answers are worth knowing. A `400`
+with `"code":"validation"` is Vendo Cloud refusing to provision your tenant, and
+it repeats the console's own reason and docs link — read the message, it names
+the fix. A `503` with `"code":"unavailable"` is Cloud itself failing, not your
+wiring.
 </Note>
 
 </Step>
@@ -131,11 +135,10 @@ For Claude Code, the plugin is one command:
 *your own* data. A write parks for approval instead of executing — that is the
 guard, not a failure.
 
-If a tool answers `not-implemented`, the cause is almost always a missing
-`actAs` — the door has no auth material to call your API with. Note that a
-broker that could not provision reports the same code, so check Step 2's `curl`
-before you go looking at `actAs`.
-[How the door works](/outside-agents/how-the-door-works) explains both.
+If a tool answers `not-implemented`, that means a missing `actAs` — the door has
+no auth material to call your API with. A Cloud problem never looks like this;
+it answers `400` or `503` with its own reason, per Step 2.
+[How the door works](/outside-agents/how-the-door-works) explains `actAs`.
 </Note>
 
 </Step>
