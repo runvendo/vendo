@@ -173,3 +173,19 @@ describe("createVendo({ uploadMaxBytes }) — the drop door's cap, moved", () =>
     expect(message).not.toContain(String(FILES_STORE_MAX_BYTES));
   });
 });
+
+/** `NaN` and `Infinity` are numbers, so the typed-config posture lets them
+    through — and both make `bytes > cap` false forever, which does not move the
+    door but DELETES it. Compose is the last moment anyone can be told, so each
+    of these must refuse there rather than reach a door at all. */
+describe("createVendo({ uploadMaxBytes }) — a cap that is not a byte count", () => {
+  it.each([NaN, Infinity, -1, 0, 1.5])("refuses at compose time, naming the value:", async (uploadMaxBytes) => {
+    await expect(compose({ uploadMaxBytes })).rejects.toThrow(
+      `createVendo({ uploadMaxBytes }): must be a positive integer, got ${uploadMaxBytes}`,
+    );
+  });
+
+  it("still composes on a real byte count", async () => {
+    await expect(compose({ uploadMaxBytes: 32 })).resolves.toBeDefined();
+  });
+});

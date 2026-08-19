@@ -105,6 +105,20 @@ function validateSlotsConfig(slots: CreateVendoConfig["slots"]): void {
   }
 }
 
+/** The upload door's cap, against the only thing a byte count can be. Typed
+    config is trusted for TYPES, which does not cover this: `NaN` and `Infinity`
+    are numbers, and both make the doors' `bytes > cap` false forever — so a
+    config slip does not move the door, it DELETES it. Refused here rather than
+    clamped, because a silent fall back to the default hides the slip. */
+function validateUploadMaxBytes(uploadMaxBytes: CreateVendoConfig["uploadMaxBytes"]): void {
+  if (uploadMaxBytes !== undefined && (!Number.isInteger(uploadMaxBytes) || uploadMaxBytes < 1)) {
+    throw new VendoError(
+      "validation",
+      `createVendo({ uploadMaxBytes }): must be a positive integer, got ${uploadMaxBytes}`,
+    );
+  }
+}
+
 /** ENG-237 recommended default (documented in the PR body; Yousef-gated as
     09-vendo contract text). */
 const DEFAULT_SWEEP_INTERVAL_MS = 60_000;
@@ -149,6 +163,7 @@ export const composeConfig = (input: CreateVendoConfig): Pick<VendoComposition,
   // before anything is constructed, rather than as a dead link months later.
   validateRouteConfig(config.routes);
   validateSlotsConfig(config.slots);
+  validateUploadMaxBytes(config.uploadMaxBytes);
   // 09-vendo §2.1 — one preset or the per-seam trio, never mixed. Checked
   // before anything is constructed so a miswired config leaks no resources.
   if (config.auth !== undefined) {
