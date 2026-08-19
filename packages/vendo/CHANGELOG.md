@@ -1,5 +1,83 @@
 # @vendoai/vendo
 
+## 0.33.0
+
+### Minor Changes
+
+- 8c7b476: Vendo runs on both AI SDK majors. The peer range widens from `ai >=6 <7` to
+  `ai >=6 <8`, and the three things that made an `ai@7` host fail are gone: the
+  turn loop and the generation engine send their cacheable system block as
+  `system` instead of as a system-role message inside `messages` (ai@7 refuses the
+  latter with `AI_InvalidPromptError`, and both majors carry the same message form
+  — cache breakpoint and all — to the provider unchanged), and the spec-version
+  gates on provider failover and the screen agent's per-role seat now admit the
+  v4 spec that ai@7-era providers report instead of only v3.
+
+  `vendo doctor` follows: `ai@6` and `ai@7` both pass, a pre-v6 install still
+  fails on the peer floor, and E-DEP-001's ceiling moves to majors above the
+  supported pair. `vendo init` stops telling an `ai@7` host to downgrade, and the
+  "install your provider" line no longer names an `ai` major at all — `ai` is
+  already resolved by the time anyone can read it.
+
+  A new `ai-dual` CI lane pins the whole workspace to the ai@7 pairing and runs
+  the suites against it, so a peer range that claims two majors is checked rather
+  than asserted. This is the compat half of #478, whose short-term half was the
+  fail-fast this replaces.
+
+- 9d3f0af: With `VENDO_API_KEY` set and no memberships seam of your own, the SDK now
+  resolves the acting user's companies from the tenant directory in Vendo Cloud,
+  cached 60s per user — and everything that already reads `RunContext.memberships`
+  (app sharing, the `org:<id>` limiter pool, org workspaces) starts working with
+  no host code. Per-tenant caps set in the console are enforced by the limiter
+  that already exists; on a store with no meter they simply do not compose, rather
+  than refusing to boot. A directory outage serves the last answer, or none —
+  never a failed turn.
+
+  Caps reset on the calendar boundary in UTC, not on a rolling lookback:
+  `messagesPerDay` refills at UTC midnight and `generationsPerMonth` on the first
+  of the month, so a message sent at 23:59 does not spend the next day's
+  allowance.
+
+  `memberships` is now also a top-level `createVendo` key, the per-seam twin of
+  `auth.memberships` for hosts on the `principal` trio — the same precedence
+  `actAs` and `oauth` already have. Assert it and it wins outright: no Cloud
+  client is constructed and no request ever calls out.
+
+  That twin is also how a keyed deployment declines the directory. If you set
+  `VENDO_API_KEY`, use `principal` rather than an `auth` preset, and have no
+  orgs, say so once and Vendo will never ask Cloud:
+
+  ```ts
+  createVendo({
+    principal: async (req) => …,
+    memberships: async () => [],
+  })
+  ```
+
+  Without that line, such a deployment resolves memberships from Cloud — one
+  cached call per user per minute, and, until your project has tenants, a log
+  line saying the directory had nothing to say.
+
+  `TenantDirectoryPayload`, `TenantLimits`, `TenantCap` and their zod schemas are
+  new in `@vendoai/core`; `cloudDirectory`, `tenantLimits` and `createLimiter` are
+  new on `@vendoai/vendo/server`.
+
+### Patch Changes
+
+- Updated dependencies [8c7b476]
+- Updated dependencies [9d3f0af]
+  - @vendoai/agents@0.33.0
+  - @vendoai/apps@0.33.0
+  - @vendoai/core@0.33.0
+  - @vendoai/guard@0.33.0
+  - @vendoai/harnesses@0.33.0
+  - @vendoai/knowledge@0.33.0
+  - @vendoai/ui@0.33.0
+  - @vendoai/actions@0.33.0
+  - @vendoai/mcp@0.33.0
+  - @vendoai/store@0.33.0
+  - @vendoai/automations@0.33.0
+
 ## 0.32.0
 
 ### Patch Changes

@@ -504,4 +504,20 @@ describe("agent mode grades", () => {
     expect(receipt.judgment.status).toBe("graded");
     expect(receipt.judgment).toMatchObject({ file: join(".vendo", "judgments.json") });
   });
+
+  // #478 — Vendo speaks ai@6 AND ai@7, so a v7 host is no longer something init
+  // warns about: telling it to downgrade would break a working install. The
+  // ceiling simply moved one major up, where nobody has run Vendo yet.
+  it("stops telling an ai@7 host to downgrade, and still names a major above the supported pair", async () => {
+    const warningFor = async (version: string): Promise<string> => {
+      const root = await fixture();
+      await mkdir(join(root, "node_modules", "ai"), { recursive: true });
+      await writeFile(join(root, "node_modules", "ai", "package.json"), JSON.stringify({ name: "ai", version }));
+      const sink = output();
+      await run(root, sink);
+      return sink.errors.join("\n");
+    };
+    expect(await warningFor("7.0.2")).not.toContain("ai@7.0.2");
+    expect(await warningFor("8.0.0")).toContain("ai@6 and ai@7");
+  });
 });

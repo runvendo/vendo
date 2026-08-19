@@ -610,7 +610,7 @@ describe("aiBelowPeerFloor", () => {
     expect(aiBelowPeerFloor("4.3.19")).toBe(true);
     expect(aiBelowPeerFloor("6.0.0")).toBe(false);
     expect(aiBelowPeerFloor("6.0.230")).toBe(false);
-    // v7 is the E-DEP-001 downgrade story, not the floor's.
+    // v7 is inside the peer contract, so it is not the floor's story either.
     expect(aiBelowPeerFloor("7.0.2")).toBe(false);
     // An unparseable version is not evidence of an old ai.
     expect(aiBelowPeerFloor("not-a-version")).toBe(false);

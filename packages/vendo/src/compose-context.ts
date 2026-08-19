@@ -53,6 +53,7 @@ import type { createByoApprovals } from "./byo-approvals.js";
 import type { CapabilitySurfaceSnapshot } from "./capability-misses.js";
 import type { MergedCapability } from "./capability/index.js";
 import type { mergeRuntimeCatalog } from "./catalog.js";
+import type { CloudDirectory } from "./cloud-directory.js";
 import { composeActions } from "./compose-actions.js";
 import { composeApps } from "./compose-apps.js";
 import { composeAutomations } from "./compose-automations.js";
@@ -124,6 +125,10 @@ export interface VendoComposition {
   /** Build contract §9.1 — the host org query the wire, the harness, the
    *  automations engine and the MCP door all resolve the SAME answer through. */
   membershipsSeam: HostAuthPreset["memberships"];
+  /** The hosted tenant directory, when VENDO_API_KEY filled a `memberships`
+   *  seam the host left unset — `undefined` whenever the host asserted its own.
+   *  Read a second time by composeLimits, off the SAME cache. */
+  directory: CloudDirectory | undefined;
   userFactsSeam: HostAuthPreset["facts"];
   userPoolsSeam: HostAuthPreset["pools"];
   sweepConfig: ResolvedSweep;

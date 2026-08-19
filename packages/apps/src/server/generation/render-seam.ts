@@ -106,12 +106,43 @@ export function hotPathAppId(path: string): AppId | undefined {
  * through untouched, and a `CommitResult` is what the store said, not what the
  * seam did with it.
  */
-const paintedByCommit = new WeakMap<CommitResult, readonly AppId[]>();
+const paintedByCommit = new WeakMap<CommitResult, {
+  readonly painted: readonly AppId[];
+  readonly unpainted: ReadonlyMap<AppId, UnpaintedReason>;
+}>();
 
 /** The apps `result`'s commit painted, or undefined for a result this seam did not
  *  produce — which is "not known", never "nothing painted". */
 export const paintedIn = (result: CommitResult): readonly AppId[] | undefined =>
-  paintedByCommit.get(result);
+  paintedByCommit.get(result)?.painted;
+
+/**
+ * Why `appId`'s landed write never reached the screen, or undefined when it
+ * painted — and for a result this seam did not produce, the same "not known"
+ * `paintedIn` answers.
+ *
+ * The seam's own refusal channel is a console line to the OPERATOR, which the
+ * hand that wrote the screen cannot read. Without this the writer had the bare
+ * fact "nothing painted" and no reason to give, so a person heard the loop's
+ * last-resort sentence instead of what actually happened.
+ */
+export const unpaintedIn = (result: CommitResult, appId: AppId): UnpaintedReason | undefined =>
+  paintedByCommit.get(result)?.unpainted.get(appId);
+
+/** Why a landed write did not paint, in the floor's own vocabulary so the loop
+ *  reads one kind of finding wherever it came from. */
+export interface UnpaintedReason {
+  /** Repair instructions for the screen — what to fix, as the floor words it. */
+  readonly blocking: readonly string[];
+  /** The DEPLOYMENT could not paint, so nothing the writer saves changes it: no
+   *  screen engine is wired here. A screen fault leaves this absent. */
+  readonly environment?: true;
+}
+
+/** A landed hot-path write, and either the view it painted or why it did not. */
+export type PaintAttempt =
+  | { readonly painted: true; readonly streamId: string; readonly part: VendoViewPart }
+  | { readonly painted: false; readonly reason?: UnpaintedReason };
 
 export interface RenderSeamOptions {
   /** Write the part on the stable per-app stream id, so successive views
@@ -178,27 +209,36 @@ const viewPart = (
 ): { streamId: string; part: VendoViewPart } | undefined =>
   vendoViewPart({ appId, payload: { ...payload, streaming: false }, ...(turnId === undefined ? {} : { turnId }) });
 
-/** The view a landed hot-path commit produces, or undefined if it does not paint. */
+/** The view a landed hot-path commit produces, or why it did not paint. */
 export async function viewForWrite(
   path: string,
   content: string,
   options: RenderSeamOptions,
-): Promise<{ streamId: string; part: VendoViewPart } | undefined> {
+): Promise<PaintAttempt> {
   const appId = hotPathAppId(path);
-  if (appId === undefined || hotPathFile(path) === undefined) return undefined;
+  // Not an app screen at all, so there is no paint to explain.
+  if (appId === undefined || hotPathFile(path) === undefined) return { painted: false };
 
   // The component gauntlet lives behind the floor, like every other check —
   // the seam never learns how to read TSX. No door means this build carries
   // no screen engine: nothing paints, the last good view stays.
   const door = options.floor?.component?.bind(options.floor);
-  if (door === undefined) return undefined;
+  if (door === undefined) {
+    return {
+      painted: false,
+      reason: {
+        blocking: ["This deployment has no screen engine wired, so no screen can paint here."],
+        environment: true,
+      },
+    };
+  }
   const result = await door({ appId, source: content });
   if (!result.ok) {
     console.error(
       `[vendo] ${appId} did not pass the checks floor; nothing painted and the last good view stays — `
       + result.blocking.join("; "),
     );
-    return undefined;
+    return { painted: false, reason: { blocking: result.blocking } };
   }
   const payload = stripServerAuthoritativeFields(
     assembleTree({ tree: { nodes: Object.values(result.nodes), root: result.root } }),
@@ -211,12 +251,9 @@ export async function viewForWrite(
   // already lives by for a screen the gauntlet refused.
   const description = screenDescriptionSchema.safeParse(payload);
   if (!description.success) {
-    console.error(
-      `[vendo] ${appId}'s compiled screen is not a valid description; nothing painted — ${
-        description.error.issues[0]?.message ?? "unknown"
-      }`,
-    );
-    return undefined;
+    const why = description.error.issues[0]?.message ?? "unknown";
+    console.error(`[vendo] ${appId}'s compiled screen is not a valid description; nothing painted — ${why}`);
+    return { painted: false, reason: { blocking: [`The compiled screen is not a valid screen description — ${why}`] } };
   }
   // The same paint, offered to the embed's build-window poll as SHAPE
   // (persistence/forming.ts strips it to geometry and holds it in memory only).
@@ -225,7 +262,16 @@ export async function viewForWrite(
   // has already happened.
   recordForming(appId, payload);
   // The gauntlet already ran its queries, so this paint is FINAL.
-  return viewPart(appId, payload, options.turnId);
+  const view = viewPart(appId, payload, options.turnId);
+  // `vendoViewPart` refuses a payload the view channel cannot carry — the last
+  // exit that used to leave the writer with nothing at all to say.
+  if (view === undefined) {
+    return {
+      painted: false,
+      reason: { blocking: ["The screen compiled, but its view could not be carried to the screen channel."] },
+    };
+  }
+  return { painted: true, ...view };
 }
 
 /**
@@ -233,19 +279,23 @@ export async function viewForWrite(
  * other operation passes straight through, so the result is still a `WorkspaceFs`.
  */
 export function wrapWorkspaceForRender(workspace: WorkspaceFs, options: RenderSeamOptions): WorkspaceFs {
-  /** True iff this path put a view on screen. */
-  const emitFor = async (path: string): Promise<boolean> => {
+  /** Whether this path put a view on screen, and why not when it did not. */
+  const emitFor = async (path: string): Promise<PaintAttempt> => {
     try {
       // Read back what the store now holds rather than trusting a remembered
       // argument: append, encoding and any store-side normalization land here.
       const content = await workspace.readFile(path);
-      const view = await viewForWrite(path, content, options);
-      if (view === undefined) return false;
-      options.emit(view.streamId, view.part);
-      return true;
-    } catch {
-      // A view is a courtesy on top of a landed commit. It can never fail one.
-      return false;
+      const attempt = await viewForWrite(path, content, options);
+      if (attempt.painted) options.emit(attempt.streamId, attempt.part);
+      return attempt;
+    } catch (error) {
+      // A view is a courtesy on top of a landed commit. It can never fail one —
+      // so the throw is still swallowed. Losing the REASON with it is what made a
+      // throw indistinguishable from a screen that simply did not paint.
+      return {
+        painted: false,
+        reason: { blocking: [error instanceof Error ? error.message : String(error)] },
+      };
     }
   };
 
@@ -301,12 +351,16 @@ export function wrapWorkspaceForRender(workspace: WorkspaceFs, options: RenderSe
         // and the last good view stays on screen until something actually does.
         if (result.status !== "ok") return result;
         const painted = new Set<AppId>();
+        const unpainted = new Map<AppId, UnpaintedReason>();
         for (const path of result.changed) {
           const appId = hotPathAppId(path);
-          if (appId !== undefined && await emitFor(path)) painted.add(appId);
+          if (appId === undefined) continue;
+          const attempt = await emitFor(path);
+          if (attempt.painted) painted.add(appId);
+          else if (attempt.reason !== undefined) unpainted.set(appId, attempt.reason);
         }
         await persistSource(result.changed);
-        paintedByCommit.set(result, [...painted]);
+        paintedByCommit.set(result, { painted: [...painted], unpainted });
         return result;
       };
     },

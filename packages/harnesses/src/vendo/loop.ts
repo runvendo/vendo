@@ -28,6 +28,7 @@ import {
   type LanguageModel,
   type ModelMessage,
   type StopCondition,
+  type SystemModelMessage,
   type ToolSet,
   type UIMessage,
 } from "ai";
@@ -582,8 +583,8 @@ function turnModel(options: TurnLoopOptions): LanguageModel {
   const fallbacks = options.fallbacks ?? [];
   if (fallbacks.length === 0) return options.model;
   const primary = options.model;
-  if (typeof primary === "string" || primary.specificationVersion !== "v3") {
-    throw new VendoError("validation", "provider failover needs a resolved v3 model as the primary");
+  if (typeof primary === "string" || primary.specificationVersion === "v2") {
+    throw new VendoError("validation", "provider failover needs a resolved model as the primary");
   }
   return failoverModel([primary, ...fallbacks]);
 }
@@ -622,9 +623,15 @@ export async function startTurn(options: TurnLoopOptions): Promise<TurnLoop> {
     ...(options.signal === undefined ? {} : { signal: options.signal }),
     workbench: debug,
   });
+  // The system block travels as `system`, not as `messages[0]`: ai@7 refuses a
+  // system-role message inside `messages` (AI_InvalidPromptError), and both
+  // majors carry this message form — cache breakpoint and all — to the provider
+  // unchanged. `turnModelMessages` always leads with it.
+  const [system, ...history] = modelMessages as [SystemModelMessage, ...ModelMessage[]];
   const result = streamText({
     model: turnModel(options),
-    messages: modelMessages,
+    system,
+    messages: history,
     tools: options.tools,
     stopWhen: [stepCountIs(maxSteps), buildFailedStop, askedUserStop, ...(options.stopWhen ?? [])],
     maxOutputTokens: options.context?.maxOutputTokens,

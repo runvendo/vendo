@@ -31,6 +31,8 @@ concurrency:
 #   test-shards       9 intra-package vitest shards for the big three
 #                     (vendo x4, store x3, ui x2 — 40 of the 55 serial minutes)
 #   test-rest         every other package, one job, one turbo run
+#   ai-dual           the same suites against the OTHER AI SDK major (ai@7),
+#                     which is the only thing that can prove the peer range
 #   coverage-merge    merges the shards' blob reports and enforces the
 #                     per-package coverage floors (they cannot be enforced on a
 #                     single shard — see the comment on that job)
@@ -423,6 +425,56 @@ jobs:
         if: always()
         run: stat -c '%n size=%s inode=%i links=%h mtime=%Y' node_modules/.pnpm/@electric-sql+pglite@*/node_modules/@electric-sql/pglite/dist/pglite.data
 
+  # The OTHER AI SDK major (#478). Every other job in this file resolves ai@6 —
+  # the version each package's devDependencies pin — so a peer range that claims
+  # `ai >=6 <8` is a claim nothing checks. This lane pins the whole tree to the
+  # v7 pairing and runs the same suites against it, which is the only way the
+  # two live majors can disagree in front of anyone.
+  #
+  # It BUILDS first on purpose: every package compiles with tsc, so a v7 type
+  # break fails here before a single test runs. `store` is the one package with
+  # no `ai` peer at all and three shards' worth of PGlite boots, so it is the one
+  # negation; the rest is `./packages/*`, expressed that way so a new package
+  # joins this lane the day it is created.
+  #
+  # NOT cached: the flipped lockfile hashes differently from every other job's,
+  # so this is a cold run by construction. That is also why it is one job rather
+  # than a second shard matrix.
+  #
+  # `test` only, never `test:ui` — no browser runs in CI (2026-08-06: headless
+  # mis-resolves :focus-visible and light-dark()), and an SDK major is not a
+  # pixel question anyway. The Playwright suite stays the local pre-PR gate it
+  # is for the v6 lane.
+  ai-dual:
+    runs-on: ubuntu-latest
+    # Longer than test-rest's 25 because this is ONE cold runner doing what the
+    # shards and test-rest split between ten: no remote cache to restore from,
+    # and the big packages are not sharded here. A timeout is a hang detector,
+    # and ~20 minutes of real work needs a ceiling above it, not at it.
+    timeout-minutes: 45
+    needs: cone
+    # Same reasoning as the shards' RUN gate: the version PR puts every package
+    # in the cone and there is nothing here for it to prove.
+    if: needs.cone.outputs.heavy == 'true'
+    env:
+      # Both halves, at job level: this job invokes turbo directly, so it does
+      # not inherit the root scripts' caps, and a max-only cap makes Tinypool
+      # throw before a single test runs.
+      VITEST_MIN_FORKS: "1"
+      VITEST_MAX_FORKS: "2"
+      VITEST_MIN_THREADS: "1"
+      VITEST_MAX_THREADS: "2"
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: pnpm
+      # One command, the same one a laptop runs: pin -> install -> build -> test.
+      - name: Build and test against ai@7
+        run: pnpm test:ai7
+
   # The per-package coverage floors (vendo 78 / store 84 / ui 90, each in the
   # package's vitest config) live HERE, because a floor is only meaningful
   # against the whole suite's coverage. vitest replays the shards' blob reports
@@ -497,7 +549,7 @@ jobs:
   # cone-only CI and no PR ever passing again, in either direction.
   ci:
     runs-on: ubuntu-latest
-    needs: [cone, typecheck-lint, test-shards, test-rest, coverage-merge]
+    needs: [cone, typecheck-lint, test-shards, test-rest, ai-dual, coverage-merge]
     if: always()
     steps:
       - name: All lanes green (skipped counts as success)

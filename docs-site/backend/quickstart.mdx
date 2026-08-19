@@ -17,11 +17,11 @@ is required.
 <CodeGroup>
 
 ```bash npm
-npm install @vendoai/agents ai@^6 zod
+npm install @vendoai/agents ai zod
 ```
 
 ```bash pnpm
-pnpm add @vendoai/agents ai@^6 zod
+pnpm add @vendoai/agents ai zod
 ```
 
 </CodeGroup>
@@ -99,8 +99,9 @@ A plain Node backend — which this page is — has to be handed the variable:
 node --env-file=.env.local ./dist/chat.js   # or: export VENDO_API_KEY=…
 ```
 
-To bring your own model instead, install `@ai-sdk/anthropic@^3` and pass it
-beside `name`: `model: anthropic("claude-sonnet-4-6")`. Either way the
+To bring your own model instead, install `@ai-sdk/anthropic` — the major that
+pairs with your `ai`, 4 with `ai@7` and 3 with `ai@6` — and pass it beside
+`name`: `model: anthropic("claude-sonnet-4-6")`. Either way the
 credential is read at the first turn, never at build time — see
 [Model credentials](/production/model-credentials).
 

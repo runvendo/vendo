@@ -194,7 +194,7 @@ describe("build-failure lifecycle (#492)", () => {
     // 0.4.x E2E defect: with a provider key set but the @ai-sdk package
     // missing, the surface said {"code":"validation","model could not produce
     // a valid app"} while the actionable install line was terminal-only.
-    const line = "OPENAI_API_KEY is set but @ai-sdk/openai is not installed in this app; install it (`npm install ai@^6 @ai-sdk/openai@^3`).";
+    const line = "OPENAI_API_KEY is set but @ai-sdk/openai is not installed in this app; install it (`npm install @ai-sdk/openai@^3`).";
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     try {
       const { runtime, store } = setup(throwingAssembler(line));
@@ -350,7 +350,7 @@ describe("buildFailureReason", () => {
   });
 
   it("passes the dev-model's own unavailable-credential lines through verbatim (they ARE the fix)", () => {
-    const installLine = "ANTHROPIC_API_KEY is set but @ai-sdk/anthropic is not installed in this app; install it (`npm install ai@^6 @ai-sdk/anthropic@^3`).";
+    const installLine = "ANTHROPIC_API_KEY is set but @ai-sdk/anthropic is not installed in this app; install it (`npm install @ai-sdk/anthropic@^3`).";
     expect(buildFailureReason(new VendoError("validation", "model could not produce a valid app", [
       `model generation failed: ${installLine}`,
     ]))).toEqual({ reason: installLine, retryable: false });

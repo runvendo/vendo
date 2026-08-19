@@ -1,6 +1,6 @@
 {
   "name": "@vendoai/knowledge",
-  "version": "0.32.0",
+  "version": "0.33.0",
   "description": "The product knowledge base: KnowledgeAdapter engines (local, cloud client, BYO HTTP) and ingestion, behind core's frozen contract.",
   "keywords": [
     "ai",
@@ -49,7 +49,7 @@
     "zod": "^3.25.0"
   },
   "peerDependencies": {
-    "ai": ">=6.0.0 <7",
+    "ai": ">=6.0.0 <8",
     "zod": ">=3.25.0 <5"
   },
   "devDependencies": {

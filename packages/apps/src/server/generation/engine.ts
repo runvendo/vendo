@@ -15,7 +15,7 @@ import {
 import {
   type AppDocument,
 } from "../../contract/index.js";
-import type { LanguageModel, ModelMessage } from "ai";
+import type { LanguageModel, SystemModelMessage } from "ai";
 import type { FloorDependencies } from "../checking/deps.js";
 import { modelCallParams } from "../runtime/model-params.js";
 
@@ -53,16 +53,17 @@ export type GeneratedAppDocument = Omit<AppDocument, "id">;
 // no-op off-Anthropic.
 const CACHE_BREAKPOINT = { anthropic: { cacheControl: { type: "ephemeral" } } } as const;
 
-/** The generation prompt as a two-message model prompt with the stable prefix
- *  (role, dialect, component menu, host tools, design rules) marked cacheable.
- *  The system message is the END of the stable prefix — identical across
- *  back-to-back generations for a deployment — so Anthropic re-reads it from
- *  cache instead of re-billing it. The user message is the per-request variable
- *  tail, deliberately left OUT of the cached prefix. */
-export const cacheableGenerationMessages = (system: string, prompt: string): ModelMessage[] => [
-  { role: "system", content: system, providerOptions: CACHE_BREAKPOINT },
-  { role: "user", content: prompt },
-];
+/** The generation prompt's stable prefix (role, dialect, component menu, host
+ *  tools, design rules), marked cacheable. It is identical across back-to-back
+ *  generations for a deployment, so Anthropic re-reads it from cache instead of
+ *  re-billing it; the per-request `prompt` is the variable tail, deliberately
+ *  left OUT of the cached prefix.
+ *
+ *  It travels as `system` rather than as a system-role message inside
+ *  `messages`: ai@7 rejects the latter (AI_InvalidPromptError), and both majors
+ *  carry this message form — breakpoint and all — to the provider unchanged. */
+export const cacheableGenerationSystem = (system: string): SystemModelMessage =>
+  ({ role: "system", content: system, providerOptions: CACHE_BREAKPOINT });
 
 /**
  * One model call, text accumulated off the stream — the answer lands whole or
@@ -88,7 +89,8 @@ export const askModel = async (
     let streamError: unknown;
     const result = streamText({
       model,
-      messages: cacheableGenerationMessages(system, prompt),
+      system: cacheableGenerationSystem(system),
+      prompt,
       ...modelCallParams(model),
       maxRetries: 0,
       onError: ({ error }) => { streamError = error; },

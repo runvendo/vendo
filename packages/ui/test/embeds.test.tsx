@@ -256,7 +256,7 @@ describe("existing-agents embeds", () => {
       'query "spendingDataReduce" names unknown tool "spending.data.reduce"; the host tools are:'
       + " host_getAccounts, host_listScheduledPayments, host_listInvoices",
       "ANTHROPIC_API_KEY is set but @ai-sdk/anthropic is not installed in this app;"
-      + " install it (`npm install ai@^6 @ai-sdk/anthropic@^3`).",
+      + " install it (`npm install @ai-sdk/anthropic@^3`).",
       "the build never finished — the server-side build task stalled or died without reporting a"
       + " failure. Retry the request; if this repeats, check the host server log.",
     ];
