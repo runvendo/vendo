@@ -56,6 +56,14 @@ Return `[]` for a caller who belongs to nothing. Leave the seam off entirely and
 nothing is asserted: sharing degenerates to plain ownership, no org owns a
 workspace, and there are no org pools to count.
 
+### …or let Cloud keep the directory
+
+Writing and maintaining this query is real work. [Tenants](/users-orgs/tenants)
+is Vendo Cloud keeping that roster for you — with `VENDO_API_KEY` set and no
+`auth.memberships` of your own, the SDK asks the directory instead. Set
+`auth.memberships` and your assertion wins, always; the directory is never
+consulted.
+
 ---
 
 ## Asserted, never stored
