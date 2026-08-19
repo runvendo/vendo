@@ -103,7 +103,7 @@ export default function Page() {
 
     const synced = await vendoSync({ root, out: join(root, ".vendo") });
     expect(synced.remixableErrors).toEqual([]);
-    expect(synced.pins).toEqual({ captured: ["MapleNetWorthCard"], drifted: [] });
+    expect(synced.pins).toEqual({ captured: ["MapleNetWorthCard"], drifted: [], ported: ["MapleNetWorthCard"] });
     const baseline = seedBaselineSchema.parse(JSON.parse(
       await readFile(join(root, ".vendo", "remixable", "MapleNetWorthCard.json"), "utf8"),
     ));
@@ -181,7 +181,7 @@ export default function Page() {
 `);
 
     const synced = await vendoSync({ root, out: join(root, ".vendo") });
-    expect(synced.pins).toEqual({ captured: ["MapleNetWorthCard"], drifted: [] });
+    expect(synced.pins).toEqual({ captured: ["MapleNetWorthCard"], drifted: [], ported: ["MapleNetWorthCard"] });
     // Sync always writes exportable: false now; raise it by hand to prove the
     // apps-side export gate still honors an exportable (legacy) baseline.
     const baselineFile = join(root, ".vendo", "remixable", "MapleNetWorthCard.json");

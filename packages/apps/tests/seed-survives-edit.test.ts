@@ -39,23 +39,21 @@ const captured = JSON.parse(
   readFileSync("../../examples/demo-bank/.vendo/remixable/NetWorthView.json", "utf8"),
 ) as SeedBaseline;
 
-/** The real capture has NO ported half — `NetWorthView` uses `<svg>` and
- *  browser globals, which the splitter refuses — and a splitter's refusal is
- *  not this file's to overrule. The ported half here is the fixture screen
- *  `seed.test.ts` seeds from, and DELIBERATELY shares not one byte with the
- *  capture, so "nothing of the capture reaches the remix" keeps meaning what
- *  it says against the host's real 10KB of source. */
+/** The ported half here is the fixture screen `seed.test.ts` seeds from, and
+ *  DELIBERATELY shares not one byte with the capture — not because the capture
+ *  lacks a port (it has one now), but so "nothing of the capture reaches the
+ *  remix" keeps meaning what it says against the host's real 10KB of source. */
 const portable: SeedBaseline = { ...captured, ported: { source: FIXTURE_SCREEN, tools: [], holes: [] } };
 
 /** The gesture's own edit really runs here — the mint and the first edit are one
  *  operation, so a fixture that skipped the edit would test half of it. */
-const runtime = (store = memoryStore(), baseline: SeedBaseline = portable) => {
+const runtime = (store = memoryStore(), baseline: SeedBaseline = portable, catalog: NormalizedCatalog = []) => {
   let built: AppsRuntime;
   built = createApps({
     store,
     guard: guardFixture(),
     tools,
-    catalog: [],
+    catalog,
     seedBaselines: [baseline],
     model: basicLanguageModel(),
     screen: scriptedScreenAssembler(
@@ -74,17 +72,24 @@ const floorDeps = (): FloorDependencies => ({
 
 describe("a seeded app survives its own edit door", () => {
   /**
-   * The capture as the demo REALLY ships it holds no ported half, and the ✦
-   * gesture refuses it before anything is minted — loudly, naming the component
-   * and the report that says why. Whether an unported component should instead
-   * fall back to a from-scratch build (the pre-splitter behavior) is an open
-   * product decision; this pins what the code does today, on the real bytes.
+   * The capture as the demo REALLY ships it now carries a ported half — the
+   * carver cut its SVG chart and its count-up hook home as holes (AreaChart,
+   * NetWorthViewCountUp) and the gauntlet blessed what remained — so the ✦ on
+   * the real bytes SEEDS. (This test used to pin the refusal, back when NetWorthView
+   * could not port; it moves with the contract it always guarded: the gesture
+   * answers honestly for what the splitter really produced.) The floor is
+   * given the holes the wiring would register, exactly as a wired host's
+   * runtime catalog carries them.
    */
-  it("refuses the ✦ on the real capture, which nothing could port", async () => {
-    await expect(runtime(memoryStore(), captured).seed.from(
+  it("seeds the ✦ on the real capture, which the splitter genuinely ported", async () => {
+    expect(captured.ported).toBeDefined();
+    const holes = (captured.ported?.holes ?? []).map((name) => ({ name, description: "" }));
+    const app = await runtime(memoryStore(), captured, holes as NormalizedCatalog).seed.from(
       { component: captured.slot, instruction: "show the balance as a sparkline" },
       owner,
-    )).rejects.toThrow(/has no ported source/u);
+    );
+    expect(app.seed?.component).toBe(captured.slot);
+    expect(app.buildFailed).toBeUndefined();
   });
 
   /**

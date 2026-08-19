@@ -207,7 +207,7 @@ describe("the ✦ fork seeds the splitter's port into both stores", () => {
       // ONLY in the port. If the workspace held nothing, this answers "There is
       // no file to edit yet"; if it held a regenerated screen, it answers "That
       // text is not in the file". Both are the bug this test exists for.
-      () => call("edit_app", { find: PORT_ONLY, replace: PORT_EDITED }, "e1"),
+      () => call("edit_app", { edits: [{ find: PORT_ONLY, replace: PORT_EDITED }] }, "e1"),
       () => speak("Tightened the heading."),
     ]);
 
@@ -261,7 +261,7 @@ describe("the ✦ fork seeds the splitter's port into both stores", () => {
     // partly-updated screen, which is recoverable through history and is not
     // what this pins.
     const seeded = await deployment([baselineWith(PORT)], [
-      () => call("edit_app", { find: PORT_ONLY, replace: PORT_EDITED }, "e1"),
+      () => call("edit_app", { edits: [{ find: PORT_ONLY, replace: PORT_EDITED }] }, "e1"),
       () => speak("Tightened the heading."),
     ]);
     const app = await seeded.vendo.apps.seed.from(
@@ -300,13 +300,13 @@ describe("the ✦ fork seeds the splitter's port into both stores", () => {
     // publishes a replay source, so an ordinary edit has nothing to take: it
     // must open the screen the person is looking at, never the pristine port.
     const seeded = await deployment([baselineWith(PORT)], [
-      () => call("edit_app", { find: PORT_ONLY, replace: PORT_EDITED }, "e1"),
+      () => call("edit_app", { edits: [{ find: PORT_ONLY, replace: PORT_EDITED }] }, "e1"),
       () => speak("Tightened the heading."),
       // The ordinary edit that follows. Its `find` is the text the FIRST edit
       // wrote, which exists only in the person's screen — if the replace path
       // had fired, the workspace would hold the pristine port and this would
       // come back "That text is not in the file".
-      () => call("edit_app", { find: PORT_EDITED, replace: 'text="Mine, twice over"' }, "e2"),
+      () => call("edit_app", { edits: [{ find: PORT_EDITED, replace: 'text="Mine, twice over"' }] }, "e2"),
       () => speak("Done."),
     ]);
     const app = await seeded.vendo.apps.seed.from(
