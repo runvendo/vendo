@@ -1,0 +1,148 @@
+/**
+ * The standalone agent's conversation, in a page — one `agentHandler()` mount,
+ * stock `useChat`, nothing of its own kept in the browser.
+ *
+ * It is `useVendoThread`'s thinner sibling: no provider, no client, no embed
+ * chrome, no situation channel — just the transport, the thread id round-trip,
+ * and the two things a host has to render for an agent that asks permission.
+ *
+ * NOTHING IS STORED HERE. The conversation's id round-trips on the response
+ * header and is handed back through `onThreadId` for the host to keep wherever
+ * it already keeps route state; the transcript — pending approvals included —
+ * is read back from the server, which is what makes `interruptions` survive a
+ * reload without this hook owning a byte of browser storage.
+ */
+import type { Decisions, Interruption, Json } from "@vendoai/core";
+import { useChat } from "@ai-sdk/react";
+import {
+  DefaultChatTransport,
+  getToolName,
+  isToolUIPart,
+  lastAssistantMessageIsCompleteWithApprovalResponses,
+  type UIMessage,
+} from "ai";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+
+/** Written out rather than imported, for the reason `use-vendo-thread.ts` (its
+    own copy) states: the literal is defined in @vendoai/harnesses beside the
+    wire that stamps it, and @vendoai/ui may depend on core and apps alone
+    (scripts/dependency-guard.mjs). */
+const THREAD_ID_HEADER = "x-vendo-thread-id";
+
+export interface UseVendoChatOptions {
+  /** Where `agentHandler()` is mounted — `"/api/agent"`. */
+  api: string;
+  /** Reopen this conversation; omit for a new one. */
+  threadId?: string;
+  /** The id the server minted, the moment it lands. Keep it where your app
+   *  already keeps route state — this hook keeps nothing. */
+  onThreadId?: (threadId: string) => void;
+}
+
+export function useVendoChat({ api, threadId, onThreadId }: UseVendoChatOptions) {
+  const base = api.replace(/\/$/, "");
+  // The live id: a ref because the transport closure reads it per request, and
+  // state because the caller renders it.
+  const activeThreadId = useRef(threadId);
+  const [effectiveThreadId, setEffectiveThreadId] = useState(threadId);
+  const announce = useRef(onThreadId);
+  announce.current = onThreadId;
+
+  const transport = useMemo(
+    () =>
+      new DefaultChatTransport<UIMessage>({
+        api: `${base}/threads`,
+        fetch: async (input, init) => {
+          const response = await globalThis.fetch(input, init);
+          const returned = response.headers.get(THREAD_ID_HEADER);
+          if (returned !== null && returned !== activeThreadId.current) {
+            activeThreadId.current = returned;
+            setEffectiveThreadId(returned);
+            announce.current?.(returned);
+          }
+          return response;
+        },
+        prepareSendMessagesRequest: ({ messages }) => {
+          const message = messages.at(-1);
+          if (message === undefined) throw new Error("Cannot send an empty Vendo turn.");
+          const id = activeThreadId.current;
+          return { body: { ...(id === undefined ? {} : { threadId: id }), message } };
+        },
+      }),
+    [base],
+  );
+
+  const chat = useChat<UIMessage>({
+    ...(threadId === undefined ? {} : { id: threadId }),
+    messages: [],
+    transport,
+    // The parked turn resumes SERVER-side once every requested approval has an
+    // answer: the SDK sends the decided messages back, and the agent re-dispatches
+    // the approved call. That is why `resume` below only has to record answers.
+    sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithApprovalResponses,
+  });
+
+  const { setMessages } = chat;
+  // Reopening reads the transcript back through the mount's own route, which is
+  // the whole durability story: an approval parked before a reload comes back in
+  // the messages, so `interruptions` below is populated again with no client
+  // state to have lost.
+  useEffect(() => {
+    if (threadId === undefined) return undefined;
+    let active = true;
+    void globalThis
+      .fetch(`${base}/threads/${encodeURIComponent(threadId)}`)
+      .then(response => (response.ok ? response.json() as Promise<{ messages: UIMessage[] }> : undefined))
+      .then(thread => {
+        if (active && thread !== undefined) setMessages(thread.messages);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [base, threadId, setMessages]);
+
+  /** What this conversation is waiting on a person for, in the vocabulary the
+   *  server speaks (`Interruption`) rather than the SDK's part shape. */
+  const interruptions = useMemo<Interruption[]>(() => {
+    const pending: Interruption[] = [];
+    for (const message of chat.messages) {
+      for (const part of message.parts) {
+        if (!isToolUIPart(part) || part.state !== "approval-requested") continue;
+        pending.push({
+          id: part.approval.id,
+          type: "approval",
+          toolCall: { id: part.toolCallId, tool: getToolName(part), args: part.input as Json },
+        });
+      }
+    }
+    return pending;
+  }, [chat.messages]);
+
+  const { addToolApprovalResponse } = chat;
+  /** Answer what the turn is waiting on, keyed by {@link Interruption.id}. */
+  const resume = useCallback(
+    async (decisions: Decisions): Promise<void> => {
+      for (const [id, decision] of Object.entries(decisions)) {
+        // v1 mints the approval arm only — `input` is wire-defined and unemitted
+        // (packages/core/src/turn-result.ts) — so an `{ answers }` decision has
+        // no interruption here to answer.
+        if (decision !== "approve" && decision !== "deny") continue;
+        await addToolApprovalResponse({ id, approved: decision === "approve" });
+      }
+    },
+    [addToolApprovalResponse],
+  );
+
+  return {
+    threadId: effectiveThreadId,
+    messages: chat.messages,
+    sendMessage: chat.sendMessage,
+    status: chat.status,
+    error: chat.error,
+    /** Pending, and durable across a reload — read back from the server. */
+    interruptions,
+    resume,
+    stop: chat.stop,
+  };
+}

@@ -26,6 +26,9 @@ export { awayRunner, type AwayRunnerDeps, type RunOptions } from "./away.js";
 /** The turn a verb hands back, and the two shapes a caller writes against it. */
 export type { ChatOptions, RunEvent, Turn } from "./turn.js";
 export { DOOR_PATH, type DoorConfig } from "./door.js";
+/** One mount for the whole agent — the chat wire, the thread lifecycle, and the
+ *  door and permission planes it already serves. */
+export { agentHandler, type HandlerOptions, type HandlerUser } from "./handler.js";
 export { PERMISSIONS_PATH, type AgentPrincipal } from "./permissions.js";
 export { assemblePrompt, type PromptInput, type SystemPromptHook } from "./prompt.js";
 export type { AgentSession, ApprovalEvent, RespondOptions, SessionOptions } from "./session.js";

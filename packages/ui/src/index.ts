@@ -15,6 +15,8 @@ export {
 } from "./client.js";
 export { VendoProvider, hostComponentMap, useVendoProvider, useVendoDiscoverability, useVendoGreeting, useVendoTheme, useVendoThemeOrDefault, useVendoTools, type ConnectorOption, type HostComponentsInput } from "./context.js";
 export { useVendoNavigate, useVendoRoutes } from "./routes.js";
+/** The standalone agent's conversation — one `agentHandler()` mount, no embed. */
+export { useVendoChat, type UseVendoChatOptions } from "./use-vendo-chat.js";
 export { defaultVendoGreeting, type VendoDiscoverability, type VendoGreeting } from "./chrome/discoverability.js";
 export type { ToolMeta, ToolMetaMap } from "./chrome/humanize.js";
 export type { VendoAppEmbedProps, VendoApprovalEmbedProps, VendoApprovalEmbedState, VendoToolResultProps } from "./embeds.js";
