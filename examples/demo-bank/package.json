@@ -13,6 +13,7 @@
     "mcp:agent": "tsx scripts/mcp-stock-agent.ts",
     "seed:console": "tsx scripts/seed-console.ts",
     "lint": "eslint",
+    "pretest": "vendo sync . --no-ai",
     "test": "vitest run"
   },
   "dependencies": {
