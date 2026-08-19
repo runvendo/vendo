@@ -116,25 +116,83 @@ it.
 
 ## Building on a file
 
-Ask for a dashboard of a spreadsheet and the agent builds an app, copying what
-it needs — the rows of a table become the app's own saved items.
+**There is nothing to wire here.** No API to call, no option to set, no flag to
+turn on. Once a file can get in, your users have this — it is the agent using
+the read tools it already has, and the only code involved is the code that puts
+the file there in the first place.
 
-Saved items are the app's **own** storage, not a second window onto the drawer.
-An app keeps only the collections it declares, each one apart from every other
-app's, and the agent is what reads and writes them. The drawer is untouched by
-any of it — the agent can list and read a user's files, and has no tool that
-writes one.
+So the way to understand it is to watch it. This is a real run against Maple,
+the demo bank.
+
+A user drops `store_sales.csv` on the thread and asks about it:
+
+```text
+Here is my store sales export. Using ONLY this file: how many units did the
+Hakodate store sell, and what is the total units_sold across every store?
+
+    Read a file you shared
+
+Hakodate (S-103): 6,094 units sold
+Total units_sold across all stores:
+4,173 + 2,856 + 6,094 + 1,287 + 3,521 = 17,931 units
+```
+
+The upload saved the file on the way in; the agent read it to answer. Nothing
+about that turn was configured. Then they ask for an app:
+
+```text
+Make me a dashboard app of that store sales file — one row per store showing
+the city, units sold and revenue, with the totals.
+
+    Building your view…
+
+    ┌──────────────────────────────────────────────┐
+    │ Store sales                 Pin to dashboard │
+    │ TOTAL UNITS SOLD   17,931                    │
+    │ CITY          UNITS SOLD   REVENUE           │
+    │ Reykjavik          4,173   $318,492.00       │
+    │ Valparaiso         2,856   $201,377.00       │
+    │ Hakodate           6,094   $447,015.00       │
+    │ Trondheim          1,287   $93,664.00        │
+    │ Ouagadougou        3,521   $259,830.00       │
+    └──────────────────────────────────────────────┘
+
+Your store sales dashboard is on your screen — one row per store with city,
+units sold, and revenue, plus totals across all five stores.
+```
+
+Those five rows are now the app's **own saved items**. Saved items are the app's
+own storage, not a second window onto the drawer: an app keeps only the
+collections it declares, each one apart from every other app's, and the agent is
+what reads and writes them. The drawer is untouched by any of it — the agent can
+list and read a user's files, and has no tool that writes one.
 
 That copy is a **snapshot, not a live link**. The app does not read the user's
-files afterwards, and nothing re-reads them on its behalf.
+files afterwards, and nothing re-reads them on its behalf. Which is what makes
+the next turn the interesting one. Months later, a new export — same name, six
+stores now instead of five:
 
-Say a user drops `sales-2026.csv` — eleven rows, one per month through November
-— and asks for a dashboard. The agent builds one over those eleven. In December
-they upload `sales-2026.csv` again, now twelve rows: the drawer's copy is
-replaced, and the dashboard still holds the eleven it was built from. It holds
-them until the person asks for a refresh. The agent then reads the new file,
-rewrites the app's saved items to the twelve, and answers in words — the file
-was replaced, the app updated. What changed is the app and what it has saved.
+```text
+I just updated that same file — here is the new version. Read it again, tell me
+how many units Hakodate sold NOW, list the file names you have for me, and then
+refresh the dashboard you built.
+
+    See the files you shared · 1 file
+    Read a file you shared
+
+Hakodate now sold 7,776 units (Q4, up from 6,094 in Q3).
+The only file I have on record for you is store_sales.csv — 6 stores now, a
+new Montevideo store was added.
+
+    Make you a screen
+
+Dashboard refreshed — it now shows all 6 stores for Q4.
+```
+
+Two things changed, and both are storage. The drawer's `store_sales.csv` **is**
+the new file — same name, last write wins. And the dashboard's saved items are
+the new six rows, replacing the five it was built from. The agent reports both
+in the reply, which is how the user knows it happened.
 
 <Note>
   **Refresh is the agent's job, never a background sync.** Send a newer
@@ -150,6 +208,16 @@ was replaced, the app updated. What changed is the app and what it has saved.
   but does not reach an app**. Only tabular data is copied into an app. Putting a
   document into an app's own file storage is a follow-up.
 </Warning>
+
+Everything in that run is the agent's. The parts that are **yours** are the ones
+above it, and they are the whole integration:
+
+| To do this | Use |
+| --- | --- |
+| Let a browser you did not build push a file | [`POST /files`](#where-files-go) |
+| Upload from your own UI | [`client.files.upload`](#from-the-browser) |
+| Put a file at a user from your server | [`putUserFile`](#from-your-own-code) |
+| Let the agent find and read them | [nothing — the two tools ship](#what-the-agent-does-with-it) |
 
 ## Size
 
