@@ -237,6 +237,11 @@ takes `{ id, label, description? }` — the same shape a mount reports, where
 alone cannot separate. A declared slot needs no render, never decays, and beats
 a page report of the same id, so no one's page can rewrite what you authored.
 
+Declaring one makes it a destination, not a display. The pin lands, but a person
+sees what is pinned there only where some page renders a `<VendoSlot>` with that
+id — so a product that renders none still needs to mount one somewhere before a
+pinned dashboard is visible to anybody.
+
 To make a pin land somewhere, name the destination on the provider with
 `pinSlot`. With one slot the panel shows **Pin to dashboard**; with several,
 the same button becomes a picker of your slots.

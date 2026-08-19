@@ -84,6 +84,25 @@ to tell the person.
 Successful calls carry the output twice: as text for the model, and as
 `structuredContent` for your own code.
 
+## Long calls need your opt-in
+
+Your client abandons a `tools/call` after 60 seconds by default, and generating
+a screen with `vendo_make` routinely runs longer. The door beats
+`notifications/progress` every 15 seconds for any call that carries a progress
+token, but the SDK extends the deadline only when you asked it to — so a client
+that receives every frame still gives up at 60 seconds.
+
+Ask for both. `onprogress` is what puts the progress token on the request, and
+`resetTimeoutOnProgress` is what makes the frames count.
+
+```js focus={4}
+const result = await client.callTool(
+  { name: "vendo_make", arguments: args },
+  undefined,
+  { onprogress: () => {}, resetTimeoutOnProgress: true },
+);
+```
+
 ## When ten minutes runs out
 
 A token lasts ten minutes and has no refresh path. An expired one answers `401`

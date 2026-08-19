@@ -61,8 +61,11 @@ const SHIM_URI = "ui://vendo/tree-shim.html";
 const SHIM_MIME_TYPE = "text/html;profile=mcp-app";
 const OPEN_IN_PRODUCT_KIND = "vendo/open-in-product@1";
 const SHIM_THEME_MARKER = "<!--VENDO_MCP_THEME-->";
-/** A stock MCP client abandons a tools/call after 60s and every
- *  notifications/progress resets that clock — vendo_make routinely runs longer. */
+/** A stock MCP client abandons a tools/call after 60s, and a
+ *  notifications/progress extends that deadline only for a client that opted in
+ *  with `resetTimeoutOnProgress` — it defaults to false, so frames arrive and
+ *  the call still dies on time. The door beats regardless, because beating is
+ *  the only half it owns and vendo_make routinely runs longer. */
 const PROGRESS_HEARTBEAT_MS = 15_000;
 
 interface HostIdentity {
