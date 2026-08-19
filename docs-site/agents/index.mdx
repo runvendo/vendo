@@ -360,10 +360,12 @@ Once the use case is `mcp`, two more questions come back on that run for you to
 relay. Who runs the OAuth plumbing: Vendo can host it at a stable
 `yourcompany.mcp.vendo.run` so none of it sits on your human's domain
 (`--posture broker`, and it uses their Vendo Cloud account), or their app can
-serve it itself with zero config (`--posture local`). And whether their own
-backend will call these tools machine to machine, like a nightly job, which
-sets up a service key (`--service-key`). Answer both as flags on the next run;
-3 is always yours.
+serve it itself with zero config (`--posture local`). And, on the local posture
+only, whether their own backend will call these tools machine to machine, like a
+nightly job, which sets up a service key (`--service-key`) — a Cloud-fronted door
+provisions its own, so pairing `--service-key` with `--posture broker` exits `1`
+rather than discarding the key. Answer as flags on the next run; 3 is always
+yours.
 
 1. **`mcp: true` plus the OAuth adapter.** Written by `--use-case mcp`; add it
    to the `createVendo({...})` init wrote otherwise. The door mints its own

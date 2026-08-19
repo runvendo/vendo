@@ -95,13 +95,15 @@ describe("planMcp — the service key", () => {
   // serviceAuth is local-door mechanics: the RFC 8693 exchange lives at the
   // door's own /token, which a broker-fronted door does not serve — and an
   // explicit local serviceAuth beats the env default, so generating one here
-  // would quietly hold the door LOCAL against the posture just chosen.
-  it("generates nothing under broker posture and points at the console instead", () => {
+  // would quietly hold the door LOCAL against the posture just chosen. Cloud
+  // provisions the broker's own key with the tenant, so there is no step here
+  // either: nothing for the operator to create, copy or paste.
+  it("generates nothing and says nothing under broker posture — Cloud provisions the key", () => {
     const broker = plan({ serviceKey: true, posture: "broker" });
     expect(broker.serviceKeyValue).toBeUndefined();
     expect(broker.compositionSource).toContain("mcp: true,");
     expect(broker.compositionSource).not.toContain("serviceAuth");
-    expect(broker.steps.at(-1)).toContain("console's keys page");
+    expect(broker.steps.join("\n")).not.toContain("VENDO_SERVICE_KEY");
   });
 
   it("says nothing about service keys when the answer was no", () => {
@@ -142,12 +144,15 @@ describe("planMcp — the two steps that stay the user's", () => {
 });
 
 describe("planMcp — the sign-in posture", () => {
-  it("prints the operator's two broker lines under broker posture, and nothing under local", () => {
-    expect(plan({ posture: "broker" }).envLines).toEqual([
-      "`VENDO_MCP_BROKER_URL=<your tenant MCP endpoint>`",
-      "`VENDO_MCP_FEDERATION_SECRET=<secret>`",
-    ]);
-    expect(plan().envLines).toEqual([]);
+  // The broker posture used to close on two placeholder environment values the
+  // operator had to go and look up. Cloud reads both itself and provisions the
+  // tenant on first use, so a placeholder printed here is a step that no longer
+  // exists — and a `<secret>` on screen is what made this path feel like setup.
+  it("prints no placeholder environment values under broker posture — Cloud provisions the tenant", () => {
+    const broker = plan({ posture: "broker" }).steps.join("\n");
+    expect(broker).not.toContain("<secret>");
+    expect(broker).not.toMatch(/VENDO_MCP_(BROKER_URL|FEDERATION_SECRET)=/);
+    expect(broker).toContain("provisions the tenant on first use");
   });
 
   // The posture select only appears when a Cloud key is in hand; a keyless run
@@ -176,18 +181,6 @@ describe("mcpStepLines — the closing block reads as steps, not a wall", () => 
       expect(at).toBeGreaterThanOrEqual(0);
       expect(lines.slice(at + 1, at + 1 + detail.length)).toEqual(detail.map((rest) => `   ${rest}`));
     }
-  });
-
-  it("closes with the env values as their own group, and skips the group under local", () => {
-    const broker = plan({ posture: "broker" });
-    const lines = mcpStepLines(broker);
-    const at = lines.indexOf("");
-    // A blank line, one sentence saying where they go, then the values.
-    expect(at).toBeGreaterThan(0);
-    expect(lines[at + 1]).toContain("Set where you deploy");
-    expect(lines.slice(at + 2)).toEqual(broker.envLines.map((env) => `   ${env}`));
-    // Local posture has no env lines, so it gets no group and no blank line.
-    expect(mcpStepLines(plan()).filter((line) => line === "")).toEqual([]);
   });
 });
 

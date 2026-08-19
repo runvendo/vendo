@@ -97,10 +97,12 @@ describe("vendo CLI commands", () => {
 
     // Every option but the models answer, so this stays init's ask pass: it
     // writes nothing and hands back the one question still open. (`--ai` is
-    // absent because the AI-flag test owns it.)
+    // absent because the AI-flag test owns it.) The posture is `local` because
+    // that is the one `--service-key` belongs to — a Cloud-fronted door
+    // provisions its own, and the pair is refused below.
     expect(await main(["init", root, "--agent", "--yes", "--force",
       "--auth", "clerk", "--framework", "next", "--theme", "accent=#7c3bed",
-      "--use-case", "mcp", "--base-url", "https://app.acme.com", "--posture", "broker",
+      "--use-case", "mcp", "--base-url", "https://app.acme.com", "--posture", "local",
       "--service-key", "--no-check"])).toBe(0);
 
     expect(await readdir(root)).toEqual([]); // the ask pass wrote nothing
@@ -161,6 +163,14 @@ describe("vendo CLI commands", () => {
     expect(error.mock.calls.flat().join("\n")).toContain("--posture only applies to --use-case mcp");
     expect(await main(["init", root, "--service-key"])).toBe(1);
     expect(error.mock.calls.flat().join("\n")).toContain("--service-key only applies to --use-case mcp");
+
+    // A Cloud-fronted door provisions its own key, so a key passed here has
+    // nowhere to land. It is refused rather than dropped — the agent relay
+    // sends both answers together, and a discarded one reads as accepted.
+    expect(await main(["init", root, "--use-case", "mcp", "--posture", "broker", "--service-key"])).toBe(1);
+    expect(error.mock.calls.flat().join("\n")).toContain("--service-key does not apply to --posture broker");
+    expect(error.mock.calls.flat().join("\n")).toContain("provisioned with the tenant on first use");
+    expect(error.mock.calls.flat().join("\n")).toContain("https://docs.vendo.run/outside-agents/service-keys-and-broker");
 
     expect(await main(["init", root, "--check", "--no-check"])).toBe(1);
     expect(error.mock.calls.flat().join("\n")).toContain("--check and --no-check answer the same question");
