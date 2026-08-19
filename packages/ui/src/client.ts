@@ -6,7 +6,9 @@
  * implementation lives in client-impl.ts (lane A).
  */
 import {
+  type AccessLevel,
   type AppDocument,
+  type AppGrantRecord,
   type AppId,
   type ApprovalDecision,
   type ApprovalId,
@@ -123,6 +125,19 @@ export interface VendoClient {
     exportApp(id: AppId): Promise<Uint8Array>;
     importApp(bytes: Uint8Array): Promise<AppDocument>;
     fork(id: AppId): Promise<AppDocument>;
+    /**
+     * Build contract §9.2 — the ✦ share toggle's transport. `grants` reads the
+     * app's grant list, the caller's own level, AND the caller's memberships
+     * (projected off the ctx), so ONE round trip tells the menu which tenant to
+     * name and whether the share is already on.
+     */
+    grants(id: AppId): Promise<{
+      level: AccessLevel | null;
+      grants: AppGrantRecord[];
+      orgs: { org: string; display?: string }[];
+    }>;
+    share(id: AppId, principal: string, level: AccessLevel): Promise<{ grants: AppGrantRecord[] }>;
+    unshare(id: AppId, principal: string): Promise<{ grants: AppGrantRecord[] }>;
     /** GET /apps/:id/ship-diff — the reviewable diff vs the captured host baselines (06 §8–§9). */
     shipDiff(id: AppId): Promise<ShipDiff>;
     /** POST /apps/:id/reseed — rebuild the remix against the host's current

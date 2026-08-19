@@ -159,7 +159,7 @@ export function createVendoClient(config: VendoClientConfig): VendoClient {
     return (await response.json()) as T;
   }
 
-  async function json<T>(path: string, method: "POST" | "PATCH" | "DELETE", body: unknown = {}): Promise<T> {
+  async function json<T>(path: string, method: "POST" | "PUT" | "PATCH" | "DELETE", body: unknown = {}): Promise<T> {
     return readJson<T>(path, {
       method,
       headers: { "Content-Type": "application/json" },
@@ -246,6 +246,12 @@ export function createVendoClient(config: VendoClientConfig): VendoClient {
           body: bytes as BodyInit,
         }),
       fork: id => json(`/apps/${idPath(id)}/fork`, "POST"),
+      // The principal rides the PATH, percent-encoded — `org:acme` contains a
+      // ":" and, for a team, a "/".
+      grants: id => readJson(`/apps/${idPath(id)}/grants`),
+      share: (id, principal, level) =>
+        json(`/apps/${idPath(id)}/grants/${idPath(principal)}`, "PUT", { level }),
+      unshare: (id, principal) => json(`/apps/${idPath(id)}/grants/${idPath(principal)}`, "DELETE"),
       shipDiff: id => readJson(`/apps/${idPath(id)}/ship-diff`),
       reseed: id => json(`/apps/${idPath(id)}/reseed`, "POST"),
       seedFrom: body => json("/apps/seed", "POST", body),
