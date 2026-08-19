@@ -111,7 +111,7 @@ export function composeTokenFor(
         "validation",
         "vendo.tokenFor exchanges a service key for a user's token, and this door has none: set VENDO_API_KEY "
         + "to let Vendo Cloud provision one, or declare your own — createVendo({ mcp: { serviceAuth: { keys: "
-        + `[process.env.VENDO_MCP_SERVICE_KEY] } } }). ${DOCS}`,
+        + `[process.env.VENDO_SERVICE_KEY!] } } }) — which \`vendo init\` generates into .env.local. ${DOCS}`,
       );
     }
     // The token binds to the door's canonical resource URI, which the door
