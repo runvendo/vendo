@@ -466,21 +466,15 @@ export async function runChannelTurn(
   // Asserted, never stored — one call, like the wire's own resolver. A link is
   // minted for a host subject, so this principal is never the ephemeral visitor
   // that resolver skips the seam for.
-  const memberships = await deps.memberships?.(principal);
-  const ctx: RunContext = {
-    principal,
-    venue: "chat",
-    presence: "present",
-    sessionId: event.eventId,
-    // What authenticates this turn's HOST calls. `presence: "present"` is true —
-    // a person is holding their phone, which is what lets the guard ask them to
-    // approve a payment — but there is no browser request here, so there are no
-    // credentials to forward. Without this the actions layer takes the present
-    // path, calls the host API with nothing, and the agent ends up apologising
-    // for a sign-in problem the person cannot do anything about.
-    channelLink: { channel: "text", linkedAt: link.linkedAt ?? new Date().toISOString() },
-    ...(memberships === undefined ? {} : { memberships }),
-  };
+  //
+  // STARTED here and awaited at the ctx, never in front of it: this is a host
+  // round trip with somebody holding a phone behind it, and the ctx is the only
+  // thing that wants it. A YES that settles a grant set builds no ctx at all, so
+  // that path overlaps the call and then walks away from it — which is why the
+  // rejection is claimed here, the same bargain `harness-turn.ts`'s `stateRead`
+  // makes: a promise nobody awaits still has to land somewhere.
+  const membershipsRead = deps.memberships?.(principal);
+  void membershipsRead?.catch(() => undefined);
   // Every text this function sends by hand is the turn's last word: a card and a
   // grant-set ask are questions the conversation then waits on, and the two set
   // receipts end the turn. Only `streamTexts` has a mid-reply cut to declare, so
@@ -514,6 +508,22 @@ export async function runChannelTurn(
       return;
     }
   }
+
+  const memberships = await membershipsRead;
+  const ctx: RunContext = {
+    principal,
+    venue: "chat",
+    presence: "present",
+    sessionId: event.eventId,
+    // What authenticates this turn's HOST calls. `presence: "present"` is true —
+    // a person is holding their phone, which is what lets the guard ask them to
+    // approve a payment — but there is no browser request here, so there are no
+    // credentials to forward. Without this the actions layer takes the present
+    // path, calls the host API with nothing, and the agent ends up apologising
+    // for a sign-in problem the person cannot do anything about.
+    channelLink: { channel: "text", linkedAt: link.linkedAt ?? new Date().toISOString() },
+    ...(memberships === undefined ? {} : { memberships }),
+  };
 
   // Subscribed BEFORE the turn: a card can be raised inside the first tool
   // call, and a late subscribe would miss it. Scoped to this conversation, so a
@@ -553,7 +563,25 @@ export async function runChannelTurn(
     // The effective thread, reopened or freshly minted — every door that serves
     // a turn stamps the same header.
     const effective = response.headers.get(THREAD_ID_HEADER);
-    if (effective !== null) await deps.links.rememberTurn(link, effective, event.conversationId);
+    // Behind the answer, not in front of it — on a hosted store this write is a
+    // network call, and it has two readers, only one of which can run during the
+    // turn. `vendo_text_me` reads the CONVERSATION off this row (text-me.ts) and
+    // nothing else writes it, so a turn that would CHANGE what it reads — a
+    // phone's first ever, a conversation that has moved — still waits for it. The
+    // other reader is the next text on this conversation, which reads the THREAD
+    // this names; the per-conversation queue cannot start that turn until this
+    // one's promise settles (compose-channels.ts), so landing the write below the
+    // reply is early enough for it.
+    const remembered = effective === null
+      ? undefined
+      : deps.links.rememberTurn(link, effective, event.conversationId);
+    // Claimed the moment it is started, exactly as `membershipsRead` above is: a
+    // deferred write is unawaited for as long as the reply takes to go out, and
+    // Node's default throw-mode kills the host process over a rejection nobody
+    // has reached yet. This marks it handled without swallowing it — the `await`
+    // below the reply still sees the failure.
+    void remembered?.catch(() => undefined);
+    if (link.conversationId !== event.conversationId) await remembered;
     try {
       if (await streamTexts(response, send) === 0) await send(NOTHING_TO_SAY);
     } catch (error) {
@@ -569,6 +597,9 @@ export async function runChannelTurn(
           + `not replayed: ${error instanceof Error ? error.message : String(error)}`,
       });
     }
+    // The reply is out; the next text on this conversation is what still needs
+    // the write, and it cannot start until this returns.
+    await remembered;
     // The next text in this conversation usually arrives inside the provider's
     // cache TTL, so the prefix is warmed once the person already has their
     // reply — never something they wait behind, and a failure costs nothing but
