@@ -31,7 +31,9 @@ export interface WiringParameter { name: string; schema: { type: string }; requi
 
 export interface WiringSlot {
   slot: string;
-  read?: { tool: string; bindings: WiringRef[] };
+  /** `parameters` is the union of the read bindings' declared parameters — the
+   *  allowlist the seed's live props are admitted against. */
+  read?: { tool: string; bindings: WiringRef[]; parameters: WiringParameter[] };
   writes: Array<{ tool: string; binding: WiringRef; parameters: WiringParameter[] }>;
   holes: WiringRef[];
 }
@@ -67,6 +69,12 @@ export function remixWiringSource(slots: readonly WiringSlot[]): string {
     return local;
   };
 
+  /** `{ billId: { type: "string" } }` — a tool's declared input, or `{}`. */
+  const propertiesOf = (parameters: readonly WiringParameter[]): string => {
+    const entries = parameters.map((parameter) => `${parameter.name}: { type: ${JSON.stringify(parameter.schema.type)} }`);
+    return `{${entries.length === 0 ? "" : ` ${entries.join(", ")} `}}`;
+  };
+
   const body: string[] = [];
   for (const entry of slots) {
     const tools: string[] = [];
@@ -79,7 +87,10 @@ export function remixWiringSource(slots: readonly WiringSlot[]): string {
         `      ${entry.read.tool}: {`,
         `        name: ${JSON.stringify(entry.read.tool)},`,
         `        description: ${JSON.stringify(readToolDescription(entry.slot))},`,
-        `        inputSchema: { type: "object", properties: {}, additionalProperties: false },`,
+        // No `required`: the port's own useQuery carries no input — a query is
+        // resolved before the screen renders — so every declared name is
+        // answered out-of-band, by the seed's live props, or not at all.
+        `        inputSchema: { type: "object", properties: ${propertiesOf(entry.read.parameters)}, additionalProperties: false },`,
         `        risk: "read",`,
         `        execute: async () => ({ ${fields.join(", ")} }),`,
         "      },",
@@ -87,7 +98,6 @@ export function remixWiringSource(slots: readonly WiringSlot[]): string {
     }
     for (const { tool, binding, parameters } of entry.writes) {
       const local = localFor(binding);
-      const properties = parameters.map((parameter) => `${parameter.name}: { type: ${JSON.stringify(parameter.schema.type)} }`);
       const required = parameters.filter((parameter) => parameter.required).map((parameter) => JSON.stringify(parameter.name));
       const signature = parameters.map((parameter) =>
         `${parameter.name}${parameter.required ? "" : "?"}: ${parameter.schema.type}`).join("; ");
@@ -95,7 +105,7 @@ export function remixWiringSource(slots: readonly WiringSlot[]): string {
         `      ${tool}: {`,
         `        name: ${JSON.stringify(tool)},`,
         `        description: ${JSON.stringify(writeToolDescription(entry.slot, binding.name))},`,
-        `        inputSchema: { type: "object", properties: { ${properties.join(", ")} }, required: [${required.join(", ")}], additionalProperties: false },`,
+        `        inputSchema: { type: "object", properties: ${propertiesOf(parameters)}, required: [${required.join(", ")}], additionalProperties: false },`,
         `        risk: "write",`,
         `        execute: async (input: { ${signature} }) => ${local}(${parameters.map((parameter) => `input.${parameter.name}`).join(", ")}),`,
         "      },",

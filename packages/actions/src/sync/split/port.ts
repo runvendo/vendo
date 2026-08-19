@@ -33,8 +33,9 @@ export interface PortBinding {
 export interface Port {
   /** Every render-time read, bundled into ONE envelope tool: the engine resolves
    *  a screen's data as one result per tool, so a component's reads have to
-   *  arrive together or they cannot all be served. */
-  read?: { tool: string; bindings: PortBinding[] };
+   *  arrive together or they cannot all be served. `arity` is the widest CALL
+   *  the host component makes of each hook — the same ceiling the writes carry. */
+  read?: { tool: string; bindings: Array<PortBinding & { arity: number }> };
   /** One intent per action binding — reachable only from a handler. `arity` is
    *  the widest CALL the host component actually makes, which is the ceiling on
    *  what the generated tool may accept. */
@@ -166,7 +167,10 @@ export function portComponent(slot: string, source: string, file: string): Port 
     if (ts.isCallExpression(node) && ts.isIdentifier(node.expression)) {
       const called = node.expression.text;
       if (enclosing === component) {
-        if (HOOK_NAME.test(called)) renderCalls.add(called);
+        if (HOOK_NAME.test(called)) {
+          renderCalls.add(called);
+          arity.set(called, Math.max(arity.get(called) ?? 0, node.arguments.length));
+        }
       } else if (inHandler) {
         handlerCalls.add(called);
         // The WIDEST call the component makes is the ceiling on the generated
@@ -204,7 +208,12 @@ export function portComponent(slot: string, source: string, file: string): Port 
   }
 
   return {
-    ...(read.length === 0 ? {} : { read: { tool: readToolName(slot), bindings: read } }),
+    ...(read.length === 0 ? {} : {
+      read: {
+        tool: readToolName(slot),
+        bindings: read.map((binding) => ({ ...binding, arity: arity.get(binding.name) ?? 0 })),
+      },
+    }),
     writes: written.map((binding) =>
       ({ tool: writeToolName(slot, binding.name), binding, arity: arity.get(binding.name) ?? 0 })),
     holes,
@@ -216,29 +225,32 @@ export function portComponent(slot: string, source: string, file: string): Port 
 /**
  * The ported TSX, once the host's signatures are known.
  *
- * Separate from {@link portComponent} because an action shim cannot be written
- * before its host function is resolved: it forwards the call site's arguments
- * under the host's OWN parameter names, so that the generated tool's input is
- * the original call's shape rather than an open bag.
+ * Separate from {@link portComponent} because a shim cannot be written before
+ * its host function is resolved: it keeps the call site's arguments under the
+ * host's OWN parameter names, so that the generated tool's input is the
+ * original call's shape rather than an open bag.
  *
- * `writeParameters` maps a binding name to the parameter names its tool
- * accepts, in order — exactly as wide as the host component's own widest call.
+ * `parameters` maps a binding name to the parameter names its tool accepts, in
+ * order — exactly as wide as the host component's own widest call.
  */
-export function renderPort(port: Port, writeParameters: ReadonlyMap<string, readonly string[]>): string {
+export function renderPort(port: Port, parameters: ReadonlyMap<string, readonly string[]>): string {
   const imported = [
     ...(port.read === undefined ? [] : ["useQuery"]),
     ...(port.writes.length === 0 ? [] : ["tools"]),
     ...port.holes.map((hole) => hole.name),
   ];
+  const signature = (binding: string): string =>
+    (parameters.get(binding) ?? []).map((name) => `${name}: any`).join(", ");
   const shims = [
-    // The call site keeps its arguments so the host's line survives untouched;
-    // the envelope they used to shape is resolved host-side now.
+    // The call site keeps its arguments so the host's line survives untouched.
+    // A query's input is a literal resolved before the component renders, so
+    // nothing here can FORWARD them — the wiring's tool declares the same names
+    // instead, and the seed's live props answer them server-side.
     ...(port.read?.bindings ?? []).map((binding) =>
-      `function ${binding.name}(...args: any[]) { return useQuery(${JSON.stringify(port.read!.tool)})?.${binding.name}; }`),
+      `function ${binding.name}(${signature(binding.name)}) { return useQuery(${JSON.stringify(port.read!.tool)})?.${binding.name}; }`),
     ...port.writes.map(({ tool, binding }) => {
-      const names = writeParameters.get(binding.name) ?? [];
-      const parameters = names.map((name) => `${name}: any`).join(", ");
-      return `async function ${binding.name}(${parameters}) { return tools.${tool}({ ${names.join(", ")} }); }`;
+      const names = parameters.get(binding.name) ?? [];
+      return `async function ${binding.name}(${signature(binding.name)}) { return tools.${tool}({ ${names.join(", ")} }); }`;
     }),
   ];
   const parts = [

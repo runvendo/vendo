@@ -70,9 +70,12 @@ describe("POST /apps/seed — the ✦ gesture over the wire", () => {
       instruction: "rank them by amount",
       slot: "dashboard",
     });
-    // Nothing copies the captured host source into the remix.
+    // The PORT is the app's own source — that is the fork now: the model edits
+    // the component's ported code, and for a component this trivial the port IS
+    // the captured source, byte for byte. What "no captured source" still
+    // guarantees is the bundle: no captured component node lands on the remix.
     expect(app.components?.[seedComponentName(component)]).toBeUndefined();
-    expect(JSON.stringify(app)).not.toContain(source.trim());
+    expect(app.source?.["app.tsx"]?.text).toBe(source);
 
     // The screen is what the first edit generates, tens of seconds after the
     // row lands — here never, because there is no model. A build that cannot

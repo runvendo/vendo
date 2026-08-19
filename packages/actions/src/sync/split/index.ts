@@ -242,8 +242,9 @@ export async function splitSlot(input: SplitInput): Promise<SplitOutcome> {
   }
 
   const issues: string[] = [];
-  /** The parameters each action tool may accept, by binding name. */
-  const writeParameters = new Map<string, HostParameter[]>();
+  /** The parameters each generated tool may accept, by binding name — an action
+   *  tool's input, and a read binding's share of the envelope tool's input. */
+  const toolParameters = new Map<string, HostParameter[]>();
   /** One host binding placed in the wiring file, or the reason it cannot be.
    *  `calls` is the widest call the component makes, for a binding this port
    *  turns into a tool; undefined for a hole, which is never called at all. */
@@ -263,10 +264,25 @@ export async function splitSlot(input: SplitInput): Promise<SplitOutcome> {
     if (calls === undefined) return placed;
 
     const signature = hostSignature(resolved.source, resolved.file, binding.imported);
+    // Reads and writes under ONE law: the tool's input is the host's own
+    // declared parameters, exactly as wide as the component's widest call. For
+    // a write those names are what the tool forwards; for a read they are the
+    // allowlist the seed's live props are admitted against — either way, a
+    // declaration this cannot narrow is a boundary this cannot write.
+    if (signature === null || signature.parameters === null) {
+      issues.push(`it binds ${binding.name}(…), whose declaration in "${binding.specifier}" could not be narrowed to a signature — a generated tool may only accept the host's own parameters, so one that cannot be read is not one this can wire`);
+      return undefined;
+    }
+    const accepted = signature.parameters.slice(0, calls);
+    if (signature.parameters.slice(calls).some((parameter) => parameter.required)) {
+      issues.push(`it calls ${binding.name}() with ${calls} argument(s) but the host declares more required parameters — a generated tool must carry the original call's shape, and this call cannot satisfy the function it names`);
+      return undefined;
+    }
+    toolParameters.set(binding.name, accepted);
     // A READ that is a hook is the normal case, not a failure: the port keeps
     // calling it, and the tool binds the FETCH underneath it. A hook that
     // resolves to no fetch — `useContext(…)` has none — is still refused.
-    if (signature?.hook === true) {
+    if (signature.hook) {
       const read = readSourceOf(resolved.source, resolved.file, binding.imported);
       if (read === null) {
         issues.push(`it binds ${binding.name}(…), a React hook this cannot see a fetch through — the generated tool runs on the server, where the hook itself would throw. Read with a hook that wraps a fetch, or leave this component un-remixable`);
@@ -285,32 +301,35 @@ export async function splitSlot(input: SplitInput): Promise<SplitOutcome> {
         ...(read.key === undefined ? {} : { key: read.key }),
       };
     }
-    if (signature === null || signature.parameters === null) {
-      issues.push(`it binds ${binding.name}(…), whose declaration in "${binding.specifier}" could not be narrowed to a signature — a generated tool may only accept the host's own parameters, so one that cannot be read is not one this can wire`);
-      return undefined;
-    }
-    const accepted = signature.parameters.slice(0, calls);
-    if (signature.parameters.slice(calls).some((parameter) => parameter.required)) {
-      issues.push(`it calls ${binding.name}() with ${calls} argument(s) but the host declares more required parameters — a generated tool must carry the original call's shape, and this call cannot satisfy the function it names`);
-      return undefined;
-    }
-    writeParameters.set(binding.name, accepted);
     return placed;
   };
 
-  // A read's envelope carries NO arguments: `useQuery`'s input must be a
-  // literal resolved before the component renders, so nothing from the call
-  // site reaches it and the host must answer from its own session.
-  const readBindings = await Promise.all((port.read?.bindings ?? []).map((binding) => reference(binding, 0)));
+  // A read's `useQuery` input is a literal resolved before the component
+  // renders, so the call site's arguments cannot ride the source — the tool
+  // DECLARES them instead, and the seed's live props answer them server-side.
+  const readBindings = await Promise.all((port.read?.bindings ?? []).map((binding) => reference(binding, binding.arity)));
   const writes = await Promise.all(port.writes.map(async ({ tool, binding, arity }) => {
     const placed = await reference(binding, arity);
     return placed === undefined ? undefined : { tool, binding: placed };
   }));
   const holes = await Promise.all(port.holes.map((binding) => reference(binding, undefined)));
+  // One envelope tool serves every read binding, so its input is the UNION of
+  // their declared parameters. One name declared with two types is an input
+  // that tool cannot carry, and it is refused by name.
+  const readParameters: HostParameter[] = [];
+  for (const binding of port.read?.bindings ?? []) {
+    for (const parameter of toolParameters.get(binding.name) ?? []) {
+      const already = readParameters.find((entry) => entry.name === parameter.name);
+      if (already === undefined) readParameters.push(parameter);
+      else if (already.schema.type !== parameter.schema.type) {
+        issues.push(`its hooks declare "${parameter.name}" as both ${already.schema.type} and ${parameter.schema.type} — one envelope tool serves every read, and its input cannot carry one name with two types`);
+      }
+    }
+  }
   if (issues.length > 0) return { ok: false, issues };
 
   const source = renderPort(port, new Map(
-    [...writeParameters].map(([name, parameters]) => [name, parameters.map((parameter) => parameter.name)]),
+    [...toolParameters].map(([name, parameters]) => [name, parameters.map((parameter) => parameter.name)]),
   ));
   const hostTools = [
     ...(port.read === undefined ? [] : [{ name: port.read.tool, description: readToolDescription(input.slot), risk: "read" }]),
@@ -344,9 +363,11 @@ export async function splitSlot(input: SplitInput): Promise<SplitOutcome> {
     },
     wiring: {
       slot: input.slot,
-      ...(port.read === undefined ? {} : { read: { tool: port.read.tool, bindings: readBindings as WiringRef[] } }),
+      ...(port.read === undefined ? {} : {
+        read: { tool: port.read.tool, bindings: readBindings as WiringRef[], parameters: readParameters },
+      }),
       writes: (writes as Array<{ tool: string; binding: WiringRef }>).map((write) =>
-        ({ ...write, parameters: writeParameters.get(write.binding.name) ?? [] })),
+        ({ ...write, parameters: toolParameters.get(write.binding.name) ?? [] })),
       holes: holes as WiringRef[],
     },
   };

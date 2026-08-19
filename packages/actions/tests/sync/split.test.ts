@@ -70,6 +70,9 @@ async function dataHookRoot(): Promise<string> {
   // wrapping a fetch, with the key and the fetcher both literal in the source.
   // No plain function wearing a hook's name — that shape cannot exist in real
   // React, and a fixture that cannot exist is the counterparty being mocked.
+  // It DECLARES the parameter its call site passes, for the same reason: a
+  // zero-parameter hook called with an argument is host code that does not
+  // compile, and the declaration is where the generated tool's input comes from.
   await write(root, "src/lib/api-client.ts",
     "export const api = { get: async (path: string) => ({ points: 10 }) };\n");
   await write(root, "src/lib/rewards.ts", `import useSWR from "swr";
@@ -77,7 +80,7 @@ import { api } from "./api-client";
 
 const f = (url: string) => api.get(url);
 
-export const useRewards = () => useSWR("/api/rewards", f);
+export const useRewards = (accountId: string) => useSWR("/api/rewards", f);
 `);
   await write(root, "src/components/RewardsPanel.tsx", `import { useRewards } from "../lib/rewards";
 
@@ -128,7 +131,7 @@ import { api } from "./api-client";
 
 const f = (url: string) => api.get(url);
 
-export const useRewards = () => useSWR("/api/rewards", f);
+export const useRewards = (accountId: string) => useSWR("/api/rewards", f);
 `);
   await write(root, "src/components/RewardsPanel.tsx", `import { useRewards } from "../lib/rewards";
 
@@ -204,7 +207,11 @@ describe("the splitter", () => {
     expect(rewards.ported?.tools).toEqual(["rewards_panel_data"]);
     expect(rewards.ported?.holes).toEqual([]);
     expect(rewards.ported?.source).toContain("const rewards = useRewards(accountId);");
-    expect(rewards.ported?.source).toContain(`function useRewards(...args: any[]) { return useQuery("rewards_panel_data")?.useRewards; }`);
+    // The shim is exactly as wide as the hook the host declared — the same law
+    // as the write shim below. An open `...args` bag would let a remix call the
+    // read with any arity, and it is also the declaration the generated tool's
+    // input schema comes from.
+    expect(rewards.ported?.source).toContain(`function useRewards(accountId: any) { return useQuery("rewards_panel_data")?.useRewards; }`);
 
     // 3. action — an intent, reachable only from a handler.
     const bill = await baselineFor(root, "BillRow");
@@ -274,14 +281,10 @@ describe("the splitter", () => {
         source: ported!.source,
         hostTools: wired.tools.map((tool) => ({ ...tool, description: `${tool.name} description` })),
         catalog: wired.holes,
-        // SYNC's configuration for a ported screen, NOT the runtime's — and
-        // this line is the thing it warns about. `ported` is what puts
-        // `className` in the dialect, but the real floor cannot pass the flag
-        // (`apps/src/server/checking/floor.ts:174`; `AppFloorOptions` has no
-        // dialect slot), so a port carrying a class goes green here and is
-        // refused at `seed.from` and on every edit. Known unfixed bug — the fix
-        // is named on `portedScreenDialect` in `sync/split/index.ts`. Until it
-        // lands, what this assertion proves is that sync agrees with ITSELF.
+        // The same dialect the runtime floor derives off the row's `seed`
+        // (`PORTED_SCREEN_DIALECT`) — `ported` is what puts `className` in the
+        // dialect, and `remix-port-dialect.test.ts` is the seam that catches the
+        // two graders disagreeing.
         ported: true,
         runQuery: async () => null,
       });
@@ -308,7 +311,7 @@ export const remixWiring = {
       rewards_panel_data: {
         name: "rewards_panel_data",
         description: "Read the data the RewardsPanel remixable component renders.",
-        inputSchema: { type: "object", properties: {}, additionalProperties: false },
+        inputSchema: { type: "object", properties: { accountId: { type: "string" } }, additionalProperties: false },
         risk: "read",
         execute: async () => ({ useRewards: await api.get("/api/rewards") }),
       },
@@ -337,6 +340,34 @@ export const useRewards = () => useContext(RewardsContext);
 
     expect((await baselineFor(root, "RewardsPanel")).ported).toBeUndefined();
     expect(result.warnings).toEqual([expect.stringContaining("a React hook this cannot see a fetch through")]);
+  }, 120_000);
+
+  it("refuses a read whose hook declares a parameter the tool cannot carry — same law as the writes", async () => {
+    const root = await dataHookRoot();
+    // The read tool's input schema is the hook's own declared parameters — that
+    // declaration is the allowlist the call site's live props are admitted
+    // against. A parameter this cannot narrow (an object) is a boundary this
+    // cannot write, and a boundary written as "anything" would be wider than
+    // the call the component already makes.
+    await write(root, "src/lib/rewards.ts", `import useSWR from "swr";
+import { api } from "./api-client";
+
+const f = (url: string) => api.get(url);
+
+export const useRewards = (filter: { region: string }) => useSWR("/api/rewards", f);
+`);
+    await write(root, "src/components/RewardsPanel.tsx", `import { useRewards } from "../lib/rewards";
+
+export function RewardsPanel({ accountId }: { accountId: string }) {
+  const rewards = useRewards({ region: accountId });
+  return <section><h2>Rewards</h2><p>{rewards?.points ?? 0}</p></section>;
+}
+`);
+
+    const result = await capturePins(root, path.join(root, ".vendo"));
+
+    expect((await baselineFor(root, "RewardsPanel")).ported).toBeUndefined();
+    expect(result.warnings).toEqual([expect.stringContaining("could not be narrowed to a signature")]);
   }, 120_000);
 
   it("never mistakes a render callback for a handler: a pure helper in .map() is refused, not made an intent", async () => {

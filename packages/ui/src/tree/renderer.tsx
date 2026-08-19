@@ -624,13 +624,16 @@ function generatedContent(context: NodeContent): ReactNode {
 }
 
 /** Which implementation wins for a built-in node. An explicit `source: "host"`
- *  means the host brand won the name. An undefined (or "prewired") source keeps
- *  the built-in first, so a stored app whose node collides with a host catalog
- *  name still renders the built-in it was written against. */
+ *  means the host brand won the name. A `"ported"` node's names are the host's
+ *  own — its `LineChart` is the npm chart the wiring registered as a hole, and
+ *  resolved built-in-first it became the Kit's, which throws on that chart's
+ *  props. An undefined (or "prewired") source keeps the built-in first, so a
+ *  stored app whose node collides with a host catalog name still renders the
+ *  built-in it was written against. */
 function resolveBuiltin(node: TreeNode, components: NodeRendererProps["components"]): ComponentType<Record<string, unknown>> | undefined {
   const kit = (KIT_COMPONENTS[node.component] ?? DISPLAY_BRICKS[node.component]) as ComponentType<Record<string, unknown>> | undefined;
   const host = components[node.component] as ComponentType<Record<string, unknown>> | undefined;
-  return node.source === "host" ? host ?? kit : kit ?? host;
+  return node.source === "host" || node.source === "ported" ? host ?? kit : kit ?? host;
 }
 
 /**
