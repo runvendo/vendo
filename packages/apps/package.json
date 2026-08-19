@@ -50,17 +50,18 @@
   },
   "files": [
     "dist",
+    "quickjs.wasm",
     "README.md",
     "box"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && node -e \"require('node:fs').copyFileSync(require.resolve('@jitl/quickjs-wasmfile-release-sync/wasm'), 'quickjs.wasm')\"",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "@jitl/quickjs-singlefile-browser-release-sync": "^0.32.0",
+    "@jitl/quickjs-wasmfile-release-sync": "^0.32.0",
     "@vendoai/core": "workspace:*",
     "acorn": "^8.15.0",
     "croner": "^9.0.0",
@@ -75,7 +76,6 @@
   },
   "peerDependencies": {
     "@anthropic-ai/claude-agent-sdk": ">=0.3.0 <1",
-    "@jitl/quickjs-wasmfile-release-sync": "^0.32.0",
     "ai": ">=6.0.0 <7",
     "e2b": "^2.32.0",
     "sucrase": "^3.35.0",
@@ -85,9 +85,6 @@
   },
   "peerDependenciesMeta": {
     "@anthropic-ai/claude-agent-sdk": {
-      "optional": true
-    },
-    "@jitl/quickjs-wasmfile-release-sync": {
       "optional": true
     },
     "ai": {
@@ -108,7 +105,7 @@
   },
   "devDependencies": {
     "@ai-sdk/anthropic": "3.0.12",
-    "@jitl/quickjs-wasmfile-release-sync": "^0.32.0",
+    "@jitl/quickjs-singlefile-browser-release-sync": "^0.32.0",
     "@types/node": "^22.0.0",
     "ai": "6.0.28",
     "e2b": "^2.32.0",
@@ -117,5 +114,11 @@
     "typescript": "^5.6.0",
     "typescript-6": "npm:typescript@6.0.3",
     "vitest": "^3.2.6"
+  },
+  "imports": {
+    "#engine/wasm": {
+      "node": "./dist/contract/genui/wasm-node.js",
+      "default": "./dist/contract/genui/wasm-browser.js"
+    }
   }
 }

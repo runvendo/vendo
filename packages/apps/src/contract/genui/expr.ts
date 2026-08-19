@@ -50,6 +50,7 @@ import type { Expression, Node } from "acorn";
 import type { QuickJSContext, QuickJSRuntime, QuickJSWASMModule } from "quickjs-emscripten-core";
 import { isFail, newQuickJSWASMModuleFromVariant } from "quickjs-emscripten-core";
 import type { Json } from "@vendoai/core";
+import { stockVariant } from "./variant.js";
 
 /** A computed binding value; the string is the expression source. */
 export interface ExprBinding {
@@ -252,15 +253,11 @@ let held: { data: object; context: QuickJSContext } | null = null;
  * `undefined`, which is exactly how it reads while its query data is still in
  * flight, and the boot races a network round-trip it reliably wins.
  *
- * The variant is the SINGLE-FILE BROWSER build: the WebAssembly rides inside
- * the JavaScript, so no host bundler has to be taught to emit a `.wasm`
- * asset, and it reaches for no Node builtin — which is what makes it the ONE
- * variant for both venues (the `-mjs-` build imports `node:module` and dies in
- * a browser bundle; this one runs in Node too).
+ * The variant is the engine's own — ./variant.ts, one build and one set of
+ * WebAssembly bytes for the screen engine and for this.
  */
 export async function warmExprRuntime(): Promise<void> {
-  booting ??= import("@jitl/quickjs-singlefile-browser-release-sync")
-    .then((module) => newQuickJSWASMModuleFromVariant(module.default));
+  booting ??= newQuickJSWASMModuleFromVariant(stockVariant());
   const quickjs = await booting;
   runtime ??= quickjs.newRuntime();
   runtime.setMemoryLimit(EXPR_MEMORY_LIMIT_BYTES);

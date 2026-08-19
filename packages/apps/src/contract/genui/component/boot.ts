@@ -36,6 +36,7 @@ import {
   type QuickJSHandle,
   type QuickJSWASMModule,
 } from "quickjs-emscripten-core";
+import { stockVariant } from "../variant.js";
 import { wallClockBudget, type ScreenTurn, type TurnLimit } from "./budget.js";
 import { SCREEN_RUNTIME, installSource, sealSource } from "./vm-program.js";
 import {
@@ -82,19 +83,18 @@ let wasm: QuickJSWASMModule | null = null;
  * Load the WebAssembly. Running a screen is synchronous — this one-time load is
  * not, so a caller awaits it once before the first {@link bootScreen}.
  *
- * The default variant is the SINGLE-FILE BROWSER build, for `$expr`'s reason:
- * the WebAssembly rides inside the JavaScript, so no host bundler has to be
- * taught to emit a `.wasm`, and it reaches for no Node builtin. The import stays
- * a literal specifier because `@vendoai/ui` depends on a bundler inlining it.
+ * The default variant is the WASMFILE build with the WebAssembly handed in as
+ * bytes — ../variant.ts holds it and says why the bytes may not ride inside the
+ * JavaScript.
  *
  * A venue that cannot run that build passes its own variant, and the memo is
  * keyed on the variant itself, so warming one twice loads it once. `stock` is
  * held for the same reason — the default needs one stable key, not a fresh
- * import promise per call. Warming TWO variants in one process is another
- * matter: see the `wasm` slot above for what a host gets then.
+ * variant per call. Warming TWO variants in one process is another matter: see
+ * the `wasm` slot above for what a host gets then.
  */
 export async function warmScreenEngine(variant?: ScreenEngineVariant): Promise<void> {
-  const key = variant ?? (stock ??= import("@jitl/quickjs-singlefile-browser-release-sync"));
+  const key = variant ?? (stock ??= stockVariant());
   let booting = engines.get(key);
   if (booting === undefined) {
     booting = newQuickJSWASMModuleFromVariant(key);
