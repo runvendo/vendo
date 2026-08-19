@@ -217,6 +217,71 @@ describe.sequential("how a texted reply arrives", () => {
     for (const message of cloud.sent) expect(message.text).not.toContain("---");
   }, 120_000);
 
+  it("splits a long reply the model did not split itself, and never mid-sentence", async () => {
+    // THE POINT, measured on Yousef's own texted turns on 0.32.0: the model wrote
+    // the divider on ONE turn in four. The teaching stays, because a split the
+    // model chooses is a better split than one a rule guesses — but a wall of
+    // text arriving on a phone three times out of four is the product, so a reply
+    // it did not split gets cut at boundaries a person would have used anyway.
+    //
+    // This IS the shape that failed (turn C): one run-on sentence per account,
+    // six accounts, no divider anywhere.
+    const listing = "Your checking account is at $412.08 right now. Savings is sitting at $8,200.00. "
+      + "The joint account with Dana has $1,140.55 in it. Your credit card balance is -$318.20. "
+      + "The travel card is at -$64.00. And the emergency fund is still untouched at $15,000.00.";
+    const { cloud, text, link } = await deployment(defineHarness({
+      name: "channel-unsplit-probe",
+      async *run(turn) {
+        if (turn.threadId.startsWith("thr_warm")) return;
+        yield { type: "text", delta: listing };
+      },
+    }));
+    await link("evt_link_unsplit");
+
+    await text("evt_unsplit", "what are my balances?");
+
+    await waitFor(() => cloud.sent.length >= 3);
+    const bubbles = cloud.sent.slice(1);
+    // Several texts, not one wall — and a bounded number of them, never one per
+    // sentence.
+    expect(bubbles.length).toBeGreaterThan(1);
+    expect(bubbles.length).toBeLessThanOrEqual(3);
+    // Not one character invented, dropped or reordered: the same words the model
+    // wrote, only cut.
+    expect(bubbles.map((message) => message.text).join(" ")).toBe(listing);
+    // Every cut lands after a sentence ends. This is the half that matters most —
+    // a bubble that stops mid-thought reads worse than the wall it replaced.
+    for (const message of bubbles) expect(message.text).toMatch(/[.!?]$/);
+    // And the contract from the divider case still holds: only the last one is
+    // final, whoever decided where the cuts go.
+    expect(bubbles.map((message) => message.final)).toEqual([
+      ...bubbles.slice(0, -1).map(() => false),
+      true,
+    ]);
+  }, 120_000);
+
+  it("leaves a short reply exactly as the model wrote it", async () => {
+    // THE CONTROL. The split is for a wall of text; a normal answer must arrive
+    // as the single text it always was, untouched.
+    const { cloud, text, link } = await deployment(defineHarness({
+      name: "channel-short-probe",
+      async *run(turn) {
+        if (turn.threadId.startsWith("thr_warm")) return;
+        yield { type: "text", delta: "Your checking balance is $412.08. Anything else?" };
+      },
+    }));
+    await link("evt_link_short");
+
+    await text("evt_short", "what is my balance?");
+
+    await waitFor(() => cloud.sent.length === 2);
+    expect(cloud.sent[1]).toEqual({
+      conversationId: CONVERSATION,
+      text: "Your checking balance is $412.08. Anything else?",
+      final: true,
+    });
+  }, 120_000);
+
   it("retries a reply the console drops, and says out loud when it is lost", async () => {
     // THE POINT: a single 503 used to lose the person's answer silently and
     // forever — the turn had already run its tool calls, so nothing could be

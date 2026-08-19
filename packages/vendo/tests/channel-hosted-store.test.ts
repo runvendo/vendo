@@ -69,13 +69,17 @@ describe("the text channel on a Cloud-hosted store", () => {
     const log = new ChannelEventLog(hosted(mount));
 
     expect(await log.claim("evt_hosted", "conv_hosted")).toBe(true);
-    // The claim is the first thing an inbound text waits on, so it is ONE
-    // guarded write rather than a read and then a write. The list behind it is
-    // the conversation's first delivery paying for its own sweep, once an hour.
-    expect(roundTrips(mount)).toEqual([
-      STORE_WIRE_PATHS["engine.insertIfAbsent"],
-      STORE_WIRE_PATHS["engine.list"],
-    ]);
+    // The claim is the first thing an inbound text waits on, so it is ONE guarded
+    // write rather than a read and then a write — and ONLY that write. The
+    // conversation's hourly sweep is started here and deliberately not awaited
+    // (channel-links.ts), so its list is no longer a round trip this person's text
+    // stood behind.
+    expect(roundTrips(mount)).toEqual([STORE_WIRE_PATHS["engine.insertIfAbsent"]]);
+    // …and it still happens, just after the claim instead of inside it. No inner
+    // wall-clock budget: the case's own timeout is the hang detector.
+    while (!roundTrips(mount).includes(STORE_WIRE_PATHS["engine.list"])) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
 
     // A retried delivery is still recognised as already claimed — and costs the
     // same single call to say so.

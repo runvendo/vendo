@@ -329,6 +329,57 @@ async function offerGrantSet(
   }
 }
 
+/** How long a reply has to be before it is worth cutting up, and how big the
+ *  pieces should come out: 240 characters is a text and a half, 160 is one. */
+const BUBBLE_MIN = 240;
+const BUBBLE_TARGET = 160;
+
+/** Three texts is somebody talking; more is a notification storm. */
+const BUBBLE_CAP = 3;
+
+/** The places a person would have broken a long text, in falling preference —
+ *  and there is deliberately no rung below a sentence end. */
+const BUBBLE_BOUNDARIES: readonly (readonly [RegExp, string])[] = [
+  [/\n[ \t]*\n/, "\n\n"],
+  [/\n/, "\n"],
+  [/(?<=[.!?])[ ]+/, " "],
+];
+
+/**
+ * The reply the model did NOT split, cut into bubble-sized texts.
+ *
+ * Measured across Yousef's own texted turns on 0.32.0: the divider teaching
+ * (TEXT_STYLE) engaged on ONE turn in four. Three times out of four a six-account
+ * listing landed as a wall of text, which is the product a person actually got.
+ * The teaching stays and stays first — a split the model chooses knows what it is
+ * saying and this does not — so this runs only when the model split nothing at
+ * all.
+ *
+ * It never cuts inside a sentence. The boundaries are a blank line, then a line
+ * end, then a sentence end; a reply with none of them (one long unbroken clause)
+ * comes back whole, because every cut available in it would land mid-thought and
+ * a bubble that stops mid-thought reads worse than the wall it replaced.
+ *
+ * Exported for its own test, the same reason `cronProse` is.
+ */
+export function bubbles(text: string): string[] {
+  if (text.length <= BUBBLE_MIN) return [text];
+  for (const [boundary, join] of BUBBLE_BOUNDARIES) {
+    const units = text.split(boundary).map((unit) => unit.trim()).filter((unit) => unit !== "");
+    if (units.length < 2) continue;
+    // Greedy, and once the cap is reached everything left joins the last piece.
+    return units.reduce<string[]>((pieces, unit) => {
+      const last = pieces.at(-1);
+      if (last !== undefined
+        && (pieces.length >= BUBBLE_CAP || `${last}${join}${unit}`.length <= BUBBLE_TARGET)) {
+        pieces[pieces.length - 1] = `${last}${join}${unit}`;
+      } else pieces.push(unit);
+      return pieces;
+    }, []);
+  }
+  return [text];
+}
+
 /** One SSE frame's contribution to the assistant's words. Keepalives are comment
  *  frames and never match `data: `. */
 function frameText(frame: string): string {
@@ -374,8 +425,15 @@ async function streamTexts(
     const text = segment.trim();
     segment = "";
     if (text === "") return;
-    sent += 1;
-    await send(text, ended);
+    // The ONE place it is both safe and honest to cut a reply ourselves: the
+    // stream is over, so this is the whole of it, and nothing came before it, so
+    // the model cut nothing. A mid-stream flush is the model's own cut and is left
+    // exactly as it wrote it.
+    const pieces = sent === 0 && ended ? bubbles(text) : [text];
+    for (const [index, piece] of pieces.entries()) {
+      sent += 1;
+      await send(piece, ended && index === pieces.length - 1);
+    }
   };
   const feed = async (delta: string): Promise<void> => {
     line += delta;
@@ -597,8 +655,18 @@ export async function runChannelTurn(
           + `not replayed: ${error instanceof Error ? error.message : String(error)}`,
       });
     }
-    // The reply is out; the next text on this conversation is what still needs
-    // the write, and it cannot start until this returns.
+    // The reply is out, and these two are all that stand between it and the
+    // per-conversation queue being released (compose-channels.ts) — so they are
+    // started TOGETHER, because neither has anything to say to the other: one is
+    // this conversation's link row, the other is the subject's approval feed. Run
+    // one after the other they charged a queued next text two hosted round trips
+    // of pure bookkeeping before its own turn could start (measured 8.3s on
+    // production Maple). The feed is read only now and never earlier: the arming
+    // call that mints the rows it looks for runs inside the turn that just ended.
+    const pending = deps.guard.approvals.pending(principal);
+    void pending.catch(() => undefined);
+    // The next text on this conversation still needs the write, and the queue
+    // cannot start it until this returns.
     await remembered;
     // The next text in this conversation usually arrives inside the provider's
     // cache TTL, so the prefix is warmed once the person already has their
@@ -612,7 +680,7 @@ export async function runChannelTurn(
     // asked on the next texted turn, which is exactly right.
     await offerGrantSet(
       deps,
-      { ctx, conversationId: event.conversationId, pending: await deps.guard.approvals.pending(principal) },
+      { ctx, conversationId: event.conversationId, pending: await pending },
       send,
     );
   } finally {

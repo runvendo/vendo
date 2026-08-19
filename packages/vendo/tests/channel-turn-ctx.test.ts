@@ -2,7 +2,7 @@ import type { RunContext } from "@vendoai/core";
 import { memoryStoreOps } from "@vendoai/core/conformance";
 import { describe, expect, it, vi } from "vitest";
 import type { ChannelLink } from "../src/channel-links.js";
-import { cronProse, runChannelTurn, type ChannelTurnDeps } from "../src/channel-turn.js";
+import { bubbles, cronProse, runChannelTurn, type ChannelTurnDeps } from "../src/channel-turn.js";
 import { createLimiter } from "../src/limits.js";
 
 describe("cronProse", () => {
@@ -21,6 +21,41 @@ describe("cronProse", () => {
     expect(cronProse("1,31 * * * *")).toBeUndefined(); // lists
     expect(cronProse("not a cron")).toBeUndefined();
     expect(cronProse("check my balance")).toBeUndefined();
+  });
+});
+
+describe("bubbles", () => {
+  const six = (separator: string) => [
+    "Checking is at $412.08 right now and nothing is pending on it.",
+    "Savings is sitting at $8,200.00.",
+    "The joint account with Dana has $1,140.55 in it.",
+    "Your credit card balance is -$318.20.",
+    "The travel card is at -$64.00.",
+    "The emergency fund is untouched at $15,000.00.",
+  ].join(separator);
+
+  it("cuts a wall at the boundary a person would have used, and puts every word back", () => {
+    // The three rungs, on the same six-account listing the live turns produced.
+    for (const [label, separator] of [["blank line", "\n\n"], ["line end", "\n"], ["sentence", " "]] as const) {
+      const wall = six(separator);
+      const pieces = bubbles(wall);
+      expect(pieces.length, label).toBeGreaterThan(1);
+      expect(pieces.length, label).toBeLessThanOrEqual(3);
+      // Nothing invented, dropped or reordered.
+      expect(pieces.join(separator), label).toBe(wall);
+      // And no piece stops mid-thought.
+      for (const piece of pieces) expect(piece, label).toMatch(/[.!?]$/);
+    }
+  });
+
+  it("leaves alone what it cannot cut honestly", () => {
+    const short = "Your checking balance is $412.08. Anything else?";
+    expect(bubbles(short)).toEqual([short]);
+    // Long, but one unbroken clause: every available cut is mid-sentence, so
+    // there is no honest one and the wall is the lesser evil.
+    const runOn = `Your balances are ${Array.from({ length: 30 }, (_, i) => `account ${i} at $${i}0.00`).join(", ")}`;
+    expect(runOn.length).toBeGreaterThan(240);
+    expect(bubbles(runOn)).toEqual([runOn]);
   });
 });
 

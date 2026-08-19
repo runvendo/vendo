@@ -127,6 +127,36 @@ describe("what a texted reply waits for", () => {
     }
   });
 
+  it("reads the approval feed BESIDE the link write, not behind it", async () => {
+    // THE POINT: both of these sit between the reply landing and the queue being
+    // released (compose-channels.ts), and they have nothing to say to each other
+    // — one is this conversation's row, the other is the subject's approval feed.
+    // Run end to end they cost a queued next text two hosted round trips of pure
+    // bookkeeping before its own turn can start.
+    //
+    // The write is held until the feed has been ASKED, so a turn that still reads
+    // them one after the other never finishes and the case's own timeout says so.
+    const order: string[] = [];
+    let asked = (): void => undefined;
+    const feedAsked = new Promise<void>((resolve) => { asked = resolve; });
+    const deps = turnDeps(order, {
+      links: { rememberTurn: async () => { await feedAsked; order.push("wrote"); } },
+      guard: {
+        onApprovalRequested: () => () => undefined,
+        approvals: {
+          pending: async () => { order.push("asked-feed"); asked(); return []; },
+          decide: async () => undefined,
+        },
+      },
+    });
+
+    await runChannelTurn(deps, { event, link: { ...link, conversationId: event.conversationId } });
+
+    // The reply first, then the two bookkeeping calls overlapping — the feed read
+    // starts while the write is still outstanding.
+    expect(order).toEqual(["sent", "asked-feed", "wrote"]);
+  });
+
   it("waits for the write on the first turn a phone ever sends, so Text me can find the conversation", async () => {
     const order: string[] = [];
 

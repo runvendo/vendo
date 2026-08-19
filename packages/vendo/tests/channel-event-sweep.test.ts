@@ -39,7 +39,47 @@ async function freshStore(): Promise<VendoStore> {
 const rows = (store: VendoStore, conversation: string): Promise<number> =>
   store.records("vendo_channel_events").list({ refs: { conversation } }).then((page) => page.records.length);
 
+/** No wall-clock budget on purpose: the case's own timeout is the hang detector,
+ *  and the sweep is now something a claim does NOT wait for, so its rows land
+ *  shortly after the claim answers rather than before it. */
+async function settlesTo(count: () => Promise<number>, expected: number): Promise<void> {
+  while (await count() !== expected) await new Promise((resolve) => setTimeout(resolve, 10));
+}
+
 describe("the delivery log's sweep", () => {
+  it("does not hold the claim while it deletes", async () => {
+    // THE FAILURE THIS PINS: the sweep is a page read plus one delete per expired
+    // row, and it ran INLINE inside the claim — so once an hour, per
+    // conversation, the person whose text triggered it waited out seven serial
+    // hosted round trips before their turn could even start.
+    const store = await freshStore();
+    const day = 24 * 60 * 60_000;
+    for (const id of ["evt_a", "evt_b", "evt_c"]) {
+      expect(await new ChannelEventLog(store).claim(id, "conv_block")).toBe(true);
+    }
+
+    // A fresh log, so the sweep cadence has not been spent, and two days on so
+    // every row above is expired and the sweep has real work to do.
+    vi.useFakeTimers({ now: Date.now() + 2 * day, toFake: ["Date"] });
+    const log = new ChannelEventLog(store);
+
+    // Deletes are HELD. A claim that still waits for the sweep never answers.
+    let release = (): void => undefined;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    const records = store.records("vendo_channel_events");
+    vi.spyOn(store, "records").mockImplementation((collection: string) => (
+      collection !== "vendo_channel_events" ? store.records(collection)
+        : { ...records, delete: async (id: string) => { await held; await records.delete(id); } }
+    ));
+
+    expect(await log.claim("evt_now", "conv_block")).toBe(true);
+
+    release();
+    // …and the sweep still lands: the work moved off the critical path, it did
+    // not stop happening.
+    await settlesTo(() => rows(store, "conv_block"), 1);
+  }, 30_000);
+
   it("keeps its cadence per conversation, so a busy one cannot starve a quiet one", async () => {
     // THE FAILURE THIS PINS: with ONE process-wide sweep clock, the chatty
     // conversation below consumes the interval and the quiet one's expired rows
@@ -56,15 +96,16 @@ describe("the delivery log's sweep", () => {
     // Two days pass: every row above is now older than the retention window.
     vi.useFakeTimers({ now: Date.now() + 2 * day, toFake: ["Date"] });
 
-    // The chatty conversation speaks first and sweeps itself.
+    // The chatty conversation speaks first and sweeps itself. Awaited rather
+    // than asserted outright: the claim no longer waits for its own sweep.
     expect(await log.claim("evt_busy_2", "conv_busy")).toBe(true);
-    expect(await rows(store, "conv_busy")).toBe(1);
+    await settlesTo(() => rows(store, "conv_busy"), 1);
 
     // THE POINT: the quiet conversation's own next delivery must still sweep
     // ITS rows. On a shared clock the line above has already spent the
     // interval, and this row stays behind forever.
     expect(await log.claim("evt_quiet_2", "conv_quiet")).toBe(true);
-    expect(await rows(store, "conv_quiet")).toBe(1);
+    await settlesTo(() => rows(store, "conv_quiet"), 1);
   }, 30_000);
 
   it("still sweeps a conversation only once per interval, not once per message", async () => {
