@@ -906,6 +906,9 @@ importers:
       '@vendoai/apps':
         specifier: workspace:*
         version: link:../apps
+      '@vendoai/automations':
+        specifier: workspace:*
+        version: link:../automations
       '@vendoai/core':
         specifier: workspace:*
         version: link:../core

@@ -56,6 +56,7 @@ export {
 } from "./memory.js";
 export { PERMISSIONS_PATH, type AgentPrincipal } from "./permissions.js";
 export { assemblePrompt, type PromptInput, type SystemPromptHook } from "./prompt.js";
+export { serve, type ServeOptions, type VendoRuntime } from "./serve.js";
 export type { AgentSession, ApprovalEvent, RespondOptions, SessionOptions } from "./session.js";
 export {
   api,

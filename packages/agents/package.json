@@ -55,6 +55,7 @@
   "dependencies": {
     "@vendoai/actions": "workspace:*",
     "@vendoai/apps": "workspace:*",
+    "@vendoai/automations": "workspace:*",
     "@vendoai/core": "workspace:*",
     "@vendoai/guard": "workspace:*",
     "@vendoai/harnesses": "workspace:*",
