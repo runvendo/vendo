@@ -67,6 +67,14 @@ export default defineConfig(async ({ command }) => {
       prompt: "a board showing where my money goes each month",
     });
     wire.state.placements.push({ slot: "slot-failed", appId: "app_slot_failed" });
+    // (/share-toggle) — the ✦ menu's fourth item over the real wire: a placed
+    // app this caller OWNS, and one tenant she belongs to. Its own app and slot,
+    // because grants are seeded per app id — every other scenario's ✦ stays the
+    // three items it has always been.
+    wire.state.apps.push(fixtureApp("app_shared", "Invoices"));
+    wire.state.surfaces.set("app_shared", wire.state.surfaces.get("app_1")!);
+    wire.state.placements.push({ slot: "slot-shared", appId: "app_shared" });
+    wire.setGrants("app_shared", { level: "owner", grants: [], orgs: [{ org: "acme", display: "Acme Corp" }] });
     // (/accounts) — a broken account for the connected-accounts panel's Reconnect
     // path. Additive and on a toolkit nothing else in the harness touches, so it
     // never becomes active: `initiate` mints its own `ca_new` row, leaving this

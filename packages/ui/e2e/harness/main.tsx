@@ -2067,6 +2067,7 @@ function scenario(pathname: string): { title: string; theme?: Partial<VendoTheme
     case "/slot-fallback": return { title: "Slot pin fallback", content: <SlotFallbackScenario />, ownProvider: true };
     case "/slot-building": return { title: "Inline slot — a build landing in place", content: <SlotBuildingScenario /> };
     case "/slot-states": return { title: "Inline slot — ready / failed", content: <SlotStatesScenario /> };
+    case "/share-toggle": return { title: "Inline slot — the ✦ menu's share toggle", content: <VendoSlot id="slot-shared"><p>Host hero (shareable)</p></VendoSlot> };
     case "/slot-picker": return { title: "Add to… — embed writes a placement", content: <SlotPickerScenario />, ownProvider: true };
     case "/remixable": return { title: "Remixable — the ✦ is one door into the chat", content: <RemixableScenario />, ownProvider: true };
     case "/appframe": return { title: "App execution planes", content: <AppFrameScenario /> };
