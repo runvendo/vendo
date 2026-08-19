@@ -9,7 +9,7 @@ import { CONNECTOR_DISCOVERY_TOOLS, VENDO_MAKE_TOOL, type AgentRunner, type Harn
 import { assertHarnessComposable, vendo } from "@vendoai/harnesses";
 import type { VendoComposition } from "./compose-context.js";
 import { storeServesHarnessTurns } from "./compose-store.js";
-import { MCP_MOUNT } from "./door-paths.js";
+import { basePathOf, MCP_MOUNT } from "./door-paths.js";
 import { createHarnessTurns, type HarnessTurns } from "./harness-turn.js";
 import { assembleSystemPrompt, discoveryRail } from "./prompt.js";
 import { withAgentMenu } from "./surface-menu.js";
@@ -167,7 +167,12 @@ const harnessTurnDoorSeams = (
       toolDoor: {
         get url(): string | undefined {
           const base = doorBase();
-          return base === undefined ? undefined : new URL(MCP_MOUNT, base).toString();
+          // The mount is ABSOLUTE, so it has to be re-prefixed by hand: `new
+          // URL("/api/vendo/mcp", base)` resolves against the base's ORIGIN and
+          // throws its path away, sending every deployment served under a prefix
+          // to a URL its own framework 404s. Same `basePathOf` the door uses to
+          // build its prefixed well-known spellings, so the two can't disagree.
+          return base === undefined ? undefined : new URL(`${basePathOf(base)}${MCP_MOUNT}`, base).toString();
         },
         // Which of the two mounts this is, stated rather than inferred. With no
         // origin the harness has to tell a host whose `mcp` cannot be reached

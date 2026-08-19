@@ -420,4 +420,18 @@ describe("where an internal door is dialled — zero config, and not poisonable 
     expect(await dialledDoorUrl({ toolDoor: true, sandbox: true }, {}, [LOOPBACK]))
       .toBe("https://app.example.com/api/vendo/mcp");
   });
+
+  it("a base under a PATH PREFIX keeps it — the door is where the host mounted Vendo, not at the origin root", async () => {
+    // `MCP_MOUNT` is absolute, and `new URL(absolute, base)` resolves against the
+    // base's ORIGIN and discards its path. So every deployment served under a
+    // prefix — Maple's `basePath: "/maple"` — dialled an origin-root URL its
+    // framework 404s. The door looked configured, the SDK swallowed the failed
+    // connect, and the session opened with zero host tools.
+    vi.stubEnv("NODE_ENV", "development");
+    vi.stubEnv("VENDO_BASE_URL", "https://app.example.com/maple");
+    expect(await dialledDoorUrl({ toolDoor: true }, {}, [LOOPBACK]))
+      .toBe("https://app.example.com/maple/api/vendo/mcp");
+    expect(await dialledDoorUrl({ toolDoor: true, sandbox: true }, {}, [LOOPBACK]))
+      .toBe("https://app.example.com/maple/api/vendo/mcp");
+  });
 });
