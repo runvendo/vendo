@@ -34,6 +34,7 @@ import {
 } from "@vendoai/store";
 import type { LanguageModel, UIMessage } from "ai";
 import { randomUUID } from "node:crypto";
+import type { MemoryAdapter } from "./memory.js";
 import { resolveSystem, type SystemPromptHook } from "./prompt.js";
 
 export interface SessionOptions {
@@ -121,6 +122,8 @@ export interface SessionDeps {
   models?: SeatModels<LanguageModel>;
   /** The host's last word on the turn's prompt — see `AgentConfig.system`. */
   system?: SystemPromptHook;
+  /** Per-user memory; its `recall` is what fills `[Memory]` each turn. */
+  memory?: MemoryAdapter;
   /** Publish the turn in flight to the agent's own MCP door (`door.ts`). A
    *  harness that thinks outside this process mints a credential pointing at
    *  "the turn now live on thread T"; without this the pointer resolves to

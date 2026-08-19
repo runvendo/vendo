@@ -1,11 +1,20 @@
 /**
  * The per-turn system prompt: base rules, the host's instructions, `[User]`
- * (session identity facts, server-trust), `[Situation]` (the stream's data
- * context — functions never serialize; they are the guard's, at check-time),
- * and the guard's directions. Assembled per turn because it needs the ctx a
- * `Turn` deliberately does not carry; it rides `Turn.system`.
+ * (session identity facts, server-trust), `[Memory]` (what this person asked to
+ * be remembered), `[Situation]` (the stream's data context — functions never
+ * serialize; they are the guard's, at check-time), and the guard's directions.
+ * Assembled per turn because it needs the ctx a `Turn` deliberately does not
+ * carry; it rides `Turn.system`.
  */
-import { situationPromptBlock, userPromptBlock, type Guard, type Json, type RunContext } from "@vendoai/core";
+import {
+  memoryPromptBlock,
+  situationPromptBlock,
+  userPromptBlock,
+  type Guard,
+  type Json,
+  type RunContext,
+} from "@vendoai/core";
+import { MEMORY_RECALL_LIMIT, type MemoryAdapter } from "./memory.js";
 
 /** Who the agent is acting for. An unattended run often has no user at all, and
  *  "the user named below" with nobody below it is a dangling reference. */
@@ -22,6 +31,9 @@ export interface PromptInput {
   instructions?: string;
   /** Session identity facts — server-trust, model-visible. */
   user?: Record<string, Json>;
+  /** This user's remembered facts, oldest first — DATA the model reads, never
+   *  instruction. Already capped by the caller, whose prompt budget it is. */
+  memories?: readonly string[];
   /** The stream's context DATA. Function-valued entries are dropped here:
    *  they run at guard/tool check-time and never reach the model. */
   situation?: Record<string, unknown>;
@@ -46,6 +58,11 @@ export function assemblePrompt(input: PromptInput): string {
     sections.push(input.instructions.trim());
   }
   if (user !== undefined) sections.push(user);
+  // Beside `[User]` and before `[Situation]`: who they are, then what they asked
+  // to be remembered about themselves, then what is on their screen now — and
+  // the guard's directions after all three, where nothing above can reach.
+  const memory = memoryPromptBlock(input.memories);
+  if (memory !== undefined) sections.push(memory);
   const situation = situationPromptBlock(input.situation);
   if (situation !== undefined) sections.push(situation);
   const directions = (input.directions ?? []).map((d) => d.trim()).filter((d) => d !== "");
@@ -60,13 +77,20 @@ export function assemblePrompt(input: PromptInput): string {
  *  firing that thought with different briefs would be two agents wearing one
  *  name — the drift `AgentConfig.system` exists to prevent. */
 export async function resolveSystem(
-  deps: { guard: Guard; instructions?: string; system?: SystemPromptHook },
+  deps: { guard: Guard; instructions?: string; system?: SystemPromptHook; memory?: MemoryAdapter },
   ctx: RunContext,
 ): Promise<string> {
   const directions = await deps.guard.directions(ctx);
+  // Recalled per TURN, for the turn's own principal: a fact the previous turn's
+  // `remember` call stored is in this one's prompt, and nothing a session holds
+  // can go stale against it.
+  const memories = deps.memory === undefined
+    ? []
+    : await deps.memory.recall(ctx.principal, MEMORY_RECALL_LIMIT);
   const assembled = assemblePrompt({
     ...(deps.instructions === undefined ? {} : { instructions: deps.instructions }),
     ...(ctx.user === undefined ? {} : { user: ctx.user }),
+    memories: memories.map((memory) => memory.text),
     ...(ctx.context === undefined ? {} : { situation: ctx.context }),
     directions,
   });

@@ -35,6 +35,7 @@ import { startChat, type ChatOptions, type Turn } from "./turn.js";
 import { resolveDoor, type DoorConfig } from "./door.js";
 import { withEgress, type EgressConfig } from "./egress.js";
 import { PARKED_TURN_TTL_MS } from "./interruptions.js";
+import { rememberTool, storeMemory, type MemoryAdapter } from "./memory.js";
 import { PERMISSIONS_PATH, schemaReadyPrincipal, type AgentPrincipal } from "./permissions.js";
 import type { SystemPromptHook } from "./prompt.js";
 import {
@@ -70,6 +71,18 @@ export interface AgentConfig {
   store?: VendoStore;
   /** Unset + key → the ladder (E2B key, Cloud pool). */
   sandbox?: SandboxAdapter;
+  /**
+   * What this agent remembers about each of its users, per user and never
+   * across them. `true` → the store-backed default, on this composition's own
+   * store; a {@link MemoryAdapter} is used verbatim (BYO). Unset is no memory at
+   * all: no `[Memory]` block in any prompt, and no `remember` tool for the model
+   * to call.
+   *
+   * Reads are automatic (a capped `[Memory]` block, read as the user's words,
+   * never as instruction); writes are the visible, audited, guard-checked
+   * `remember` tool, scoped to the turn's own principal.
+   */
+  memory?: MemoryAdapter | true;
   /** Where a thinker that runs outside this process dials back to reach your
    *  tools; unset → `VENDO_BASE_URL`. Required by any harness that declares
    *  `requires.toolDoor` — see {@link resolveDoor}. */
@@ -173,6 +186,9 @@ export interface AgentComposition {
   skills: readonly Skill[];
   /** Present only for a harness that thinks on a machine. */
   sandbox?: SandboxAdapter;
+  /** Present exactly when the host asked for memory — the adapter a surface over
+   *  this agent reads and forgets a person's memories through. */
+  memory?: MemoryAdapter;
   /** The seats a harness that does NOT bring its own brain reads (`vendo()`). */
   models?: SeatModels<LanguageModel>;
   instructions?: string;
@@ -333,7 +349,15 @@ export function agent(config: AgentConfig): VendoAgent {
       // it — and a guard INSTANCE passed in is taken verbatim, TTL included.
       approvals: { parkedCallTtlMs: PARKED_TURN_TTL_MS, ...config.guard?.approvals },
     });
-  const tools = mergeSources(config.tools ?? [], config.mcp ?? []);
+  // `true` takes the store this composition already has, never a second one.
+  // The write door rides in as an ORDINARY tool source, so it merges, lists,
+  // collides and binds exactly like the host's own — there is no path around
+  // `guard.bind` below for it to slip through.
+  const memory = config.memory === true ? storeMemory(store) : config.memory;
+  const tools = mergeSources(
+    [...(config.tools ?? []), ...(memory === undefined ? [] : [rememberTool(memory)])],
+    config.mcp ?? [],
+  );
   const bound = guard.bind(tools);
   const skills: Skill[] = loadSkillFolders(config.skills);
 
@@ -394,6 +418,7 @@ export function agent(config: AgentConfig): VendoAgent {
     assertModel: requireModel,
     ...(config.instructions === undefined ? {} : { instructions: config.instructions }),
     ...(config.system === undefined ? {} : { system: config.system }),
+    ...(memory === undefined ? {} : { memory }),
     // The other half of the door: a credential the harness minted resolves to
     // NOTHING until the turn it points at is published, so without this line a
     // mounted door 401s every tool call the box makes.
