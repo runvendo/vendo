@@ -41,7 +41,10 @@ export type AwayRunnerDeps = TurnDeps;
 
 export interface RunOptions<T = void> {
   /** Whose run this is — the subject every grant, workspace and audit row is
-   *  scoped to. Unset, the agent runs as itself. */
+   *  scoped to. Unset, the agent runs as itself.
+   *  @deprecated Name the person ONCE — `agent.forUser(subject)` — rather than
+   *  on every call, and their turns, conversations and memories come with them.
+   *  Still honored: a run that passes it behaves exactly as it always has. */
   as?: string;
   /** Server-trust identity facts, model-visible (`[User]`). */
   user?: Record<string, Json>;

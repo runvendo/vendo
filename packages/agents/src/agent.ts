@@ -34,6 +34,7 @@ import { startRun, type RunOptions } from "./away.js";
 import { startChat, type ChatOptions, type Turn } from "./turn.js";
 import { resolveDoor, type DoorConfig } from "./door.js";
 import { withEgress, type EgressConfig } from "./egress.js";
+import { createUser, type AgentUser, type UserOptions } from "./facade.js";
 import { PARKED_TURN_TTL_MS } from "./interruptions.js";
 import { rememberTool, storeMemory, type MemoryAdapter } from "./memory.js";
 import { PERMISSIONS_PATH, schemaReadyPrincipal, type AgentPrincipal } from "./permissions.js";
@@ -117,6 +118,21 @@ export interface VendoAgent {
    */
   chat(message: string, options?: ChatOptions): Turn;
   /**
+   * Everything this agent does FOR ONE PERSON, with who they are bound once —
+   * their turns, their conversations, and what it remembers about them.
+   *
+   *     const user = support.forUser("u_42", {
+   *       profile: { name: "Dana", plan: "pro" },
+   *       context: { tenantId },
+   *     });
+   *     await user.chat("where is my refund?", { headers: request.headers });
+   *
+   * `profile` and `context` are FACTS about the person and are bound here.
+   * `headers` are the authority of ONE request, so they ride per call and are
+   * never kept — see facade.ts.
+   */
+  forUser(subject: string, options?: UserOptions): AgentUser;
+  /**
    * `respond` answers a person over HTTP: one turn, an AI-SDK UI-message-stream
    * `Response` to return from your route, with the conversation's id on
    * `x-vendo-thread-id`.
@@ -147,6 +163,10 @@ export interface VendoAgent {
    * `disable()` by a person outlives every redeploy.
    */
   on(when: When, task: string, options?: OnOptions): void;
+  /** @deprecated A session is request-lifetime and the THREAD is what outlives
+   *  it, so the durable noun is the one to hold: `agent.forUser(subject)` for
+   *  the turns, `user.threads` for the conversations. `respond()` is unchanged.
+   *  Still supported — nothing about this call has changed. */
   session(subject: string, options?: SessionOptions): Promise<AgentSession>;
   /**
    * This agent's MCP door, present exactly when its harness thinks outside this
@@ -429,6 +449,7 @@ export function agent(config: AgentConfig): VendoAgent {
   const built: VendoAgent = {
     name: config.name,
     chat: (message, options) => startChat(deps, message, options),
+    forUser: (subject, options) => createUser(deps, subject, options),
     async respond(subject, message, options = {}) {
       await requireModel();
       const session = await createSession(deps, subject, options);

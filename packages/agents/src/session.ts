@@ -96,6 +96,11 @@ export interface ApprovalEvent {
   deny(): Promise<void>;
 }
 
+/** @deprecated The object a session hands back is request-lifetime, and the
+ *  THREAD is what outlives it — so hold the durable noun instead:
+ *  `agent.forUser(subject)` for the turns, `user.threads` for the
+ *  conversations. Reached only through `agent.session()`, which still works;
+ *  `respond()` is unchanged and is not deprecated. */
 export interface AgentSession {
   /** The conversation this session is on. Hand it back as
    *  `session(subject, { threadId })` to reopen the same conversation later. */

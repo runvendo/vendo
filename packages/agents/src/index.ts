@@ -26,6 +26,16 @@ export { awayRunner, type AwayRunnerDeps, type RunOptions } from "./away.js";
 /** The turn a verb hands back, and the two shapes a caller writes against it. */
 export type { ChatOptions, RunEvent, Turn } from "./turn.js";
 export { DOOR_PATH, type DoorConfig } from "./door.js";
+/** One user, bound once — what `agent.forUser(subject)` hands back. */
+export {
+  createUser,
+  type AgentUser,
+  type Memories,
+  type Threads,
+  type UserChatOptions,
+  type UserOptions,
+  type UserThread,
+} from "./facade.js";
 /** Interrupted turns, addressed by id — the same park a caller holding the
  *  result answers through `TurnResult.resume()`, from any other process. */
 export {
