@@ -382,22 +382,17 @@ function warnNoOriginOnce(): void {
 
 /**
  * Is the door THERE? One request of exactly the shape the SDK's MCP client is
- * about to make, and one answer that means it is not: the origin itself saying
- * this path does not exist. Every other status is the door working — a 401
- * especially, since the credential that authenticates it is not minted until
- * further down.
+ * about to make, and the two answers that mean it is not: no answer at all
+ * (refused, DNS failure, timeout — anything that makes `fetch` throw), or the
+ * origin itself saying this path does not exist.
  *
- * A 404 is a ROUTING fact and the whole of the observed failure: a deployment
- * under a path prefix answers 404 at the origin root and 401 at its real mount.
- * A transport error is not the same fact and deliberately does not refuse. The
- * host process is provably up — it is serving this very turn — so a failure to
- * connect is a transient blip or a vantage difference, and on the sandbox leg
- * the prober is the HOST while the consumer is the BOX, two different places on
- * the network. Refusing on that would invent an outage the door never had.
+ * Any HTTP status other than 404 is the door WORKING. A 401 especially: the
+ * credential that authenticates it is not minted until further down, so an
+ * unauthenticated probe is supposed to be turned away.
  */
 async function doorAnswers(url: string): Promise<boolean> {
   const response = await fetch(url, { method: "POST" }).catch(() => undefined);
-  return response === undefined || response.status !== 404;
+  return response !== undefined && response.status !== 404;
 }
 
 /**
@@ -534,10 +529,12 @@ export function claudeCode(
 
       // The other half of that refusal, and the one it could not see: a door
       // that IS named and is not THERE. The SDK swallows a failed MCP connect,
-      // so a 404 here opens a session with zero host tools and lets the model
-      // answer anyway — the same polite-refusal-at-HTTP-200, reached through a
-      // url that looks configured. Both legs, before the machine exists, so a
-      // doomed turn never pays for a sandbox boot.
+      // so a dead door here opens a session with zero host tools and lets the
+      // model answer anyway — the same polite-refusal-at-HTTP-200, reached
+      // through a url that merely looks configured. A typo'd host and a host
+      // that is down are the same failure to the customer as a wrong path, so
+      // all of them refuse. Both legs, before the machine exists, so a doomed
+      // turn never pays for a sandbox boot.
       if (doorUrl !== undefined && !await doorAnswers(doorUrl)) {
         throw new VendoError(
           "unavailable",

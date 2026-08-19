@@ -31,6 +31,7 @@ import { createSessionRoutes } from "@vendoai/harnesses/box-door";
 import { claudeCode } from "@vendoai/harnesses/claude-code";
 import { createStore, type VendoStore } from "@vendoai/store";
 import { afterEach, describe, expect, it } from "vitest";
+import { liveDoor } from "../src/agent-doubles.test-util.js";
 import { createVendo, type Vendo } from "../src/server.js";
 
 const encoder = new TextEncoder();
@@ -218,9 +219,19 @@ async function compose(overrides: Record<string, unknown>): Promise<{
   vendo: Vendo;
   store: VendoStore;
   host: ReturnType<typeof hostTools>;
+  /** The door's origin, for the one case that asserts where the box was sent. */
+  door: { origin: string };
 }> {
   const store = await tempStore();
   const host = hostTools();
+  // ⚠️ TEST EDIT — this used to be `https://host.test`, a reserved TLD that
+  // never resolves. `claudeCode()` now probes the door url before it boots a
+  // machine and refuses a turn nothing answers, so a composition has to name a
+  // base that is actually there. Everything below is unchanged: the box still
+  // reaches the REAL door through `vendo.handler`, which routes on the mount
+  // path and does not care which origin named it.
+  const door = await liveDoor();
+  cleanups.push(door.close);
   const vendo = createVendo({
     // Never reached: the thinker here is the scripted box, not a provider. The
     // reviewer's own seat is what a case overrides, since the judging pass is
@@ -230,7 +241,7 @@ async function compose(overrides: Record<string, unknown>): Promise<{
     store,
     // The box reaches its tools over the host's MCP door, so a composed
     // `claudeCode()` needs one open and a public origin a machine could name.
-    mcp: { baseUrl: "https://host.test" },
+    mcp: { baseUrl: door.origin },
     oauth: {
       async authorize() { return { subject: principal.subject }; },
       async principal(subject: string) { return { kind: "user" as const, subject }; },
@@ -238,7 +249,7 @@ async function compose(overrides: Record<string, unknown>): Promise<{
     ...overrides,
   } as Parameters<typeof createVendo>[0]);
   vendo.actions.add(host.tools);
-  return { vendo, store, host };
+  return { vendo, store, host, door };
 }
 
 /**
@@ -308,7 +319,7 @@ describe("createVendo({ sandbox, harness: claudeCode() })", () => {
       box.emit({ type: "usage", inputTokens: 12, outputTokens: 3 });
       box.emit({ type: "text", delta: "Two invoices are open." });
     });
-    const { vendo, store, host } = await compose({ sandbox, harness: claudeCode() });
+    const { vendo, store, host, door } = await compose({ sandbox, harness: claudeCode() });
     composed = vendo;
 
     const turn = await vendo.handler(post("/threads", {
@@ -328,7 +339,9 @@ describe("createVendo({ sandbox, harness: claudeCode() })", () => {
     // with nothing hand-wired into the harness.
     expect(sandbox.creates).toBe(1);
     // Composition minted the credential and pointed the box at its own door.
-    expect(handed?.url).toBe("https://host.test/api/vendo/mcp");
+    // ⚠️ TEST EDIT — the origin is the composed door's rather than a hardcoded
+    // `https://host.test`; the mount it must carry is asserted exactly as before.
+    expect(handed?.url).toBe(`${door.origin}/api/vendo/mcp`);
     expect(handed?.token).toMatch(/^vtk_/);
     // And the call executed on OUR side, through the one guard-bound registry.
     expect(host.calls).toHaveLength(1);

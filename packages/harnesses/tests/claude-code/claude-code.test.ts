@@ -17,7 +17,7 @@ import { createSessionRoutes } from "../../box/turn-routes.mjs";
 import { assertHarnessComposable } from "../../src/compose.js";
 import { createTurnState } from "../../src/harness-state.js";
 import { provideHarnessAdapters } from "../../src/harness-sandbox.js";
-import { testAppsHooks, testWorkspace, unusedModels, userMessage } from "../../src/test-doubles.test-util.js";
+import { liveDoor, testAppsHooks, testWorkspace, unusedModels, userMessage } from "../../src/test-doubles.test-util.js";
 import { boxEgress, claudeCode, inferenceEnv, promptFor, truncated } from "../../src/claude-code/index.js";
 import { boxMachine, disposeSessionMachines, type SandboxAdapterLike, type SandboxMachineLike } from "../../src/claude-code/box.js";
 
@@ -564,6 +564,9 @@ describe("the box's egress allowlist — what the provider is asked to filter", 
     VENDO_INFERENCE_URL: undefined,
     VENDO_API_KEY: undefined,
   };
+  /** The pure `boxEgress()` cases below never open a turn, so nothing probes
+   *  this and it stays the plain string it always was. The three tests that DO
+   *  run a turn start a real door instead — see the ⚠️ TEST EDIT notes. */
   const DOOR = "https://app.example.com/api/vendo/mcp";
 
   test("the minimum set is the inference host and the door origin — assembled from what the box is actually given", () => {
@@ -581,17 +584,27 @@ describe("the box's egress allowlist — what the provider is asked to filter", 
   });
 
   test("a conversational box is provisioned WITH an allowlist — undefined would be unrestricted internet", async () => {
-    const sandbox = fakeSandbox(async () => undefined);
-    const harness = claudeCode({ sandbox });
-    provideHarnessAdapters(harness, {
-      toolDoor: { url: DOOR, mint: () => "vtk_1", revoke: () => undefined },
-    });
-    await withEnvAsync(NO_INFERENCE, async () => {
-      await drain(harness, makeTurn({ threadId: "thr_egress_min" }).turn);
-    });
-    expect(sandbox.specs).toHaveLength(1);
-    // EXACT, not "contains": an extra entry here is an extra hole in the box.
-    expect(sandbox.specs[0]?.allowedDomains).toEqual(["api.anthropic.com", "app.example.com"]);
+    // ⚠️ TEST EDIT — the door was `app.example.com`, a reserved domain that
+    // never resolved. This test opens a turn, and a turn now refuses a door
+    // nothing answers on, so the fixture has to be a door that exists. The
+    // assertion is unchanged in kind: still an EXACT allowlist, still the
+    // inference host plus the door's own hostname.
+    const door = await liveDoor();
+    try {
+      const sandbox = fakeSandbox(async () => undefined);
+      const harness = claudeCode({ sandbox });
+      provideHarnessAdapters(harness, {
+        toolDoor: { url: door.url, mint: () => "vtk_1", revoke: () => undefined },
+      });
+      await withEnvAsync(NO_INFERENCE, async () => {
+        await drain(harness, makeTurn({ threadId: "thr_egress_min" }).turn);
+      });
+      expect(sandbox.specs).toHaveLength(1);
+      // EXACT, not "contains": an extra entry here is an extra hole in the box.
+      expect(sandbox.specs[0]?.allowedDomains).toEqual(["api.anthropic.com", "127.0.0.1"]);
+    } finally {
+      await door.close();
+    }
   });
 
   test("with no door composed the box still gets an allowlist — the inference host alone", async () => {
@@ -603,16 +616,23 @@ describe("the box's egress allowlist — what the provider is asked to filter", 
   });
 
   test("the HOST may widen it — one additive option on the constructor", async () => {
-    const sandbox = fakeSandbox(async () => undefined);
-    const harness = claudeCode({ sandbox, egress: ["api.stripe.com"] });
-    provideHarnessAdapters(harness, {
-      toolDoor: { url: DOOR, mint: () => "vtk_2", revoke: () => undefined },
-    });
-    await withEnvAsync(NO_INFERENCE, async () => {
-      await drain(harness, makeTurn({ threadId: "thr_egress_widen" }).turn);
-    });
-    expect(sandbox.specs[0]?.allowedDomains)
-      .toEqual(["api.anthropic.com", "app.example.com", "api.stripe.com"]);
+    // ⚠️ TEST EDIT — same reason as above: a turn-opening test needs a door
+    // that answers. The widening assertion itself is untouched.
+    const door = await liveDoor();
+    try {
+      const sandbox = fakeSandbox(async () => undefined);
+      const harness = claudeCode({ sandbox, egress: ["api.stripe.com"] });
+      provideHarnessAdapters(harness, {
+        toolDoor: { url: door.url, mint: () => "vtk_2", revoke: () => undefined },
+      });
+      await withEnvAsync(NO_INFERENCE, async () => {
+        await drain(harness, makeTurn({ threadId: "thr_egress_widen" }).turn);
+      });
+      expect(sandbox.specs[0]?.allowedDomains)
+        .toEqual(["api.anthropic.com", "127.0.0.1", "api.stripe.com"]);
+    } finally {
+      await door.close();
+    }
   });
 
   test("`egress` is construction-time only — a wire caller cannot widen the box's network boundary", async () => {
@@ -625,17 +645,24 @@ describe("the box's egress allowlist — what the provider is asked to filter", 
   });
 
   test("the Cloud rung's gateway host rides the allowlist, read off the env the box is handed", async () => {
-    const sandbox = fakeSandbox(async () => undefined);
-    const harness = claudeCode({ sandbox });
-    provideHarnessAdapters(harness, {
-      toolDoor: { url: DOOR, mint: () => "vtk_3", revoke: () => undefined },
-    });
-    await withEnvAsync({ ...NO_INFERENCE, VENDO_API_KEY: "vnd-key", VENDO_CLOUD_URL: undefined }, async () => {
-      await drain(harness, makeTurn({ threadId: "thr_egress_cloud" }).turn);
-    });
-    // The gateway host and the door — NOT api.anthropic.com, which this box
-    // never dials.
-    expect(sandbox.specs[0]?.allowedDomains).toEqual(["console.vendo.run", "app.example.com"]);
+    // ⚠️ TEST EDIT — same reason as above. What this test is about, the gateway
+    // host displacing the default inference host, is asserted exactly as before.
+    const door = await liveDoor();
+    try {
+      const sandbox = fakeSandbox(async () => undefined);
+      const harness = claudeCode({ sandbox });
+      provideHarnessAdapters(harness, {
+        toolDoor: { url: door.url, mint: () => "vtk_3", revoke: () => undefined },
+      });
+      await withEnvAsync({ ...NO_INFERENCE, VENDO_API_KEY: "vnd-key", VENDO_CLOUD_URL: undefined }, async () => {
+        await drain(harness, makeTurn({ threadId: "thr_egress_cloud" }).turn);
+      });
+      // The gateway host and the door — NOT api.anthropic.com, which this box
+      // never dials.
+      expect(sandbox.specs[0]?.allowedDomains).toEqual(["console.vendo.run", "127.0.0.1"]);
+    } finally {
+      await door.close();
+    }
   });
 });
 
@@ -886,49 +913,62 @@ describe("a turn on a real box wire", () => {
   });
 
   test("the driver mints a credential and hands the box the door — the only way it reaches the world", async () => {
-    let seen: { url: string; token: string } | undefined;
-    const sandbox = fakeSandbox(async (box) => { seen = box.toolDoor; });
-    const harness = claudeCode({ sandbox });
-    const minted: string[] = [];
-    provideHarnessAdapters(harness, {
-      toolDoor: {
-        url: "https://app.example.com/api/vendo/mcp",
-        mint: (threadId: string) => {
-          minted.push(threadId);
-          return `vtk_for_${threadId}`;
+    // ⚠️ TEST EDIT — the door was `app.example.com`, which never resolved. A
+    // turn now probes the url before it boots a machine, so a door that no
+    // longer exists cannot stand in for one that does. Both assertions are
+    // unchanged; the url they compare against is simply the real one.
+    const door = await liveDoor();
+    try {
+      let seen: { url: string; token: string } | undefined;
+      const sandbox = fakeSandbox(async (box) => { seen = box.toolDoor; });
+      const harness = claudeCode({ sandbox });
+      const minted: string[] = [];
+      provideHarnessAdapters(harness, {
+        toolDoor: {
+          url: door.url,
+          mint: (threadId: string) => {
+            minted.push(threadId);
+            return `vtk_for_${threadId}`;
+          },
+          revoke: () => undefined,
         },
-        revoke: () => undefined,
-      },
-    });
-    const { turn } = makeTurn({ threadId: "thr_mint" });
-    await drain(harness, turn);
+      });
+      const { turn } = makeTurn({ threadId: "thr_mint" });
+      await drain(harness, turn);
 
-    // Minted for THIS conversation, and named by nothing else: the registry
-    // reads the subject off the turn in flight (`turn-credentials.ts`).
-    expect(minted).toEqual(["thr_mint"]);
-    expect(seen).toEqual({
-      url: "https://app.example.com/api/vendo/mcp",
-      token: "vtk_for_thr_mint",
-    });
+      // Minted for THIS conversation, and named by nothing else: the registry
+      // reads the subject off the turn in flight (`turn-credentials.ts`).
+      expect(minted).toEqual(["thr_mint"]);
+      expect(seen).toEqual({ url: door.url, token: "vtk_for_thr_mint" });
+    } finally {
+      await door.close();
+    }
   });
 
   test("ONE credential per conversation — a warm machine's second message reuses it, because a live session's headers are fixed at open", async () => {
-    const sandbox = fakeSandbox(async () => undefined);
-    const harness = claudeCode({ sandbox });
-    let issued = 0;
-    provideHarnessAdapters(harness, {
-      toolDoor: {
-        url: "https://app.example.com/api/vendo/mcp",
-        mint: () => `vtk_${(issued += 1)}`,
-        revoke: () => undefined,
-      },
-    });
-    await drain(harness, makeTurn({ threadId: "thr_one_cred" }).turn);
-    await drain(harness, makeTurn({ threadId: "thr_one_cred" }).turn);
+    // ⚠️ TEST EDIT — same reason: two turns run here, and each probes the door.
+    // The mint-count assertion is untouched.
+    const door = await liveDoor();
+    try {
+      const sandbox = fakeSandbox(async () => undefined);
+      const harness = claudeCode({ sandbox });
+      let issued = 0;
+      provideHarnessAdapters(harness, {
+        toolDoor: {
+          url: door.url,
+          mint: () => `vtk_${(issued += 1)}`,
+          revoke: () => undefined,
+        },
+      });
+      await drain(harness, makeTurn({ threadId: "thr_one_cred" }).turn);
+      await drain(harness, makeTurn({ threadId: "thr_one_cred" }).turn);
 
-    // A second mint per turn would leak a live credential per message. Safe
-    // because the AUTHORITY is per turn regardless of how old the token is.
-    expect(issued).toBe(1);
+      // A second mint per turn would leak a live credential per message. Safe
+      // because the AUTHORITY is per turn regardless of how old the token is.
+      expect(issued).toBe(1);
+    } finally {
+      await door.close();
+    }
   });
 
   test("an AUTO-MOUNTED door with no origin RUNS the turn workspace-only — the shape a host that never configured `mcp` deploys", async () => {
@@ -968,24 +1008,28 @@ describe("a turn on a real box wire", () => {
   });
 
   test("an AUTO-MOUNTED door WITH a reachable origin still hands the box full tools — auto-mounting suppresses nothing", async () => {
-    let seen: { url: string; token: string } | undefined;
-    const sandbox = fakeSandbox(async (box) => { seen = box.toolDoor; });
-    const harness = claudeCode({ sandbox });
-    provideHarnessAdapters(harness, {
-      toolDoor: {
-        url: "https://app.example.com/api/vendo/mcp",
-        autoMounted: true,
-        mint: () => "vtk_auto_ok",
-        revoke: () => undefined,
-      },
-    });
+    // ⚠️ TEST EDIT — this test's whole subject is a door with a REACHABLE
+    // origin, and its fixture named one that never resolved. Now it is one.
+    const door = await liveDoor();
+    try {
+      let seen: { url: string; token: string } | undefined;
+      const sandbox = fakeSandbox(async (box) => { seen = box.toolDoor; });
+      const harness = claudeCode({ sandbox });
+      provideHarnessAdapters(harness, {
+        toolDoor: {
+          url: door.url,
+          autoMounted: true,
+          mint: () => "vtk_auto_ok",
+          revoke: () => undefined,
+        },
+      });
 
-    await drain(harness, makeTurn({ threadId: "thr_auto_reachable" }).turn);
+      await drain(harness, makeTurn({ threadId: "thr_auto_reachable" }).turn);
 
-    expect(seen).toEqual({
-      url: "https://app.example.com/api/vendo/mcp",
-      token: "vtk_auto_ok",
-    });
+      expect(seen).toEqual({ url: door.url, token: "vtk_auto_ok" });
+    } finally {
+      await door.close();
+    }
   });
 
   test("a HOST-CONFIGURED door with no reachable URL still REFUSES — an explicit `mcp` that no box can reach is a misconfiguration, not a posture", async () => {
