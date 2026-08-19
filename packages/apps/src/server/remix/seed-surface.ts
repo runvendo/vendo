@@ -35,7 +35,7 @@ import {
 } from "../../contract/index.js";
 import { APPS_COLLECTION, appRecordInput } from "../persistence/persistence.js";
 import type { AppsRuntimeContext } from "../runtime/runtime-context.js";
-import type { AppsRuntime, EditResult, SeedFromInput, VersionEntry } from "../runtime/types.js";
+import type { AppsRuntime, SeedFromInput, VersionEntry } from "../runtime/types.js";
 
 export type SeedSurfaceDeps = Pick<
   AppsRuntimeContext,

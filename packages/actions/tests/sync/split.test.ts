@@ -639,6 +639,28 @@ export function RangePicker() {
     expect(picker.ported?.holes).toEqual([]);
   }, 120_000);
 
+  it("narrows a plain card's inline style with nothing else to carve — background is every host's word", async () => {
+    const root = await temporaryRoot();
+    await write(root, "src/app/page.tsx", `
+      import { Remixable } from "${UI_CHROME}";
+      import { PlainCard } from "../components/PlainCard";
+      export default function Page() { return <Remixable><PlainCard /></Remixable>; }
+    `);
+    // No cuts, no buttons — just the one style key the paint allowlist spells
+    // differently. The narrowing must not depend on the carver having anything
+    // ELSE to do: a plain real card was refused for exactly this.
+    await write(root, "src/components/PlainCard.tsx", `export function PlainCard() {
+  return <article style={{ borderRadius: 16, background: "#fff" }}><p>Net worth</p></article>;
+}
+`);
+
+    const result = await capturePins(root, path.join(root, ".vendo"));
+    expect(result.warnings).toEqual([]);
+
+    const card = await baselineFor(root, "PlainCard");
+    expect(card.ported?.source).toContain(`style={{ borderRadius: 16, backgroundColor: "#fff" }}`);
+  }, 120_000);
+
   it("grades a props-dependent port with the host's own sample props, and lands them on the baseline", async () => {
     const root = await temporaryRoot();
     await write(root, "src/app/page.tsx", `
