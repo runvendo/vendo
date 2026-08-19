@@ -62,7 +62,7 @@ pointed at.
 
    ```bash
    npm install @vendoai/vendo
-   npx vendo --version   # must be >= 0.28.0
+   npx vendo --version   # must be >= 0.29.0
    ```
 
    In a workspace repo, install into the app package with the host's own
@@ -186,9 +186,10 @@ pointed at.
    it is, and never asks. If they bring their own key, tell them to put it in
    `.env.local` as `ANTHROPIC_API_KEY=...` or `OPENAI_API_KEY=...` and to tell
    you when it is there. It never passes through your chat.
-   `--framework <next|express|custom>` is required only when detection fails
-   (init errors with that exact instruction rather than guessing); `custom` is
-   the answer for every non-Next, non-Express host. See the
+   `--framework <next|express|custom>` matters when detection fails: agent mode
+   does NOT stop to ask, it falls through to `custom`. So a Next or Express host
+   whose `package.json` you could not read is a runtime-neutral scaffold nobody
+   asked for — pass the flag yourself whenever step 1 left you unsure. See the
    [CLI reference](/reference/cli#vendo-init-dir) for every other flag and
    [vendo init](/reference/vendo-init) for exactly what it writes.
 
@@ -233,13 +234,19 @@ person; the mechanics are the same everywhere.
 **The guard's default posture.** Reads and writes RUN without approval.
 Destructive and ungraded calls ASK: the person gets an approve/deny card, and
 the call resumes on yes. A standing grant they already gave runs a destructive
-call without a new ask, and away runs, rate breakers, and an org policy turn
-would-be runs into asks. To ask before writes too, compose the cautious
-preset — a `guard()` option, not a `.vendo/policy.json` field:
+call without a new ask, and away runs, rate breakers, and an org policy can turn
+a would-be run into an ask — or into a refusal. To ask before writes too,
+compose the cautious preset — a `guard()` option, not a `.vendo/policy.json`
+field:
 
 ```ts
 guard: guard({ policy: "cautious" }),
 ```
+
+The preset expands to explicit rules, and inline rules win with no merge, so it
+REPLACES `.vendo/policy.json`'s rules rather than tightening them. That is why
+init writes `guard({ policy: {} })`: the empty object is the shape that keeps
+reading the file.
 
 **If every call parks, the tools are ungraded, not broken.** An ungraded tool
 asks before each call, which reads as an agent that will not do anything.
@@ -249,9 +256,18 @@ Grade them, then restart the dev server:
 npx vendo sync --ai
 ```
 
-The restart is not optional: the runtime reads `.vendo/judgments.json` once at
-boot and never hot-swaps it, so a sync against a running server changes
-nothing the person can see.
+The restart is not optional: the runtime memoizes the merged tool registry on
+first use and holds it for the life of the process, so a sync against a running
+server changes nothing the person can see.
+
+**`VENDO_BASE_URL` names your human's own origin.** Init's dev-URL question
+already wrote it into `.env.local`. It is load-bearing wherever a Vendo tool
+runs OUTSIDE the wire route init wrote — their own chat route, their backend —
+because a `vendo_*` or `api()` call is a real HTTP request back at their API and
+nothing else says where to send it. Unset there, the first tool call throws
+`Cannot execute … set VENDO_BASE_URL, or pass baseUrl`. Deployments set the same
+variable in the hosting platform, to the public URL with the path prefix
+included ([environment variables](/reference/environment-variables)).
 
 **The judgment work init leaves you.** Init writes the deterministic contract.
 The parts that need reading the code are yours, and nothing but you will catch
@@ -303,8 +319,14 @@ import theme from "../.vendo/theme.json";
 ```
 
 `baseUrl` is where init mounted the route, path prefix included — an app served
-under `/maple` passes `baseUrl="/maple/api/vendo"`. Pass the host's real
-components to the provider so generated screens are built from them
+under `/maple` passes `baseUrl="/maple/api/vendo"`.
+
+Host components take TWO registrations, and they are different halves. What the
+agent may build FROM is the server-side catalog — `createVendo({ catalog })`
+merged over `.vendo/catalog.json` — because that is where the descriptions and
+prop schemas live. The provider's `components` prop is the browser half, which
+draws those names. Register in one only and you get either a component the agent
+was never told about, or a name nothing can draw
 ([tools and catalog](/generated/host-components)).
 
 **Offer slots, and explain what a slot is.** A slot is a spot on one of your
@@ -375,12 +397,8 @@ created under one subject is invisible to a surface asking as another.
 has that file in both shapes — with an auth preset and without — and it is
 the one exception to the one-page rule, not an invitation to browse.
 
-**`VENDO_BASE_URL` is required here.** A `vendo_*` tool call is a real HTTP
-request back at the host's own API, and on this path the tool runs in THEIR
-chat route, which is not a request the wire route ever sees. Init's dev-URL
-question already wrote the line; without it the first tool call comes back
-with `Cannot execute … set VENDO_BASE_URL, or pass baseUrl`
-([environment variables](/reference/environment-variables)).
+**This is one of the two paths `VENDO_BASE_URL` is load-bearing on**: the tool
+runs in THEIR chat route, which is not a request the wire route ever sees.
 
 **Guard and done on this path.** There is no overlay to place. Vendo calls
 arrive in the host's chat as `dynamic-tool` parts: hand every finished one to
@@ -422,8 +440,9 @@ sets up a service key (`--service-key`). Answer both as flags on the next run;
    authJs|clerk|supabase|auth0` (or `jwt({ secret })`) is the whole answer;
    `--auth none` is NOT — it writes a demo `principal` and no oauth seam, so
    the door stays shut until that seam is filled. An `auth` preset owns the
-   seam: a separately passed `oauth` is ignored whenever `auth` is set. Which
-   preset: [host auth](/production/auth).
+   seam outright: pass `oauth` (or `principal`, or `actAs`) beside `auth` and
+   `createVendo` THROWS naming the mixed keys. Which preset:
+   [host auth](/production/auth).
 
    ```ts
    export const vendo = createVendo({
@@ -455,7 +474,9 @@ sets up a service key (`--service-key`). Answer both as flags on the next run;
    of leaving it out is that the host's own route-bound tools answer
    `not-implemented` over the door, while `vendo_make` and the apps tools
    work. Every client acts as that one person: a demo or an internal tool,
-   not a multi-user product.
+   not a multi-user product. Server-action-bound tools answer
+   `not-implemented` over MCP whatever `actAs` says — they execute in-process
+   with the present user's session, and a door call has none.
 
 2. **The discovery route.** The door's discovery documents live at ORIGIN-ROOT
    paths, outside `/api/vendo`, so the catch-all route never sees them and that
@@ -470,9 +491,12 @@ sets up a service key (`--service-key`). Answer both as flags on the next run;
    ```
 
    The handler answers only the door's own paths and 404s everything else under
-   `/.well-known`. Express and custom hosts instead mount the same composition
-   at the origin root as well (`app.use("/.well-known", mountVendo())`),
-   registered after the app's own well-known routes.
+   `/.well-known`. An Express host instead mounts the `mountVendo()` that init
+   generated into its own `vendo/server.ts` at the origin root as well
+   (`app.use("/.well-known", mountVendo())`) — registered AFTER the app's own
+   well-known routes, because that middleware is terminal: anything behind it
+   gets Vendo's not-found JSON. Custom runtimes route `/.well-known` into the
+   same `handleVendoRequest(request, env)` they already export.
 
 3. **`VENDO_BASE_URL`.** It names the origin the door actually answers on: the
    dev origin while your human is local, the deployment's FULL public URL (path
@@ -506,17 +530,20 @@ sets up a service key (`--service-key`). Answer both as flags on the next run;
 
 **Guard and done on this path.** The outside AI app is the surface, and the
 door runs the same guard as everything else — a parked call comes back to that
-agent as `pending-approval` carrying the approval id and where to resolve it,
-never as a silent success. Done is their own MCP client connected, signed in
+agent as an in-band error naming the approval id and telling it the approval is
+waiting in your human's own product, to be resolved there and the call retried.
+Never a silent success, and never a link: the door serves no approval UI of its
+own. Done is their own MCP client connected, signed in
 as one of their users, and one real ask answered from their API. Publishing to
 the MCP registry is a separate job, not part of being installed
 ([`E-MCP-004`](/production/troubleshooting/e-mcp-004)).
 
 ## In the backend
 
-A governed agent in any Node backend, with no Vendo UI to mount: `agent()`
-composes it, `respond()` answers someone who is waiting, `run()` drives work
-nobody is watching. A backend agent IS the host's own loop, so init wrote this
+A governed agent in any Node backend, with no Vendo UI to mount. `agent()` is
+the only export of the three: it composes the agent, and the object it returns
+carries `respond()` for someone who is waiting and `run()` for work nobody is
+watching. A backend agent IS the host's own loop, so init wrote this
 path with `--use-case agent-loop`, which is also what tells doctor to skip the
 mounted-UI checks. The one page for it:
 [`https://docs.vendo.run/backend/quickstart.md`](/backend/quickstart).
@@ -525,17 +552,15 @@ mounted-UI checks. The one page for it:
 beside it because every file init writes imports `@vendoai/vendo/*` and the
 `predev`/`prebuild` hooks run the `vendo` binary it ships.
 
-**`VENDO_BASE_URL` is required here too**, and for the same reason as the
-existing-agent path: `api()` tools are real HTTP requests back at the host's
-own API, and no Vendo route is mounted for the runtime to learn the origin
-from. Unset, the first tool call throws `Cannot execute … set VENDO_BASE_URL,
-or pass baseUrl`.
+**This is the other one**: `api()` tools are real HTTP requests, and on this
+path no Vendo route is mounted at all for the runtime to learn an origin from.
 
 **Guard and done on this path.** The UI stays the host's, so approvals do not
 render themselves. A `respond()` turn streams the approval card to whatever is
-listening and waits; a `run()` nobody is watching parks instead and reports the
-ids in `refs.approvals` — a non-empty `refs.approvals` is the signal that
-nothing actually happened, not a warning. Show those to a person, let them
+listening and waits; a `run()` nobody is watching parks that one call and
+carries on, reporting its id in `refs.approvals`. Parking is per call, not per
+run, so a non-empty `refs.approvals` means PART of the task did not happen and
+the report is the only place that says so. Show those to a person, let them
 answer, then call `run()` again. Done is one real turn, driven from their own
 backend, answering from their own API.
 
@@ -587,7 +612,7 @@ backend, answering from their own API.
 | `https://docs.vendo.run/llms.txt` | Index of every docs page for LLM ingestion (also at `/.well-known/llms.txt`) |
 | `https://docs.vendo.run/llms-full.txt` | The whole docs site as one file |
 | `npx vendo init --agent` | Init's setup questions as one JSON object, answered back as flags on a re-run |
-| `npx vendo sync --json --ai` | One machine-readable sync report object on stdout. Pass `--ai`: a sync that cannot ask reports `judgment: skipped`, and every ungraded tool then asks before each call. Do NOT pass it to `init --agent` — init rejects that pair, because in agent mode the judgment is yours. |
+| `npx vendo sync --json --ai` | One machine-readable sync report object on stdout. `--ai` is what grades non-interactively: WITHOUT it a run that cannot ask reports `judgment: skipped`, and every ungraded tool then asks before each call. `init --agent` takes the same flag and grades by default. |
 | `.claude/skills/vendo-setup/` | Setup skill shipped in the npm tarball; init writes it when `.claude/` exists and it is missing, and never overwrites an edited copy |
 
 See the [CLI reference](/reference/cli) for every flag and exit code.

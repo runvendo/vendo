@@ -4,7 +4,8 @@
     late. Mintlify strips ALL JSX expressions from the SSR pass, so the prompt
     is written twice on purpose: as literal text for the page, and as
     CARD_PROMPT for the copy button. Both are copies of
-    `buildAgentPrompt({ src: "docs" })` in packages/vendo/src/agent-prompt.ts —
+    `buildAgentPrompt({ src: "docs", signedIn: false })` in
+    packages/vendo/src/agent-prompt.ts —
     change it there first; agent-prompt-docs.docs.test.ts holds them to it.
     Styling: styles.css under .vendo-agent-prompt. */}
 

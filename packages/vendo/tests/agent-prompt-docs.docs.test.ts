@@ -32,11 +32,27 @@ const README = "README.md";
 const QUICKSTART = "docs-site/existing-agent/quickstart.mdx";
 const AI_SDK = "docs-site/existing-agent/ai-sdk.mdx";
 const MASTRA = "docs-site/existing-agent/mastra.mdx";
-/** Every page that restates the Next externals list rather than linking to it. */
-const EXTERNALS_PAGES = ["docs-site/index.mdx", "docs-site/agents/index.mdx", AI_SDK];
+/** Every page that restates the Next externals list rather than linking to it —
+ *  including the troubleshooting page a reader lands on when the list is wrong,
+ *  which is the worst place of all for it to be wrong. */
+const EXTERNALS_PAGES = [
+  "docs-site/index.mdx",
+  "docs-site/agents/index.mdx",
+  "docs-site/production/troubleshooting/e-cfg-004.mdx",
+  AI_SDK,
+];
+
+/** Line breaks are the one difference a published copy may carry: the README
+ *  hard-wraps its fence for readability, and JSX collapses a wrapped text child
+ *  to single spaces before it ever reaches the page. Comparing collapsed on
+ *  both sides tests the words, which is the thing that rots — rewrapping either
+ *  copy is not drift and must not fail. */
+const collapse = (text: string): string => text.replace(/\s+/g, " ").trim();
 
 describe("every published copy of the paste is the builder's own text", () => {
   it("the card's copy-button string is the docs build of it", async () => {
+    // Exact, not collapsed: this literal IS the string the copy button puts on
+    // the clipboard, so its bytes are the product.
     const literal = /export const CARD_PROMPT = "([^"]*)";/.exec(await read(CARD));
     expect(literal, `${CARD} must export CARD_PROMPT as one string literal`).not.toBeNull();
     expect(literal![1]).toBe(buildAgentPrompt({ src: "docs", signedIn: false }));
@@ -45,18 +61,15 @@ describe("every published copy of the paste is the builder's own text", () => {
   it("the card's server-rendered twin is the same string", async () => {
     const pre = /<pre className="vendo-agent-prompt-pre">([\s\S]*?)<\/pre>/.exec(await read(CARD));
     expect(pre, `${CARD} must still server-render the paste as literal text`).not.toBeNull();
-    expect(pre![1]).toBe(buildAgentPrompt({ src: "docs", signedIn: false }));
+    expect(collapse(pre![1]!)).toBe(buildAgentPrompt({ src: "docs", signedIn: false }));
   });
 
   it("the README's block is the same string under its own src", async () => {
     // Anchored on the citation comment so a second ```text fence elsewhere in
-    // the README can never be mistaken for the paste. The README hard-wraps for
-    // readability, and unwrapping is the only difference a copy may carry.
+    // the README can never be mistaken for the paste.
     const block = /Change it there first\.\s*-->\s*```text\n([\s\S]*?)```/.exec(await read(README));
     expect(block, `${README} must still publish the paste under its citation comment`).not.toBeNull();
-    expect(block![1]!.trim().split("\n").join(" ")).toBe(
-      buildAgentPrompt({ src: "readme", signedIn: false }),
-    );
+    expect(collapse(block![1]!)).toBe(buildAgentPrompt({ src: "readme", signedIn: false }));
   });
 });
 
