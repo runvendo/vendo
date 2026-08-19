@@ -260,3 +260,44 @@ describe("memory through chat() — the verb the quickstart uses", () => {
     expect(briefs[1]).toContain("- Prefers window seats");
   }, 30_000);
 });
+
+describe("memory through run() — the unattended lane", () => {
+  const recordingAgent = async (memory: boolean): Promise<{ agent: ReturnType<typeof agent>; briefs: string[] }> => {
+    const briefs: string[] = [];
+    return {
+      briefs,
+      agent: agent({
+        name: "support",
+        harness: defineHarness({
+          name: "remembers",
+          async *run(turn) {
+            briefs.push(turn.system ?? "");
+            if (briefs.length === 1 && memory) await turn.tools.call("remember", { text: "Prefers window seats" });
+            yield { type: "text" as const, delta: "ok" };
+          },
+        }),
+        store: await freshStore(),
+        ...(memory ? { memory: true } : {}),
+      }),
+    };
+  };
+
+  it("an away run reads the same [Memory] block a chat turn does", async () => {
+    // The same seam as chat's: the fact is written through the real `remember`
+    // tool in a chat turn, and read back off the brief the away run's harness
+    // was actually handed — venue "automation", presence "away".
+    const { agent: support, briefs } = await recordingAgent(true);
+    expect(await support.chat("Remember that I prefer window seats.", { as: alice.subject }))
+      .toMatchObject({ status: "ok" });
+    await support.run("Draft this week's digest.", { as: alice.subject });
+
+    expect(briefs[1]).toContain("[Memory]");
+    expect(briefs[1]).toContain("- Prefers window seats");
+  }, 30_000);
+
+  it("no memory configured is still no block, away as anywhere else", async () => {
+    const { agent: support, briefs } = await recordingAgent(false);
+    await support.run("Draft this week's digest.", { as: alice.subject });
+    expect(briefs[0]).not.toContain("[Memory]");
+  }, 30_000);
+});

@@ -92,7 +92,9 @@ export async function resolveSystem(
   const directions = await deps.guard.directions(ctx);
   // Recalled per TURN, for the turn's own principal: a fact the previous turn's
   // `remember` call stored is in this one's prompt, and nothing a session holds
-  // can go stale against it.
+  // can go stale against it. VENUE IS DELIBERATELY IRRELEVANT — an away run
+  // reads the person's memories exactly as a chat turn does (founder's call,
+  // 2026-08-19), so an automation acting for someone is not a stranger to them.
   const memories = deps.memory === undefined
     ? []
     : await deps.memory.recall(ctx.principal, MEMORY_RECALL_LIMIT);
