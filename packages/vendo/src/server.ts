@@ -149,6 +149,14 @@ export { chainSecrets, cloudSecrets, type CloudSecretsOptions } from "./cloud-se
 // createVendo({ connectors: [cloudTools({...})] }) to scope with `apps`.
 export { cloudTools, type CloudToolsOptions } from "./cloud-tools.js";
 
+// The hosted tenant directory and the policy it feeds ride the server surface
+// like the other Cloud adapters — and the console's cross-repo seam test drives
+// all three against the SHIPPING code, which is the only way a producer and a
+// consumer can ever disagree in a test.
+export { cloudDirectory, type CloudDirectory, type CloudDirectoryOptions } from "./cloud-directory.js";
+export { tenantLimits } from "./tenant-limits.js";
+export { createLimiter, type Limiter, type LimitVerdict } from "./limits.js";
+
 // The BYO connectors a host passes to createVendo({ connectors }), named from
 // here so bringing an MCP server or a third-party REST API in is one import
 // from the umbrella — no direct @vendoai/actions dependency.

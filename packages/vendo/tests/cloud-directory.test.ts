@@ -89,3 +89,14 @@ describe("cloudDirectory", () => {
     expect(seen[0]?.["authorization"]).toBe("Bearer vk_test");
   });
 });
+
+describe("the server surface", () => {
+  // The console's seam test drives the REAL consumer — no stub on either side —
+  // so these three are public surface, not an implementation detail.
+  it("exports the directory, its policy, and the limiter", async () => {
+    const server = await import("../src/server.js");
+    expect(typeof server.cloudDirectory).toBe("function");
+    expect(typeof server.tenantLimits).toBe("function");
+    expect(typeof server.createLimiter).toBe("function");
+  });
+});
