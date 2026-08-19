@@ -32,6 +32,7 @@ comes after it.
 ```http
 POST /api/vendo/files?name=sales-2026.csv
 Content-Type: text/csv
+x-vendo-upload: 1
 
 month,revenue
 jan,31000
@@ -43,6 +44,11 @@ jan,31000
 
 The body is the file's own raw bytes under its own media type — there is no
 multipart form to assemble, so the name rides the query string, percent-encoded.
+
+`x-vendo-upload` is required and its value is not read. A raw body cannot be
+`application/json`, so this door sits outside the wire's CSRF floor and asks for
+a header a cross-site form post cannot set. Without it the upload comes back a
+`400`. The client below sends it for you.
 
 <Note>
   **Same name replaces.** Upload `sales-2026.csv` again and the new file *is*

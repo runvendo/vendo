@@ -176,7 +176,17 @@ await vendo.tenantConnectors.list("acme");
 
 The vault belongs to whichever store composes. If Vendo composes it, `VENDO_STORE_ENCRYPTION_KEY` (base64, 32 bytes) is what turns it on. If you pass your own store, you configure it there yourself — `createStore({ url, encryption: { key: ... } })` — because an explicitly passed store owns its own secrets config, and the environment variable never reaches it.
 
-Without one of those two, a registration carrying a token is refused in every environment, not just production. A tokenless registration is unaffected: it stores no secret, so it needs no vault.
+With no key at all, what happens next depends on which store composed, and the two answers differ.
+
+| No key, and the store is… | A registration carrying a token |
+| --- | --- |
+| composed by Vendo, in development | Written **in the clear**, behind one loud warning |
+| composed by Vendo, with `NODE_ENV=production` | Refused |
+| passed by you | Refused in **every** environment, development included |
+
+A store Vendo composes gets the development allowance automatically. A store you pass does not: it owns its own secrets config, so it refuses until you give it a key — or opt in explicitly with `createStore({ url, allowUnencryptedSecrets: true })`, which is a development convenience and nothing more.
+
+A tokenless registration is unaffected either way: it stores no secret, so it needs no vault.
 
 ## Checking and removing
 
