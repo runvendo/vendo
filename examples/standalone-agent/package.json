@@ -7,8 +7,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "chat": "node dist/chat.js",
-    "start": "node dist/server.js"
+    "chat": "node --env-file-if-exists=.env.local dist/chat.js",
+    "start": "node --env-file-if-exists=.env.local dist/server.js"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.0",

@@ -47,11 +47,12 @@ export const support = agent({
 
 `description` is required, and it is the only thing the model reads when it
 decides whether to call the tool. `risk` is `read`, `write`, or `destructive`,
-and your label is final — leave it off and the tool is ungraded, which the
-guard asks about every time.
+and your label is final. Grade it: leave `risk` off and the tool is ungraded,
+which the guard asks a person about every time — so the very first `chat()`
+comes back `interrupted` with nothing run.
 
 Nothing else is configured. Left unset, the agent thinks in this process, and
-threads and audit rows go to an embedded database that needs no setup.
+threads and audit rows are persisted automatically, with zero setup.
 
 <CardGroup cols={4}>
   <Card title="tools">
@@ -89,10 +90,18 @@ console.log(turn.text);
 
 That is the whole hello world. The agent needs a model to think with, and the
 shortest way to give it one is `npx vendoai@latest login`, which mints a
-`VENDO_API_KEY` into `.env.local` and never prints it. To bring your own
-instead, install `@ai-sdk/anthropic@^3` and pass it beside `name`:
-`model: anthropic("claude-sonnet-4-6")`. Either way the credential is read at
-the first turn, never at build time — see
+`VENDO_API_KEY` into `.env.local` and never prints it.
+
+`.env.local` is a Next.js convention, and nothing in `@vendoai/agents` reads it.
+A plain Node backend — which this page is — has to be handed the variable:
+
+```bash
+node --env-file=.env.local ./dist/chat.js   # or: export VENDO_API_KEY=…
+```
+
+To bring your own model instead, install `@ai-sdk/anthropic@^3` and pass it
+beside `name`: `model: anthropic("claude-sonnet-4-6")`. Either way the
+credential is read at the first turn, never at build time — see
 [Model credentials](/production/model-credentials).
 
 `turn` is a `TurnResult`: read `status` once and everything you then touch is

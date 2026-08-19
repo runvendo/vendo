@@ -249,12 +249,32 @@ return session.stream(message);
 principal the turn acts as. The wait is the same 90 seconds, so decide inside
 it. Full shape: [Server API](/reference/server-api).
 
-{/* TODO(restack): `user.turns.list({ status: "interrupted" })` and
-    `user.turns.resume(turnId, decisions)` land in the durable-resume slice
-    (#1503). Until then `POST /turns/:id/resume` answers `not-implemented`
-    (packages/agents/src/handler.ts) and an approval is answered on the turn
-    object that parked it, as above. Not runnable on this branch — verify at
-    restack before documenting the verbs. */}
+## Answer it tomorrow
+
+`turn.resume()` is a closure, so it dies with the process. The ask does not: a
+server restarts, the turn ran on a queue worker, the person answers on Monday.
+`forUser(subject).turns` addresses a parked turn by **id** instead, from
+anywhere over the same store.
+
+```ts focus={2,4}
+const user = support.forUser(subject);
+const waiting = await user.turns.list({ status: "interrupted" });
+
+const result = await user.turns.resume(waiting[0]!.turnId, {
+  [waiting[0]!.interruptions[0]!.id]: "approve",
+});
+```
+
+`turns.resume` hands back the **result**, not a turn: it reads the store before
+it can start anything, and a `Turn` is itself awaitable, so there would be no
+handle left to hold. The answer is prose either way — an `output` schema
+belonged to the code that called `run({ output })` and was never persisted, so
+resume through the result you are holding to keep the shape.
+
+Every interruption the turn parked needs a decision in the same call; a partial
+map is refused, naming the ids it is missing. A parked turn waits **seven
+days**, and a resume after that fails saying the ask expired rather than acting
+on a week-old yes.
 
 <CardGroup cols={2}>
   <Card title="Run" href="/backend/run">

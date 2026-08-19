@@ -9,8 +9,8 @@ The `@vendoai/agents` quickstart, whole. One package, three short files:
 | [`src/server.ts`](src/server.ts) | the same agent mounted on an HTTP server |
 
 Nothing else is configured. No store, no sandbox, no harness, no `vendo init`,
-no CLI. Left unset, the agent thinks in this process and persists to an
-embedded database, so these three files are the whole project.
+no CLI. Left unset, the agent thinks in this process and persists its threads
+and audit rows automatically, so these three files are the whole project.
 
 ## Run it
 
@@ -18,17 +18,30 @@ embedded database, so these three files are the whole project.
 pnpm install && pnpm build
 
 # the one line that gives the agent a brain
-npx vendoai@latest login          # mints VENDO_API_KEY, never prints it
+cd examples/standalone-agent
+npx vendoai@latest login          # mints VENDO_API_KEY into .env.local, never prints it
 
-pnpm --filter @vendoai-examples/standalone-agent chat
+pnpm chat
 ```
 
-The agent calls `order_status`, reads the row, and answers in its own words —
-something like:
+`.env.local` is a Next.js convention and nothing in `@vendoai/agents` reads it,
+so the `chat` and `start` scripts pass it to Node themselves
+(`node --env-file-if-exists=.env.local …`). Exporting `VENDO_API_KEY` in your
+shell works just as well.
+
+The agent calls `order_status`, reads the row, and answers in its own words.
+Verbatim, on 2026-08-19:
 
 ```
-Order A-1001 has shipped and is expected to arrive on 2026-08-21.
+$ node --env-file-if-exists=.env.local dist/chat.js
+[vendo] model: VENDO_API_KEY (Vendo Cloud) → vendo via the Cloud gateway
+Order A-1001 has shipped and is expected to arrive by August 21, 2026. Let me know if you'd like more details!
 ```
+
+`order_status` is graded `risk: "read"`, which is why that turn ran straight
+through. Leave `risk` off and the tool is ungraded, which the guard asks a
+person about every time — the first `chat()` would come back `interrupted` with
+nothing run.
 
 `VENDO_API_KEY` is the shortest path to a model. To bring your own instead,
 pass one to `agent()` and the key is not needed at all:

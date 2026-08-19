@@ -61,7 +61,7 @@ serves a single request.
 support.on("every monday", "summarize the week");
 // VendoError [validation]: "every monday" is not a cron expression — a cron
 // expression has exactly 5 fields. Did you mean "0 9 * * 1"?
-// See https://vendo.run/docs/capabilities/automations
+// See https://docs.vendo.run/capabilities/automations
 ```
 
 A cron nobody can run, an `every` outside `<n><s|m|h|d>`, an `at` that is not an
@@ -69,24 +69,38 @@ instant, an unnamed event or webhook — each one stops the boot, with the neare
 valid form to paste. An automation you cannot see failing is worse than a deploy
 that will not start.
 
-## Register the agent
+## Arm them
 
-An automation record stores the agent's **name**, never the agent. Your code is
-looked up under that name when the automation fires, so the agent has to be
-registered when your process boots:
+A declaration is **inert** until a lifecycle reconciles it. There are two, and
+they run the same reconcile.
+
+In a standalone backend, `serve()` is the lifecycle. It takes the agents whose
+declarations this process runs and hands back the handle that stops the
+scheduler:
+
+```ts
+import { serve } from "@vendoai/agents";
+import { support } from "./agent.js";
+
+const runtime = await serve({ agents: [support] });
+// …
+await runtime.close();
+```
+
+`close()` stops the scheduler and nothing else: the records stay in the store,
+armed, because stopping a process is not a decision about what should fire.
+
+Inside a Vendo deployment, `createVendo`'s own boot is the lifecycle, and
+registering the agent is what arms it. An automation record stores the agent's
+**name**, never the agent, and your code is looked up under that name when it
+fires:
 
 ```ts app/api/vendo/[...vendo]/route.ts
-import { createVendo } from "@vendoai/vendo";
+import { createVendo } from "@vendoai/vendo/server";
 import { support, billing } from "@/lib/agent";
 
 export const vendo = createVendo({ agents: [support, billing] });
 ```
-
-{/* TODO(restack): `serve({ agents: [support] })` — the standalone lifecycle that
-    arms `.on()` without `createVendo` — is PR7 and is NOT on this branch; it is
-    not exported from `@vendoai/agents` here, so it is deliberately undocumented
-    rather than guessed at. Once PR7 lands, this section needs the standalone
-    half: declarations are inert until `serve()`. Verify at restack. */}
 
 `vendo.agent` — the embed's own composed agent — is registered for you, and
 `.on()` works on it too. Two agents claiming one name throw at startup. A record
