@@ -53,6 +53,7 @@ export * from "./sse-keepalive.js";
 export * from "./store.js";
 export * from "./thread-window.js";
 export * from "./store-wire.js";
+export * from "./tenant-directory.js";
 export * from "./style.js";
 export * from "./engine-collections.js";
 export * from "./engine-over-adapter.js";
