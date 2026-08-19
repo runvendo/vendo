@@ -1,16 +1,30 @@
 ---
 title: "Vendo's Full-Stack Agent"
 description: "Your agent as a panel inside your own product, in your own brand."
-sidebarTitle: "Quickstart"
+sidebarTitle: "Quickstart: in your product"
 ---
 
 Vendo brings the loop, the model, and the chat surface. You paste three things
 into your own client.
 
-This picks up after the two commands on the [main quickstart](/) —
-`npm install @vendoai/vendo`, then `npx vendo init` (`pnpm add @vendoai/vendo`
-and `pnpm exec vendo init` on pnpm). Those leave you
-`app/api/vendo/[...vendo]/route.ts` written, and a model credential settled.
+This picks up after the two commands on the [main quickstart](/):
+
+<CodeGroup>
+
+```bash npm
+npm install @vendoai/vendo
+npx vendo init
+```
+
+```bash pnpm
+pnpm add @vendoai/vendo
+pnpm exec vendo init
+```
+
+</CodeGroup>
+
+Those leave you `app/api/vendo/[...vendo]/route.ts` written, and a model
+credential settled.
 
 Which credential depends on how you answered init's models question. **Vendo
 Cloud** ran the browser login and put a `VENDO_API_KEY` in `.env.local`.

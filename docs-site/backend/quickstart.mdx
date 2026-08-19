@@ -1,6 +1,6 @@
 ---
 title: "In your backend"
-sidebarTitle: "Quickstart"
+sidebarTitle: "Quickstart: backend"
 description: "Compose a governed agent with agent(), answer a waiting person with respond(), and drive unattended work with run(). The UI stays yours."
 ---
 
@@ -70,10 +70,11 @@ export const support = agent({
   VENDO_BASE_URL, or pass baseUrl`.
 
   An interactive `vendo init` asks where your app runs in dev and writes the
-  answer for you, so the line is usually already there:
+  answer for you, so the line is usually already there with your real port in
+  place of the placeholder:
 
   ```bash .env.local
-  VENDO_BASE_URL=http://localhost:3000
+  VENDO_BASE_URL=http://localhost:<your-dev-port>
   ```
 
   Add it by hand (with the port your own server listens on) if init ran
