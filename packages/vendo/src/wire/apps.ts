@@ -154,16 +154,24 @@ async function openApp(wire: WireContext, appId: string, ctx: RunContext, pendin
   try {
     surface = await deps.apps.open(appId, ctx, { pending });
   } catch (reason) {
-    // A broken ARTIFACT, never a bad request: the only input this door takes is
-    // the app id, and a bad one is not-found — so a `validation` refusal is
-    // always about what is STORED (a served row with no machine, a screen that
-    // no longer renders: persistence/open.ts). That is terminal for every caller
-    // and unchanged by every retry, so it is answered in the wire's own terminal
-    // vocabulary (#492) carrying the refusal's own words. As a bare 400 it read
-    // as "try again", and an agent retried one identical response for 7.7
-    // minutes, until its turn budget died, with the reason never reaching it.
+    // About the STORED artifact, never about this request: the only input this
+    // door takes is the app id, and a bad one is not-found. So the caller is told
+    // WHAT is wrong in the refusal's own words, through the terminal answer this
+    // wire already speaks (`{kind:"failed"}` — the shape persistence/open.ts:249
+    // returns for a document with no screen left). As a bare 400 it carried no
+    // reason and read as "try again": an agent retried one identical response for
+    // 7.7 minutes, until its turn budget died.
+    //
+    // No `retryable` claim rides along, because this door's refusals are a MIXED
+    // class. A screen's OWN fault is permanent (it will not compile, it throws on
+    // the shape its queries really return), but the same refusal also carries a
+    // deployment with no compiler or engine, a query the guard blocked, an
+    // unconnected toolkit, and a read awaiting approval
+    // (server/checking/component-screen.ts) — every one of those can open fine
+    // later, and only the floor knows which one it had. So this states the
+    // failure and its reason, and asserts nothing about a retry.
     if (isVendoError(reason) && reason.code === "validation") {
-      return json({ kind: "failed", reason: reason.message, retryable: false });
+      return json({ kind: "failed", reason: reason.message });
     }
     // Cross-realm safe (`isVendoError`): a second @vendoai/core copy's not-found
     // read as an unknown fault here, which 501'd the poll instead of answering it.

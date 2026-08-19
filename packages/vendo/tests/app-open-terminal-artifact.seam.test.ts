@@ -1,31 +1,47 @@
 /**
- * A BROKEN ARTIFACT IS NOT A RETRIABLE REQUEST.
+ * A REFUSED OPEN SAYS WHY, AND CLAIMS NOTHING MORE THAN IT KNOWS.
  *
- * `open()` refuses a stored app it can never serve with a `validation` VendoError
- * — a served row whose machine is gone, or a screen that no longer renders
- * (`persistence/open.ts`). The wire's build window only rescued `not-found`, so
- * those two reached the caller as a bare HTTP 400: no reason, and a status every
- * agent reads as "try again". One did, on the identical response, for 7.7 minutes
- * until its turn budget died.
+ * `open()` refuses a stored app it cannot serve with a `validation` VendoError —
+ * a served row whose machine is gone, or a screen the floor would not pass
+ * (`persistence/open.ts:191`, `:221`). The wire's build window only rescued
+ * `not-found`, so those reached the caller as a bare HTTP 400: no reason, and a
+ * status every agent reads as "try again". One did, on the identical response,
+ * for 7.7 minutes until its turn budget died.
  *
- * So this drives both refusals through the REAL seam and asserts the answer is
- * terminal and self-explaining. The producer is a shipped write door
- * (`authoredScreen` for a screen that went bad after it landed, `importApp` for a
- * served document whose machine never crosses interchange) over a real store; the
- * consumer is the real `GET /apps/:id/open` route on the real composed handler.
- * Nothing is stubbed on either side, and the screen really renders — and really
- * crashes — in the sealed VM.
+ * The answer now carries the refusal's own words in the terminal shape this wire
+ * already speaks. What it must NOT carry is a verdict on retrying: that door's
+ * refusals are a mixed class. "This screen did not render" covers a screen that
+ * will never compile AND a query the guard blocked, an unconnected toolkit, a
+ * read awaiting approval, or a deployment missing esbuild/tsc/QuickJS
+ * (`server/checking/component-screen.ts`) — and the wire cannot tell which it
+ * got. The last test here is that case, end to end: the same stored app that
+ * refused opens fine once its dependency answers.
+ *
+ * The producer is a shipped write door (`authoredScreen` for a screen that went
+ * bad after it landed, `importApp` for a served document whose machine never
+ * crosses interchange) over a real store; the consumer is the real
+ * `GET /apps/:id/open` on the real composed handler. Nothing is stubbed on either
+ * side, and the screen really renders — and really crashes — in the sealed VM.
  *
  * What must be able to fail: drop the `validation` arm from `openApp`
- * (`src/wire/apps.ts`) and both terminal reads go red with a 400 carrying no
- * `reason` an agent could act on. The healthy open below is the premise — it
- * proves this deployment paints screens at all, so a refusal here is the SCREEN's
- * and not a deployment with no engine wired.
+ * (`src/wire/apps.ts`) and every read here goes red with a 400 carrying no
+ * `reason` an agent could act on; add `retryable: false` back to it and the
+ * recoverable case goes red. The healthy open is the premise — it proves this
+ * deployment paints screens at all, so a refusal here is the SCREEN's and not a
+ * deployment with no engine wired.
  */
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { VENDO_APP_FORMAT, type AppDocument, type AppId, type Principal, type RunContext } from "@vendoai/core";
+import {
+  VENDO_APP_FORMAT,
+  type AppDocument,
+  type AppId,
+  type Json,
+  type Principal,
+  type RunContext,
+  type ToolDefinition,
+} from "@vendoai/core";
 import { createStore } from "@vendoai/store";
 import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it } from "vitest";
@@ -56,7 +72,21 @@ export default function Broken() {
 }
 `;
 
-async function setup(): Promise<Vendo> {
+/** A sound screen whose one query has to answer for it to paint — the paint runs
+ *  the query for real on every open, so this screen's fate follows its world. */
+const QUERYING_SCREEN = `import { Stack, Text, useQuery } from "@vendo/screen";
+
+export default function Balance() {
+  const balance = useQuery("host_balance");
+  return (
+    <Stack>
+      <Text text={String(balance.data.cents)} />
+    </Stack>
+  );
+}
+`;
+
+async function setup(tools: ToolDefinition[] = []): Promise<Vendo> {
   const dataDir = await mkdtemp(join(tmpdir(), "vendo-open-terminal-"));
   const store = createStore({ dataDir });
   cleanups.push(async () => {
@@ -71,6 +101,7 @@ async function setup(): Promise<Vendo> {
       return subject === null ? null : { kind: "user", subject };
     },
     store,
+    tools,
   });
 }
 
@@ -106,9 +137,9 @@ describe("opening an app that can never be served answers terminally, not 400", 
     // artifact, in the words that name where to fix it.
     expect(body.reason).toContain("this screen did not render");
     expect(body.reason).toMatch(/threw while rendering/);
-    // And the permanence, in the wire's existing vocabulary: no retry can change
-    // a stored record.
-    expect(body.retryable).toBe(false);
+    // No verdict on retrying: this screen's own fault is permanent, but the wire
+    // cannot see that from the refusal, so it says nothing it cannot know.
+    expect(body.retryable).toBeUndefined();
     // The embed's flagged poll gets the same terminal answer, never a `pending`
     // it would spin on to its deadline.
     expect(await answer(await open(vendo, "app_broken_screen", "?pending=1"))).toEqual({ status, body });
@@ -131,7 +162,47 @@ describe("opening an app that can never be served answers terminally, not 400", 
     expect(body.kind).toBe("failed");
     expect(body.reason).toContain("has no machine");
     expect(body.reason).toContain("re-create the app");
-    expect(body.retryable).toBe(false);
+    expect(body.retryable).toBeUndefined();
+  }, 60_000);
+
+  it("does not call a recoverable refusal permanent — the same app opens once its query answers", async () => {
+    // The reviewer's case (PR #1537), and the one the enumeration confirmed:
+    // `open.ts:221` also fires when a screen's QUERY would not answer — a guard
+    // that blocked it, an unconnected toolkit, a read awaiting approval, a tool
+    // that was simply down (`build-surface.ts:379-385` → `component-screen.ts:663`).
+    // The screen is fine; its world was not.
+    let down = true;
+    const vendo = await setup([{
+      name: "host_balance",
+      title: "Balance",
+      description: "The account balance.",
+      inputSchema: { type: "object", properties: {}, additionalProperties: false },
+      risk: "read",
+      execute: async () => {
+        if (down) throw new Error("the balance service is warming up");
+        return { data: { cents: 4200 } } as unknown as Json;
+      },
+    }]);
+    await vendo.apps.authoredScreen(
+      { appId: "app_flaky_query" as AppId, name: "Balance", source: QUERYING_SCREEN },
+      ctx,
+    );
+
+    const refused = await answer(await open(vendo, "app_flaky_query"));
+    expect(refused.status).toBe(200);
+    expect(refused.body.kind).toBe("failed");
+    // The reason still reaches the caller — that is the whole fix.
+    expect(refused.body.reason).toContain("the balance service is warming up");
+    // But nothing claims a retry is pointless, because here it is not.
+    expect(refused.body.reason).not.toMatch(/retry|permanent/i);
+    expect(refused.body.retryable).toBeUndefined();
+
+    // The proof that the refusal was recoverable: nothing about the stored app
+    // changed, the world did.
+    down = false;
+    const served = await answer(await open(vendo, "app_flaky_query"));
+    expect(served.status).toBe(200);
+    expect(served.body.kind).toBe("tree");
   }, 60_000);
 
   it("still paints a sound screen, and still masks an app that is not there", async () => {
