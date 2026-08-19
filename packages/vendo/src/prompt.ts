@@ -5,7 +5,27 @@
  * catalog and the knowledge index. It rides the turn (`Turn.system`), so every
  * harness — the default one, a host's own — thinks on the same brief.
  */
-import { userPromptBlock, type Guard, type RunContext } from "@vendoai/core";
+import { userPromptBlock, type Guard, type Harness, type RunContext } from "@vendoai/core";
+
+/**
+ * Which discovery rail a turn's harness actually carries — ONE derivation, for
+ * every path that assembles a brief.
+ *
+ * It was written four times and three of them were a hardcoded `false`. The away
+ * automation run and the delegated run mount the composed `vendo()`, so they
+ * carry `find_tools` like any chat turn — and were told they carried nothing.
+ * Maple, 2026-08-19: an automation whose whole job was "check the balance and
+ * text me" read the balance and then said it had no way to send a text, because
+ * the belt had evicted `vendo_text_me` and the brief never mentioned the search
+ * that would have found it again. A rail nobody names is a rail nobody uses.
+ */
+export const discoveryRail = (
+  harness: Pick<Harness, "toolSurface">,
+  connectorDiscovery: boolean | undefined,
+): "find-tools" | "connectors" | false =>
+  harness.toolSurface?.curated !== false
+    ? "find-tools"
+    : connectorDiscovery === true ? "connectors" : false;
 
 const OPERATING_PROMPT = `You are Vendo's agent.
 Act through the host's available tools on behalf of the signed-in user.

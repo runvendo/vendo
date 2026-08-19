@@ -74,6 +74,7 @@ import {
 } from "@vendoai/harnesses";
 import type { VendoToolSearchConfig } from "@vendoai/harnesses/vendo";
 import { createUIMessageStream, createUIMessageStreamResponse, type LanguageModel, type UIMessage } from "ai";
+import { discoveryRail } from "./prompt.js";
 import { isUserFilePath, userFilePath } from "./user-files.js";
 import type { Limiter } from "./limits.js";
 
@@ -500,9 +501,7 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
       // paid the store's wait and the guard's `directions` wait end to end.
       // Started after the limiter gate, not before: a refused message must still
       // cost nothing.
-      const rail = config.harness.toolSurface?.curated !== false
-        ? "find-tools" as const
-        : config.connectorDiscovery === true ? "connectors" as const : false;
+      const rail = discoveryRail(config.harness, config.connectorDiscovery);
       const systemRead = config.system(input.ctx, { discovery: rail });
       // A rejection is delivered where the prompt is awaited below; this only
       // keeps a store-phase throw from turning it into an unhandled one.
@@ -877,9 +876,7 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
         transcript: { upsert: async () => {}, list: async () => [] },
         harnessState: { get: async () => undefined, set: async () => {}, clear: async () => {} },
       });
-      const rail = config.harness.toolSurface?.curated !== false
-        ? "find-tools" as const
-        : config.connectorDiscovery === true ? "connectors" as const : false;
+      const rail = discoveryRail(config.harness, config.connectorDiscovery);
       const system = await config.system(input.ctx, { discovery: rail });
       const response = await runtime.run<{ maxSteps: number; maxOutputTokens: number }>({
         harness: config.harness,

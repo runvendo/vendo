@@ -22,7 +22,7 @@ import {
 import type { VendoComposition } from "./compose-context.js";
 import { cloudKeyOptions } from "./compose-selection.js";
 import { isHostedStore, reportHostedStoreOnce } from "./compose-store.js";
-import { assembleSystemPrompt } from "./prompt.js";
+import { assembleSystemPrompt, discoveryRail } from "./prompt.js";
 import { enrolForTicks } from "./tick-enrolment.js";
 
 /** How often a development process ticks its own scheduler. One minute is the
@@ -93,10 +93,24 @@ export const composeAutomations = (composition: VendoComposition): Pick<VendoCom
     models: inference.seats,
     // The SAME brief a chat turn thinks on, assembled for the FIRING ctx — so
     // the venue gate and the guard's directions are the away run's too, and the
-    // deployment does not have two agents wearing one name. No discovery
-    // section: an away run gets no discovery rails, and promising `find_tools`
-    // would name a tool that is not on its listing.
-    system: (ctx) => assembleSystemPrompt(guard, ctx, system, true, false),
+    // deployment does not have two agents wearing one name.
+    //
+    // Including the discovery section, which this line used to hardcode off on
+    // the belief that "an away run gets no discovery rails". It was never true:
+    // an away run thinks on the SAME composed `vendo()` a chat turn does, and
+    // `find_tools` is one of that brain's own hands. The cost was measured on
+    // production Maple (2026-08-19): an armed "check my balance and text me"
+    // read the balance, found no Text me on its 24-tool belt, and told the
+    // person it had no way to send a text — with the search that would have
+    // equipped it mounted and unmentioned. The rail is DERIVED now, from the
+    // harness that actually runs.
+    system: (ctx) => assembleSystemPrompt(
+      guard,
+      ctx,
+      system,
+      true,
+      discoveryRail(harness, composition.serviceCatalog),
+    ),
   });
   const automations = createAutomations({
     tools: boundTools,

@@ -178,6 +178,15 @@ export const vendo = createVendo({
     judge: vendoAutoJudge({ model: vendoModel("vendo-judge") }),
   }),
   limits: mapleLimits,
+  // The 24-tool default belt is sized for a 600-tool catalog (tool-search.ts):
+  // past it, everything is one `find_tools` away. Maple's whole surface is ~31
+  // tools, comfortably inside the 30-50 band that file cites as the accurate
+  // one — and the default cut it safest-first, which on 25 reads and 6 writes
+  // means every WRITE was evicted. Twice in two days that buried `vendo_text_me`
+  // and an armed automation told the customer it could not text them. Raised
+  // here rather than lowered in the block: the cap is right for the catalog it
+  // was written for, and wrong for a demo bank.
+  maxInitialTools: 64,
   mcp: mapleMcpConfig(),
   // Maple's customers can text the assistant: they link their phone from the
   // "Text with Maple" card on /settings (components/settings/text-channel-card.tsx

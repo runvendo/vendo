@@ -11,14 +11,33 @@ import type { VendoComposition } from "./compose-context.js";
 import { storeServesHarnessTurns } from "./compose-store.js";
 import { MCP_MOUNT } from "./door-paths.js";
 import { createHarnessTurns, type HarnessTurns } from "./harness-turn.js";
-import { assembleSystemPrompt } from "./prompt.js";
+import { assembleSystemPrompt, discoveryRail } from "./prompt.js";
 import { withAgentMenu } from "./surface-menu.js";
+import { VENDO_TEXT_ME_TOOL } from "./text-me.js";
 import { registerTurnSteer } from "./turn-liveness.js";
 
 /** The tools the OPERATING PROMPT teaches by name — product knowledge, declared
  *  here so the general harness carries none of it (tool-search.ts exempts only
- *  its own capability-miss hand). */
-const PROMPT_TAUGHT_TOOLS: readonly string[] = [VENDO_MAKE_TOOL, ...CONNECTOR_DISCOVERY_TOOLS];
+ *  its own capability-miss hand).
+ *
+ *  `vendo_text_me` is here for the OTHER reason, and it is the first honoring of
+ *  a contract nothing implemented: types.ts's `loadout` doc says "Vendo's own
+ *  `vendo_*` tools are always active" and no code ever made it so. Maple's away
+ *  surface is 25 reads and 6 writes, so the 24-tool safest-first slice evicts
+ *  EVERY write — twice in two days (2026-08-18/19) an automation armed with a
+ *  live Text me grant answered "I don't have a way to send a text message". A
+ *  granted power the belt hides is a lie the person who granted it cannot see.
+ *  Restoring the whole contract belongs to the loadout redesign; the one tool
+ *  that broke production does not wait for it.
+ *
+ *  A name with nothing behind it costs nothing: `computeInitialLoadout` filters
+ *  the turn's OWN listings through this set (tool-search.ts), so on a deployment
+ *  that never opted into texts it simply never matches — no `channels` gate. */
+const PROMPT_TAUGHT_TOOLS: readonly string[] = [
+  VENDO_MAKE_TOOL,
+  VENDO_TEXT_ME_TOOL,
+  ...CONNECTOR_DISCOVERY_TOOLS,
+];
 
 const withPromptTaughtTools = (
   toolSearch: VendoComposition["toolSearch"],
@@ -311,7 +330,7 @@ const harnessDoorFor = (composition: VendoComposition): HarnessTurns => {
  * their task. It says the real reason instead.
  */
 const delegateRunnerFor = (composition: VendoComposition): AgentRunner => {
-  const { store, harness, files, guard, capability, inference, system } = composition;
+  const { store, harness, files, guard, capability, inference, system, serviceCatalog } = composition;
   return storeServesHarnessTurns(store)
     ? awayRunner({
       harness,
@@ -320,10 +339,12 @@ const delegateRunnerFor = (composition: VendoComposition): AgentRunner => {
       guard,
       skills: capability.skills,
       models: inference.seats,
-      // The SAME brief a chat turn thinks on, assembled for the delegated ctx. No
-      // discovery section: a delegated run has no discovery rails, and promising
-      // `find_tools` would name a tool that is not on its listing.
-      system: (ctx) => assembleSystemPrompt(guard, ctx, system, true, false),
+      // The SAME brief a chat turn thinks on, assembled for the delegated ctx —
+      // discovery section included. A delegated run is this deployment's own
+      // brain on the same runtime, so it carries the same `find_tools` hand a
+      // chat turn does; the hardcoded `false` here told it otherwise, the same
+      // way the away run's did (compose-automations.ts).
+      system: (ctx) => assembleSystemPrompt(guard, ctx, system, true, discoveryRail(harness, serviceCatalog)),
       liveTurn: ({ threadId, ctx, tools, steer }) => {
         const unpublish = composition.turnCredentials.publish(threadId, { ctx, tools });
         const unregister = registerTurnSteer({ threadId, subject: ctx.principal.subject, steer });
