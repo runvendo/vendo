@@ -48,7 +48,7 @@ afterEach(async () => {
  *  really went out rather than that a tool said "ok". */
 interface FakeConsole {
   baseUrl: string;
-  sent: Array<{ conversationId: string; text: string }>;
+  sent: Array<{ conversationId: string; text: string; final?: boolean }>;
   /** On, the router has no live assignment for the conversation: a 404, exactly
    *  as a lapsed iMessage identity answers. */
   failSends: boolean;
@@ -76,7 +76,7 @@ async function fakeConsole(): Promise<FakeConsole> {
           res.end(JSON.stringify({ error: { code: "not-found", message: "no active assignment" } }));
           return;
         }
-        state.sent.push(JSON.parse(body) as { conversationId: string; text: string });
+        state.sent.push(JSON.parse(body) as { conversationId: string; text: string; final?: boolean });
         res.end(JSON.stringify({ ok: true }));
         return;
       }
@@ -219,7 +219,7 @@ describe.sequential("Text me", () => {
     expect(run?.steps).toMatchObject([{ id: "tell", tool: VENDO_TEXT_ME_TOOL, outcome: "ok" }]);
     // And the console really received it, on the conversation the link row
     // learned from the person's own message.
-    expect(cloud.sent[2]).toEqual({ conversationId: CONVERSATION, text: "Your rent cleared." });
+    expect(cloud.sent[2]).toEqual({ conversationId: CONVERSATION, text: "Your rent cleared.", final: true });
   }, 120_000);
 
   it("parks a live turn's text behind the same card any other write earns", async () => {

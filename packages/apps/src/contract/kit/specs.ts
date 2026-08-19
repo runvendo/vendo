@@ -14,43 +14,7 @@ import { config, copy, data, type KitComponentSpec, type KitSlotSpec, type PropC
 
 // ---- shared zod fragments -------------------------------------------------
 const rows = z.array(z.record(z.string(), z.unknown()));
-/**
- * A CHART AXIS's format token — THE ONE EXCEPTION to the value tier's death.
- *
- * Every other displayed value in a screen passes through the model's own code, so
- * the model formats it there with `Intl` and the Kit only displays and themes it.
- * An axis tick is the one value that never does: the labels are computed
- * HOST-SIDE off a numeric scale, from numbers the screen holds no value of, so a
- * chart has to be TOLD what its figures mean rather than handed text. `duration`
- * belongs here for that same reason — an axis of build times ticks in seconds the
- * host reduces itself.
- */
-const valueFormat = z.enum(["money", "date", "datetime", "time", "number", "duration", "text"]);
 const align = z.enum(["start", "center", "end"]);
-/** A series descriptor stays OPEN: what is written beside `key`, `label` and
- *  `color` is passed to that one series' engine element, so per-line colors are a
- *  property of the line rather than of the whole chart. `color` is DECLARED
- *  rather than left to the passthrough because the engine's own name for it
- *  differs per chart (`stroke`, `fill`) — undeclared, the obvious word reached
- *  the engine and meant nothing to it. */
-const seriesInput = z.array(z.union([
-  z.string(),
-  z.object({
-    key: z.string(),
-    label: z.string().optional(),
-    /** The word the model was already reaching for. `name` is the ENGINE's own
-     *  spelling of a series' title, so it arrived, passed through, and then lost
-     *  to the `label ?? key` default — a renamed series that kept its raw field
-     *  name. The Kit reads it as `label` now and still owns what reaches the
-     *  engine, exactly as it does for `color`. */
-    name: z.string().optional(),
-    color: z.string().optional(),
-    /** THIS series' units, over the chart's. A chart of two series in different
-     *  units (an amount and a count) has no one chart-level token that reads
-     *  both. */
-    format: valueFormat.optional(),
-  }).passthrough(),
-]));
 
 /**
  * Raw tool output as choices — the ONE shape Select, Radio and Combobox share.
@@ -70,6 +34,7 @@ const OPTIONS_DOC = "raw items, read through labelField/valueField; an item's ow
  *  typings, the catalog's type printer — has to recognise the same strings,
  *  and a second copy of one is a marker that stops matching. */
 export const SLOT_PROP_DESCRIPTION = "holds Kit elements";
+export const TEXT_SLOT_DESCRIPTION = "holds finished text";
 export const ACTION_PROP_DESCRIPTION = "names a host tool";
 export const ICON_NAME_DESCRIPTION = "lucide icon name in kebab-case";
 
@@ -96,6 +61,50 @@ export const ICON_NAME_DESCRIPTION = "lucide icon name in kebab-case";
  * described slot as an element type instead ({@link SLOT_PROP_DESCRIPTION}).
  */
 const slot = z.unknown().describe(SLOT_PROP_DESCRIPTION);
+
+/**
+ * A FORMATTER — the same slot law, at a text arity.
+ *
+ * A slot holds elements; this holds the one thing a chart can paint that is not
+ * an element and not a number the Kit may interpret: a FIGURE, as the screen's own
+ * `Intl` helper wrote it. It is written exactly as a per-row slot is —
+ * `format={(row) => money(row.amount)}` — and the screen VM resolves it the same
+ * way, one finished string per row, in the rows prop's order ({@link
+ * KIT_SLOT_PROPS}).
+ *
+ * A SECOND description rather than reusing the slot's, because the two print
+ * differently everywhere a Kit schema is read: the catalog offers this as `fn`
+ * (the model writes a function) where a slot is `element`, and the screen typings
+ * type it as text so a formatter that hands back a component is a compile error
+ * rather than an `[object Object]` on an axis.
+ */
+const textSlot = z.unknown().describe(TEXT_SLOT_DESCRIPTION);
+
+/** A series descriptor stays OPEN: what is written beside `key`, `label` and
+ *  `color` is passed to that one series' engine element, so per-line colors are a
+ *  property of the line rather than of the whole chart. `color` is DECLARED
+ *  rather than left to the passthrough because the engine's own name for it
+ *  differs per chart (`stroke`, `fill`) — undeclared, the obvious word reached
+ *  the engine and meant nothing to it. */
+const seriesInput = z.array(z.union([
+  z.string(),
+  z.object({
+    key: z.string(),
+    label: z.string().optional(),
+    /** The word the model was already reaching for. `name` is the ENGINE's own
+     *  spelling of a series' title, so it arrived, passed through, and then lost
+     *  to the `label ?? key` default — a renamed series that kept its raw field
+     *  name. The Kit reads it as `label` now and still owns what reaches the
+     *  engine, exactly as it does for `color`. */
+    name: z.string().optional(),
+    color: z.string().optional(),
+    /** THIS series' figures, written by the screen. A formatter lives on the
+     *  series rather than on the chart because two series in different units (an
+     *  amount and a count) have no one text that reads for both. */
+    format: textSlot.optional(),
+  }).passthrough(),
+]));
+
 /**
  * A field description, or the bare KEY that stands for one.
  *
@@ -516,7 +525,7 @@ const BASE_SPECS: KitComponentSpec[] = [
     props: {
       entries: data(rows, "entries from a tool call", { required: true }),
       titleField: config(z.string(), "field for each entry's title"),
-      timeField: config(z.string(), "field holding each entry's timestamp"),
+      timeField: config(z.string(), "field holding each entry's time — shown as it stands, so format it where you prepare the entries or in `cell`"),
       timeAlign: config(z.enum(["start", "end"]), "where the timestamp sits: start (default) or end"),
       cell: config(slot, "Kit elements rendered as each entry's body; the components inside name their field"),
       marker: config(slot, "a Kit element drawn in place of the dot"),
@@ -524,7 +533,7 @@ const BASE_SPECS: KitComponentSpec[] = [
       empty: config(slot, "elements shown instead of that text"),
     },
     examples: [
-      '<Timeline entries={payments.list({}).data} titleField="description" timeField="paidAt" timeAlign="end"/>',
+      '<Timeline entries={payments.list({}).data.map((p) => ({ ...p, paidAt: day(p.paidAt) }))} titleField="description" timeField="paidAt" timeAlign="end"/>',
     ],
   },
   {
@@ -554,50 +563,48 @@ const BASE_SPECS: KitComponentSpec[] = [
 
   // Charts (recharts internals; data props only; $NaN is unrenderable)
   //
-  // THE ONE EXCEPTION to the value tier's death: a chart keeps its axis `format`
-  // and `xFormat` tokens. Everywhere else in a screen the displayed value passes
-  // through the model's own code, so the model formats it there with `Intl` and
-  // hands over text. An axis tick never does — the labels are computed HOST-SIDE
-  // off a numeric scale, from numbers the screen holds no value of — so the series
-  // stay NUMERIC and the token is how the chart is told what they mean. Tooltips
-  // and bar labels read the same token, which is why they are not hand-formatted
-  // either.
+  // A CHART FORMATS NOTHING, like every other component. The `format` tokens that
+  // used to sit here were the last of the value tier — the one place left where a
+  // figure could turn from 285000 cents into "$285,000.00" with nobody writing the
+  // division down, and it did exactly that twice on real screens
+  // (`maple/spend-overview`, `buildlog/compute-spend`). A formatter is the screen's
+  // own `Intl` helper now, written as a function of the ROW and resolved to one
+  // finished string per row, exactly as `columns[].cell` is.
   //
-  // A chart also has no READ to divide at: it looks its numbers up BY KEY, so the
-  // `/ 100` has to happen in the data prep. These examples used to hand tool rows
-  // straight to `format="money"`, and a screen that copied one faithfully rendered
-  // cents as dollars — $285,000 of housing spend. So each of these says DOLLARS
-  // beside its own format token, and every example maps first.
+  // ONE FIGURE IS OUT OF REACH, and it is why the tokens lasted this long: a Y AXIS
+  // TICK is recharts' own invention off the scale, a number the screen never held a
+  // row of. It reads with the host's digit grouping and nothing else — 285000 ticks
+  // as "285,000" — so a chart's numbers should already be in the units a reader
+  // wants, which is the same "divide where you prepare the rows" the rest of the
+  // manual asks for.
   {
     name: "LineChart",
     group: "charts",
-    summary: "A line/trend chart. Y-axis ticks and tooltips are formatted by the format token, the x axis by xFormat.",
+    summary: "A line/trend chart. Each series writes its own tooltip figure through `format`; `xFormat` writes the x tick. Y ticks are grouped numbers.",
     props: {
       data: data(rows, "rows to plot", { required: true }),
       xKey: config(z.string(), "category (x) field", { required: true }),
-      series: config(seriesInput, "value series: bare keys, or {key,label,color,format}. `name` reads as the label too, and a series' own format reads its tooltip in that series' units", { required: true }),
-      format: config(valueFormat, "y-axis + tooltip format; money plots DOLLARS — divide a cents field where you prepare the data"),
-      // The category axis had no format token at all, so a trend over days
-      // printed the raw stamp the host stored under every tick while the figures
-      // beside it read in the host's own words.
-      xFormat: config(valueFormat, 'x-axis tick + tooltip heading format — a stored date reads "Jul 30, 2026" instead of "2026-07-30"'),
+      series: config(seriesInput, "value series: bare keys, or {key,label,color,format}. `name` reads as the label too, and a series' own `format` is a (row) => text function writing that series' tooltip figure", { required: true }),
+      // The category axis had no formatter at all, so a trend over days printed
+      // the raw stamp the host stored under every tick while the figures beside
+      // it read in the host's own words.
+      xFormat: config(textSlot, 'the x tick and the hovered point\'s heading, as (row) => text — `(row) => day(row.month)`, so a stored date reads "Jul 30, 2026" instead of "2026-07-30"'),
       height: config(z.number().int().positive(), "chart height in px"),
       emptyState: copy(z.string(), "text when there is nothing to plot"),
       empty: config(slot, "elements shown instead of that text"),
       tooltip: config(slot, "elements for the hovered point"),
       legend: config(slot, "a series key under the chart"),
     },
-    examples: ['<LineChart data={revenue.byMonth({}).data.map((r) => ({ ...r, amount: r.amount_cents / 100 }))} xKey="month" series={["amount"]} format="money"/>'],
+    examples: ['<LineChart data={revenue.data} xKey="month" series={[{key:"amount_cents",format:(row) => money(row.amount_cents)}]} xFormat={(row) => month(row.month)}/>'],
   },
   {
     name: "BarChart",
     group: "charts",
-    summary: "A bar chart. Every bar is LABELLED with its own value, so the figure is on the chart and not only on the axis. Set horizontal for ranked lists, stacked to combine series.",
+    summary: "A bar chart. Every bar is LABELLED with its own value, so the figure is on the chart, not only on the axis — each series writes it through `format`. Set horizontal for ranked lists, stacked to combine series.",
     props: {
       data: data(rows, "rows to plot", { required: true }),
       xKey: config(z.string(), "category field", { required: true }),
-      series: config(seriesInput, "value series: bare keys, or {key,label,color,format}. `name` reads as the label too, and a series' own format reads its bars and their labels", { required: true }),
-      format: config(valueFormat, "axis + tooltip + bar-label format; money plots DOLLARS — divide a cents field where you prepare the data"),
+      series: config(seriesInput, "value series: bare keys, or {key,label,color,format}. `name` reads as the label too, and a series' own `format` is a (row) => text function writing its bar labels and tooltip", { required: true }),
       stacked: config(z.boolean(), "stack series into one bar"),
       horizontal: config(z.boolean(), "horizontal bars"),
       height: config(z.number().int().positive(), "chart height in px"),
@@ -606,17 +613,17 @@ const BASE_SPECS: KitComponentSpec[] = [
       tooltip: config(slot, "elements for the hovered bar"),
       legend: config(slot, "a series key under the chart"),
     },
-    examples: ['<BarChart data={sales.byRegion} xKey="region" series={["unitsSold"]} horizontal/>'],
+    examples: ['<BarChart data={spend.data} xKey="category" series={[{key:"amount_cents",format:(row) => money(row.amount_cents)}]} horizontal/>'],
   },
   {
     name: "DonutChart",
     group: "charts",
-    summary: "A donut/pie of category shares. A zero KEEPS its place in the legend reading 0; an unrenderable value is dropped, and a negative one is refused outright — a share of a whole cannot be below zero. Every slice is named and valued in a legend under the ring, so set `format`. A category field of enum tokens reads there as EnumBadge's own pills; one spelled in words prints verbatim.",
+    summary: "A donut/pie of category shares. A zero KEEPS its place in the legend reading 0; an unrenderable value is dropped, and a negative one is refused outright — a share of a whole cannot be below zero. Every slice is named and valued in a legend under the ring, so write `format`. An enum category field reads there as EnumBadge's own pills; one spelled in words prints verbatim.",
     props: {
       data: data(rows, "rows to plot", { required: true }),
       categoryKey: config(z.string(), "slice-label field", { required: true }),
-      valueKey: config(z.string(), "slice-value field — in DOLLARS where format is money, so divide a cents field where you prepare the data", { required: true }),
-      format: config(valueFormat, "legend + tooltip format; money reads DOLLARS and converts nothing"),
+      valueKey: config(z.string(), "slice-value field — the raw number the ring is drawn from", { required: true }),
+      format: config(textSlot, "each slice's figure in the legend and the tooltip, as (row) => text — `(row) => money(row.amount_cents)`. One ring, one whole, so one formatter reads every slice"),
       // Enum-ness is judged per FIELD, not per value: one pill beside one bare
       // word in the same ring is worse than either reading alone, and a name field
       // ("ACME Corp") must keep the data's own words — which is why the legend
@@ -629,7 +636,7 @@ const BASE_SPECS: KitComponentSpec[] = [
       empty: config(slot, "elements shown instead of that text"),
       tooltip: config(slot, "elements for the hovered slice"),
     },
-    examples: ['<DonutChart data={spend.byCategory({}).data.map((r) => ({ ...r, amount: r.amount_cents / 100 }))} categoryKey="category" valueKey="amount" format="money"/>'],
+    examples: ['<DonutChart data={spend.byCategory({}).data} categoryKey="category" valueKey="amount_cents" format={(row) => money(row.amount_cents)}/>'],
   },
   {
     name: "Sparkline",
@@ -774,7 +781,7 @@ const BASE_SPECS: KitComponentSpec[] = [
       showValue: config(z.boolean(), "show the current number"),
       onChange: config(action, "called on change"),
     },
-    examples: ['<Slider label="Budget" min={0} max={5000} step={50} showValue value={budget} onChange={(e) => setBudget(e.target.value)}/>'],
+    examples: ['<Slider label="Budget" min={0} max={5000} step={50} showValue value={budget} onChange={(e) => setBudget(Number(e.target.value))}/>'],
   },
   {
     name: "SegmentedControl",
@@ -1084,6 +1091,11 @@ const empty = (nothing: string): KitSlotSpec => ({ doc: `what to show in place o
 /** A chart's hovered point, on the cell contract: written once PER POINT and
  *  painted for whichever one is under the pointer. */
 const tooltip: KitSlotSpec = { doc: "Kit value components composed for the hovered point, in place of the default tooltip — write it as (point) => elements", perRow: true, rows: "data" };
+/** A SERIES' own figures, on that same per-row contract: written once as a
+ *  function of the row, resolved once per row, and read wherever that series is
+ *  printed — its bar labels and its tooltip. Declared at `series` because that is
+ *  the prop it ARRIVES in, exactly as a table's cell arrives in `columns`. */
+const seriesFormat: KitSlotSpec = { doc: "THIS series' figure", perRow: true, text: true, rows: "data", at: "series" };
 
 const SLOTS: Readonly<Record<string, Record<string, KitSlotSpec>>> = {
   // No `at` on any of these pairs: a container reads its header and footer as
@@ -1111,9 +1123,24 @@ const SLOTS: Readonly<Record<string, Record<string, KitSlotSpec>>> = {
     empty: empty("entries"),
   },
   Stat: { icon: { doc: "a glyph beside the metric name" } },
-  LineChart: { tooltip, legend: { doc: "a series key drawn under the chart" }, empty: empty("points to plot") },
-  BarChart: { tooltip, legend: { doc: "a series key drawn under the chart" }, empty: empty("bars to plot") },
-  DonutChart: { tooltip, legend: { doc: "false hides the built-in key under the ring; an element replaces it" }, empty: empty("slices to plot") },
+  // The three formatters are slots for the reason every per-row slot is one: a
+  // function written in a screen only reaches a component if the VM CALLS it. Left
+  // undeclared it would cross as a `$handler` door instead — a callback where a
+  // figure belongs, returning nothing and firing a screen turn on every tick.
+  LineChart: {
+    tooltip,
+    format: seriesFormat,
+    xFormat: { doc: "the x tick and hovered heading", perRow: true, text: true, rows: "data" },
+    legend: { doc: "a series key drawn under the chart" },
+    empty: empty("points to plot"),
+  },
+  BarChart: { tooltip, format: seriesFormat, legend: { doc: "a series key drawn under the chart" }, empty: empty("bars to plot") },
+  DonutChart: {
+    tooltip,
+    format: { doc: "each slice's figure under the ring", perRow: true, text: true, rows: "data" },
+    legend: { doc: "false hides the built-in key under the ring; an element replaces it" },
+    empty: empty("slices to plot"),
+  },
   Progress: { label: { doc: "the caption over the bar, as elements instead of text" } },
   // No `hint` on any of these: it is a shared adjective now, so it lands on every
   // control that takes one (`SHARED_PROPS`) rather than the three listed here.

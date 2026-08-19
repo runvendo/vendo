@@ -219,8 +219,8 @@ export async function runBriefStage(input: BriefStageInput): Promise<BriefStageR
     return { brief: artifact.brief, fromStage: true, notes };
   } catch (error) {
     notes.push(
-      `brief stage failed (${message(error)}) — keeping the current brief; `
-      + "the stage's own output is at .vendo/data/extract/brief.json",
+      `the AI polish for your brief did not finish (${message(error)}) — your install is `
+      + "complete and valid with the default brief; run `vendo sync --ai` to try the polish again",
     );
   }
   // The "current brief" is an ARTIFACT, so the fallback reads it from the

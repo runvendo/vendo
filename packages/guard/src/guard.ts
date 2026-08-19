@@ -547,6 +547,11 @@ class GuardImplementation implements VendoGuard {
     parkedCallTtlMs: DEFAULT_PARKED_CALL_TTL_MS,
     pending: (principal: Principal): Promise<ApprovalRequest[]> =>
       this.#pendingApprovals(principal),
+    get: (
+      id: ApprovalId,
+      principal: Principal,
+    ): Promise<{ request: ApprovalRequest; status: ApprovalRecordData["status"] } | undefined> =>
+      this.#getApproval(id, principal),
     decide: (
       ids: ApprovalId | ApprovalId[],
       decision: ApprovalDecision,
@@ -2201,6 +2206,17 @@ class GuardImplementation implements VendoGuard {
         // The owner identity the record below already keeps — ON the request
         // too, so subscribers can scope delivery to the parking conversation.
         sessionId: ctx.sessionId,
+        // The TURN that asked, so a park survives the process that made it as
+        // something addressable rather than as one more of a subject's asks:
+        // `turns.resume(turnId, …)` (@vendoai/agents) finds this row through it
+        // after a restart. Inert for matching — `sameParkedCall` pins the call
+        // and the venue, never this — and absent on a check with no turn.
+        ...(ctx.turnId === undefined ? {} : { turnId: ctx.turnId }),
+        // The AGENT that asked, on the same terms: one store holds every
+        // agent's asks, and a resume that could not tell them apart spent one
+        // agent's yes on another's same-named tool. Inert for matching too —
+        // it decides who may ANSWER, never what the yes authorizes.
+        ...(ctx.agent === undefined ? {} : { agent: ctx.agent }),
         ...(ctx.appId === undefined ? {} : { appId: ctx.appId }),
         ...(ctx.trigger === undefined ? {} : { trigger: cloneJson(ctx.trigger) }),
       },
@@ -2224,6 +2240,21 @@ class GuardImplementation implements VendoGuard {
       }
     }
     return request;
+  }
+
+  /** Owner-scoped like every approval read: a foreign or unknown id is absent,
+   *  never a hint that it exists. Reads the row directly rather than through a
+   *  ref-filtered listing because the caller already has the id, and a decided
+   *  row is exactly the one no status filter would return. */
+  async #getApproval(
+    id: ApprovalId,
+    principal: Principal,
+  ): Promise<{ request: ApprovalRequest; status: ApprovalRecordData["status"] } | undefined> {
+    const record = await this.#engine.get(APPROVALS_COLLECTION, id);
+    if (record === null) return undefined;
+    const data = approvalData(record);
+    if (data.request.ctx.principal.subject !== principal.subject) return undefined;
+    return { request: data.request, status: data.status };
   }
 
   async #pendingApprovals(principal: Principal): Promise<ApprovalRequest[]> {

@@ -1,5 +1,6 @@
 /** The public surface, pinned — what the spec promises a host can import. */
 import { describe, expect, it } from "vitest";
+import { claudeCode } from "../src/claude-code.js";
 import * as agents from "../src/index.js";
 import { mcpSources } from "../src/tools.js";
 
@@ -12,6 +13,13 @@ describe("the package surface", () => {
     expect(agents.e2b).toBeTypeOf("function");
     expect(agents.postgres).toBeTypeOf("function");
     expect(agents.provideCloudAdapters).toBeTypeOf("function");
+  });
+
+  it("exports both engines, so a host installs one package", () => {
+    expect(agents.vendo).toBeTypeOf("function");
+    // `claudeCode` rides a subpath, not the barrel: its SDK reaches Node
+    // built-ins and this barrel is bundled for Worker targets.
+    expect(claudeCode).toBeTypeOf("function");
   });
 
   it("exports the type a host writes its `system` hook against", () => {

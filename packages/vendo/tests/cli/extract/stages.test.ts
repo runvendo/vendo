@@ -83,9 +83,11 @@ describe("runBriefStage", () => {
 
     expect(result.fromStage).toBe(false);
     expect(result.brief).toBe("The humans already described this product.");
+    // The raw parser error alone read as a broken install. It says what broke
+    // (the polish, not the install), that the install stands, and how to retry.
     expect(result.notes).toEqual([
-      "brief stage failed (timed out) — keeping the current brief; "
-      + "the stage's own output is at .vendo/data/extract/brief.json",
+      "the AI polish for your brief did not finish (timed out) — your install is "
+      + "complete and valid with the default brief; run `vendo sync --ai` to try the polish again",
     ]);
   });
 

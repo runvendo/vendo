@@ -1,11 +1,17 @@
 ---
 title: "Converse with a person"
-sidebarTitle: "Converse — respond()"
-description: "respond() streams one turn back to a waiting person, carries the thread id in a header, and forwards the caller's own credentials to your API."
+sidebarTitle: "Converse — chat()"
+description: "chat() is one turn and the answer, handler() is the whole agent on one route, and respond() is one turn as a stream you return yourself."
 ---
 
-Someone is on the other end. `respond()` is one turn of that conversation: an
-AI SDK UI-message-stream `Response` you return from a route unchanged.
+Someone is on the other end. There are three ways to answer them, and they are
+the same turn:
+
+- **`chat(message)`** hands back the answer. No route, no stream, no wiring.
+- **`handler({ basePath, resolveUser })`** is the whole agent on one route, for
+  a browser to talk to.
+- **`respond(subject, message)`** is one turn as an AI SDK UI-message-stream
+  `Response`, for when you own the route already.
 
 ## Give it hands
 
@@ -51,7 +57,66 @@ exactly as it does for `destructive`.
 `ctx.principal` is who the turn acts as, so bind the two yourself. An unscoped
 lookup acts on someone else's order however the approval card was answered.
 
-## The route
+## One turn, in a line
+
+`chat()` runs the turn and gives you what it answered.
+
+```ts
+const turn = await support.chat("Where is order A-1001?", { as: user.id });
+
+if (turn.status === "ok") console.log(turn.text);
+```
+
+Awaiting it gives the `TurnResult` — what it said, on which thread, with which
+tool calls. Skip the `await` and you hold the turn itself instead: `threadId`
+and `turnId` are readable straight away, and `events` is the live feed while
+it runs. The turn happens either way.
+
+## One route, the whole agent
+
+`handler()` serves the chat turn, the thread list and transcript, and the
+approvals wire off one mount. It is a fetch handler, so it goes on any server
+that can hand it a `Request`.
+
+```ts app/api/agent/[[...path]]/route.ts focus={4-10}
+import { support } from "@/lib/agent";
+import { auth } from "@/lib/auth";
+
+const handle = support.handler({
+  basePath: "/api/agent",
+  resolveUser: async (request) => {
+    const user = await auth(request);
+    return user === null ? null : { subject: user.id, profile: { plan: user.plan } };
+  },
+});
+
+export { handle as GET, handle as POST, handle as DELETE };
+```
+
+`resolveUser` is where identity is configured, once. Return `null` and the
+mount answers 401; the `subject` you return is what every thread, grant and
+audit row on that request is scoped to, and a thread id belonging to somebody
+else reads back as absent.
+
+| Option | Type | What it does |
+| --- | --- | --- |
+| `basePath` | `string` | Where you mounted it |
+| `resolveUser` | `(request) => Promise<HandlerUser \| null>` | Your session, read per request |
+| `headers` | `Record<string, string>` or `false` | What the turn's tools forward as the caller's authority. Unset forwards this request's own headers; `false` forwards nothing |
+
+In the browser, `useVendoChat` from `@vendoai/ui` talks to that mount and keeps
+nothing of its own — the transcript, pending approvals included, is read back
+from the server, so a reload loses nothing.
+
+```tsx app/support/page.tsx focus={2-5}
+const { messages, sendMessage, interruptions, resume, status, stop } =
+  useVendoChat({
+    api: "/api/agent",
+    onThreadId: (id) => router.replace(`/support/${id}`),
+  });
+```
+
+## Your own route
 
 ```ts app/api/support/route.ts focus={13-16}
 import { support } from "@/lib/agent";
@@ -127,11 +192,10 @@ A `threadId` is checked against the same subject that owns it. Someone else's
 thread, or one that never existed, comes back `not-found` rather than as a
 silent new conversation.
 
-## Approvals, with a person present
+## Approvals
 
-An interactive turn can stop for the human. A `destructive` or `ungraded` call
-raises an approval, the stream carries the card, and the turn waits 90 seconds
-for a decision.
+A turn can stop for a human. A `destructive` or `ungraded` call raises an
+approval, and what happens next depends on which verb is driving.
 
 <Frame>
   <img
@@ -142,8 +206,33 @@ for a decision.
   />
 </Frame>
 
-Approve and the same call runs with the same arguments. Deny, or let the wait
-expire, and the model is told so and carries on.
+**`chat()` and `run()` end the turn.** The result comes back `interrupted`
+with the cards on it, in the time the turn actually took. Answer them and the
+turn carries on from exactly where it parked — a denied call is a refusal the
+model reads, never a rerun.
+
+```ts focus={5-10}
+import type { Decisions } from "@vendoai/agents";
+
+const turn = await support.chat(message, { as: user.id });
+
+if (turn.status === "interrupted") {
+  const decisions: Decisions = {};
+  for (const ask of turn.interruptions) decisions[ask.id] = await askSomeone(ask);
+
+  const done = await turn.resume(decisions);
+}
+```
+
+Behind `handler()` this is already wired: `useVendoChat` surfaces the same
+cards as `interruptions` and its `resume(decisions)` posts them to the mount's
+approvals wire. The `interruptions` survive a reload, because they are read
+back from the server rather than kept in the browser.
+
+**`respond()` and `session()` hold the stream open.** The card goes down the
+stream and the turn waits 90 seconds for a decision. Approve and the same call
+runs with the same arguments; deny, or let the wait expire, and the model is
+told so and carries on.
 
 No card to render? `session()` is `respond()` with the object kept, and the
 same decision arrives as an event your backend answers itself.
@@ -160,11 +249,32 @@ return session.stream(message);
 principal the turn acts as. The wait is the same 90 seconds, so decide inside
 it. Full shape: [Server API](/reference/server-api).
 
-<Warning>
-  This is the interactive lane only. Inside `run()` there is nobody to ask, so
-  the call is refused and the card is left standing. See
-  [Run](/backend/run).
-</Warning>
+## Answer it tomorrow
+
+`turn.resume()` is a closure, so it dies with the process. The ask does not: a
+server restarts, the turn ran on a queue worker, the person answers on Monday.
+`forUser(subject).turns` addresses a parked turn by **id** instead, from
+anywhere over the same store.
+
+```ts focus={2,4}
+const user = support.forUser(subject);
+const waiting = await user.turns.list({ status: "interrupted" });
+
+const result = await user.turns.resume(waiting[0]!.turnId, {
+  [waiting[0]!.interruptions[0]!.id]: "approve",
+});
+```
+
+`turns.resume` hands back the **result**, not a turn: it reads the store before
+it can start anything, and a `Turn` is itself awaitable, so there would be no
+handle left to hold. The answer is prose either way — an `output` schema
+belonged to the code that called `run({ output })` and was never persisted, so
+resume through the result you are holding to keep the shape.
+
+Every interruption the turn parked needs a decision in the same call; a partial
+map is refused, naming the ids it is missing. A parked turn waits **seven
+days**, and a resume after that fails saying the ask expired rather than acting
+on a week-old yes.
 
 <CardGroup cols={2}>
   <Card title="Run" href="/backend/run">

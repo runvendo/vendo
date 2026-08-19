@@ -43,7 +43,7 @@ afterEach(async () => {
     "the vendor was down exactly when the card went out". */
 interface FakeConsole {
   baseUrl: string;
-  sent: Array<{ conversationId: string; text: string }>;
+  sent: Array<{ conversationId: string; text: string; final?: boolean }>;
   attempts: number;
   failSends: boolean;
 }
@@ -72,7 +72,7 @@ async function fakeConsole(): Promise<FakeConsole> {
           res.end(JSON.stringify({ error: { code: "unavailable", message: "carrier down" } }));
           return;
         }
-        sent.push(JSON.parse(body) as { conversationId: string; text: string });
+        sent.push(JSON.parse(body) as { conversationId: string; text: string; final?: boolean });
         res.end(JSON.stringify({ ok: true }));
         return;
       }
@@ -213,7 +213,7 @@ describe.sequential("consent over text", () => {
     await waitFor(() => host.paid.length === 1);
     expect(host.paid).toEqual([{ billId: "bill_9", amount: 4200 }]);
     await waitFor(() => cloud.sent.length === 3);
-    expect(cloud.sent[2]).toEqual({ conversationId: "conv_approval", text: "Paid the electric bill." });
+    expect(cloud.sent[2]).toEqual({ conversationId: "conv_approval", text: "Paid the electric bill.", final: true });
   }, 120_000);
 
   it("never decides a card that did not go out over this channel", async () => {

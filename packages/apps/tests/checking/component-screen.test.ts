@@ -806,6 +806,39 @@ export default function S() {
     }
   });
 
+  /** `key` is React's on EVERY element, brick and component alike — the format
+   *  skill asks for one on every row a screen maps. TypeScript only intersects
+   *  `JSX.IntrinsicAttributes` into a value-based element, never into an
+   *  intrinsic tag, so declaring `key` there alone made `<li key={…}>` a TS2322
+   *  that the translator then reported as the self-contradictory `prop "key" on
+   *  <li> takes string | number, but this value is string`. Both spellings are
+   *  asserted here because a fix that only moves the declaration would trade one
+   *  half of the rule for the other. */
+  it("takes `key` on a mapped row, on a display brick and on a Kit component alike", async () => {
+    const result = await check(`import { Stack, Text } from "@vendo/screen";
+
+const NAMES = ["ada", "bob"];
+
+export default function Roster() {
+  return (
+    <Stack gap={8}>
+      <ul>
+        {NAMES.map((name) => <li key={name} style={{ padding: 4 }}>{name}</li>)}
+      </ul>
+      {NAMES.map((name) => <Text key={name} text={name} />)}
+    </Stack>
+  );
+}
+`);
+
+    expect(result).toMatchObject({ ok: true, issues: [] });
+    // …and the key REACHES the paint, so the renderer's React keys are the ones
+    // the screen wrote rather than positions the next repaint reshuffles.
+    const ids = Object.keys(result.initialTree?.nodes ?? {});
+    expect(ids).toContain("root.0.li:ada");
+    expect(ids).toContain("root.Text:bob");
+  });
+
   it("refuses a field the tool's declared response does not carry, and names the real ones", async () => {
     const { text } = await refusal(`import { Text, useQuery } from "@vendo/screen";
 export default function S() {

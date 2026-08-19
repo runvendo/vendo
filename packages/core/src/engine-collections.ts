@@ -3,10 +3,9 @@ import { VendoError } from "./errors.js";
 /** Named in every refusal so a caller can tell "this name was never an engine
     collection" from "this build's list is older than yours". Bump it whenever
     ENGINE_COLLECTIONS or ENGINE_COLLECTION_PATTERNS changes. */
-// 5, not 3 (ours) or 4 (main's): both sides added a collection, so the merged
-// list is a list neither version ever named. A refusal quoting v3 or v4 would be
-// describing a build that never existed.
-export const ENGINE_ALLOWLIST_VERSION = 5;
+// 6: v5's list plus `vendo_tenant_connectors`, which shipped missing from it. A
+// refusal still quoting v5 would be describing a build without that entry.
+export const ENGINE_ALLOWLIST_VERSION = 6;
 
 /** What a collection HOLDS. `knowledge` is the retrieval corpus — documents and
     the chunks an engine mints from them; everything else is `storage`.
@@ -19,7 +18,7 @@ export type CollectionKind = "storage" | "knowledge";
 export interface EngineCollectionSpec {
   kind: CollectionKind;
   /** The fields an `engine.list` watermark may bound, because THIS collection
-      keeps them indexed. Absent for the 37 collections with nothing to walk
+      keeps them indexed. Absent for the 38 collections with nothing to walk
       forward through: an unindexed bound is a full table scan wearing a filter's
       clothes, so it is refused rather than served slowly. */
   indexed?: readonly string[];
@@ -97,6 +96,7 @@ export const ENGINE_COLLECTION_REGISTRY = {
   vendo_channel_links: { kind: "storage" }, // LINK_COLLECTION, packages/vendo/src/channel-links.ts:22
   vendo_channel_events: { kind: "storage" }, // EVENT_COLLECTION, packages/vendo/src/channel-links.ts:25
   vendo_channel_asks: { kind: "storage" }, // ASK_COLLECTION, packages/vendo/src/channel-links.ts:33
+  vendo_tenant_connectors: { kind: "storage" }, // COLLECTION, packages/vendo/src/tenant-connectors.ts:78
 } as const satisfies Record<string, EngineCollectionSpec>;
 
 export type EngineCollection = keyof typeof ENGINE_COLLECTION_REGISTRY;

@@ -30,9 +30,14 @@ import { createStore, hostedStore, storeFiles, type VendoStore } from "@vendoai/
 import type { LanguageModel, UIMessage } from "ai";
 import { randomUUID } from "node:crypto";
 import { declareAutomation, type OnOptions } from "./automations.js";
-import { startRun, type AgentRun, type RunOptions } from "./away.js";
+import { startRun, type RunOptions } from "./away.js";
+import { startChat, type ChatOptions, type Turn } from "./turn.js";
 import { resolveDoor, type DoorConfig } from "./door.js";
+import { agentHandler, type HandlerOptions } from "./handler.js";
 import { withEgress, type EgressConfig } from "./egress.js";
+import { createUser, type AgentUser, type UserOptions } from "./facade.js";
+import { PARKED_TURN_TTL_MS } from "./interruptions.js";
+import { rememberTool, storeMemory, type MemoryAdapter } from "./memory.js";
 import { PERMISSIONS_PATH, schemaReadyPrincipal, type AgentPrincipal } from "./permissions.js";
 import type { SystemPromptHook } from "./prompt.js";
 import {
@@ -68,6 +73,18 @@ export interface AgentConfig {
   store?: VendoStore;
   /** Unset + key → the ladder (E2B key, Cloud pool). */
   sandbox?: SandboxAdapter;
+  /**
+   * What this agent remembers about each of its users, per user and never
+   * across them. `true` → the store-backed default, on this composition's own
+   * store; a {@link MemoryAdapter} is used verbatim (BYO). Unset is no memory at
+   * all: no `[Memory]` block in any prompt, and no `remember` tool for the model
+   * to call.
+   *
+   * Reads are automatic (a capped `[Memory]` block, read as the user's words,
+   * never as instruction); writes are the visible, audited, guard-checked
+   * `remember` tool, scoped to the turn's own principal.
+   */
+  memory?: MemoryAdapter | true;
   /** Where a thinker that runs outside this process dials back to reach your
    *  tools; unset → `VENDO_BASE_URL`. Required by any harness that declares
    *  `requires.toolDoor` — see {@link resolveDoor}. */
@@ -94,20 +111,42 @@ export interface AgentConfig {
 export interface VendoAgent {
   readonly name: string;
   /**
-   * ONE lane per shape of caller. `respond` answers a person: one turn, an
-   * AI-SDK UI-message-stream `Response` to return from your route, with the
-   * conversation's id on `x-vendo-thread-id`. `run` answers code: no screen, a
-   * report at the end.
+   * ONE turn of a conversation — the answer, not a stream. Bare, the agent talks
+   * as itself; `as` names the user it is acting for. Venue "chat", presence
+   * "present", so it sees the whole present-user tool surface — and a call the
+   * guard wants a person for ENDS the turn as `interrupted` rather than blocking
+   * on it, with `resume()` to carry on once they answer.
+   */
+  chat(message: string, options?: ChatOptions): Turn;
+  /**
+   * Everything this agent does FOR ONE PERSON, with who they are bound once —
+   * their turns, their conversations, and what it remembers about them.
+   *
+   *     const user = support.forUser("u_42", {
+   *       profile: { name: "Dana", plan: "pro" },
+   *       context: { tenantId },
+   *     });
+   *     await user.chat("where is my refund?", { headers: request.headers });
+   *
+   * `profile` and `context` are FACTS about the person and are bound here.
+   * `headers` are the authority of ONE request, so they ride per call and are
+   * never kept — see facade.ts.
+   */
+  forUser(subject: string, options?: UserOptions): AgentUser;
+  /**
+   * `respond` answers a person over HTTP: one turn, an AI-SDK UI-message-stream
+   * `Response` to return from your route, with the conversation's id on
+   * `x-vendo-thread-id`.
    *
    * It is exactly `session(subject, options)` followed by `stream(message)` —
    * reach for `session()` when you want the object (approval events, several
    * turns on one thread), and this when you want the Response.
    */
   respond(subject: string, message: string | UIMessage, options?: RespondOptions): Promise<Response>;
-  /** One unattended run: no screen, an {@link AgentRun} whose report says what
-   *  happened. Venue "automation", presence "away", non-interactive — so a tool
-   *  the guard wants a person for parks, and `refs.approvals` is who to ask. */
-  run<T = never>(task: string, options?: RunOptions<T>): AgentRun<T>;
+  /** One unattended run: no screen, the same {@link Turn} `chat` answers with.
+   *  Venue "automation", presence "away" — so every ask parks and a run that
+   *  needed consent answers `interrupted`, carrying the cards to answer. */
+  run<T = void>(task: string, options?: RunOptions<T>): Turn<T>;
   /**
    * Declare an automation this agent runs unattended. A bare string is a cron
    * expression; the other four shapes are `{ every }`, `{ at }`, `{ event }` and
@@ -120,12 +159,24 @@ export interface VendoAgent {
    *
    * Returns void because it is a DECLARATION: it is validated here and now — a
    * bad cron throws at module load, with what, why, a did-you-mean and the docs
-   * — and reconciled against the store when `createVendo` boots. The code is the
-   * consent, so deleting the call disarms the automation on the next deploy;
-   * `disable()` by a person outlives every redeploy.
+   * — and reconciled against the store by a lifecycle, `serve({ agents })` or
+   * `createVendo`'s boot. INERT until one of them runs. The code is the consent,
+   * so deleting the call disarms the automation on the next deploy; `disable()`
+   * by a person outlives every redeploy.
    */
   on(when: When, task: string, options?: OnOptions): void;
+  /** @deprecated A session is request-lifetime and the THREAD is what outlives
+   *  it, so the durable noun is the one to hold: `agent.forUser(subject)` for
+   *  the turns, `user.threads` for the conversations. `respond()` is unchanged.
+   *  Still supported — nothing about this call has changed. */
   session(subject: string, options?: SessionOptions): Promise<AgentSession>;
+  /**
+   * This whole agent over HTTP, as ONE fetch handler for the host to mount —
+   * the chat turn, the thread lifecycle, and the door and permission planes
+   * below. See {@link agentHandler}, which is the same thing for a caller
+   * holding the options rather than the agent.
+   */
+  handler(options: HandlerOptions): (request: Request) => Promise<Response>;
   /**
    * This agent's MCP door, present exactly when its harness thinks outside this
    * process (`requires.toolDoor`). A library cannot add a route to the host's
@@ -151,6 +202,10 @@ export interface VendoAgent {
  * object stays exactly `{ name, session }`.
  */
 export interface AgentComposition {
+  /** WHICH agent this composed — `agent({ name })`. Declared here because a
+   *  consumer that scopes rows to one agent (`createTurns`) reads it off the
+   *  composition, never off a name a caller passes in beside it. */
+  agent: string;
   harness: Harness<unknown>;
   store: VendoStore;
   files: FilesAdapter;
@@ -160,6 +215,9 @@ export interface AgentComposition {
   skills: readonly Skill[];
   /** Present only for a harness that thinks on a machine. */
   sandbox?: SandboxAdapter;
+  /** Present exactly when the host asked for memory — the adapter a surface over
+   *  this agent reads and forgets a person's memories through. */
+  memory?: MemoryAdapter;
   /** The seats a harness that does NOT bring its own brain reads (`vendo()`). */
   models?: SeatModels<LanguageModel>;
   instructions?: string;
@@ -311,8 +369,24 @@ export function agent(config: AgentConfig): VendoAgent {
   // completed with this composition's store.
   const guard = isGuardInstance(config.guard)
     ? config.guard
-    : createGuard({ store, ...config.guard });
-  const tools = mergeSources(config.tools ?? [], config.mcp ?? []);
+    : createGuard({
+      store,
+      ...config.guard,
+      // An agent's parked turn waits for a PERSON, not for a BYO loop that
+      // will retry in the hour the guard defaults to (interruptions.ts). The
+      // host's own number still wins — this fills the slot, it does not take
+      // it — and a guard INSTANCE passed in is taken verbatim, TTL included.
+      approvals: { parkedCallTtlMs: PARKED_TURN_TTL_MS, ...config.guard?.approvals },
+    });
+  // `true` takes the store this composition already has, never a second one.
+  // The write door rides in as an ORDINARY tool source, so it merges, lists,
+  // collides and binds exactly like the host's own — there is no path around
+  // `guard.bind` below for it to slip through.
+  const memory = config.memory === true ? storeMemory(store) : config.memory;
+  const tools = mergeSources(
+    [...(config.tools ?? []), ...(memory === undefined ? [] : [rememberTool(memory)])],
+    config.mcp ?? [],
+  );
   const bound = guard.bind(tools);
   const skills: Skill[] = loadSkillFolders(config.skills);
 
@@ -362,6 +436,7 @@ export function agent(config: AgentConfig): VendoAgent {
 
   const deps = {
     name: config.name,
+    agent: config.name,
     harness,
     store,
     files,
@@ -372,6 +447,7 @@ export function agent(config: AgentConfig): VendoAgent {
     assertModel: requireModel,
     ...(config.instructions === undefined ? {} : { instructions: config.instructions }),
     ...(config.system === undefined ? {} : { system: config.system }),
+    ...(memory === undefined ? {} : { memory }),
     // The other half of the door: a credential the harness minted resolves to
     // NOTHING until the turn it points at is published, so without this line a
     // mounted door 401s every tool call the box makes.
@@ -381,6 +457,8 @@ export function agent(config: AgentConfig): VendoAgent {
 
   const built: VendoAgent = {
     name: config.name,
+    chat: (message, options) => startChat(deps, message, options),
+    forUser: (subject, options) => createUser(deps, subject, options),
     async respond(subject, message, options = {}) {
       await requireModel();
       const session = await createSession(deps, subject, options);
@@ -389,6 +467,7 @@ export function agent(config: AgentConfig): VendoAgent {
       return session.stream(message, options.signal === undefined ? {} : { signal: options.signal });
     },
     run: (task, options) => startRun(deps, task, options),
+    handler: (options) => agentHandler(built, options),
     on: (when, task, options) => declareAutomation(built, when, task, options),
     async session(subject, options) {
       await requireModel();

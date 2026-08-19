@@ -50,9 +50,10 @@ export interface DeviceLoginOptions {
   /**
    * The pretty renderer is driving this ceremony, so a human is reading a rail
    * and the machine-readable receipt below is noise sitting under the three
-   * lines of state. Suppressed there and NOWHERE else: `--agent`, `--json`,
-   * piped, non-TTY, CI and standalone `vendo login` all keep it byte for byte,
-   * because something parses each of those.
+   * lines of state. Suppressed there — and, `isTty` above, on any terminal a
+   * human is watching: nothing parses a TTY, and standalone `vendo login`
+   * printed that JSON block at a human who read it as a crash. `--agent`,
+   * piped, non-TTY and CI runs keep it byte for byte.
    *
    * Passed explicitly rather than inferred. `usePrettyOutput()` answers "is
    * this terminal colour-capable", which is a different question — standalone
@@ -203,6 +204,7 @@ export async function runDeviceLogin(
   const fetchImpl = options.fetchImpl ?? fetch;
   const sleep = options.sleep ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
   const now = options.now ?? Date.now;
+  const tty = options.isTty ?? (process.stdout.isTTY === true);
   const base = resolveCloudBaseUrl({
     apiUrl: option(args, "--api-url"),
     env: options.env ?? process.env,
@@ -287,14 +289,13 @@ export async function runDeviceLogin(
       const ceremony = ceremonyFrom(claim.body);
 
       const approvalUrl = ceremony.verification_uri_complete ?? ceremony.verification_uri;
-      const tty = options.isTty ?? (process.stdout.isTTY === true);
       noteStaleCode(pending, now(), output);
       if (options.pretty === true) {
         if (tty) {
-          // One line. The browser is already opening, so the code IS the whole
-          // instruction; the URL is not lost — the stall notice below carries
-          // it as the recovery path if the browser never came up.
-          output.log(`Opening your browser — approve the code ${ceremony.user_code} there…`);
+          // One line, no numbered list — but it NAMES the URL: opening the
+          // browser is best-effort, and on a headless or remote box nothing
+          // comes up, leaving a code with nowhere to type it.
+          output.log(`Opening your browser — approve the code ${ceremony.user_code} at ${approvalUrl}`);
           (options.openBrowser ?? defaultOpenBrowser)(approvalUrl);
         } else {
           output.log(`Vendo Cloud device login — approve the code ${ceremony.user_code} at ${approvalUrl}`);
@@ -417,7 +418,7 @@ export async function runDeviceLogin(
         if (options.rerunHint !== false) {
           output.log("Re-run `vendo init` to finish wiring (it picks the key up from .env.local).");
         }
-        if (options.pretty !== true) {
+        if (options.pretty !== true && !tty) {
           printJson(output, { deviceLogin: true, wroteEnvLocal: true, keyLast4: key.slice(-4) });
         }
         return "approved";
@@ -452,7 +453,7 @@ export async function runDeviceLogin(
     // is not a failure. A re-run resumes this same claim (#479).
     const pendingExit = (): number => {
       output.log(`Still waiting on approval — code ${userCode}. Re-run \`vendo login\` to resume (it continues this same request).`);
-      if (options.pretty !== true) {
+      if (options.pretty !== true && !tty) {
         printJson(output, {
           deviceLogin: true,
           pending: true,

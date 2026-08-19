@@ -5,6 +5,8 @@
  * rather than either package publishing a test-only subpath: a doubles surface
  * on a published package is surface nobody asked for.
  */
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import type {
   ApprovalId,
   ApprovalRequest,
@@ -259,6 +261,35 @@ export function testTranscript() {
  *  (`SeatModels`): a harness that DOES read a seat names the gap itself. */
 export function unusedModels(): SeatModels<LanguageModel> {
   return {};
+}
+
+/**
+ * A REAL door on loopback, for every suite whose turn reaches one.
+ *
+ * `claudeCode()` probes the door url it is handed before it boots a machine, so
+ * a fixture url is no longer just a string to echo back — a turn only proceeds
+ * if something answers it. `401` is the default because that is what the live
+ * door says to an unauthenticated caller: the credential is minted later.
+ *
+ * `hostname` is what the egress allowlist derives from the url (`hostOf`), so a
+ * suite asserting the allowlist can name it without recomputing the derivation.
+ */
+export async function liveDoor(status = 401): Promise<{
+  url: string;
+  hostname: string;
+  close: () => Promise<void>;
+}> {
+  const server = createServer((_request, response) => {
+    response.writeHead(status);
+    response.end();
+  });
+  await new Promise<void>((resolve) => { server.listen(0, "127.0.0.1", resolve); });
+  const { port } = server.address() as AddressInfo;
+  return {
+    url: `http://127.0.0.1:${port}/api/vendo/mcp`,
+    hostname: "127.0.0.1",
+    close: () => new Promise<void>((resolve) => { server.close(() => { resolve(); }); }),
+  };
 }
 
 export type StreamPart = Awaited<ReturnType<MockLanguageModelV3["doStream"]>>["stream"] extends ReadableStream<

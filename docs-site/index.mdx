@@ -10,6 +10,27 @@ import AgentPromptCard from "/snippets/agent-prompt-card.mdx"
 
 Your agent picks the right setup for your repo. You confirm it.
 
+## Just want an agent?
+
+The smallest thing Vendo does needs no CLI, no init, and nothing moved around.
+Install one package and write one call:
+
+```ts
+import { agent } from "@vendoai/agents";
+
+const support = agent({
+  name: "support",
+  instructions: "Answer in the product's voice; never invent account numbers.",
+});
+
+console.log((await support.chat("Where is order A-1001?")).text);
+```
+
+Give it tools, put it on a route, or hand it a schedule from there:
+[backend quickstart](/backend/quickstart). Everything below is the rest of
+Vendo — the embedded surface and the generated screens — and `init` is how you
+get there.
+
 ## Quickstart
 
 No agent handy? Do it by hand. Three steps.
@@ -76,11 +97,10 @@ No agent handy? Do it by hand. Three steps.
         writes the wiring, and prints one snippet for you to paste.
     ```
 
-    Each answer is a path. The agent-loop answer forks once more — a chat in
-    your app, or an agent in your backend — so there are four:
+    Each answer is a path. Continue with the one you picked:
 
     <div className="direction-cards">
-      <CardGroup cols={2}>
+      <CardGroup cols={3}>
         <Card title="Vendo's Full-Stack Agent" href="/product/quickstart" img="/images/cards/direction-product.svg">
           Vendo runs the loop and renders screens in your brand.
 
@@ -99,13 +119,6 @@ No agent handy? Do it by hand. Three steps.
           Your own agent, acting as the signed-in user.
 
           `createVendo({ mcp: true })`
-
-          Quickstart →
-        </Card>
-        <Card title="In your backend" href="/backend/quickstart" img="/images/cards/direction-backend.svg">
-          A governed agent in any Node backend. The UI stays yours.
-
-          `agent({ name })`
 
           Quickstart →
         </Card>

@@ -75,6 +75,7 @@ export interface VendoTheme {
     border: string;
     success?: string;
     warning?: string;
+    info?: string;
     surfaceRaised?: string;
   };
   typography: {
@@ -118,6 +119,7 @@ export const vendoThemeSchema = z.object({
     border: z.string(),
     success: z.string().optional(),
     warning: z.string().optional(),
+    info: z.string().optional(),
     surfaceRaised: z.string().optional(),
   }).passthrough(),
   typography: z.object({

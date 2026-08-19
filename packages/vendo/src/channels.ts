@@ -22,8 +22,23 @@ export interface ChannelsService {
   register(input: { url: string; secret: string }): Promise<TextChannelRegistration>;
   /** One outbound message on a conversation the user already started. There is
    *  no host-initiated send: `conversationId` always comes from an inbound
-   *  event. */
-  send(input: { conversationId: string; text: string }): Promise<void>;
+   *  event.
+   *
+   *  `final` scopes to THIS MESSAGE and never to the turn: `false` means more of
+   *  the text being written is still coming — a reply the model is cutting at
+   *  dividers, mid-stream — and `true` means this message is whole.
+   *
+   *  It is deliberately NOT a promise that nothing else will arrive on the
+   *  conversation, because nothing can promise that: `vendo_text_me` and an
+   *  automation firing reach the same conversation at any moment, and a turn's
+   *  own grant-set question is decided from the live approval feed only after
+   *  the reply has gone out. A receiver reads it to stop showing a reply as
+   *  still-being-written; it must never read it as "stop listening".
+   *
+   *  Optional, so an implementation written against the older shape (a host's own
+   *  Inkbox account) is still a `ChannelsService`, and so a carrier that has
+   *  nothing to do with it can ignore it. */
+  send(input: { conversationId: string; text: string; final?: boolean }): Promise<void>;
 }
 
 /** What the router side answers: the shared triage number a person texts, the

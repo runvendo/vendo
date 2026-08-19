@@ -15,6 +15,10 @@ playbook instead of the raw text, re-fetch it raw
 (`curl -sL https://docs.vendo.run/agents.md`) — the value flags, exact
 commands, and rules below don't survive paraphrase.
 
+**Only an agent in their backend?** Then none of the install below applies:
+`@vendoai/agents` is one package with no CLI and no `init`. Go straight to
+[In the backend](#in-the-backend).
+
 **How to read this — fetch lean, act fast.** Take [Start here](#start-here) to
 the end. Init closes by naming the path this repo is on and printing ONE
 Continue link; read only that path's section below, then fetch only the page
@@ -24,10 +28,11 @@ chunk of context you will not use, and it is why installs feel slow to start.
 Read the repo's `package.json` before deep directory scans. Start acting after
 init, not after reading everything.
 
-**The code lives here, not in init's output.** Init writes files and reports
-what it found and what it wrote. The lines you hand-wire are on this page and
-on the four quickstarts it sends you to — so when a step below and your memory
-of some earlier install disagree, this page wins.
+**The code lives here, not in init's output.** Init prints no code and no
+steps: it writes the files itself, then states what it wired, what it detected,
+the guard posture, and one link. Every line you hand-wire is on this page and
+on the quickstarts it sends you to — so when a step below and your memory of
+some earlier install disagree, this page wins.
 
 ## Start here
 
@@ -139,6 +144,10 @@ pointed at.
    `VENDO_BASE_URL`. Say what each option gets their users, not what it
    configures.
 
+   One more consent gate rides ahead of the grading pass: that pass spends
+   model tokens, so init asks before it runs. Relay it like the rest — the
+   answer is money, and it is not yours to give.
+
    Take the model answer first, before you re-run anything. It is the one
    answer that has no flag: the Vendo Cloud pick is a login you run now, and
    the key only counts once login has written it to `.env.local`.
@@ -193,19 +202,35 @@ pointed at.
    [CLI reference](/reference/cli#vendo-init-dir) for every other flag and
    [vendo init](/reference/vendo-init) for exactly what it writes.
 
-4. **Take the Continue link.** The write run ends by naming the path this
-   repo is on and printing ONE Continue link. That link is your section below,
-   and its section names the one page to fetch:
+4. **Take the Continue link.** The write run prints no code and no steps. It
+   ends on four computed lines and one URL — what it wired, what it detected,
+   the guard posture it left you, and where to go next:
+
+   ```
+   Wired: .env.example, .vendo/install.json, …, lib/vendo.ts, next.config.mjs
+   Detected: Next.js · no auth detected · npm · port 3000
+   Guard: writes run without approval — how to tighten: vendo.run/agents.md
+   Continue: https://docs.vendo.run/product/quickstart
+   ```
+
+   The receipt carries the same as structured fields (`wrote`, `detected`,
+   `guardPosture`, `continueUrl`). That Continue URL is your section below, and
+   its section names the one page to fetch:
 
    | Continue link | Your section |
    | --- | --- |
    | `/product/quickstart` | [In the product](#in-the-product) |
    | `/existing-agent/ai-sdk` or `/existing-agent/mastra` | [In an agent you already run](#in-an-agent-you-already-run) |
    | `/outside-agents/quickstart` | [Outside agents over MCP](#outside-agents-over-mcp) |
-   | `/backend/quickstart` | [In the backend](#in-the-backend) |
 
    One link, one section, one page. If init named a path your human did not
-   expect, that is a question for them, not a second install.
+   expect, that is a question for them, not a second install. Nothing in that
+   tail is a paste: init writes the files itself and the code lives on the
+   pages below.
+
+   **A backend agent takes none of this.** `@vendoai/agents` needs no CLI and
+   no init — see [In the backend](#in-the-backend), which starts from an empty
+   project rather than from a Continue link.
 
 ### Next.js: `serverExternalPackages`
 
@@ -260,14 +285,20 @@ The restart is not optional: the runtime memoizes the merged tool registry on
 first use and holds it for the life of the process, so a sync against a running
 server changes nothing the person can see.
 
+Grading can only ever TIGHTEN on its own. Where the pass wants to loosen a tool
+— run something that currently asks — it queues that as a pending proposal
+instead of applying it, because the guard law admits no loosening without a
+human. Those are your human's to accept, never yours.
+
 **`VENDO_BASE_URL` names your human's own origin.** Init's dev-URL question
-already wrote it into `.env.local`. It is load-bearing wherever a Vendo tool
-runs OUTSIDE the wire route init wrote — their own chat route, their backend —
-because a `vendo_*` or `api()` call is a real HTTP request back at their API and
-nothing else says where to send it. Unset there, the first tool call throws
-`Cannot execute … set VENDO_BASE_URL, or pass baseUrl`. Deployments set the same
-variable in the hosting platform, to the public URL with the path prefix
-included ([environment variables](/reference/environment-variables)).
+already wrote it into `.env.local`. It is load-bearing wherever a `vendo_*` tool
+runs OUTSIDE the wire route init wrote — their own chat route — because that
+call is a real HTTP request back at their API and nothing else says where to
+send it. Unset there, the first tool call throws `Cannot execute … set
+VENDO_BASE_URL, or pass baseUrl`. Deployments set the same variable in the
+hosting platform, to the public URL with the path prefix included
+([environment variables](/reference/environment-variables)). The MCP door reads
+it for a second reason — discovery — covered in that section.
 
 **The judgment work init leaves you.** Init writes the deterministic contract.
 The parts that need reading the code are yours, and nothing but you will catch
@@ -397,8 +428,8 @@ created under one subject is invisible to a surface asking as another.
 has that file in both shapes — with an auth preset and without — and it is
 the one exception to the one-page rule, not an invitation to browse.
 
-**This is one of the two paths `VENDO_BASE_URL` is load-bearing on**: the tool
-runs in THEIR chat route, which is not a request the wire route ever sees.
+**This is the path `VENDO_BASE_URL` is load-bearing on**: the tool runs in
+THEIR chat route, which is not a request the wire route ever sees.
 
 **Guard and done on this path.** There is no overlay to place. Vendo calls
 arrive in the host's chat as `dynamic-tool` parts: hand every finished one to
@@ -540,28 +571,37 @@ the MCP registry is a separate job, not part of being installed
 
 ## In the backend
 
-A governed agent in any Node backend, with no Vendo UI to mount. `agent()` is
-the only export of the three: it composes the agent, and the object it returns
-carries `respond()` for someone who is waiting and `run()` for work nobody is
-watching. A backend agent IS the host's own loop, so init wrote this
-path with `--use-case agent-loop`, which is also what tells doctor to skip the
-mounted-UI checks. The one page for it:
+**Skip everything above.** This path takes no CLI, no `init`, and nothing moved
+around — it starts from an empty project. There is no Continue link to arrive
+on and no `.vendo/` contract to write; if your human wants only an agent in
+their backend, none of steps 1 to 4 apply. The one page for it:
 [`https://docs.vendo.run/backend/quickstart.md`](/backend/quickstart).
 
-`@vendoai/agents` carries the code on that page; `@vendoai/vendo` is installed
-beside it because every file init writes imports `@vendoai/vendo/*` and the
-`predev`/`prebuild` hooks run the `vendo` binary it ships.
+One package and one call at module scope. `agent()` is the only export of the
+three — the object it returns carries the other two:
 
-**This is the other one**: `api()` tools are real HTTP requests, and on this
-path no Vendo route is mounted at all for the runtime to learn an origin from.
+```bash
+npm install @vendoai/agents ai@^6 zod
+```
+
+- `chat(message)` is one turn and the answer, with no route and no stream in
+  the way.
+- `handler()` is the whole agent as one fetch handler — the chat turn, the
+  thread list and transcript, and the approvals wire — mounted on one
+  catch-all route.
+- `run(task)` is work nobody is watching.
+
+Left unset, the agent thinks in this process, and threads and audit rows are
+persisted automatically with zero setup.
 
 **Guard and done on this path.** The UI stays the host's, so approvals do not
-render themselves. A `respond()` turn streams the approval card to whatever is
-listening and waits; a `run()` nobody is watching parks that one call and
-carries on, reporting its id in `refs.approvals`. Parking is per call, not per
-run, so a non-empty `refs.approvals` means PART of the task did not happen and
-the report is the only place that says so. Show those to a person, let them
-answer, then call `run()` again. Done is one real turn, driven from their own
+render themselves — they come back in the turn. Every result is a `TurnResult`:
+`ok` carries the typed `output`, and `interrupted` carries the `interruptions`
+a person has to answer plus a `resume(decisions)` that carries on from exactly
+where it stopped. `resume()` is not a rerun. A tool graded `write` or above is
+one the guard asks about every time, so the very FIRST `chat()` on a fresh
+agent usually comes back `interrupted` with nothing run — that is the guard
+working, not a broken install. Done is one real turn, driven from their own
 backend, answering from their own API.
 
 ## Rules of engagement
@@ -607,7 +647,7 @@ backend, answering from their own API.
 | `https://vendo.run/agents.md` | This playbook as raw Markdown (append `.md` to any docs page) |
 | `https://docs.vendo.run/product/quickstart.md` | The in-product path: the provider, the overlay, and slots |
 | `https://docs.vendo.run/existing-agent/quickstart.md` | The tool-pack path for hosts that already have an agent |
-| `https://docs.vendo.run/backend/quickstart.md` | The backend path: `agent()`, `respond()`, `run()`, and no Vendo UI to mount |
+| `https://docs.vendo.run/backend/quickstart.md` | The backend path: one package, `agent()`, `chat()`, `handler()`, `run()` — no CLI and no Vendo UI to mount |
 | `https://vendo.run/auth.md` | The raw claim-ceremony protocol behind `vendo login` |
 | `https://docs.vendo.run/llms.txt` | Index of every docs page for LLM ingestion (also at `/.well-known/llms.txt`) |
 | `https://docs.vendo.run/llms-full.txt` | The whole docs site as one file |

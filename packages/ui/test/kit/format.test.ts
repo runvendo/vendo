@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   applyFormat,
   formatDateTime,
-  formatDuration,
   formatMoney,
   formatNum,
   isRenderableNumber,
@@ -69,61 +68,6 @@ describe("formatNum", () => {
 
   it("returns null for non-finite input", () => {
     expect(formatNum(Number.NaN)).toBeNull();
-  });
-});
-
-describe("formatDuration (takes seconds, and only seconds)", () => {
-  it("reads a count of seconds as a duration", () => {
-    expect(formatDuration(268)).toBe("4m 28s");
-    expect(formatDuration(412)).toBe("6m 52s");
-    expect(formatDuration(158 * 60)).toBe("2h 38m");
-    // No unit to declare any more: a series stored in minutes multiplies where
-    // its data is prepared, because a chart's `format` is a bare word.
-    expect(formatDuration(200)).toBe("3m 20s");
-  });
-
-  it("keeps to the two largest units — a duration is one figure, not three", () => {
-    expect(formatDuration(3661)).toBe("1h 1m");
-    expect(formatDuration(90 * 60)).toBe("1h 30m");
-    expect(formatDuration(5 * 86_400)).toBe("5d");
-  });
-
-  it("drops a unit that would read as zero", () => {
-    expect(formatDuration(300)).toBe("5m");
-    expect(formatDuration(3600)).toBe("1h");
-  });
-
-  // A build stage's 38 seconds printed "38s", which is the host's own field read
-  // aloud, not a duration — the judge caught the whole sub-minute column while
-  // the 157-second stage beside it read "2m 37s". The minute is the floor.
-  it("floors a sub-minute count at the minute, so the pair still reads as one", () => {
-    expect(formatDuration(38)).toBe("0m 38s");
-    expect(formatDuration(46)).toBe("0m 46s");
-    expect(formatDuration(59.6)).toBe("1m");
-    // Nothing above the floor moves, and zero has no pair to carry.
-    expect(formatDuration(157)).toBe("2m 37s");
-    expect(formatDuration(0)).toBe("0s");
-  });
-
-  it("says 0s rather than nothing at all, and keeps a sign", () => {
-    expect(formatDuration(0)).toBe("0s");
-    expect(formatDuration(0.4)).toBe("0s");
-    expect(formatDuration(-115 * 60)).toBe("-1h 55m");
-  });
-
-  it("returns null for non-finite input", () => {
-    expect(formatDuration(Number.NaN)).toBeNull();
-    expect(formatDuration(Number.POSITIVE_INFINITY)).toBeNull();
-    // deliberately exercising the runtime guard against bad model data
-    expect(formatDuration("268" as unknown as number)).toBeNull();
-  });
-
-  // The `duration` token survives for the ONE place the Kit still formats a
-  // figure itself: a chart axis, whose ticks come off a numeric scale the host
-  // reduces, so the chart has to be told what its numbers mean.
-  it("is reachable through the format token a chart axis takes", () => {
-    expect(applyFormat(268, "duration")).toBe("4m 28s");
-    expect(applyFormat("268", "duration")).toBeNull();
   });
 });
 

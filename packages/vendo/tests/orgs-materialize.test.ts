@@ -32,6 +32,7 @@ import { createSessionRoutes } from "@vendoai/harnesses/box-door";
 import { claudeCode } from "@vendoai/harnesses/claude-code";
 import { appAccess, createStore, type VendoStore } from "@vendoai/store";
 import { afterEach, describe, expect, it } from "vitest";
+import { liveDoor } from "../src/agent-doubles.test-util.js";
 import { createVendo, type Vendo } from "../src/server.js";
 
 const encoder = new TextEncoder();
@@ -142,13 +143,19 @@ function fakeSandbox(script: (box: BoxScript) => Promise<void>) {
 let acting: Principal = kim;
 
 async function boot(store: VendoStore, sandbox: ReturnType<typeof fakeSandbox>): Promise<Vendo> {
+  // ⚠️ TEST EDIT — was `https://host.test`, a reserved TLD that never resolves.
+  // `claudeCode()` now probes the door before booting a machine and refuses a
+  // turn nothing answers, so this composition needs a base that is really there.
+  // Nothing this file asserts — org file materialization — depends on the origin.
+  const door = await liveDoor();
+  cleanups.push(door.close);
   const vendo = createVendo({
     // Never reached: the thinker is the scripted box, not a provider.
     models: { default: {} as LanguageModel },
     store,
     sandbox: sandbox as unknown as SandboxAdapter,
     harness: claudeCode(),
-    mcp: { baseUrl: "https://host.test" },
+    mcp: { baseUrl: door.origin },
     // One preset, four seams (09-vendo §2.1) — `memberships` is the one this
     // file is about, and `oauth` is what lets the box's MCP door open at all.
     auth: {

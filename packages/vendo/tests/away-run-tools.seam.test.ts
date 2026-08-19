@@ -18,7 +18,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { automationsInternals } from "@vendoai/automations";
-import type { Harness, Principal, RunContext, ToolDescriptor, ToolRegistry } from "@vendoai/core";
+import { VENDO_AUTOMATE_TOOL, type Harness, type Principal, type RunContext, type ToolDescriptor, type ToolRegistry } from "@vendoai/core";
 import { defineHarness } from "@vendoai/harnesses";
 import { createStore, type VendoStore } from "@vendoai/store";
 import type { LanguageModel } from "ai";
@@ -130,7 +130,7 @@ async function fire(vendo: Vendo): Promise<void> {
 }
 
 describe.sequential("the belt an away firing is handed", () => {
-  it("keeps vendo_text_me on it however many reads crowd the surface", async () => {
+  it("keeps the tools the prompt teaches on it however many reads crowd the surface", async () => {
     // The channel is configured, so the tool is registered and the grant the
     // person gave it is worth something. `VENDO_CLOUD_URL` points nowhere on
     // purpose: this run never reaches the console, and a stray request must fail
@@ -151,7 +151,14 @@ describe.sequential("the belt an away firing is handed", () => {
     // THE POINT: the power the person granted is on the belt the model was
     // handed. Before this, it was the 25th read's turn and every write lost.
     expect(belt).toContain(VENDO_TEXT_ME_TOOL);
-    // …and the cap really did bite, so the line above is a survivor and not an
+    // …and so is the tool that ARMS it. The channel's hidden grounding names the
+    // automation path on every single inbound text ("to text the user later, set
+    // up an automation for it", channel-turn.ts), and arming is a write — so the
+    // same safest-first cut that buried Text me made the one thing this channel
+    // advertises cost a `find_tools` round on the first turn of every fresh
+    // thread.
+    expect(belt).toContain(VENDO_AUTOMATE_TOOL);
+    // …and the cap really did bite, so the lines above are survivors and not an
     // accident of a surface that fit whole.
     expect(belt.filter((name) => name.startsWith("maple_read_")).length).toBeLessThan(READS);
   }, 60_000);

@@ -1064,6 +1064,24 @@ function StatefulTreeView({
     )
     : null;
 
+  // The drift notice's OTHER promise, kept. An update replays every wish and
+  // says which ones the new version could not take; the server records exactly
+  // those (`seed.unapplied`), and until this notice existed only the chat ever
+  // heard them — so a change the person asked for disappeared out of an Update
+  // that reported nothing at all. Phrased as the LAST update's verdict, which
+  // stays true until the next one replays them.
+  const unappliedRaw = (tree as WalkTree & { seedUnapplied?: unknown }).seedUnapplied;
+  const unapplied = Array.isArray(unappliedRaw)
+    ? unappliedRaw.filter((wish): wish is string => typeof wish === "string")
+    : [];
+  const unappliedNotice = unapplied.length > 0
+    ? (
+      <ContainedNotice label="Not carried over" outcome="blocked">
+        {`The last update couldn’t carry every change you asked for onto the new version. These are still on record, so you can ask for them again: ${unapplied.map(wish => `“${wish}”`).join(", ")}.`}
+      </ContainedNotice>
+    )
+    : null;
+
   // The view settled without the data it asked for (render-seam.ts writes this when
   // a query fails). Every unresolved binding renders "—" or an empty state, so a
   // silent settle reads as "you have no spending". SERVER-AUTHORITATIVE like
@@ -1090,6 +1108,7 @@ function StatefulTreeView({
           {dataNotice}
           {dropBackNotice}
           {driftNotice}
+          {unappliedNotice}
           <NodeRenderer
             nodeId={validation.tree.root}
             ancestry={new Set()}

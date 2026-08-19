@@ -2,6 +2,11 @@
   "$schema": "https://turbo.build/schema.json",
   "tasks": {
     "build": { "dependsOn": ["^build"], "outputs": ["dist/**", ".next/**", "!.next/cache/**"] },
+    // The screen engine's WebAssembly is copied out of the wasmfile dependency at
+    // build time and sits at the package root, so it is the same relative path from
+    // src/ (vitest) and from dist/ (a published install). It has to be a declared
+    // OUTPUT or a cache hit restores dist/ and leaves the engine with no bytes.
+    "@vendoai/apps#build": { "dependsOn": ["^build"], "outputs": ["dist/**", "quickjs.wasm"] },
     "test": { "dependsOn": ["^build", "build"], "env": ["CI", "POSTGRES_URL", "VITEST_MIN_FORKS", "VITEST_MAX_FORKS", "VITEST_MIN_THREADS", "VITEST_MAX_THREADS"] },
     "test:ui": { "dependsOn": ["^build", "build"], "env": ["CI", "VITEST_MIN_FORKS", "VITEST_MAX_FORKS", "VITEST_MIN_THREADS", "VITEST_MAX_THREADS"] },
     "test:coverage": { "dependsOn": ["^build", "build"], "outputs": ["coverage/**"], "env": ["CI", "POSTGRES_URL", "VITEST_MIN_FORKS", "VITEST_MAX_FORKS", "VITEST_MIN_THREADS", "VITEST_MAX_THREADS"] },
@@ -11,6 +16,19 @@
     // before @vendoai/ui:build and the template build dies on an unresolvable @vendoai/ui.
     "@vendoai/apps#test": { "dependsOn": ["^build", "build", "@vendoai/box-template#build"], "env": ["CI", "POSTGRES_URL", "VITEST_MIN_FORKS", "VITEST_MAX_FORKS", "VITEST_MIN_THREADS", "VITEST_MAX_THREADS"] },
     "@vendoai/apps#test:coverage": { "dependsOn": ["^build", "build", "@vendoai/box-template#build"], "outputs": ["coverage/**"], "env": ["CI", "POSTGRES_URL", "VITEST_MIN_FORKS", "VITEST_MAX_FORKS", "VITEST_MIN_THREADS", "VITEST_MAX_THREADS"] },
+    // The install seam packs the WHOLE publish set off disk and runs the real
+    // CLI, so its inputs are every packages/* dist — none of which turbo can
+    // see, because the fixture deliberately declares no workspace dependency
+    // (a `workspace:` edge is the exact shortcut it exists to rule out).
+    // `vendoai#build` is the closure in one edge: the alias depends on the
+    // umbrella, which depends on every block. `cache: false` because a task
+    // whose real inputs are outside the graph must never replay a stale pass —
+    // that is how a green suite becomes a blind fixture.
+    "@vendoai-fixtures/install-seam#test": {
+      "dependsOn": ["vendoai#build"],
+      "cache": false,
+      "env": ["CI", "VITEST_MIN_FORKS", "VITEST_MAX_FORKS", "VITEST_MIN_THREADS", "VITEST_MAX_THREADS"]
+    },
     "conformance": { "dependsOn": ["^build", "build"], "env": ["CI", "POSTGRES_URL"] },
     "typecheck": { "dependsOn": ["^build"] },
     "lint": {},

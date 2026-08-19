@@ -79,7 +79,7 @@ Agent-readable: [vendo.run/agents.md](https://vendo.run/agents.md)
 [**You already have an agent**](https://docs.vendo.run/existing-agent/quickstart) — one tool pack for your AI SDK, Mastra, or homegrown loop.<br>
 [**Your product has no agent**](https://docs.vendo.run/quickstart) — one command brings the loop, the chat UI, and the approvals.<br>
 [**Expose your product over MCP**](https://docs.vendo.run/outside-agents/how-the-door-works) — Claude, ChatGPT, Cursor, and Claude Code act as the signed-in user.<br>
-[**Your agent lives in your backend**](https://docs.vendo.run/backend/quickstart) — `agent()`, `respond()`, and `run()`, with no UI of ours to mount.
+[**Your agent lives in your backend**](https://docs.vendo.run/backend/quickstart) — one package, `agent()` and `chat()`, no CLI and no UI of ours to mount.
 
 <img src="assets/kicker-03-how-it-works.svg" alt="03 · How it works">
 

@@ -34,6 +34,7 @@ import {
   KIT_PREAMBLE_PROP_NAMES,
   KIT_SPECS,
   SLOT_PROP_DESCRIPTION,
+  TEXT_SLOT_DESCRIPTION,
 } from "./specs.js";
 import type { KitComponentSpec, PropClass } from "./schema.js";
 import type { CatalogSummaryEntry } from "../briefing.js";
@@ -86,7 +87,11 @@ const typeText = (schema: ZodTypeAny | undefined): string => {
     case "boolean": return "boolean";
     case "unknown":
     case "any":
-      return schema?.description === SLOT_PROP_DESCRIPTION ? "element" : "any";
+      if (schema?.description === SLOT_PROP_DESCRIPTION) return "element";
+      // A FORMATTER is a function the model writes, exactly as an `on*` prop is —
+      // and calling it `element` would send it composing a component where a
+      // chart wants one finished string.
+      return schema?.description === TEXT_SLOT_DESCRIPTION ? "fn" : "any";
     case "enum":
       return (shape.values ?? []).map((value) => JSON.stringify(value)).join("|");
     case "union":

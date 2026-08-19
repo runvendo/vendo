@@ -28,6 +28,23 @@ import { PayloadView } from "@vendoai/ui/tree";
 import { useEffect, type JSX } from "react";
 import { createRoot } from "react-dom/client";
 
+/**
+ * The engine build THIS page runs on, pinned rather than defaulted.
+ *
+ * The harness contract's first rule is SELF-CONTAINED — the page is opened with
+ * no network at all — and `render.ts` bundles it as ONE esbuild IIFE, where
+ * `import.meta` is empty. The stock build fetches its WebAssembly as an emitted
+ * asset, and neither half of that exists here. The SINGLE-FILE build carries the
+ * bytes inside the JavaScript, which is the one thing this page can hold; the
+ * string it embeds is unparseable after SWC re-quotes it (#1496) and perfectly
+ * fine after esbuild, and esbuild is the only bundler this page ever sees.
+ *
+ * Pinned at module scope so it is ONE stable key: `warmScreenEngine` memoizes on
+ * the variant, and an explicitly passed one wins over every later default warm —
+ * including `PayloadView`'s own, which asks for no variant.
+ */
+const PAGE_ENGINE = import("@jitl/quickjs-singlefile-browser-release-sync");
+
 declare global {
   interface Window {
     /** The one seam every contender's page answers through, injected by
@@ -93,7 +110,7 @@ async function opened(): Promise<UIPayload> {
   // live screen, and `PayloadView` boots its own VM off this same warmed module
   // (`ui/src/tree/screen-engine.ts`) — so awaiting it here is what lets the
   // settle signal below be two frames rather than a guess at how long a VM takes.
-  await warmScreenEngine();
+  await warmScreenEngine(PAGE_ENGINE);
   const plan = interactive.queryPlan ?? [];
   if (plan.length === 0) return served;
   const answer = (asks: readonly ScreenQuery[]): Record<string, unknown> => Object.fromEntries(asks.map((query) => {

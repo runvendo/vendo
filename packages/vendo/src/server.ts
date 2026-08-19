@@ -8,6 +8,7 @@
  * is where a host names it.
  */
 import { provideCloudAdapters } from "@vendoai/agents";
+import { isJsonRequest, relativePath } from "@vendoai/agents/http";
 import { isVendoError, log, VendoError } from "@vendoai/core";
 import { announceBootSummary, bootSummaryFor } from "./boot-summary.js";
 import { createComposition } from "./compose-context.js";
@@ -216,17 +217,6 @@ export { guard, createGuard, type GuardRules, type VendoGuard } from "@vendoai/g
 // assignment, no I/O — safe at module scope under workerd (portability gate).
 provideCloudAdapters({ sandbox: cloudSandbox });
 
-function isJsonRequest(request: Request): boolean {
-  return request.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase()
-    === "application/json";
-}
-
-function relativePath(url: URL): string | null {
-  if (url.pathname === BASE_PATH) return "/";
-  if (!url.pathname.startsWith(`${BASE_PATH}/`)) return null;
-  return url.pathname.slice(BASE_PATH.length);
-}
-
 /** The door path set of each composition, keyed by its own instance: the wire
     matches it (`isDoorPath`) and `wellKnownVendoHandler` must match the SAME
     one, and the base-path prefix it is built from is a composition fact rather
@@ -381,7 +371,7 @@ function createWireHandler(deps: WireDeps): (request: Request) => Promise<Respon
         await deps.ready();
         return await deps.door.handler(request);
       }
-      const path = relativePath(url);
+      const path = relativePath(BASE_PATH, url);
       if (path === null) throw new VendoError("not-found", "unknown Vendo route");
       // Learn the same-origin default only from a request that addresses a real
       // Vendo route (defense in depth beyond the untrusted-forwarding rule).

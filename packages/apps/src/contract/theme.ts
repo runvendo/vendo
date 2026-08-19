@@ -50,6 +50,9 @@ export const themeDefaults = {
   colors: {
     success: "#1e7f53",
     warning: "#d4a017",
+    // The host's OWN accent hue rather than a literal blue (`infoColorFor`), so
+    // the status that is neither good news nor bad is brand-native too.
+    info: infoColorFor("var(--vendo-color-accent)"),
     // One step off the host's OWN surface rather than a literal, so a raised
     // card sits the same distance from the page in any brand and either scheme.
     surfaceRaised: "color-mix(in srgb, var(--vendo-color-surface) 92%, var(--vendo-color-text))",
@@ -103,6 +106,19 @@ const chartRamp: ReadonlyArray<readonly [number, number]> = [
  */
 export function chartPaletteFor(accent: string): string[] {
   return [accent, ...chartRamp.map(([l, c]) => `oklch(from ${accent} ${l} calc(c * ${c}) h)`)];
+}
+
+/**
+ * The "in progress" color an accent implies — the same idiom as
+ * {@link chartPaletteFor}: the accent's hue (`h`) exactly, at a mid lightness and
+ * eased-off chroma, so a state that is neither good news nor bad is brand-native
+ * on any host and never invents a color. NOT the accent itself: a status painted
+ * in the brand's own colour reads as the primary action, which is the whole
+ * reason a fourth status colour exists. The Kit derives its own fallback from
+ * this same function, so the two sides cannot drift.
+ */
+export function infoColorFor(accent: string): string {
+  return `oklch(from ${accent} 0.55 calc(c * 0.75) h)`;
 }
 
 /** Deep-merge a partial theme over a base (one level per contract group). */

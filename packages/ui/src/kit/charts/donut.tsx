@@ -1,10 +1,10 @@
 /** DonutChart — recharts Pie internals, data props only (W2 §The Kit). */
 import type { ComponentProps, ReactNode } from "react";
 import { Cell, Pie, PieChart as RPieChart, ResponsiveContainer, Tooltip } from "recharts";
-import { isRenderableNumber, applyFormat, type ValueFormat } from "../format.js";
+import { isRenderableNumber } from "../format.js";
 import { font, numeric, seriesColor, t, type KitStyled, type KitEngine, type KitRendered, given } from "../tokens.js";
 import { EnumBadge, humanizeEnum, type EnumTone } from "../values.js";
-import { ChartEmpty, ChartFrame, slotTooltip, tooltipSurface } from "./sanitize.js";
+import { ChartEmpty, ChartFrame, chartText, plainFigure, slotTooltip, tooltipSurface, type ChartFormat } from "./sanitize.js";
 
 interface DonutChartOwnProps extends KitStyled {
   data: Array<Record<string, unknown>>;
@@ -12,8 +12,10 @@ interface DonutChartOwnProps extends KitStyled {
   categoryKey: string;
   /** Slice-value field. */
   valueKey: string;
-  /** Value-tier format for tooltips. */
-  format?: ValueFormat;
+  /** Each slice's figure in the legend and the tooltip, as a function of the row
+   *  — `(row) => money(row.amount)`. A ring states shares of ONE whole, so one
+   *  formatter reads every slice. */
+  format?: ChartFormat;
   /** Slice value → tone, exactly as EnumBadge takes it — the pills the legend
    *  gives a status ring. */
   tones?: Record<string, EnumTone>;
@@ -52,7 +54,7 @@ export function DonutChart({
   data,
   categoryKey,
   valueKey,
-  format = "number",
+  format,
   tones,
   donut = true,
   legend = true,
@@ -75,10 +77,14 @@ export function DonutChart({
   // nothing" is an answer — and dropping it took the row out of the LEGEND too,
   // so a screenshot of five categories showed four and never said which one was
   // missing. It draws no arc, which is correct, and reads 0 under the ring.
-  const slices = (Array.isArray(data) ? data : [])
+  const rows = Array.isArray(data) ? data : [];
+  const slices = rows
     .map((row, at) => ({ ...row, at, name: String(row[categoryKey] ?? ""), value: row[valueKey] }))
     .filter((s) => isRenderableNumber(s.value)) as Array<{ at: number; name: string; value: number }>;
-  const fmt = (v: unknown) => applyFormat(v, format) ?? "";
+  // `at` is the row's place in `data`, which is the order the screen's formatter
+  // was resolved in — never the slice's place on the ring, which drops the
+  // unrenderable rows and would read every text after one of them off by a row.
+  const fmt = (at: number, value: unknown) => chartText(format, rows[at], at) ?? plainFigure(value);
   // A negative value is REFUSED, out loud, rather than filtered: a donut states
   // shares of one whole, so a negative cannot be one of them. Dropped quietly it
   // takes its category out of the ring AND out of the legend while every
@@ -90,7 +96,7 @@ export function DonutChart({
   if (negative) {
     return (
       <ChartEmpty height={height} style={style}>
-        {`Negative values aren't shares of a whole: “${negative.name}” is ${fmt(negative.value)}. Chart these as a BarChart instead.`}
+        {`Negative values aren't shares of a whole: “${negative.name}” is ${fmt(negative.at, negative.value)}. Chart these as a BarChart instead.`}
       </ChartEmpty>
     );
   }
@@ -124,7 +130,13 @@ export function DonutChart({
               ))}
             </Pie>
             <Tooltip
-              formatter={(v, name) => [fmt(v), enums ? humanizeEnum(String(name)) : String(name)]}
+              // The hovered slice carries its own `at` in the payload recharts
+              // hands back, so the tooltip reads the same text its legend line
+              // does rather than a second rendering of the same figure.
+              formatter={(v, name, item) => [
+                fmt(((item as { payload?: { at?: number } } | undefined)?.payload?.at) ?? -1, v),
+                enums ? humanizeEnum(String(name)) : String(name),
+              ]}
               content={tooltip === undefined ? undefined : slotTooltip(hovered, slices)}
               contentStyle={tooltipSurface}
             />
@@ -159,7 +171,7 @@ export function DonutChart({
                   the ring's own legend used to print the raw "past_due". A name
                   the data spells in words stays exactly as written. */}
               {enums ? <EnumBadge value={slice.name} tones={tones} /> : <span>{slice.name}</span>}
-              <span style={{ ...numeric, color: t.muted }}>{fmt(slice.value)}</span>
+              <span style={{ ...numeric, color: t.muted }}>{fmt(slice.at, slice.value)}</span>
             </li>
           ))}
         </ul>

@@ -131,10 +131,17 @@ const LAYERS = {
   // does. mcp depends on core alone, so there is no cycle and the umbrella is
   // not dragged in; the cost is that a standalone install now carries
   // @modelcontextprotocol/sdk and jose, which is accepted.
+  // automations joined for `serve()` (agents-dx v1): `.on()` only COLLECTED
+  // declarations while the umbrella was the one lifecycle, and a standalone
+  // runtime with no lifecycle to reconcile them had triggers that never fired.
+  // automations depends on core alone, so there is no cycle and no umbrella
+  // edge; the cost is that a standalone install now carries croner and jsonata,
+  // which is accepted.
   "@vendoai/agents": [
     "@vendoai/core",
     "@vendoai/actions",
     "@vendoai/apps",
+    "@vendoai/automations",
     "@vendoai/guard",
     "@vendoai/harnesses",
     "@vendoai/mcp",
@@ -287,8 +294,17 @@ function* sourceFiles(dir) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     if (GENERATED_DIRS.has(entry.name)) continue;
     const p = join(dir, entry.name);
-    if (entry.isDirectory()) yield* sourceFiles(p);
-    else if (/\.(ts|tsx|mts|cts|js|mjs|cjs|jsx)$/.test(entry.name)) yield p;
+    if (entry.isDirectory()) {
+      // A nested directory carrying its OWN manifest is a different package's
+      // source, and its imports are declared there. fixtures/install-seam/app
+      // is the case: the stranger app the install-seam suite copies to a temp
+      // dir and installs the packed tarballs into. Its `@vendoai/vendo` import
+      // resolves from a registry-shaped tree by design — declaring it in the
+      // suite's manifest would give it the workspace link that whole fixture
+      // exists to rule out.
+      if (existsSync(join(p, "package.json"))) continue;
+      yield* sourceFiles(p);
+    } else if (/\.(ts|tsx|mts|cts|js|mjs|cjs|jsx)$/.test(entry.name)) yield p;
   }
 }
 

@@ -36,6 +36,7 @@ import {
   type QuickJSHandle,
   type QuickJSWASMModule,
 } from "quickjs-emscripten-core";
+import { stockVariant } from "../variant.js";
 import { wallClockBudget, type ScreenTurn, type TurnLimit } from "./budget.js";
 import { SCREEN_RUNTIME, installSource, sealSource } from "./vm-program.js";
 import {
@@ -70,37 +71,52 @@ export type ScreenEngineVariant = Parameters<typeof newQuickJSWASMModuleFromVari
 const engines = new Map<ScreenEngineVariant, Promise<QuickJSWASMModule>>();
 let stock: ScreenEngineVariant | null = null;
 
-/** The module every screen boots on — ONE shared slot. Every completed warm
- *  reassigns it, including a warm that only hit the memo above, and
- *  {@link bootScreen} reads it with no variant selector. So warming two variants
- *  is NOT a supported per-screen choice: the warm that resolved LAST is the
- *  module every subsequent boot gets. The per-variant map dedupes LOADING only —
- *  it does not decide which module runs a screen. */
+/** The variant a host handed over BY NAME, once it has. AN EXPLICITLY PASSED
+ *  VARIANT WINS — the same law every adapter slot in this codebase keeps, and
+ *  the only thing that makes the hatch below real: `@vendoai/ui` re-warms with
+ *  no variant of its own when a screen mounts (`ui/src/tree/screen-engine.ts`),
+ *  so a default that could overwrite a pinned one would discard the host's
+ *  choice on the first paint. */
+let pinned: ScreenEngineVariant | null = null;
+
+/** The module every screen boots on — ONE shared slot, which {@link bootScreen}
+ *  reads with no variant selector. So warming two variants is NOT a per-screen
+ *  choice: a pinned variant is the module every boot gets, and absent one it is
+ *  whichever warm resolved last. The per-variant map dedupes LOADING only. */
 let wasm: QuickJSWASMModule | null = null;
 
 /**
  * Load the WebAssembly. Running a screen is synchronous — this one-time load is
  * not, so a caller awaits it once before the first {@link bootScreen}.
  *
- * The default variant is the SINGLE-FILE BROWSER build, for `$expr`'s reason:
- * the WebAssembly rides inside the JavaScript, so no host bundler has to be
- * taught to emit a `.wasm`, and it reaches for no Node builtin. The import stays
- * a literal specifier because `@vendoai/ui` depends on a bundler inlining it.
+ * The default variant is the WASMFILE build with the WebAssembly handed in as
+ * bytes — ../variant.ts holds it and says why the bytes may not ride inside the
+ * JavaScript.
  *
- * A venue that cannot run that build passes its own variant, and the memo is
- * keyed on the variant itself, so warming one twice loads it once. `stock` is
- * held for the same reason — the default needs one stable key, not a fresh
- * import promise per call. Warming TWO variants in one process is another
- * matter: see the `wasm` slot above for what a host gets then.
+ * A venue that cannot run that build passes its own, and it STICKS: every later
+ * default warm is a no-op, and a default already in flight lands nowhere. That
+ * is what a venue with no network and no asset URL needs — genbench's offline
+ * single-bundle page, workerd's deploy-time module — because the host warms
+ * once and every library-side warm after it must honour that, not race it.
+ *
+ * The memo is keyed on the variant itself, so warming one twice loads it once.
+ * `stock` is held for the same reason: the default needs one stable key, not a
+ * fresh variant per call.
  */
 export async function warmScreenEngine(variant?: ScreenEngineVariant): Promise<void> {
-  const key = variant ?? (stock ??= import("@jitl/quickjs-singlefile-browser-release-sync"));
+  if (variant === undefined && pinned !== null) return;
+  const key = variant ?? (stock ??= stockVariant());
+  if (variant !== undefined) pinned = key;
   let booting = engines.get(key);
   if (booting === undefined) {
     booting = newQuickJSWASMModuleFromVariant(key);
     engines.set(key, booting);
   }
-  wasm = await booting;
+  const module = await booting;
+  // A default warm that was already in flight when the host pinned its own must
+  // not land on top of it — the early return above only catches the ones that
+  // start after.
+  if (pinned === null || pinned === key) wasm = module;
 }
 
 /** What a VM threw, read out before its handle goes away. */

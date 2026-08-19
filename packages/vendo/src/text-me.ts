@@ -104,7 +104,9 @@ export function textMeRegistry(deps: TextMeDeps): ToolRegistry {
         return { status: "error", error: { code: "not-linked", message: noReachablePhone(invite.url) } };
       }
       try {
-        await deps.channel.send({ conversationId: link.conversationId, text });
+        // One whole message with no stream behind it — an automation firing or a
+        // web turn reaching a phone, never a piece of a reply being written.
+        await deps.channel.send({ conversationId: link.conversationId, text, final: true });
       } catch {
         // Loud, and the model's to explain. Rethrowing would surface as "the
         // tool is broken", which the agent retries; a result the person can act

@@ -161,6 +161,33 @@ const WIRED_CHECKBOX = screen(
 );
 
 /**
+ * A radio group drawn the way the Kit draws one, with the second option already on.
+ *
+ * The control a person presses is an EMPTY `<span role=radio>` — its label is a
+ * sibling it points at with `aria-labelledby`, and the `aria-hidden` input beside it
+ * carries the form value — which is exactly the markup `project-tracker/file-bug`
+ * failed on. Pressing an unselected one calls nothing, adds no element and changes
+ * no word on the screen: what it does is move the selection, one coming on as
+ * another goes off. COUNTED, that is the same number either way, so the probe read
+ * a group that selects fine as a dead control (2026-08-19).
+ *
+ * The spans are sized because an empty one has no box to click.
+ */
+const RADIO_GROUP = screen(
+  `<label><span id="urgent" role="radio" aria-checked="false" aria-labelledby="urgent-label" tabindex="-1" style="display:inline-block;width:16px;height:16px"></span><input type="radio" name="priority" value="urgent" aria-hidden="true" tabindex="-1"><span id="urgent-label">Urgent</span></label>
+  <label><span id="high" role="radio" aria-checked="true" aria-labelledby="high-label" tabindex="0" style="display:inline-block;width:16px;height:16px"></span><input type="radio" name="priority" value="high" aria-hidden="true" tabindex="-1" checked><span id="high-label">High</span></label>`,
+  `document.querySelectorAll("[role=radio]").forEach(function (pick) {
+    pick.addEventListener("click", function () {
+      var picked = this;
+      document.querySelectorAll("[role=radio]").forEach(function (other) {
+        other.setAttribute("aria-checked", String(other === picked));
+      });
+      picked.parentElement.querySelector("input").checked = true;
+    });
+  });`,
+);
+
+/**
  * The tab the screen opens on, beside the tab it does not.
  *
  * Pressing the selected tab calls nothing and moves nothing BY DESIGN — it is
@@ -738,6 +765,36 @@ describe("the click probe grades what a browser actually does", () => {
       // the switch, and that is a live local control, not a dead one.
       expect(trace).toEqual([{ label: "Compact rows", changed: true, calls: [] }]);
       expect(wiredActions(trace, world).bindings[0]).toMatchObject({ effect: "state" });
+    });
+
+    /**
+     * The same evidence one species over, where COUNTING it was not enough
+     * (2026-08-19).
+     *
+     * A toggle that flips changes how many controls are on; a radio press does not —
+     * the selection moves within the group, one on as one off — so the number the
+     * probe read was the number it started with and a radio a person can watch fill
+     * in graded as a control that did nothing: `project-tracker/file-bug` recorded
+     * "control 1" with `changed: false` against a priority group that selects fine.
+     * Reading WHICH controls are on rather than how many is what moves here, and the
+     * Kit's own markup is why it cannot be read off the control's words: all four
+     * spans of that group are empty and identical.
+     */
+    it("passes a radio that only moves the selection inside its own group", async () => {
+      const trace = await traceOf(RADIO_GROUP);
+
+      // No call, no dialog, no new words, no new elements — the whole record of this
+      // press is that the group is on a different option than it was.
+      expect(trace).toEqual([
+        { label: "control 1", changed: true, calls: [] },
+        { label: "control 2", alreadyActive: true, changed: false, calls: [] },
+      ]);
+      // And the floor now reads it as the live local control it is, beside the
+      // already-selected one it has always excused.
+      expect(wiredActions(trace, world).bindings).toEqual([
+        { where: "control 1", effect: "state", why: "changed the screen without calling a tool" },
+        { where: "control 2", effect: "already-active", why: "already-active — a no-op by design" },
+      ]);
     });
 
     it("presses the browser's own checkbox too", async () => {
