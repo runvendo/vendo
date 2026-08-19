@@ -49,8 +49,15 @@ export function s3Files(options: S3FilesOptions): FilesAdapter {
     const signed = await client().sign(`${base}/${path}`, { method, ...init });
     const response = await send(signed);
     // 404 is the interface's `| undefined` on `get`, so only `get` reads it;
-    // every other outcome on every verb is the deployment's to fix.
-    if (!response.ok && !(method === "GET" && response.status === 404)) {
+    // every other outcome on every verb is the deployment's to fix. But a
+    // missing BUCKET answers 404 too (measured against R2), and only the error
+    // body's code tells it from a missing object — so a wrong or deleted bucket
+    // would otherwise read back to the host as "that file isn't there",
+    // silently and forever. The body is read ONLY on this branch; a served GET
+    // never touches it.
+    const missingObject = method === "GET" && response.status === 404
+      && !(await response.text()).includes("NoSuchBucket");
+    if (!response.ok && !missingObject) {
       throw new VendoError(
         "unavailable",
         `s3Files: ${method} ${options.bucket}/${path} failed with ${response.status}`

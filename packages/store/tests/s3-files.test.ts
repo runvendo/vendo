@@ -110,6 +110,36 @@ describe("s3Files — what leaves the adapter", () => {
       .toBeUndefined();
   });
 
+  it("still resolves undefined when the OBJECT is missing and the bucket is fine", async () => {
+    const { fetch } = capture(() => new Response(
+      '<?xml version="1.0" encoding="UTF-8"?><Error><Code>NoSuchKey</Code>'
+      + "<Message>The specified key does not exist.</Message></Error>",
+      { status: 404 },
+    ));
+
+    expect(await s3Files({ endpoint: ENDPOINT, bucket: "drawer", credentials: CREDENTIALS, fetch }).get("gone"))
+      .toBeUndefined();
+  });
+
+  it("THROWS when the bucket itself is missing, which R2 also answers 404", async () => {
+    // Verified against a real R2 bucket: a wrong or deleted bucket comes back
+    // with the SAME status as a missing object, and only the error body's code
+    // tells them apart. Read on status alone, a typo'd bucket reads back to the
+    // host as "that file isn't there" — silently, forever.
+    const { fetch } = capture(() => new Response(
+      '<?xml version="1.0" encoding="UTF-8"?><Error><Code>NoSuchBucket</Code>'
+      + "<Message>The specified bucket does not exist.</Message></Error>",
+      { status: 404 },
+    ));
+    const files = s3Files({ endpoint: ENDPOINT, bucket: "typo", credentials: CREDENTIALS, fetch });
+
+    await expect(files.get("wsb_abc")).rejects.toThrow(VendoError);
+    await expect(files.get("wsb_abc")).rejects.toThrow(
+      "s3Files: GET typo/wsb_abc failed with 404"
+      + " — check the endpoint, region, bucket and credentials passed to s3Files().",
+    );
+  });
+
   it("throws ONE error that names itself and the fix on any other failure", async () => {
     const { fetch } = capture(() => new Response("no", { status: 403 }));
     const files = s3Files({ endpoint: ENDPOINT, bucket: "drawer", credentials: CREDENTIALS, fetch });
