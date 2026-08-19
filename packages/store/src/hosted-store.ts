@@ -338,13 +338,32 @@ type StoreWireOp = keyof typeof STORE_WIRE_PATHS;
 /** Measurement instrument, not a feature: with VENDO_STORE_TRACE set, every
  * call through the store client below — the 50 ops AND the StoreAdapter façade,
  * which rides the same client — emits one greppable stderr line naming the op,
- * its path, the round trip in milliseconds (the body read included, since that
- * is what the caller waits for), the response size in bytes and the outcome.
+ * its path, `net=` the time on the wire (request start → response headers,
+ * summed over attempts), `total=` the time the caller waited, `retried=` how
+ * many replays it took, `bytes=` the size the server declared, and the outcome.
+ *
+ * The two clocks are separate because the ONE number this line used to print
+ * folded three things into the door's own latency and so lied about it: a
+ * retry's 250ms–10s backoff, event-loop queueing on a busy container, and the
+ * instrument's own second full body read (a `clone().arrayBuffer()` inside the
+ * timed span). Field 2026-08-19: a healthy 54ms door read as 2.1s and cost an
+ * afternoon. So size now comes from `content-length` — free, and `?` where the
+ * server declared none — and the door is never charged for being measured. The
+ * server's own processing time would need a header the console does not send.
+ *
  * Read ONCE at import, like the skew latch below: a debug switch belongs to the
  * process, so the adapter itself still reads nothing at construction or on any
  * call, and unset there is no wrapper to pay for. */
 const TRACE = (globalThis as { process?: { env?: Record<string, string | undefined> } })
   .process?.env?.VENDO_STORE_TRACE !== undefined;
+
+/** The half of a traced call only the attempt loop can see: the time actually
+ * spent on the wire, and how many replays it took. `call` hands one in and
+ * reads it back afterwards, because from outside `wire` the backoff sleep is
+ * indistinguishable from a slow server — which is precisely the confusion the
+ * old single number caused. A refused attempt's small error body is read inside
+ * `send`, so it lands in `net` too. */
+type TraceMeter = { net: number; retried: number };
 
 /** The `outcome=` field of a FAILED call's trace line. Failures are the tail of
  * the latency distribution, not an afterthought: an exhausted 30s budget is the
@@ -484,8 +503,21 @@ function storeWireClient(
     }),
   });
 
-  const wire = async (op: StoreWireOp, path: string, init?: RequestInit): Promise<Response> => {
-    const attempt = (): Promise<Response> => send(path, init);
+  const wire = async (
+    op: StoreWireOp,
+    path: string,
+    init?: RequestInit,
+    meter?: TraceMeter,
+  ): Promise<Response> => {
+    const attempt = async (): Promise<Response> => {
+      if (meter === undefined) return send(path, init);
+      const started = performance.now();
+      try {
+        return await send(path, init);
+      } finally {
+        meter.net += performance.now() - started;
+      }
+    };
     try {
       // The retry sends the SAME init — same key, same body — so a mutation
       // the server already applied is deduped instead of applied twice.
@@ -493,6 +525,7 @@ function storeWireClient(
         if (!isRetryable(error)) throw error;
         const wait = (error as { retryAfterMs?: number }).retryAfterMs ?? DEFAULT_RETRY_MS;
         await new Promise((resolve) => setTimeout(resolve, wait));
+        if (meter !== undefined) meter.retried += 1;
         return attempt();
       });
     } catch (error) {
@@ -522,41 +555,28 @@ function storeWireClient(
 
   /** Untraced, `call` IS `wire` — see {@link TRACE}. */
   const call: typeof wire = !TRACE ? wire : async (op, path, init) => {
+    const meter: TraceMeter = { net: 0, retried: 0 };
     const started = performance.now();
-    const line = (bytes: number, outcome: string): void =>
+    const line = (bytes: string, outcome: string): void =>
       console.error(
-        `vendo-store-trace op=${op} path=${path} ms=${Math.round(performance.now() - started)} bytes=${bytes} outcome=${outcome}`,
+        `vendo-store-trace op=${op} path=${path} net=${Math.round(meter.net)}`
+          + ` total=${Math.round(performance.now() - started)} retried=${meter.retried}`
+          + ` bytes=${bytes} outcome=${outcome}`,
       );
-    let response: Response;
     try {
-      response = await wire(op, path, init);
+      const response = await wire(op, path, init, meter);
+      // The response goes back untouched, unread and whole: the size is the one
+      // the server DECLARED, so measuring it costs nothing and cannot fail the
+      // call it measures. A server that declared none reads `?` rather than
+      // billing the door for a body read to find out.
+      line(response.headers.get("content-length") ?? "?", "ok");
+      return response;
     } catch (error) {
       // A refusal has a body, but `wire` already consumed it to build this
-      // error — the bytes are gone and the failure is what mattered anyway.
-      line(0, traceOutcome(error));
+      // error — the size is gone and the failure is what mattered anyway.
+      line("?", traceOutcome(error));
       throw error;
     }
-    // Measure a CLONE and hand back the response `wire` returned, untouched.
-    // Rebuilding it instead would be a real behavior change on a null-body
-    // status — `new Response(body, { status: 204 })` throws — and would put the
-    // instrument in the path of every hosted call it is supposed to observe.
-    //
-    // Measuring must never FAIL the call it is measuring either. A body stream
-    // that breaks mid-read is not an error to this client: `json`'s catch reads
-    // it as `{}`, which a void mutation ignores entirely and a payload reader
-    // reports as service misbehavior. Letting the measurement's own rejection
-    // escape would turn tracing on into "some calls now fail", which is the one
-    // thing an instrument may not do — so a broken read is a fact ABOUT the
-    // call, recorded in the line, not a fact that changes it.
-    let bytes = 0;
-    let outcome = "ok";
-    try {
-      bytes = (await response.clone().arrayBuffer()).byteLength;
-    } catch {
-      outcome = "unreadable-body";
-    }
-    line(bytes, outcome);
-    return response;
   };
 
   const json = async (response: Response): Promise<unknown> => response.json().catch(() => ({}));
