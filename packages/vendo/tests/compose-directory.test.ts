@@ -50,7 +50,10 @@ const compositionOf = (over: Partial<VendoComposition>): VendoComposition =>
   ({ config: {}, ops: undefined, directory: undefined, ...over } as VendoComposition);
 
 const fakeDirectory = { entry: async () => ({ memberships: [], limits: {} }), memberships: async () => [] };
-const meter = { usage: { count: async () => 0, record: async () => {} } };
+// Only the `usage` family, because `composeLimits` reads only `ops?.usage` —
+// StoreOps' other thirteen families would be dead weight, so the stub takes the
+// `unknown` hop rather than pretending to be a whole store.
+const meter = { usage: { count: async () => 0, record: async () => {} } } as unknown as VendoComposition["ops"];
 
 describe("composeLimits with a Cloud directory", () => {
   it("composes the Cloud default when the host set no policy", () => {
