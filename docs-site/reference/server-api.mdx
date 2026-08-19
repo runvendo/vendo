@@ -51,14 +51,23 @@ The composition registers app capability tools in actions and guard-binds every 
 ```ts
 export interface Vendo {
   handler(req: Request): Promise<Response>;
+  tokenFor(who: Request | string): Promise<string>;
   emit(event: string, payload: Json, principal: Principal): Promise<RunId[]>;
+  putUserFile(input: {
+    principal: Principal;
+    name: string;
+    content: Uint8Array | string;
+    contentType?: string;
+  }): Promise<UploadedFile>;
   usage(query: UsageTallyQuery): Promise<UsageTallyRow[]>;
   guard: VendoGuard;
   guardedTools: ToolRegistry;
   apps: AppsRuntime;
   automations: AutomationsEngine;
+  agent?: ComposedAgent;
   actions: ActionsRegistry;
   connections: ConnectionsService;
+  tenantConnectors: TenantConnectors;
   channels: VendoChannels;
   store: VendoStore;
   harness: HarnessTurns;
@@ -68,9 +77,13 @@ export interface Vendo {
 | Member | Notes |
 | --- | --- |
 | `handler` | Fetch-style and framework-agnostic. Mount at `/api/vendo/[...]` |
+| `tokenFor` | One short-lived MCP access token bound to one of your users, for a backend agent connecting to this deployment's door. Pass the `Request` to read the signed-in user off its session cookie, or a user id to mint headlessly. A blank id is refused rather than minted. See [Your own agent](/outside-agents/your-own-agent) |
 | `emit` | The host-event seam. Returns the ids of runs started for enabled automations owned by that principal, and throws `not-implemented` under `automations: false` |
+| `putUserFile` | Pushes a file into one user's own drawer from host code — the programmatic half of the chat drop, through the same server-side write. Same name replaces the file that was there. It reaches the user the next time they chat; nothing is delivered and no turn starts |
 | `usage` | Reads the store's usage meter. Throws `not-implemented` on a meterless store |
 | `guardedTools` | The guard-bound registry your own agent loop executes through. Parks pending-approval calls for wire resume |
+| `agent` | The agent this deployment adopted via `createVendo({ agent })`, read back. Absent when the host composed none — the deployment still has the composed harness, and a firing that names no agent reaches it |
+| `tenantConnectors` | One tenant's own MCP server or OpenAPI spec, registered at runtime with no redeploy. Each org is served its own registry, and a pasted token is vaulted in the store's encrypted secrets, never readable back |
 | `channels` | `{ text: { link, status, unlink } }`, each taking a `Principal` |
 | `harness` | The composed thinker's door: what `POST /threads` runs, and what a host driving a turn directly calls |
 

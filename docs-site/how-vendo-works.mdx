@@ -33,7 +33,47 @@ Three boxes are Vendo. The two on the ends are yours.
 
 ## One request, end to end
 
-The same path, with one real turn moving through it.
+The same five boxes, with one real turn moving through them. A user types
+*"show me what I spent on travel last quarter."*
+
+<Steps>
+
+<Step title="The surface posts the question">
+The panel sends it to a route inside **your own app** — the one file `vendo init`
+wrote. It does not go to Vendo's servers.
+</Step>
+
+<Step title="Your route says who is asking">
+Your own auth resolves the signed-in user. A visitor your resolver cannot place
+is refused the turn.
+</Step>
+
+<Step title="The agent picks a tool">
+It reads `.vendo/tools.json` and chooses `host_transactions_list` with a date
+range. The prompt carries your instructions, your theme and knowledge index, the
+user's messages, and the tool schemas — which model answers it, and whose
+servers it runs on, is set by
+[your model credential](/production/model-credentials).
+</Step>
+
+<Step title="The guard grades the call">
+A read like this one runs. Anything destructive, and anything extraction could
+not grade, stops and parks the turn on an approval card showing the exact
+request. Approve it and the same turn resumes.
+</Step>
+
+<Step title="Your API runs the call">
+The call reaches your own endpoint as the person who is signed in. The agent can
+do what that person could already do by clicking, and nothing more.
+</Step>
+
+<Step title="A screen comes back instead of a paragraph">
+The agent calls `vendo_make`. The screen's code runs in a WebAssembly VM that
+can't touch anything — no DOM, no network, no clock — and your surface renders
+what comes out, in your brand, bound to the rows your own API just returned.
+</Step>
+
+</Steps>
 
 ## What runs where
 
@@ -69,9 +109,9 @@ Your repo, your API, and your auth stay on your side. Vendo Cloud runs the manag
     The signed-in user's own headers, forwarded only to the API origin you configured. For unattended runs, a short-lived token your server mints from your own secret, naming the user who set the automation up.
   </Accordion>
   <Accordion title="Where do prompts go?" defaultOpen>
-    To Vendo's model gateway. A prompt carries your instructions, your theme and knowledge index, the user's messages, and tool schemas.
+    Wherever your composition points them. Select a model object — `models: { default: anthropic("claude-sonnet-4-6") }`, which is what `vendo init` writes when you bring your own key — and the prompt goes straight to that provider. Vendo's servers never see it. Leave the slot unset and the `VENDO_API_KEY` in your environment answers it over Vendo's Cloud gateway. [Model credentials](/production/model-credentials) covers both.
 
-    The agent never sees your audit log.
+    A prompt carries your instructions, your theme and knowledge index, the user's messages, and tool schemas. The agent never sees your audit log.
   </Accordion>
   <Accordion title="Where does my data live?" defaultOpen>
     Threads and audit rows live in Vendo Cloud's hosted store. Delete any of it through the erase API, which drops the rows for good.

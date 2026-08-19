@@ -168,6 +168,8 @@ The answer flags are the ones init already has: `--use-case`, `--auth`, `--cloud
 
 `--posture` or `--service-key` without `--use-case mcp` exits `1` rather than being silently ignored, and so does `--service-key` with `--posture broker`: a Cloud-fronted door provisions its own key, so accepting one there would discard it. `--ai-polish` is the older spelling of `--ai`.
 
+`--posture broker` with a dev URL that is not `https://` exits `1` too: Vendo Cloud registers that origin as the tenant's forwarding address and refuses one that is not https, so the door would be written and then fail on its first request. Take `--posture local`, which is zero config and works on http, or pass an https origin. This one is checked against the URL the run resolved rather than the flags alone, so it also catches a broker posture picked at the prompt.
+
 <Warning>
   `--base-url` is a DEV URL: it lands in `.env.local` as `VENDO_BASE_URL`, which is what your own agent loop, any backend process, and the MCP door need before their first tool call. Production is never set here — set `VENDO_BASE_URL` in your hosting platform's environment settings when you deploy. A deployed URL in `.env.local` would repoint local dev's discovery, callbacks, and credential forwarding at the deployed origin.
 </Warning>

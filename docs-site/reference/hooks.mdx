@@ -10,7 +10,11 @@ Headless React hooks that read from the same wire the built-in chrome uses. Pair
 import { useThreads, useApprovals, useVendoThread } from "@vendoai/ui";
 ```
 
-Every hook here is also re-exported from `@vendoai/vendo/react`, which is the import that needs no direct `@vendoai/ui` dependency.
+Every hook here is also re-exported from `@vendoai/vendo/react`, which is the import that needs no direct `@vendoai/ui` dependency — with one exception. `useApprovalModal` ships only on `@vendoai/ui/chrome`:
+
+```ts
+import { useApprovalModal } from "@vendoai/ui/chrome";
+```
 
 ## The shared read shape
 
@@ -71,7 +75,6 @@ A hook's `isLoading` still tracks only the first read, so drive mutation-pending
 | `useVendoTheme()` | the resolved `VendoTheme` |
 | `useVendoThemeOrDefault()` | the same, falling back to the default theme |
 | `useVendoTools()` | the `ToolMetaMap` a host passed as `<VendoProvider tools>` |
-| `useVendoClientOrNone()` | the client, or `undefined` outside a provider |
 | `useVendoDiscoverability()` | the discoverability config |
 | `useVendoGreeting()` | the configured greeting, or `undefined` |
 | `useVendoRoutes()` | the `VendoRouteMap` |

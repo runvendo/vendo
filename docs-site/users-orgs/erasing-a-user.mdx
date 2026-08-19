@@ -95,7 +95,10 @@ and audit rows. Useful for tearing down a test build.
 
 `eraseStore` runs the SQL cascade against a local or BYO Postgres store. The hosted
 store carries **its own erase door** with the same two methods, so the cascade runs
-server-side with the same behavior:
+server-side with the same behavior.
+
+Feature-detect that door rather than branching on which store you configured: if
+`erase.bySubject` is there, call it; if not, build the local cascade.
 
 ```ts highlight={2}
 const door = typeof (vendo.store as Partial<HostedStore>).erase?.bySubject === "function"

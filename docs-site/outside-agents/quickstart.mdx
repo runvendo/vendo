@@ -202,6 +202,22 @@ client — [Your own agent](/outside-agents/your-own-agent) is the whole loop �
 and the call lands in your product under the user you named.
 </Note>
 
+One thing to pass on that first call. Your client abandons a `tools/call` after
+60 seconds by default, and generating a screen with `vendo_make` routinely runs
+longer. The door beats `notifications/progress` every 15 seconds, but the SDK
+extends the deadline only when you asked it to — so a client that receives every
+frame still gives up at 60 seconds. Ask for both: `onprogress` is what puts the
+progress token on the request, and `resetTimeoutOnProgress` is what makes the
+frames count.
+
+```js focus={4}
+const result = await client.callTool(
+  { name: "vendo_make", arguments: args },
+  undefined,
+  { onprogress: () => {}, resetTimeoutOnProgress: true },
+);
+```
+
 </Step>
 
 </Steps>

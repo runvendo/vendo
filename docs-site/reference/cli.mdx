@@ -18,7 +18,7 @@ The `@vendoai/vendo` package owns the `vendo` bin. `vendo --version` prints the 
 | [`cloud <command>`](#vendo-cloud) | Use the public Vendo Cloud API |
 | [`config <command>`](#vendo-config) | Show which layer owns each `.vendo` config surface |
 
-Every command rejects an option it does not recognize and exits `1` before doing anything. A value flag missing its value fails the same way.
+`init`, `login`, `doctor`, `sync`, and `knowledge` reject an option they do not recognize and exit `1` before doing anything; a value flag missing its value fails the same way. `eject`, `mcp`, `cloud`, and `config` do not check their flags — an unrecognized option is ignored there, though an unrecognized sub-command still exits `1`.
 
 ## `vendo init` {#vendo-init-dir}
 
@@ -41,10 +41,12 @@ Init never writes to a file you authored. Mounting `<VendoProvider>` is the one 
 | `--cloud-key <key>` | a `vnd_` key | writes an existing Vendo Cloud key to `.env.local` |
 | `--byo` | | declines the Cloud key offer |
 | `--ai` / `--no-ai` | | force the AI judgment pass on or off |
-| `--base-url <url>` | a full `http(s)` URL | where this deploys |
+| `--base-url <url>` | a full `http(s)` URL | where the app runs **in dev**. Lands in `.env.local` as `VENDO_BASE_URL`; never a deployed URL |
 | `--theme <slot=value>` | repeatable | answers an uncertain theme slot |
 | `--posture <name>` | `local`, `broker` | how outside agents sign in. `--use-case mcp` only |
 | `--service-key` | | generate a machine-to-machine service key. `--use-case mcp` only |
+
+`--posture broker` with a dev URL that is not `https://` exits `1`: Vendo Cloud registers that origin as the tenant's forwarding address and refuses one that is not https, so the door would be written and then fail on its first request. Take `--posture local` — zero config, and it works on http — or pass an https origin. The check reads the URL the run actually resolved, so it catches a broker posture picked at the prompt too, not just `--posture broker` on the command line.
 
 ### Overriding detection
 
@@ -76,7 +78,7 @@ Claims a Vendo Cloud key through the [claim ceremony](https://vendo.run/auth.md)
 
 The minted `VENDO_API_KEY` is written to `.env.local` in the current working directory and never printed. Run it from the same directory you ran init in.
 
-The pending claim persists to `~/.vendo/pending-claim.json` (mode `0600`), so a fresh `vendo login` resumes the same claim after a crash.
+The pending claim persists to `~/.vendo/pending-claims/<hash>.json` (mode `0600`, inside a `0700` directory), where `<hash>` is the first 16 hex characters of the SHA-256 of the directory the claim was opened for. A fresh `vendo login` **in that same directory** resumes the claim after a crash. Scoping by directory is what stops two logins in two projects from resuming each other's ceremony. A pre-0.4.2 `~/.vendo/pending-claim.json` is read once, honored only if its recorded directory matches, migrated to the new path, and deleted.
 
 | Flag | Effect |
 | --- | --- |
@@ -85,7 +87,7 @@ The pending claim persists to `~/.vendo/pending-claim.json` (mode `0600`), so a 
 
 `--wait` takes a whole number of seconds; anything else exits `1`. The command takes no email, and `--email` is not a flag.
 
-`vendo cloud device-login` is the same command under an alias.
+`vendo cloud device-login` runs the same ceremony under an alias, with one difference: it does not check its flags, so an option it does not recognize is ignored rather than exiting `1`.
 
 ## `vendo doctor`
 
@@ -138,8 +140,9 @@ The `--json` object is `{ ok, exitCode, report, impact, notes, theme, baselines,
 
 | Code | Meaning |
 | --- | --- |
-| `0` | success. Warnings never fail the run |
-| `2` | `<Remixable>` wrappers that cannot be captured (any mode), or breaking tool changes under `--strict` |
+| `0` | success. Warnings never fail the run, and a soft extraction failure without `--strict` still exits `0` |
+| `1` | a bad flag, or `--report` with no resolvable Cloud key — a `--report` that never reported is a failed run. The `--strict` codes are more specific and keep their meaning |
+| `2` | `<Remixable>` wrappers that cannot be captured (any mode); breaking tool changes under `--strict` that impact nothing saved; or a soft extraction failure under `--strict` |
 | `3` | breaking tool changes that impact saved apps, automations, or grants, under `--strict` |
 
 ### The theme re-scan

@@ -101,8 +101,19 @@ node --env-file=.env.local ./dist/chat.js   # or: export VENDO_API_KEY=…
 
 To bring your own model instead, install `@ai-sdk/anthropic` — the major that
 pairs with your `ai`, 4 with `ai@7` and 3 with `ai@6` — and pass it beside
-`name`: `model: anthropic("claude-sonnet-4-6")`. Either way the
-credential is read at the first turn, never at build time — see
+`name`. That is two lines:
+
+```ts lib/agent.ts focus={1,6}
+import { anthropic } from "@ai-sdk/anthropic";
+import { agent } from "@vendoai/agents";
+
+export const support = agent({
+  name: "support",
+  model: anthropic("claude-sonnet-4-6"),
+});
+```
+
+Either way the credential is read at the first turn, never at build time — see
 [Model credentials](/production/model-credentials).
 
 `turn` is a `TurnResult`: read `status` once and everything you then touch is

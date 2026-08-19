@@ -91,8 +91,12 @@ throws, and a visitor your resolver cannot place is refused the turn.
 
 <Step title="The turn runs on your server">
 
-The harness runs the loop in your own process. The model answers over the
-Vendo Cloud gateway, on the `VENDO_API_KEY` in your environment.
+The harness runs the loop in your own process. Where the prompt goes is set by
+what your composition selects: pass a model object — `models: { default:
+anthropic("claude-sonnet-4-6") }`, which is what `vendo init` writes when you
+bring your own key — and the call goes straight to that provider. Leave the slot
+unset and the `VENDO_API_KEY` in your environment answers it over the Vendo
+Cloud gateway. [Model credentials](/production/model-credentials) covers both.
 
 Its tools are your API, extracted into `.vendo/tools.json` by `vendo init` and
 refreshed by `vendo sync`, plus Vendo's own tools for building screens.
@@ -137,7 +141,7 @@ to live data from your own tools. From there it can be pinned into a
 | Panel, palette, slots | Your browser, out of your own bundle |
 | The route and the composition | Your server, in your process |
 | Your API and your database | Yours, untouched |
-| The model | The Vendo Cloud gateway, keyed by `VENDO_API_KEY` |
+| The model | Your own provider when `models` selects one, otherwise the Vendo Cloud gateway keyed by `VENDO_API_KEY` |
 | Threads, apps, grants, audit | Hosted Postgres behind the same key |
 | Server code inside a generated app | A Cloud sandbox behind the same key |
 

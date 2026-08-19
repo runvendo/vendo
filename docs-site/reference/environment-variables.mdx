@@ -26,7 +26,7 @@ Every variable a host developer sets. Keys are credentials; config selects.
 | `VENDO_POSTHOG_KEY` `VENDO_POSTHOG_HOST` | Override the telemetry project key and capture host. | shell or CI |
 | `DO_NOT_TRACK=1` | Disables telemetry; also honored by Scarf. | shell or CI |
 | `CI` | Disables telemetry. | set by your CI |
-| `NODE_ENV` | Gates the dev-server telemetry collector and the local store's plaintext-secret allowance. Unset fails closed on both. | deploy platform |
+| `NODE_ENV` | Two separate gates, and they behave differently when it is unset. Dev-server telemetry collection: unset counts as production, so collection stays off. The local store's plaintext-secret allowance: unset counts as *not* production, so plaintext is allowed — see the warning below. | deploy platform |
 | `E2B_API_KEY` | Credential the E2B SDK reads. Selects nothing. | deploy platform |
 | `VENDO_BOX_TEMPLATE` | Base template a provisioned e2b machine boots from. The Cloud pool ships its own image. | deploy platform |
 | `VENDO_BOX_EDIT_TIMEOUT_MS` | Long-poll budget for one in-box agent edit. Default 8 minutes. | deploy platform |
@@ -44,6 +44,25 @@ Every variable a host developer sets. Keys are credentials; config selects.
 | `VERCEL` `CF_PAGES` `AWS_LAMBDA_FUNCTION_NAME` | Block the default PGlite store on an ephemeral filesystem. | set by the platform |
 | `RAILWAY_ENVIRONMENT` `RENDER` `FLY_APP_NAME` `DYNO` | Mark the PGlite data directory ephemeral, so boot says so once. | set by the platform |
 | `NEXT_RUNTIME` | How the boot event learns this deployment runs on Next. | set by the platform |
+
+<Warning>
+  **An unset `NODE_ENV` stores secrets in plaintext.** On the default local
+  store, the plaintext allowance is `NODE_ENV !== "production"` — so unset, or
+  any value other than `production`, **allows** it. The only signal is one
+  `console.warn` the first time a secret is written.
+
+  Set both on any real deployment:
+
+  ```bash .env
+  NODE_ENV=production
+  VENDO_STORE_ENCRYPTION_KEY=…   # 32-byte base64
+  ```
+
+  Either one alone is enough to stop plaintext: with the key set, secrets are
+  encrypted whatever `NODE_ENV` says; with `NODE_ENV=production` and no key, the
+  store refuses to write a secret rather than writing it in the clear. Vendo
+  Cloud's hosted store is unaffected — this is the local store only.
+</Warning>
 
 ## App machine
 

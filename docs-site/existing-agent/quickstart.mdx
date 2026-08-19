@@ -30,7 +30,9 @@ pnpm exec vendo init
 
 </CodeGroup>
 
-No pins needed. Vendo speaks both live AI SDK majors, so `ai@6` and `ai@7` are each supported — keep the pair together (`ai@7` with `@ai-sdk/*@4`, `ai@6` with `@ai-sdk/*@3`), which is what a bare install gives you. `vendo doctor` reports [E-DEP-001](/production/troubleshooting/e-dep-001) for an `ai` outside that pair of majors.
+No pins needed. Vendo speaks both live AI SDK majors, so `ai@6` and `ai@7` are each supported — keep the pair together (`ai@7` with `@ai-sdk/*@4`, `ai@6` with `@ai-sdk/*@3`), which is what a bare install gives you.
+
+`vendo doctor` checks the `ai` major and nothing else: it reports [E-DEP-001](/production/troubleshooting/e-dep-001) when `ai` falls outside that pair. It never inspects `@ai-sdk/anthropic`, so a `@ai-sdk/*` major that drifts out of step with `ai` passes doctor clean — keep that pin matched by hand.
 
 Answer the first question with **Through my own agent loop (AI SDK / Mastra)**, and take **Vendo Cloud** on the model one. Init writes the wire route and lands a `VENDO_API_KEY` in `.env.local`.
 

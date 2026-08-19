@@ -112,7 +112,7 @@ openApiConnector({
 The resolver receives `principal`, `presence` (`present` or `away`), and `grant` when the guard decided the call against a standing permission.
 
 <Warning>
-  `mcpConnector` also resolves headers when it **lists** the server's tools — a system operation with no principal. Hand back a service-level credential when `principal` is undefined, never a specific user's. `openApiConnector` reads its listing straight off the document, so it only resolves headers for real calls.
+  Hand back a service-level credential when `principal` is undefined, never a specific user's. That case is real: `mcpConnector` also resolves headers when it **lists** the server's tools, a system operation with no principal. `openApiConnector` reads its listing straight off the document, so it only resolves headers for real calls.
 </Warning>
 
 An MCP connector with a resolver also keeps one protocol session per subject, so a server that binds auth to the session can never mix two users up.
