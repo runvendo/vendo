@@ -36,6 +36,9 @@ export {
   type UserOptions,
   type UserThread,
 } from "./facade.js";
+/** One mount for the whole agent — the chat wire, the thread lifecycle, and the
+ *  door and permission planes it already serves. */
+export { agentHandler, type HandlerOptions, type HandlerUser } from "./handler.js";
 /** Interrupted turns, addressed by id — the same park a caller holding the
  *  result answers through `TurnResult.resume()`, from any other process. */
 export {
