@@ -2,7 +2,7 @@
 import type { ReactNode } from "react";
 import { EmptyOrForming } from "../../tree/forming-skeleton.js";
 import { applyFormat } from "../format.js";
-import { readField, RowContext } from "../row.js";
+import { readField, rowSlot } from "../row.js";
 import { font, hairline, microLabel, numeric, t, type KitStyled } from "../tokens.js";
 
 export interface TimelineProps extends KitStyled {
@@ -14,10 +14,10 @@ export interface TimelineProps extends KitStyled {
   timeField?: string;
   /** Where the timestamp sits: leading the title, or right-aligned. */
   timeAlign?: "start" | "end";
-  /** Kit elements rendered as each entry's BODY instead of the title, with that
-   *  entry published on `RowContext` so the components inside name their field
-   *  — the DataTable cell contract, once per entry. */
-  cell?: ReactNode;
+  /** Kit elements rendered as each entry's BODY instead of the title — the
+   *  DataTable cell contract, once per entry. Written as a function of the entry,
+   *  it arrives as ONE element per entry in `entries` order. */
+  cell?: ReactNode | readonly ReactNode[];
   /** Kit element drawn in place of the dot. */
   marker?: ReactNode;
   /** Text shown when there are no entries. */
@@ -27,7 +27,9 @@ export interface TimelineProps extends KitStyled {
 }
 
 /** A timestamp field is a date most of the time and a plain label the rest of
- *  it; an unformattable value reads as itself rather than disappearing. */
+ *  it; a value the Kit will not parse reads as ITSELF rather than disappearing —
+ *  and a stamp already written for a reader is exactly that case: "Aug 15,
+ *  7:42 AM" names no year, and re-parsing it dated the entry 2001. */
 function timeText(value: unknown): string {
   return applyFormat(value, "datetime") ?? (value === undefined || value === null ? "" : String(value));
 }
@@ -73,46 +75,52 @@ export function Timeline({
         const time = timeField === undefined ? "" : timeText(readField(entry, timeField));
         const title = titleField === undefined ? null : String(readField(entry, titleField) ?? "—");
         return (
-          <RowContext.Provider key={String(readField(entry, "id") ?? index)} value={entry}>
-            <li style={{ display: "flex", gap: "var(--vendo-density-content-gap, 10px)", minWidth: 0 }}>
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0 }}>
-                {marker ?? (
-                  <span
-                    aria-hidden="true"
-                    style={{
-                      width: 9,
-                      height: 9,
-                      marginTop: "0.45em",
-                      borderRadius: "50%",
-                      background: t.accent,
-                      boxShadow: `0 0 0 calc(${t.borderWidth} * 3) color-mix(in srgb, ${t.accent} 14%, transparent)`,
-                    }}
-                  />
-                )}
-                {/* The spine joins this entry to the next, so the last one ends
-                    at its dot instead of trailing a stub. */}
-                {index < entries.length - 1 ? (
-                  <span style={{ flex: 1, marginTop: 5, borderLeft: hairline }} />
-                ) : null}
+          <li
+            key={String(readField(entry, "id") ?? index)}
+            style={{ display: "flex", gap: "var(--vendo-density-content-gap, 10px)", minWidth: 0 }}
+          >
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0 }}>
+              {marker ?? (
+                <span
+                  aria-hidden="true"
+                  style={{
+                    width: 9,
+                    height: 9,
+                    marginTop: "0.45em",
+                    borderRadius: "50%",
+                    background: t.accent,
+                    boxShadow: `0 0 0 calc(${t.borderWidth} * 3) color-mix(in srgb, ${t.accent} 14%, transparent)`,
+                  }}
+                />
+              )}
+              {/* The spine joins this entry to the next, so the last one ends
+                  at its dot instead of trailing a stub. */}
+              {index < entries.length - 1 ? (
+                <span style={{ flex: 1, marginTop: 5, borderLeft: hairline }} />
+              ) : null}
+            </div>
+            <div
+              style={{
+                display: "flex",
+                flexDirection: timeAlign === "end" ? "row" : "column",
+                justifyContent: "space-between",
+                alignItems: timeAlign === "end" ? "baseline" : "stretch",
+                gap: timeAlign === "end" ? "var(--vendo-density-content-gap, 10px)" : 2,
+                flex: 1,
+                minWidth: 0,
+                paddingBottom: index === entries.length - 1 ? 0 : "var(--vendo-density-content-gap, 10px)",
+              }}
+            >
+              {timeAlign === "start" && time ? <TimeText time={time} /> : null}
+              {/* By POSITION, and that is right here: a timeline paints in
+                  `entries` order and never reorders — unlike a DataTable, which
+                  sorts, so it matches by identity. */}
+              <div style={{ minWidth: 0, fontWeight: t.weightEmphasis, lineHeight: 1.4 }}>
+                {rowSlot(cell, index) ?? title}
               </div>
-              <div
-                style={{
-                  display: "flex",
-                  flexDirection: timeAlign === "end" ? "row" : "column",
-                  justifyContent: "space-between",
-                  alignItems: timeAlign === "end" ? "baseline" : "stretch",
-                  gap: timeAlign === "end" ? "var(--vendo-density-content-gap, 10px)" : 2,
-                  flex: 1,
-                  minWidth: 0,
-                  paddingBottom: index === entries.length - 1 ? 0 : "var(--vendo-density-content-gap, 10px)",
-                }}
-              >
-                {timeAlign === "start" && time ? <TimeText time={time} /> : null}
-                <div style={{ minWidth: 0, fontWeight: t.weightEmphasis, lineHeight: 1.4 }}>{cell ?? title}</div>
-                {timeAlign === "end" && time ? <TimeText time={time} /> : null}
-              </div>
-            </li>
-          </RowContext.Provider>
+              {timeAlign === "end" && time ? <TimeText time={time} /> : null}
+            </div>
+          </li>
         );
       })}
     </ol>

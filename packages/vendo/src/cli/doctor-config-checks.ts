@@ -5,6 +5,7 @@ import { applyJudgment, disabledReason, judgmentsFileSchema, overridesFileSchema
 import { firstOpenApiSpec, openApiMountPath } from "@vendoai/actions/sync";
 import { publicBase, type RiskLabel } from "@vendoai/core";
 import { CONFIG_SURFACES, OVERRIDES_ENABLEMENT_NOTE } from "../config-surface.js";
+import { UPLOAD_MAX_BYTES } from "../wire/files.js";
 import { describeDevCredential, resolveDevCredential } from "../dev-creds/resolve.js";
 // Relative (not the #dev-creds condition): the CLI is Node-only and the edge
 // build deliberately does not export the pin map.
@@ -105,6 +106,20 @@ export async function checkStorePersistence(run: DoctorRun): Promise<void> {
     `the store's data directory ${JSON.stringify(dataDir)} is on ephemeral disk — ${wiper} wipes it on every redeploy `
     + "and your users' apps and data go with it; mount a persistent volume and point the store's dataDir at it, "
     + "or pass url: \"postgres://…\" to createVendo");
+}
+
+/** The drop door's own line on the itinerary: a deployment now has a place a
+ *  user's files LIVE, and the two facts an operator needs about it are what
+ *  bounds one upload and where the bytes end up. Both are readable without
+ *  touching the deployment — doctor makes no requests — because the cap is a
+ *  constant and the store is chosen by the same key `checkStorePersistence`
+ *  reads. A wired `files:` adapter is invisible from here for the reason stated
+ *  there: no doctor check can see a programmatic override, and the boot block's
+ *  own `files` row names it at runtime. */
+export async function checkUserFiles(run: DoctorRun): Promise<void> {
+  const backing = (run.env.VENDO_API_KEY ?? "") !== "" ? "the Cloud store" : "this deployment's store";
+  run.pass("files/drawer",
+    `chat uploads land in each user's own files, at most ${UPLOAD_MAX_BYTES} bytes each, kept in ${backing}`);
 }
 
 /** Spec 2026-08-06 §B1 — the deployment's path prefix has exactly one home:

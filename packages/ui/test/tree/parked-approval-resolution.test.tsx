@@ -35,10 +35,12 @@ beforeAll(async () => {
 const compile = (tsx: string): string =>
   transform(tsx, { transforms: ["typescript", "jsx", "imports"], production: true, jsxRuntime: "automatic" }).code;
 
-const CATALOG = ["Stack", "Card", "Text", "Money", "Button"];
+const CATALOG = ["Stack", "Card", "Text", "Button", "Input"];
 
 const TRANSFERS = `
-import { Button, Card, Money, Stack, Text, tools, useQuery } from "@vendo/screen";
+import { Button, Card, Stack, Text, tools, useQuery } from "@vendo/screen";
+
+const money = (cents) => (cents / 100).toLocaleString("en-US", { style: "currency", currency: "USD" });
 
 export default function PendingTransfers() {
   const pending = useQuery("list_pending");
@@ -47,12 +49,32 @@ export default function PendingTransfers() {
       <Text text={"Pending: " + pending.data.length} />
       {pending.data.map((row) => (
         <Card key={row.id} title={row.recipient}>
-          <Money amount={row.amount_cents / 100} />
+          <Text text={money(row.amount_cents)} />
           <Button label={"Cancel " + row.recipient} onClick={async () => {
             await tools.cancel_transfer({ id: row.id });
           }} />
         </Card>
       ))}
+    </Stack>
+  );
+}
+`;
+
+/** The same screen with something the PERSON has typed in it — the state a
+ *  refresh must not throw away when the call it followed really ran. */
+const TYPED = `
+import { useState } from "react";
+import { Button, Input, Stack, Text, tools, useQuery } from "@vendo/screen";
+
+export default function PendingTransfers() {
+  const pending = useQuery("list_pending");
+  const [note, setNote] = useState("");
+  return (
+    <Stack gap={12}>
+      <Text text={"Pending: " + pending.data.length} />
+      <Input label="Note" value={note} onChange={(e) => setNote(e.target.value)} />
+      <Text text={"note: " + note} />
+      <Button label="Cancel Ada" onClick={async () => { await tools.cancel_transfer({ id: "tr_1" }); }} />
     </Stack>
   );
 }
@@ -205,6 +227,9 @@ const announce = async (approved: boolean): Promise<void> => {
   });
 };
 
+/** The screen's own mirror of what it thinks is in the box. */
+const noteText = (): string => screen.getByText(/^note:/u).textContent ?? "";
+
 /** The pending notice, which is also the affordance back to a dismissed ask —
  *  and says so, in the name a screen reader hears. */
 const waitingNotice = () => screen.getByRole("button", { name: /Waiting for your approval — review/u });
@@ -276,6 +301,31 @@ describe("a parked press learns its answer", () => {
     const rearmed = await screen.findByRole("button", { name: "Cancel Ada" });
     expect((rearmed as HTMLButtonElement).disabled).toBe(false);
     expect(screen.getByText(/nothing was sent/u)).toBeTruthy();
+  });
+
+  /**
+   * THE OTHER HALF OF THE SPLIT. A refusal reboots because the screen's latched
+   * flag has no other way back; an EXECUTED call must not, because there the
+   * screen's own state is the person's work. Both halves need a test, or the
+   * boolean that chooses between them can be flipped one way with every test
+   * still green.
+   */
+  it("KEEPS what the screen holds when the approved call really ran", async () => {
+    const live = world(TYPED);
+    live.render();
+    fireEvent.change(await screen.findByLabelText("Note"), { target: { value: "half a sentence" } });
+    await waitFor(() => expect(noteText()).toBe("note: half a sentence"));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel Ada" }));
+    await waitFor(() => expect(screen.getByText(/Waiting for your approval/u)).toBeTruthy());
+
+    live.approve();
+    await announce(true);
+
+    // The row is gone, because the call ran and the screen re-read…
+    await waitFor(() => expect(screen.getByText("Pending: 1")).toBeTruthy());
+    // …and what the person had typed is still in the box, because a supply
+    // re-renders the screen that is standing rather than booting a new one.
+    expect(noteText()).toBe("note: half a sentence");
   });
 
   /**

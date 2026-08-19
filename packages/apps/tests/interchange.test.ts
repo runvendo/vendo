@@ -179,7 +179,7 @@ describe(".vendoapp interchange through createApps", () => {
         seedBaselines: testCase.baselines,
       });
       const app = await runtime.importApp(document({
-        seed: { component: pin.slot, baseline: pin.base, instruction: "make it mine" },
+        seed: { component: pin.slot, baseline: pin.base, wishes: ["make it mine"] },
         ...(testCase.components === undefined ? {} : { components: testCase.components }),
       }), ctx);
       if (!testCase.allowed) {
@@ -190,7 +190,7 @@ describe(".vendoapp interchange through createApps", () => {
       } else {
         const archive = unzipSync(await runtime.exportApp(app.id, ctx));
         const exported = JSON.parse(decoder.decode(archive["app.json"])) as AppDocument;
-        expect(exported.seed).toEqual({ component: pin.slot, baseline: pin.base, instruction: "make it mine" });
+        expect(exported.seed).toEqual({ component: pin.slot, baseline: pin.base, wishes: ["make it mine"] });
       }
     }
   });

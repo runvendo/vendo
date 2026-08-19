@@ -22,12 +22,15 @@
 import {
   bootScreen,
   flattenTree,
+  pressControls,
   ScreenError,
   warmScreenEngine,
   type FlatNode,
   type FlatTree,
+  type InertControl,
   type ScreenErrorKind,
   type ScreenInstance,
+  type ScreenQuery,
 } from "../../contract/genui/component/index.js";
 import { screenTypecheckIssues } from "./screen-typecheck.js";
 import { screenProgram } from "./screen-tsc.js";
@@ -94,22 +97,59 @@ export interface ScreenPaintInput {
    *  and it is what lets a brick paint the host's own class. Set by the gauntlet
    *  off the dialect it graded in, never by the screen. */
   readonly source?: FlatNode["source"];
+  /** The wall the screen's formats resolve against, as `bootScreen` takes it —
+   *  carried through because the gate has to paint on the SAME wall the surface
+   *  renders on, or a date it judged is not the date the person is shown. Unset
+   *  is `"en-US"` and `"UTC"`, wherever the paint runs. */
+  readonly locale?: string;
+  readonly timeZone?: string;
 }
 
 /** A failed paint is DATA, not a throw: `ScreenError`'s two fields are what the
  *  gauntlet's sentence is chosen on, and an error object does not survive a
- *  venue boundary. */
+ *  venue boundary.
+ *
+ *  `inert` is the same posture one step further: the running screen is the only
+ *  place a control can be pressed, and an instance cannot cross a venue
+ *  boundary, so the presses happen HERE and what comes back is which controls
+ *  did nothing — node and prop, no sentence. Required rather than optional, so
+ *  a toolchain that does not press has to say so out loud instead of passing a
+ *  dead button by omission.
+ *
+ *  `misses` is why one screen can be painted more than once. A read whose input
+ *  the screen COMPUTES cannot be resolved before the component renders, so the
+ *  paint names what it wanted and the caller paints again with the answers. An
+ *  instance cannot cross this boundary, so a round is a fresh boot rather than a
+ *  `supply` — at gate time there is no hook state to keep. Controls are pressed
+ *  only on a paint that missed nothing: a screen still waiting on a read is not
+ *  the screen the person is shown, so its buttons are not the ones to judge.
+ *
+ *  A FAILED paint carries them too, and that is what makes the loop a loop: a
+ *  paint that threw while it was still waiting on a read threw against data it
+ *  was never given, so the caller answers what it named and paints again. Only a
+ *  throw with nothing outstanding is the screen's own. */
 export type ScreenPaintResult =
-  | { readonly ok: true; readonly tree: FlatTree }
-  | { readonly ok: false; readonly kind: ScreenErrorKind; readonly message: string };
+  | {
+    readonly ok: true;
+    readonly tree: FlatTree;
+    readonly inert: readonly InertControl[];
+    readonly misses: readonly ScreenQuery[];
+  }
+  | {
+    readonly ok: false;
+    readonly kind: ScreenErrorKind;
+    readonly message: string;
+    readonly misses: readonly ScreenQuery[];
+  };
 
 export interface ScreenToolchain {
   /** Both forms of the screen. A throw is a screen that does not compile;
    *  {@link ScreenToolchainUnavailable} is a toolchain that cannot compile. */
   transform(source: string): Promise<ScreenTransform>;
   typecheck(input: ScreenTypecheckInput): Promise<ScreenTypecheckResult>;
-  /** A throw here is the engine failing to START, which is a different refusal
-   *  from a screen that would not paint. */
+  /** Run the screen: paint it, then press every control it painted. A throw
+   *  here is the engine failing to START, which is a different refusal from a
+   *  screen that would not paint. */
   paint(input: ScreenPaintInput): Promise<ScreenPaintResult>;
 }
 
@@ -188,14 +228,18 @@ export const nodeToolchain = (): ScreenToolchain => ({
     let instance: ScreenInstance | undefined;
     try {
       instance = bootScreen(input);
-      return { ok: true, tree: flattenTree(instance.tree(), input.source) };
+      const tree = flattenTree(instance.tree(), input.source);
+      const misses = instance.misses();
+      // Every press gets its own screen, booted from the same input — see
+      // press.ts for why, and for why a pressed write never happens.
+      return { ok: true, tree, misses, inert: misses.length > 0 ? [] : pressControls(tree, () => bootScreen(input)) };
     } catch (error) {
       // A throw that is not a `ScreenError` has no kind of its own. `boot` is
       // where it happened, and — like every kind but `render` and `budget` — it
       // reads back as the screen having thrown.
       return error instanceof ScreenError
-        ? { ok: false, kind: error.kind, message: error.message }
-        : { ok: false, kind: "boot", message: error instanceof Error ? error.message : String(error) };
+        ? { ok: false, kind: error.kind, message: error.message, misses: error.misses }
+        : { ok: false, kind: "boot", message: error instanceof Error ? error.message : String(error), misses: [] };
     } finally {
       // A dispose that throws is not the screen's verdict.
       try { instance?.dispose(); } catch { /* ignore */ }

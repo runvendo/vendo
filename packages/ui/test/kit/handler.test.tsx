@@ -100,7 +100,7 @@ describe("a Kit control with a screen handler", () => {
     expect((screen.getByLabelText("Why") as HTMLTextAreaElement).value).toBe("because");
   });
 
-  it("controls a single Select, and leaves a multiple one to the DOM", () => {
+  it("controls a single Select, and leaves a valueless multiple one to the DOM", () => {
     const one = markHandlerCallback(vi.fn());
     const many = markHandlerCallback(vi.fn());
     render(
@@ -114,13 +114,40 @@ describe("a Kit control with a screen handler", () => {
     expect(one).toHaveBeenCalledWith({ target: { value: "c1" } });
     expect((screen.getByLabelText("Account") as HTMLSelectElement).value).toBe("c2");
 
-    // A multi-select's value is a LIST, which one `value` string cannot express,
-    // so it keeps the uncontrolled DOM — and its screen handler is handed the
-    // list, which is plain data and crosses into the VM as it is.
+    // Nothing to render is still nothing to control, multiple or not: the DOM
+    // keeps the selection and the handler is handed the bare list.
     const many_options = screen.getByLabelText("Accounts") as HTMLSelectElement;
     for (const option of many_options.options) option.selected = true;
     fireEvent.change(many_options);
     expect(many).toHaveBeenCalledWith(["c1", "c2"]);
+  });
+
+  it("hands a multiple Select's whole selection over as the event a screen reads", () => {
+    // A multi-select used to be excluded from the screen path outright, so a
+    // screen writing `onChange={(e) => setPicked(e.target.value)}` was handed a
+    // raw array and read `undefined` off it — the selection never arrived.
+    const fire = markHandlerCallback(vi.fn());
+    render(<Select label="Accounts" multiple value={["c1"]} options={["c1", "c2"]} onChange={fire} />);
+    const box = screen.getByLabelText("Accounts") as HTMLSelectElement;
+
+    expect([...box.selectedOptions].map((option) => option.value)).toEqual(["c1"]);
+    for (const option of box.options) option.selected = true;
+    fireEvent.change(box);
+
+    // The list, under `target.value`, which is what `screenEvent` projects and
+    // what the screen's own handler was written against.
+    expect(fire).toHaveBeenCalledWith({ target: { value: ["c1", "c2"] } });
+    // Controlled: the box still shows what the SCREEN says it holds.
+    expect([...box.selectedOptions].map((option) => option.value)).toEqual(["c1"]);
+  });
+
+  it("reads one string for a multiple Select as the one-item list", () => {
+    // A controlled `multiple` select needs a list; a screen that wrote one value
+    // meant that one, not a React warning about the wrong shape.
+    const fire = markHandlerCallback(vi.fn());
+    render(<Select label="Accounts" multiple value="c2" options={["c1", "c2"]} onChange={fire} />);
+    const box = screen.getByLabelText("Accounts") as HTMLSelectElement;
+    expect([...box.selectedOptions].map((option) => option.value)).toEqual(["c2"]);
   });
 });
 

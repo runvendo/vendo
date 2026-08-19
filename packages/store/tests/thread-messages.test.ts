@@ -234,7 +234,7 @@ for (const backend of backends()) {
       expect(threads[0]!["n"]).toBe(2);
       // vendo_threads lost `messages` (build contract §6).
       const columns = await made.sql(
-        `SELECT column_name FROM information_schema.columns WHERE table_name = 'vendo_threads'`,
+        `SELECT column_name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'vendo_threads'`,
       );
       expect(columns.map((c) => c["column_name"])).not.toContain("messages");
     });

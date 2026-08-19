@@ -145,6 +145,23 @@ export interface ApprovalRequest {
   call: ToolCall;
   descriptor: ToolDescriptor;
   inputPreview: string;
+  /**
+   * The standing powers ONE yes to this ask mints — human tool TITLES, never
+   * identifiers.
+   *
+   * Present only on an ask that is a consent moment for work nobody has asked
+   * for yet: arming an automation (07 §3), where the yes authorizes calls the
+   * agent will make at 2am. That ask parks BEFORE the record exists, so the set
+   * is computed at park time and rides here — which is the whole point of
+   * putting it on the request rather than in a renderer. Every surface (a text,
+   * a card, a console feed) names the same powers because there is one
+   * computation, and a surface that has not learned to render them simply shows
+   * the ask it always showed.
+   *
+   * Absent on every ordinary ask, where the call in hand IS the whole of what is
+   * being allowed.
+   */
+  powers?: string[];
   invalidatedGrant?: {
     id: GrantId;
     grantedAt: IsoDateTime;
@@ -170,6 +187,7 @@ export const approvalRequestSchema = z.object({
   call: toolCallSchema,
   descriptor: toolDescriptorSchema,
   inputPreview: z.string(),
+  powers: z.array(z.string()).optional(),
   invalidatedGrant: z.object({
     id: grantIdSchema,
     grantedAt: isoDateTimeSchema,

@@ -34,13 +34,13 @@ for (const backend of backends()) {
     it("has a NOT NULL subject column and an index on it", async () => {
       const columns = await made.sql(
         `SELECT column_name, is_nullable FROM information_schema.columns
-         WHERE table_name = 'vendo_effects' AND column_name = 'subject'`,
+         WHERE table_schema = current_schema() AND table_name = 'vendo_effects' AND column_name = 'subject'`,
       );
       expect(columns).toHaveLength(1);
       expect(columns[0]!["is_nullable"]).toBe("NO");
 
       const indexes = await made.sql(
-        "SELECT indexdef FROM pg_indexes WHERE schemaname = 'public' AND tablename = 'vendo_effects'",
+        "SELECT indexdef FROM pg_indexes WHERE schemaname = current_schema() AND tablename = 'vendo_effects'",
       );
       expect(indexes.some((row) => /\(subject\)/.test(String(row["indexdef"])))).toBe(true);
     });

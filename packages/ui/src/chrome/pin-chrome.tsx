@@ -1,42 +1,78 @@
 import { log } from "@vendoai/core";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { useVendoProvider } from "../context.js";
 import { developmentMode } from "./dev-mode.js";
 import { openVendoConversation } from "./overlay-registry.js";
-import { GRACE_MS, useMenuDismiss } from "./remixable.js";
 import { vendoToast } from "./vendo-toasts.js";
 
+/** Long enough for cursor travel from the element to the pill, short enough
+ *  that the pill does not linger over the page. Shared with `<Remixable>`
+ *  (remixable.tsx), which wears the same marks — two copies of this number is
+ *  two blooms that can drift apart. */
+export const GRACE_MS = 200;
+
+/** Every ✦ popover dismisses like any menu: Escape, or pointer-down outside
+ *  it. Returns the ref that marks "inside". Shared with `<Remixable>`
+ *  (remixable.tsx), where it is touch's only way to put the mark away. */
+export function useMenuDismiss(open: boolean, onToggle: (open: boolean) => void) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (!(event.target instanceof Node) || !ref.current?.contains(event.target)) onToggle(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onToggle(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open, onToggle]);
+  return ref;
+}
+
 /**
- * S3 — what a person can DO with the app someone pinned into a host slot.
+ * The ONE ✦ menu — Edit in chat · Update · Revert — over any app the page is
+ * showing on the person's behalf: one someone pinned into a host slot, and one
+ * a `<Remixable>` component was remixed into (remixable.tsx mounts this same
+ * chrome rather than a lookalike of it, so there is one ✦ vocabulary on the
+ * page instead of two that almost match).
  *
- * A pinned app had no handle at all: it was a view that appeared, and changing
- * or removing it meant knowing to go ask the assistant. This is the handle, in
- * the grammar the page already speaks — the same 9px ✦ seed, the same bloom
- * into a pill, the same small popover as `<Remixable>` (remixable.tsx), because
- * a second vocabulary for the same gesture is a vocabulary nobody learns.
+ * Only `Revert` differs by owner, so only `Revert` is injected: a pinned app's
+ * placement is unplaced, a remix's whole app is deleted. Both mean the same
+ * thing to the person — the host's own markup comes back.
  *
  * REVEALED IS STATE, NOT `:hover`, for the reason Remixable documents: a
  * CSS-only reveal dies on the way to the pill, so the pill could never be
  * clicked. Touch has no hover at all, so a tap on the app reveals the seed and
  * a tap anywhere else puts it away.
  *
- * The bloom's timing and the dismissal are Remixable's own — imported, not
- * restated, so the two ✦ marks can never drift apart. `useMenuDismiss` is
- * scoped TWICE here, which is the whole of the touch behavior: the popover
- * closes on a press outside the popover, and the mark only goes away on a press
- * outside the APP, so tapping the app cannot undo the tap that revealed it.
+ * `useMenuDismiss` is scoped TWICE here, which is the whole of the touch
+ * behavior: the popover closes on a press outside the popover, and the mark
+ * only goes away on a press outside the APP, so tapping the app cannot undo the
+ * tap that revealed it.
  */
 
-export function PinChrome({ appId, slotId, title, onRefresh, onUnpinned, children }: {
+export function PinChrome({ appId, title, context, state, onRefresh, onRevert, children }: {
   appId: string;
-  slotId: string;
   /** What the app calls itself — the prefill names the THING, never an id. */
   title: string;
+  /** The grounding "Edit in chat" hands the agent — never rendered. */
+  context: string;
+  /** An app that is NOT a finished screen. The mark reads `label`, answers to
+   *  `name`, and the menu announces `status` — because the ✦ sits over the
+   *  host's own original in both of those states, and a settled "Edit" over one
+   *  is the page claiming a screen that is not there. Absent is the ordinary
+   *  settled app. Vocabulary belongs to the caller: a remix that never built and
+   *  a pinned app that will not load are not the same sentence. */
+  state?: { label: string; name: string; status: string; busy?: boolean };
   onRefresh(): void;
-  onUnpinned(): void;
+  /** Undo this app's presence on the page; rejecting keeps the popover open. */
+  onRevert(): Promise<void>;
   children: ReactNode;
 }) {
-  const { client } = useVendoProvider();
   const [revealed, setRevealed] = useState(false);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -63,42 +99,36 @@ export function PinChrome({ appId, slotId, title, onRefresh, onUnpinned, childre
   const edit = () => {
     setOpen(false);
     setRevealed(false);
-    // Same hand-off as the ✦ remix popover's "Open in panel": the person reads
-    // the app's name, the agent reads the grounding, and nothing is sent.
-    const opened = openVendoConversation({
-      appId,
-      prompt: `Update ${title}: `,
-      context: `The view being edited is the "${title}" app (${appId}), pinned in the "${slotId}" slot.`,
-      send: false,
-    });
+    // The person reads the app's name, the agent reads the grounding, and
+    // nothing is sent.
+    const opened = openVendoConversation({ appId, prompt: `Update ${title}: `, context, send: false });
     if (!opened && developmentMode()) {
       log({
         code: "ui.pin-chrome-no-overlay",
         level: "warn",
-        message: `[vendo] VendoSlot "${slotId}": "Edit in chat" opens the conversation surface — mount a VendoOverlay for it to land in.`,
+        message: `[vendo] ✦ "${title}": "Edit in chat" opens the conversation surface — mount a VendoOverlay for it to land in.`,
       });
     }
   };
 
-  const unpin = () => {
+  const revert = () => {
     setBusy(true);
-    void client.apps.unplace(appId, slotId).then(
+    void onRevert().then(
       () => {
         setOpen(false);
         setRevealed(false);
-        onUnpinned();
       },
       (reason: unknown) => {
-        // The row is still there, so nothing here may settle as though it were
+        // The app is still there, so nothing here may settle as though it were
         // gone: closing the popover over an app that stayed put is the same lie
         // the pin ring used to tell from a timer. One honest line — the exact
         // sentence a refused `apps.place` shows (pin-ceremony.ts) — and the
-        // popover stays open, so Unpin is still under the cursor to try again.
+        // popover stays open, so Revert is still under the cursor to try again.
         if (developmentMode()) {
           log({
-            code: "ui.pin-chrome-unplace-failed",
+            code: "ui.pin-chrome-revert-failed",
             level: "warn",
-            message: `[vendo] VendoSlot "${slotId}": unpinning ${appId} failed — ${String(reason)}`,
+            message: `[vendo] ✦ "${title}": reverting ${appId} failed — ${String(reason)}`,
           });
         }
         vendoToast({ text: "That didn’t go through — try again.", state: "error" });
@@ -125,20 +155,26 @@ export function PinChrome({ appId, slotId, title, onRefresh, onUnpinned, childre
         <button
           type="button"
           className="fl-remix-pill"
-          aria-label={`Edit ${title}`}
+          aria-label={state?.name ?? `Edit ${title}`}
           aria-haspopup="true"
           aria-expanded={open}
+          aria-busy={state?.busy === true || undefined}
           onClick={() => setOpen(!open)}
         >
           <span aria-hidden="true" className="fl-remix-pill-mark">✦</span>
-          Edit
+          {state?.label ?? "Edit"}
         </button>
         {open ? (
           <div className="fl-remix-menu" role="group" aria-label={title}>
+            {/* The state's own sentence, announced. The menu is where it lived
+                before the two ✦ marks converged, and it stays a LINE rather than
+                a surface: what went wrong, and what to do about it, belong to
+                the conversation that asked (remixable.tsx). */}
+            {state === undefined ? null : <span className="fl-remix-status" role="status">{state.status}</span>}
             <button type="button" onClick={edit}>Edit in chat</button>
-            <button type="button" onClick={() => { setOpen(false); onRefresh(); }}>Refresh</button>
-            <button type="button" className="is-danger" disabled={busy} onClick={unpin}>
-              {busy ? "Unpinning…" : "Unpin"}
+            <button type="button" onClick={() => { setOpen(false); onRefresh(); }}>Update</button>
+            <button type="button" className="is-danger" disabled={busy} onClick={revert}>
+              {busy ? "Reverting…" : "Revert"}
             </button>
           </div>
         ) : null}

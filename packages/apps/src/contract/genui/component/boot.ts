@@ -36,6 +36,7 @@ import {
   type QuickJSHandle,
   type QuickJSWASMModule,
 } from "quickjs-emscripten-core";
+import { stockVariant } from "../variant.js";
 import { wallClockBudget, type ScreenTurn, type TurnLimit } from "./budget.js";
 import { SCREEN_RUNTIME, installSource, sealSource } from "./vm-program.js";
 import {
@@ -46,6 +47,7 @@ import {
   type NestedNode,
   type ScreenErrorKind,
   type ScreenInstance,
+  type ScreenQuery,
 } from "./types.js";
 
 /** The VM's heap. A screen that tries to build a gigabyte of rows dies with an
@@ -69,37 +71,52 @@ export type ScreenEngineVariant = Parameters<typeof newQuickJSWASMModuleFromVari
 const engines = new Map<ScreenEngineVariant, Promise<QuickJSWASMModule>>();
 let stock: ScreenEngineVariant | null = null;
 
-/** The module every screen boots on — ONE shared slot. Every completed warm
- *  reassigns it, including a warm that only hit the memo above, and
- *  {@link bootScreen} reads it with no variant selector. So warming two variants
- *  is NOT a supported per-screen choice: the warm that resolved LAST is the
- *  module every subsequent boot gets. The per-variant map dedupes LOADING only —
- *  it does not decide which module runs a screen. */
+/** The variant a host handed over BY NAME, once it has. AN EXPLICITLY PASSED
+ *  VARIANT WINS — the same law every adapter slot in this codebase keeps, and
+ *  the only thing that makes the hatch below real: `@vendoai/ui` re-warms with
+ *  no variant of its own when a screen mounts (`ui/src/tree/screen-engine.ts`),
+ *  so a default that could overwrite a pinned one would discard the host's
+ *  choice on the first paint. */
+let pinned: ScreenEngineVariant | null = null;
+
+/** The module every screen boots on — ONE shared slot, which {@link bootScreen}
+ *  reads with no variant selector. So warming two variants is NOT a per-screen
+ *  choice: a pinned variant is the module every boot gets, and absent one it is
+ *  whichever warm resolved last. The per-variant map dedupes LOADING only. */
 let wasm: QuickJSWASMModule | null = null;
 
 /**
  * Load the WebAssembly. Running a screen is synchronous — this one-time load is
  * not, so a caller awaits it once before the first {@link bootScreen}.
  *
- * The default variant is the SINGLE-FILE BROWSER build, for `$expr`'s reason:
- * the WebAssembly rides inside the JavaScript, so no host bundler has to be
- * taught to emit a `.wasm`, and it reaches for no Node builtin. The import stays
- * a literal specifier because `@vendoai/ui` depends on a bundler inlining it.
+ * The default variant is the WASMFILE build with the WebAssembly handed in as
+ * bytes — ../variant.ts holds it and says why the bytes may not ride inside the
+ * JavaScript.
  *
- * A venue that cannot run that build passes its own variant, and the memo is
- * keyed on the variant itself, so warming one twice loads it once. `stock` is
- * held for the same reason — the default needs one stable key, not a fresh
- * import promise per call. Warming TWO variants in one process is another
- * matter: see the `wasm` slot above for what a host gets then.
+ * A venue that cannot run that build passes its own, and it STICKS: every later
+ * default warm is a no-op, and a default already in flight lands nowhere. That
+ * is what a venue with no network and no asset URL needs — genbench's offline
+ * single-bundle page, workerd's deploy-time module — because the host warms
+ * once and every library-side warm after it must honour that, not race it.
+ *
+ * The memo is keyed on the variant itself, so warming one twice loads it once.
+ * `stock` is held for the same reason: the default needs one stable key, not a
+ * fresh variant per call.
  */
 export async function warmScreenEngine(variant?: ScreenEngineVariant): Promise<void> {
-  const key = variant ?? (stock ??= import("@jitl/quickjs-singlefile-browser-release-sync"));
+  if (variant === undefined && pinned !== null) return;
+  const key = variant ?? (stock ??= stockVariant());
+  if (variant !== undefined) pinned = key;
   let booting = engines.get(key);
   if (booting === undefined) {
     booting = newQuickJSWASMModuleFromVariant(key);
     engines.set(key, booting);
   }
-  wasm = await booting;
+  const module = await booting;
+  // A default warm that was already in flight when the host pinned its own must
+  // not land on top of it — the early return above only catches the ones that
+  // start after.
+  if (pinned === null || pinned === key) wasm = module;
 }
 
 /** What a VM threw, read out before its handle goes away. */
@@ -127,6 +144,148 @@ const dropPrototypeKeys = (key: string, value: unknown): unknown =>
 
 /** QuickJS reports a tripped interrupt handler as exactly this. */
 const isInterrupt = (thrown: Thrown): boolean => thrown.message === "InternalError: interrupted";
+
+/** The locale a screen's formats resolve against when it names none. A default
+ *  has to be SOME locale; what matters is that it is the HOST's and not the
+ *  machine's — a host whose people read another one passes it. */
+const DEFAULT_LOCALE = "en-US";
+
+/** The zone likewise. UTC because a stored instant is stored in UTC, so the day
+ *  a screen prints is the day the data says — and because it is the zone the
+ *  benchmark's browsers are pinned to, which is the only way two contenders'
+ *  dates are comparable at all. */
+const DEFAULT_TIME_ZONE = "UTC";
+
+/** Which of the host's formats one ask wants. A closed set: nothing but
+ *  {@link INTL_SOURCE} can reach the bridge that carries it. */
+type IntlOp =
+  | "number" | "numberParts" | "numberResolved"
+  | "date" | "dateParts" | "dateResolved"
+  | "relative" | "relativeParts" | "relativeResolved"
+  | "plural" | "pluralResolved"
+  /** `Collator`'s two, which `String.prototype.localeCompare` shares — it is the
+   *  same comparison under another name. */
+  | "collate" | "collateResolved"
+  | "display" | "displayResolved"
+  /** One tag taken apart, and the tags a locales list canonicalizes to. */
+  | "locale" | "canonical"
+  /** `supportedLocalesOf`, one op per constructor: each format has its own locale
+   *  data, so the answer genuinely differs by which one is asking. */
+  | "numberSupported" | "dateSupported" | "relativeSupported"
+  | "pluralSupported" | "collateSupported" | "displaySupported"
+  /** `Date.prototype`'s three, which differ from `date` only in what each
+   *  defaults to when the screen named no components. */
+  | "day" | "time" | "stamp";
+
+/** One locale-aware format a screen asked for, as it crosses the wall
+ *  (./vm-program.ts `INTL_SOURCE`, which is the only writer of this shape). */
+interface IntlAsk {
+  op: IntlOp;
+  locale?: string | string[];
+  options?: Record<string, unknown>;
+  /** The number or the instant, as its decimal spelling — JSON carries neither
+   *  `NaN` nor `Infinity`, and both are things `Intl` prints. */
+  value?: string;
+  /** What the count counts, for the one format whose `format` takes two
+   *  arguments: `"hour"` in `format(-2, "hour")` → "2 hours ago". */
+  unit?: string;
+  /** The STRING arguments, where a format takes those instead of a number: a
+   *  collation's two operands, a display name's code, one locale tag, or the whole
+   *  locales list a `supportedLocalesOf` is asked about. */
+  text?: string[];
+}
+
+/**
+ * One locale tag as the fields a screen reads off it, plus the two tags
+ * `maximize`/`minimize` resolve to.
+ *
+ * Both of those read CLDR's likely-subtags table — precisely the data the VM does
+ * not carry — so they are resolved HERE, once, and the VM builds each result by
+ * asking again with the tag this answer named. `JSON.stringify` drops the fields
+ * the tag does not carry, which is the `undefined` the standard promises for each
+ * of them.
+ */
+const localeFacts = (locale: Intl.Locale) => ({
+  /** The full identifier, extensions included — `baseName` is the language,
+   *  script and region alone, and `toString()` is not the same string. */
+  tag: locale.toString(),
+  baseName: locale.baseName,
+  calendar: locale.calendar,
+  caseFirst: locale.caseFirst,
+  collation: locale.collation,
+  hourCycle: locale.hourCycle,
+  language: locale.language,
+  numberingSystem: locale.numberingSystem,
+  numeric: locale.numeric,
+  region: locale.region,
+  script: locale.script,
+  maximized: locale.maximize().toString(),
+  minimized: locale.minimize().toString(),
+});
+
+/**
+ * One ask, answered by the host's real `Intl`: the formatted text, or JSON where
+ * the ask was for structure.
+ *
+ * The locale and the zone a screen did not name are the WALL's; everything it did
+ * name wins, because it wrote it. The three `toLocale*` ops are answered by the
+ * host's own methods rather than by `Intl.DateTimeFormat`, because the only thing
+ * that separates them is which components each defaults to when a screen names
+ * none — and the engine's own answer to that is the answer a browser gives.
+ *
+ * A format the host refuses (`currency: "USDD"`, an unknown zone) throws out of
+ * here, and the bridge turns a host throw into the same `RangeError` the screen
+ * would have seen in a browser.
+ */
+const answerIntl = (ask: IntlAsk, wall: { locale: string; timeZone: string }): string => {
+  const locale = ask.locale ?? wall.locale;
+  const value = Number(ask.value);
+  /** The string arguments. `first`/`second` are a collation's operands, a display
+   *  name's code or a locale tag; `locales` is the whole list, for the statics
+   *  whose argument IS a list of locales rather than one format's locale. */
+  const locales = ask.text ?? [];
+  const [first = "", second = ""] = locales;
+  const counts = ask.options as Intl.NumberFormatOptions | undefined;
+  const dates = { timeZone: wall.timeZone, ...ask.options } as Intl.DateTimeFormatOptions;
+  const words = ask.options as Intl.RelativeTimeFormatOptions | undefined;
+  const forms = ask.options as Intl.PluralRulesOptions | undefined;
+  const order = ask.options as Intl.CollatorOptions | undefined;
+  // `DisplayNames` is the one format whose options MUST carry a `type`, so this
+  // asserts rather than narrows: an ask that omits it is the host's `TypeError` to
+  // raise, and it is the same one a browser raises.
+  const names = ask.options as unknown as Intl.DisplayNamesOptions;
+  const unit = ask.unit as Intl.RelativeTimeFormatUnit;
+  switch (ask.op) {
+    case "number": return new Intl.NumberFormat(locale, counts).format(value);
+    case "numberParts": return JSON.stringify(new Intl.NumberFormat(locale, counts).formatToParts(value));
+    case "numberResolved": return JSON.stringify(new Intl.NumberFormat(locale, counts).resolvedOptions());
+    case "relative": return new Intl.RelativeTimeFormat(locale, words).format(value, unit);
+    case "relativeParts": return JSON.stringify(new Intl.RelativeTimeFormat(locale, words).formatToParts(value, unit));
+    case "relativeResolved": return JSON.stringify(new Intl.RelativeTimeFormat(locale, words).resolvedOptions());
+    case "plural": return new Intl.PluralRules(locale, forms).select(value);
+    case "pluralResolved": return JSON.stringify(new Intl.PluralRules(locale, forms).resolvedOptions());
+    case "date": return new Intl.DateTimeFormat(locale, dates).format(value);
+    case "dateParts": return JSON.stringify(new Intl.DateTimeFormat(locale, dates).formatToParts(value));
+    case "dateResolved": return JSON.stringify(new Intl.DateTimeFormat(locale, dates).resolvedOptions());
+    case "collate": return String(new Intl.Collator(locale, order).compare(first, second));
+    case "collateResolved": return JSON.stringify(new Intl.Collator(locale, order).resolvedOptions());
+    // `of` answers `undefined` for a code the locale has no name for, and JSON
+    // carries no `undefined` — `null` crosses and the VM reads it back as one.
+    case "display": return JSON.stringify(new Intl.DisplayNames(locale, names).of(first) ?? null);
+    case "displayResolved": return JSON.stringify(new Intl.DisplayNames(locale, names).resolvedOptions());
+    case "locale": return JSON.stringify(localeFacts(new Intl.Locale(first, ask.options as Intl.LocaleOptions)));
+    case "canonical": return JSON.stringify(Intl.getCanonicalLocales(locales));
+    case "numberSupported": return JSON.stringify(Intl.NumberFormat.supportedLocalesOf(locales, counts));
+    case "dateSupported": return JSON.stringify(Intl.DateTimeFormat.supportedLocalesOf(locales, ask.options));
+    case "relativeSupported": return JSON.stringify(Intl.RelativeTimeFormat.supportedLocalesOf(locales, words));
+    case "pluralSupported": return JSON.stringify(Intl.PluralRules.supportedLocalesOf(locales, forms));
+    case "collateSupported": return JSON.stringify(Intl.Collator.supportedLocalesOf(locales, order));
+    case "displaySupported": return JSON.stringify(Intl.DisplayNames.supportedLocalesOf(locales, ask.options));
+    case "day": return new Date(value).toLocaleDateString(locale, dates);
+    case "time": return new Date(value).toLocaleTimeString(locale, dates);
+    case "stamp": return new Date(value).toLocaleString(locale, dates);
+  }
+};
 
 /**
  * Boot one screen. Synchronous, and long-lived: the VM, the component and its
@@ -258,6 +417,19 @@ export function bootScreen(options: BootScreenOptions): ScreenInstance {
     return true;
   };
 
+  /** The reads this VM has named and had no answer to, asked of a VM that may be
+   *  in any state at all — this runs on the way out of a FAILED boot. Best
+   *  effort by design: a failure before the runtime is installed has no
+   *  `__vendo` to ask, and a dead VM cannot be asked anything. */
+  const pendingMisses = (): ScreenQuery[] => {
+    if (dead) return [];
+    try {
+      return JSON.parse(evalString("__vendo.misses()", "render")) as ScreenQuery[];
+    } catch {
+      return [];
+    }
+  };
+
   const turn = <T>(kind: ScreenTurn, body: () => T): T => {
     if (dead) throw new ScreenError("vm", "this screen was disposed");
     limit = budget.limit(kind);
@@ -291,6 +463,16 @@ export function bootScreen(options: BootScreenOptions): ScreenInstance {
   context.setProp(context.global, "__vendo_tool", bridge);
   bridge.dispose();
 
+  // The Intl bridge: the VM is built without ICU, so every locale-aware format
+  // inside it is answered out here, against the wall these options pinned. Same
+  // mechanism as the tool bridge and none of its ceremony — a format is
+  // synchronous, and what comes back is a string.
+  const wall = { locale: options.locale ?? DEFAULT_LOCALE, timeZone: options.timeZone ?? DEFAULT_TIME_ZONE };
+  const intl = context.newFunction("__vendo_intl", (askHandle) =>
+    context.newString(answerIntl(JSON.parse(context.getString(askHandle)) as IntlAsk, wall)));
+  context.setProp(context.global, "__vendo_intl", intl);
+  intl.dispose();
+
   try {
     turn("boot", () => {
       evalVoid(sealSource(options.now), "boot");
@@ -306,8 +488,12 @@ export function bootScreen(options: BootScreenOptions): ScreenInstance {
       repaint();
     });
   } catch (error) {
+    // Read the reads BEFORE the VM goes: a boot that threw while it was still
+    // waiting on one threw against data it was never given, and the caller
+    // running the supply loop needs to know which.
+    const asked = pendingMisses();
     teardown();
-    throw bootHint(error, options.compiledSource);
+    throw bootFailure(error, options.compiledSource, asked);
   }
 
   return {
@@ -369,6 +555,23 @@ export function bootScreen(options: BootScreenOptions): ScreenInstance {
       });
     },
 
+    misses(): ScreenQuery[] {
+      return turn("op", () => JSON.parse(evalString("__vendo.misses()", "render")) as ScreenQuery[]);
+    },
+
+    supply(results: Record<string, unknown>): NestedNode {
+      // A boot's turn, because a supply repaints the WHOLE screen against real
+      // data for the first time — the same work the first paint did, not an
+      // event's fifth of a second.
+      return turn("boot", () => {
+        evalVoid(`__vendo.supply(${JSON.stringify(literal(results))})`, "render");
+        drain();
+        checkFailure();
+        repaint();
+        return currentTree();
+      });
+    },
+
     dispose: teardown,
   };
 }
@@ -422,13 +625,15 @@ const literal = (value: unknown): string => {
   return json === undefined ? "null" : json;
 };
 
-/** The one boot failure worth naming: source compiled to the wrong format. The
- *  parser's own complaint about a top-level `import` says nothing useful. */
-const bootHint = (error: unknown, source: string): unknown => {
-  if (!(error instanceof ScreenError) || error.kind !== "boot") return error;
-  if (!/^\s*(?:import|export)\s/mu.test(source)) return error;
-  return new ScreenError(
-    "boot",
-    `${error.message} — this source looks like an ES module, and the screen VM hosts CommonJS: compile it with esbuild's format: "cjs"`,
-  );
+/** A failed boot, as its caller has to read it: the one hint worth naming —
+ *  source compiled to the wrong format, where the parser's own complaint about a
+ *  top-level `import` says nothing useful — and the reads the paint was still
+ *  waiting on, which is what tells a supply loop this was a loading paint rather
+ *  than a verdict. */
+const bootFailure = (error: unknown, source: string, misses: readonly ScreenQuery[]): unknown => {
+  if (!(error instanceof ScreenError)) return error;
+  const hint = error.kind === "boot" && /^\s*(?:import|export)\s/mu.test(source)
+    ? " — this source looks like an ES module, and the screen VM hosts CommonJS: compile it with esbuild's format: \"cjs\""
+    : "";
+  return new ScreenError(error.kind, error.message + hint, error.vmStack, misses);
 };

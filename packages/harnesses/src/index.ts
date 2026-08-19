@@ -22,10 +22,13 @@ export { assertHarnessComposable, type ComposedAdapters } from "./compose.js";
 export {
   addUsage,
   createHarnessRuntime,
+  createTurnTimings,
   type HarnessRuntime,
   type HarnessRuntimeDeps,
   type TranscriptStore,
   type TurnRunInput,
+  type TurnTimingKey,
+  type TurnTimings,
   type UsageTotals,
 } from "./runtime.js";
 // `vendo()` itself stays on the ROOT barrel: `harness: vendo()` is the

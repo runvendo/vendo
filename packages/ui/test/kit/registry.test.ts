@@ -16,7 +16,7 @@ describe("KIT registry", () => {
     expect(new Set(names).size).toBe(names.length);
     for (const required of [
       "Stack", "Row", "Grid", "Surface", "Divider",
-      "Text", "Money", "DateTime", "Percent", "Num", "EnumBadge",
+      "Text", "EnumBadge",
       "DataTable", "CardList", "Stat", "Badge",
       "LineChart", "BarChart", "DonutChart", "Sparkline", "Progress",
       "Input", "Select", "DatePicker", "Form", "Button", "Disclaimer",
@@ -60,16 +60,19 @@ describe("kitPrompt()", () => {
     expect(prompt.toLowerCase()).toContain("tool");
   });
 
-  it("includes canonical examples and the money rule — dollars in, /100 at the read", () => {
-    expect(prompt).toContain("Money");
-    expect(prompt).toContain("none of them converts");
+  // The formatting is the MODEL's now, so the prompt has to hand it over: `Intl`
+  // in the screen's own code, the `/ 100` at the read, and no component that
+  // would have done it instead.
+  it("puts the formatting on the model — Intl in its own code, /100 at the read", () => {
+    expect(prompt).toContain("toLocaleString");
     expect(prompt).toContain("/ 100");
+    expect(prompt).toContain("Components never format");
   });
 
   it("can scope to a subset of components", () => {
-    const scoped = kitPrompt({ only: ["DataTable", "Money"] });
+    const scoped = kitPrompt({ only: ["DataTable", "Stat"] });
     expect(scoped).toContain("<DataTable");
-    expect(scoped).toContain("<Money");
+    expect(scoped).toContain("<Stat");
     expect(scoped).not.toContain("<Accordion");
   });
 });

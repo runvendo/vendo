@@ -7,11 +7,13 @@ import {
   type JsonSchema,
 } from "@vendoai/core";
 import {
+  KIT_ICON_NAMES,
   KIT_SCREEN_COMPONENT_NAMES,
   type NormalizedCatalog,
 } from "../../src/contract/index.js";
 import { describe, expect, it } from "vitest";
-import { screenTypings, zodTypeText } from "../../src/server/checking/screen-typings.js";
+import { componentScreenTypings, screenTypings, zodTypeText } from "../../src/server/checking/screen-typings.js";
+import type { HostToolInfo } from "../../src/server/checking/deps.js";
 
 const netWorthSchema: JsonSchema = {
   type: "object",
@@ -58,17 +60,16 @@ describe("screenTypings", () => {
 
   it("carries the Kit's zod prop types, not just its prop names", () => {
     const dts = screenTypings({ catalog: [], queries: [] });
-    // Money.amount is a number of DOLLARS (data class); currency an optional
-    // string. Every prop also admits VendoBinding — see the unresolvable-binding
-    // test below. `amount` is optional since the cell slots landed: a value
-    // component inside a cell takes its value from `field`, so a required
-    // `amount` would make the slot the catalog teaches unwritable.
-    expect(dts).toContain("declare const Money: (props: { amount?: number | VendoBinding; currency?: string | VendoBinding;");
+    // Stat.value is the figure the screen already formatted, so it takes either a
+    // number or a string; `unit` is an optional string. Every prop also admits
+    // VendoBinding — see the unresolvable-binding test below.
+    expect(dts).toContain("declare const Stat: (props: { label: string | VendoBinding; value: number | string | VendoBinding; unit?: string | VendoBinding;");
     // Required is still required where it is load-bearing — a table with no rows
     // is nothing at all, and that is what pins the marker itself.
     expect(dts).toContain("declare const DataTable: (props: { rows: Array<Record<string, any>> | VendoBinding;");
-    // Stat.format is an enum — the literal union is what makes format=\"huge\" a type error.
-    expect(dts).toContain('format?: "money" | "date" | "datetime" | "time" | "percent" | "number" | "duration" | "text"');
+    // A chart's axis format is the ONE format token left in the Kit, and it is an
+    // enum — the literal union is what makes xFormat=\"huge\" a type error.
+    expect(dts).toContain('xFormat?: "money" | "date" | "datetime" | "time" | "number" | "duration" | "text"');
     // A cell slot holds an ELEMENT, which no schema describes. A STORED
     // document's is a serialized one, so the wire's slot stays permissive — the
     // alias, not a shape — and without that the catalog's own DataTable example
@@ -96,7 +97,29 @@ describe("screenTypings", () => {
     // since the cell slots landed, where `field` supplies it instead).
     expect(dts).toContain("text?: string | number | VendoBinding");
     // An enum slot keeps its literal union — format="huge" is still a type error.
-    expect(dts).toContain('format?: "money" | "date" | "datetime" | "time" | "percent" | "number" | "duration" | "text" | VendoBinding');
+    expect(dts).toContain('format?: "money" | "date" | "datetime" | "time" | "number" | "duration" | "text" | VendoBinding');
+  });
+
+  /**
+   * The one string prop whose SET is closed.
+   *
+   * A lucide name the renderer has no path data for paints an EMPTY SPAN (`ui`
+   * kit/icon.tsx) — deliberately, never a crash — so no gate after this one can
+   * question the name, and the catalog stopped teaching the list. Printed as the
+   * closed union, tsc is the refusal. Swept from `KIT_ICON_NAMES` rather than
+   * restated, so a regenerated icon set cannot drift from what the check admits.
+   */
+  it("types an icon name as the closed lucide set, and still admits a binding", () => {
+    const declaration = screenTypings({ catalog: [], queries: [] })
+      .split("\n").find((line) => line.startsWith("declare const Icon:")) ?? "";
+
+    for (const name of KIT_ICON_NAMES) expect(declaration, name).toContain(`"${name}"`);
+    // A required prop, and not a bare `string` — which is what admitted every
+    // invented glyph.
+    expect(declaration).toContain(`name: "${KIT_ICON_NAMES[0]}" |`);
+    expect(declaration).not.toContain("name: string");
+    // A stored screen resolving the name at render time is untouched.
+    expect(declaration).toContain("| VendoBinding;");
   });
 
   it("types host components from their derived JSON Schema", () => {
@@ -279,5 +302,31 @@ describe("a schema the printer cannot read is typed as any, and says so", () => 
     const notes: string[] = [];
     zodTypeText({ _def: { type: "promise" } } as never, 0, (reason) => notes.push(reason));
     expect(notes.join(" ")).toContain("promise");
+  });
+});
+
+describe("componentScreenTypings", () => {
+  const reader = (name: string, outputSchema?: JsonSchema): HostToolInfo =>
+    ({ name, description: name, risk: "read", ...(outputSchema === undefined ? {} : { outputSchema }) });
+
+  const overloads = (...tools: HostToolInfo[]): string[] =>
+    componentScreenTypings({ catalog: [], tools })
+      .split("\n").filter((line) => line.includes("export function useQuery"));
+
+  it("declares a query result as PARTIAL, because the first paint may not have it", () => {
+    // A read whose input the screen computes has no answer until the host supplies
+    // one, and the VM hands back `{ data: undefined }` until then
+    // (`genui/component/vm-program.ts` `MISS`). A declaration that promised `data`
+    // on every render would be a green check over the one paint that has none.
+    expect(overloads(reader("list_invoices", invoicesSchema))).toEqual([
+      '  export function useQuery(tool: "list_invoices", input?: any): '
+      + "Partial<{ data: Array<{ id: string; amount_cents: number }>; total: number }>;",
+    ]);
+  });
+
+  it("leaves a tool that declared no output schema permissive", () => {
+    expect(overloads(reader("list_invoices"))).toEqual([
+      '  export function useQuery(tool: "list_invoices", input?: any): any;',
+    ]);
   });
 });

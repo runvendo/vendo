@@ -52,15 +52,19 @@ describe("ApprovalCard and NoPolicyNotice exports", () => {
     //
     // ⚠️ TEST EDIT (review of #1149): the notes are a LIST — one item per fact,
     // so a screen reader can step through them the way it could step through
-    // the field table this replaced. The " · " between them is CSS punctuation
-    // and is deliberately not in the accessible text.
+    // the field table this replaced.
+    // ⚠️ TEST EDIT (clipboard separator): the " · " leads every item but the
+    // first as real text. It was CSS `content`, which a screen reader DOES
+    // announce (Chromium puts generated content in the accessibility tree) but
+    // the clipboard never sees — so a copied line read "…as you.asked in an
+    // app". These are the exact items, which is also exactly what copies.
     const notes = container.querySelector("ul.fl-approval-sub")!;
     expect(notes.getAttribute("aria-label")).toBe("Request details");
     expect(Array.from(notes.querySelectorAll("li")).map(item => item.textContent)).toEqual([
       "Invoice id: inv_42",
-      "Permanent: Yes",
-      "This makes a change you can’t undo, as you.",
-      "asked in an app",
+      " · Permanent: Yes",
+      " · This makes a change you can’t undo, as you.",
+      " · asked in an app",
     ]);
     // No amber and no pill: the grade is a machine affordance on the shell, and
     // its plain words are in the line above.

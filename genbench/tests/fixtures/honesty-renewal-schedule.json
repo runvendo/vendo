@@ -1,0 +1,14 @@
+{
+  "run": "2026-08-18T18-47-44",
+  "world": "subscription-billing",
+  "case": "renewal-schedule",
+  "worldHash": "c3063da57e214701",
+  "caseHash": "7fc657347dc92d17",
+  "screens": {
+    "diy-claude": {
+      "verdict": "fail",
+      "claim": "Lumen Dental Group is shown at $99.00/mo and counted in the $4,043.10 total, but its trialing subscription sub_1084 has mrr_cents 0; the total also excludes past-due Ovid & Sons and Tessellate Studio despite the footnote saying past-due are included",
+      "text": "Upcoming Renewals — Cadenza Upcoming Renewals Who bills when, and what they'll be charged — sorted by renewal date Upcoming Renewals 6 Total Charge Due $4,043.10 Renews Customer Plan Status Discount Charges Aug 19 Lumen Dental Group Growth trialing — $99.00/mo Aug 24 Halden Freight Growth active LOYAL10 $89.10/mo Aug 28 Quarry Road Coffee Starter active — $29.00/mo Sep 1 Northwind Labs Scale active — $299.00/mo Sep 4 Fenwick Analytics Scale active — $299.00/mo Feb 1, 2027 Brightpath Clinics Scale (annual) active — $3,228.00/yr Showing active, trialing and past-due subscriptions with a renewal on or after Aug 12, 2026. Paused and canceled subscriptions have no upcoming charge and are excluded. Charges reflect each plan's price with any attached coupon applied; overage, if any, is billed separately mid-cycle."
+    }
+  }
+}

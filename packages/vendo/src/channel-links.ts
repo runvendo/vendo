@@ -14,6 +14,7 @@
 import {
   VendoError,
   type ApprovalId,
+  type AutomationId,
   type IsoDateTime,
   type StoreAdapter,
   type VendoRecord,
@@ -30,10 +31,23 @@ const EVENT_COLLECTION = "vendo_channel_events";
  *  will make, and matches the window a conversation itself lives in. */
 const DELIVERY_MEMORY_MS = 24 * 60 * 60_000;
 
+/** How often one process bothers to sweep those rows. Pruning is housekeeping,
+ *  not correctness — nothing reads a stale row, it is only storage — but it used
+ *  to run on EVERY message, re-listing the whole conversation and deleting
+ *  row by row before the turn could start. So it becomes a sweep, kept per
+ *  conversation: a conversation's first delivery pays for it (which is what
+ *  keeps a serverless deployment, where every instance is cold, bounded exactly
+ *  as before) and the burst of texts behind it does not. */
+const PRUNE_INTERVAL_MS = 60 * 60_000;
+
 const ASK_COLLECTION = "vendo_channel_asks";
 /** An approval id IS the row id, and the guard mints them `apr_<uuid>`
  *  (guard.ts:205) — so a row that is not one was not written by this file. */
 const ASK_ID_PATTERN = /^apr_[0-9a-f-]+$/;
+/** How a grant-SET ask row is told apart from a card row in the one collection.
+ *  The prefix is what keeps `ids()` — which admits approval ids only — from ever
+ *  handing a set row to the card decider. */
+const SET_ID_PREFIX = "set_";
 
 /** Unambiguous alphabet: no O/0, no I/1/L. A person retypes this code from one
  *  message into another, on a phone keyboard. */
@@ -300,9 +314,67 @@ export class ChannelAskRepository {
     await this.records().delete(approvalId);
   }
 
+  /** Remember that this conversation was asked about one automation's whole set
+   *  of outstanding permissions, and which approvals that one text covers.
+   *
+   *  Keyed by the AUTOMATION, not by the engine's own `gset_` id: the engine
+   *  mints exactly one grant set per record — arming reuses the record's still
+   *  pending set and a fire-time miss joins it (automations `consent.ts`,
+   *  `captureGrants` and `needsPermission`) — so the automation names the same
+   *  set without this file reading the engine's private capture rows. The row
+   *  lives from the moment the text lands until a YES or NO settles it, which
+   *  makes it both what a bare reply routes to and the memory that stops a later
+   *  turn asking the same set twice. */
+  async addSet(
+    subject: string,
+    conversationId: string,
+    automationId: AutomationId,
+    approvals: readonly ApprovalId[],
+  ): Promise<void> {
+    await this.records().put({
+      id: `${SET_ID_PREFIX}${automationId}`,
+      data: { subject, conversationId, automationId, approvals: [...approvals] },
+      refs: { subject, conversation: conversationId },
+    });
+  }
+
+  /** The grant set ask this conversation is holding, if any. One at a time, like
+   *  the cards: whichever row the store lists first is the open question, and
+   *  nothing new goes out while one is here. */
+  async setAsk(conversationId: string): Promise<ChannelGrantSetAsk | null> {
+    let cursor: string | undefined;
+    do {
+      const page = await this.records().list({
+        refs: { conversation: conversationId },
+        ...(cursor === undefined ? {} : { cursor }),
+      });
+      for (const record of page.records) {
+        if (!record.id.startsWith(SET_ID_PREFIX)) continue;
+        const data = record.data as Partial<ChannelGrantSetAsk> | null;
+        if (typeof data?.automationId === "string" && Array.isArray(data.approvals)) {
+          return { automationId: data.automationId as AutomationId, approvals: data.approvals };
+        }
+      }
+      cursor = page.cursor;
+    } while (cursor !== undefined);
+    return null;
+  }
+
+  /** Spend the set row: its question has been answered, or answered elsewhere. */
+  async consumeSet(automationId: AutomationId): Promise<void> {
+    await this.records().delete(`${SET_ID_PREFIX}${automationId}`);
+  }
+
   private records(): ReturnType<StoreAdapter["records"]> {
     return this.store.records(ASK_COLLECTION);
   }
+}
+
+/** One automation's outstanding permissions, as this conversation was asked
+ *  about them. */
+export interface ChannelGrantSetAsk {
+  automationId: AutomationId;
+  approvals: readonly ApprovalId[];
 }
 
 /** The row id for a delivery: a digest, because the id is the vendor's string
@@ -322,12 +394,9 @@ async function deliveryRowId(eventId: string): Promise<string> {
  * that retry is a different instance — which would run the person's text a
  * SECOND time, with a second tool call and a second charge behind it.
  *
- * Read-then-write rather than a conditional insert, because the records door has
- * no create-if-absent. Retries are sequential by construction — one exists only
- * because the delivery before it did not answer — so a retry does not land in
- * the window between the read and the write. Two genuinely concurrent copies of
- * one delivery would still both run; closing that needs a conditional write at
- * the adapter layer.
+ * The claim IS the adapter's conditional insert wherever there is one, so the
+ * winner is decided by the store rather than by a read the next copy of the
+ * delivery could race.
  *
  * The row holds the event id and a timestamp, never the phone or the text, so
  * there is nothing here for `eraseStore().bySubject` to have to reach.
@@ -335,16 +404,35 @@ async function deliveryRowId(eventId: string): Promise<string> {
 export class ChannelEventLog {
   constructor(private readonly store: StoreAdapter) {}
 
+  /** Per conversation, not one clock for the process: a single shared clock
+   *  lets one chatty conversation spend every interval, and every other
+   *  conversation's expired rows are then never considered again. */
+  private readonly sweptAt = new Map<string, number>();
+
   /** True when this delivery is ours to run, false when it already ran. */
   async claim(eventId: string, conversationId: string): Promise<boolean> {
     const id = await deliveryRowId(eventId);
-    if (await this.records().get(id) !== null) return false;
-    await this.records().put({
+    const records = this.records();
+    const row = {
       id,
       data: { eventId, seenAt: new Date(Date.now()).toISOString() },
       refs: { conversation: conversationId },
-    });
-    await this.prune(conversationId);
+    };
+    // ONE guarded write where the adapter has one (01 §12). This claim is the
+    // first thing an inbound text waits on, and read-then-write cost a person two
+    // round trips to answer it — while leaving a window where two concurrent
+    // copies of one delivery each read the absence and both ran the turn. An
+    // adapter without `atomic` keeps that pair, which is what it always had.
+    if (records.atomic !== undefined) {
+      if (await records.atomic.insertIfAbsent(row) === null) return false;
+    } else {
+      if (await records.get(id) !== null) return false;
+      await records.put(row);
+    }
+    if (Date.now() - (this.sweptAt.get(conversationId) ?? 0) >= PRUNE_INTERVAL_MS) {
+      this.sweptAt.set(conversationId, Date.now());
+      await this.prune(conversationId);
+    }
     return true;
   }
 

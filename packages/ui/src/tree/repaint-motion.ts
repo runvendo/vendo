@@ -26,9 +26,9 @@
  *     is a different view rather than a data refresh, and nothing animates.
  */
 import { isHandlerRef, SCREEN_TEXT_NODE } from "@vendoai/apps/contract";
-import type { Json, TreeNode } from "@vendoai/core";
+import type { TreeNode } from "@vendoai/core";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { applyFormat, formatMoney, formatNum, formatPercent, type ValueFormat } from "../kit/format.js";
+import { applyFormat } from "../kit/format.js";
 import { t } from "../kit/tokens.js";
 
 export type NodeMap = ReadonlyMap<string, TreeNode>;
@@ -58,30 +58,22 @@ const EMPTY_DIFF: PaintDiff = { marks: new Map(), exits: [] };
 const MAX_MARKS = 24;
 
 /**
- * The Kit's numeric leaves: the prop holding the number, and how that leaf
- * prints it. Everything else pulses without rolling — a date or a status has no
- * in-between to show.
+ * The Kit's numeric leaves: the leaf that holds a number, and how it prints one.
+ * Everything else pulses without rolling — a date or a status has no in-between
+ * to show.
+ *
+ * A `Stat` handed an already-formatted string — the common shape now that a
+ * screen formats with `Intl` in its own code — CUTS to its new text instead,
+ * which is accepted: only a number has an in-between to roll through.
  */
-const NUMERIC_LEAVES: Record<string, (props: Record<string, Json>) => NumericTick["render"] | null> = {
-  Money: (props) => (value) => formatMoney(value, {
-    ...(typeof props.currency === "string" ? { currency: props.currency } : {}),
-    ...(typeof props.locale === "string" ? { locale: props.locale } : {}),
-  }),
-  Num: (props) => (value) => formatNum(value, {
-    ...(typeof props.maximumFractionDigits === "number" ? { maximumFractionDigits: props.maximumFractionDigits } : {}),
-    ...(props.notation === "compact" || props.notation === "standard" ? { notation: props.notation } : {}),
-  }),
-  Percent: (props) => (value) => formatPercent(value, {
-    ...(typeof props.fractionDigits === "number" ? { fractionDigits: props.fractionDigits } : {}),
-    ...(props.whole === true ? { whole: true } : {}),
-  }),
-  Stat: (props) => (value) => applyFormat(value, (props.format ?? "text") as ValueFormat),
+const NUMERIC_LEAVES: Record<string, NumericTick["render"]> = {
+  Stat: (value) => applyFormat(value, "text"),
 };
 
 /** The numeric prop of a Kit numeric leaf, when it holds a finite number. */
 const numericValue = (node: TreeNode): number | undefined => {
   if (!(node.component in NUMERIC_LEAVES)) return undefined;
-  const raw = node.component === "Money" ? node.props?.amount : node.props?.value;
+  const raw = node.props?.value;
   return typeof raw === "number" && Number.isFinite(raw) ? raw : undefined;
 };
 
@@ -89,9 +81,9 @@ const tickBetween = (before: TreeNode, after: TreeNode): NumericTick | null => {
   const from = numericValue(before);
   const to = numericValue(after);
   if (from === undefined || to === undefined || from === to) return null;
-  const render = NUMERIC_LEAVES[after.component]?.(after.props ?? {});
-  // A leaf that cannot print its own value (a bad currency code) has nothing to
-  // roll THROUGH, so it takes the pulse alone.
+  const render = NUMERIC_LEAVES[after.component];
+  // A leaf that cannot print its own value has nothing to roll THROUGH, so it
+  // takes the pulse alone.
   return render && render(to) !== null ? { from, to, render } : null;
 };
 

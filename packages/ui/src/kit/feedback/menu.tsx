@@ -1,13 +1,18 @@
 /**
  * Menu — actions behind one trigger (W2 §The Kit).
  *
- * Dual API, for the same reason Tabs has one: `items` is what a WIRE tree can
- * express (plain data plus a single `onSelect`), and children are what code
- * reaches for when an entry needs more than a word. Children win when both are
- * given.
+ * ONE API: `items` plus one `onSelect`, which is what a WIRE tree can express.
+ *
+ * Children are REFUSED by the floor — Menu is childless in the Kit specs, and the
+ * nesting check names `items={[…]}` + `onSelect` as the fix — because the branch
+ * that used to accept them wrapped every child in an entry with NO handler. A
+ * menu written that way opened, listed its entries, highlighted them on hover,
+ * and did nothing at all when one was chosen. There is no version of that branch
+ * worth keeping: a nested Menu cannot say which value an entry carries, so a
+ * refusal that names the fix is the only outcome the author can act on.
  */
 import { Menu as Base } from "@base-ui/react/menu";
-import { Children, type ComponentProps, type ReactNode } from "react";
+import type { ComponentProps } from "react";
 import { Icon } from "../icon.js";
 import { control, font, popup, popupMotion, t, transitionFor, type KitStyled, type KitEngine, type KitRendered, given } from "../tokens.js";
 import { isHandlerCallback } from "../handler.js";
@@ -27,8 +32,6 @@ interface MenuOwnProps extends KitStyled {
   items?: MenuItem[];
   /** Bound handler; receives the chosen item's value. */
   onSelect?: (value: string) => void;
-  /** One entry per line, in place of `items`. */
-  children?: ReactNode;
 }
 
 /** Plus any Base UI `<Menu.Root>` prop, handed straight to the menu. `style`
@@ -57,7 +60,6 @@ export function Menu({ label, items, onSelect, children, style, pending, ...engi
   const fire = (value: string) => isHandlerCallback(onSelect)
     ? onSelect({ target: { value } })
     : onSelect?.(value);
-  const entries = Children.toArray(children);
   return (
     <Base.Root {...given(engine)}>
       <Base.Trigger
@@ -70,19 +72,17 @@ export function Menu({ label, items, onSelect, children, style, pending, ...engi
       <Base.Portal>
         <Base.Positioner sideOffset={4} style={{ zIndex: 2 }}>
           <Base.Popup style={(state) => ({ ...popup, ...popupMotion(state), minWidth: 160 })}>
-            {entries.length > 0
-              ? entries.map((entry, i) => <Base.Item key={i} style={itemStyle}>{entry}</Base.Item>)
-              : (items ?? []).map((item, i) => (
-                <Base.Item
-                  key={`${item.label}-${i}`}
-                  disabled={item.disabled}
-                  onClick={() => fire(item.value ?? item.label)}
-                  style={itemStyle}
-                >
-                  {item.icon ? <Icon name={item.icon} /> : null}
-                  {item.label}
-                </Base.Item>
-              ))}
+            {(items ?? []).map((item, i) => (
+              <Base.Item
+                key={`${item.label}-${i}`}
+                disabled={item.disabled}
+                onClick={() => fire(item.value ?? item.label)}
+                style={itemStyle}
+              >
+                {item.icon ? <Icon name={item.icon} /> : null}
+                {item.label}
+              </Base.Item>
+            ))}
           </Base.Popup>
         </Base.Positioner>
       </Base.Portal>

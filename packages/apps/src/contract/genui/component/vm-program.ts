@@ -32,10 +32,11 @@
  * same trick.
  */
 import { TREE_MAX_NODES } from "@vendoai/core";
+import { KIT_SLOT_PROPS } from "../../kit/specs.js";
 import { PREACT_HOOKS_SOURCE, PREACT_JSX_RUNTIME_SOURCE, PREACT_SOURCE } from "./preact-source.js";
 
 /**
- * The names the VM must NOT carry.
+ * The names the VM must NOT carry — and the two it may hold only from the host.
  *
  * `Date` and `Math.random` are `$expr`'s two deletions, for `$expr`'s reason: a
  * screen that reads them paints differently on two identical renders. Timers
@@ -48,6 +49,11 @@ import { PREACT_HOOKS_SOURCE, PREACT_JSX_RUNTIME_SOURCE, PREACT_SOURCE } from ".
  * `console.log` is not a capability, and a bare context has no `console`, so
  * without this one a debug line the model forgot to delete is a ReferenceError
  * that takes the whole screen down.
+ *
+ * The frozen clock and {@link INTL_SOURCE} are the other shape of the same rule:
+ * both are things a screen genuinely needs, both would read the machine the VM
+ * happens to run on, so both are answered by the HOST instead — the clock as one
+ * pinned instant, `Intl` across the wall.
  */
 export function sealSource(now: number | undefined): string {
   const clock = now === undefined
@@ -68,8 +74,216 @@ globalThis.setInterval = globalThis.setTimeout;
 globalThis.clearTimeout = function () {};
 globalThis.clearInterval = globalThis.clearTimeout;
 globalThis.console = { log: function () {}, warn: function () {}, error: function () {}, info: function () {}, debug: function () {} };
+${INTL_SOURCE}
 0`;
 }
+
+/**
+ * Real `Intl`, borrowed from the host.
+ *
+ * QuickJS is built without ICU: there is no `Intl` in here at all, and the
+ * `toLocaleString` family it does carry degrades to `toString()`. So the idiom
+ * every model was trained on —
+ * `cents.toLocaleString("en-US", { style: "currency", currency: "USD" })`,
+ * `new Date(row.due).toLocaleDateString("en-US", { month: "short", day: "numeric" })`
+ * — painted `4200` and a full ISO stamp where a browser paints `$4,200.00` and
+ * `Aug 17`. Every name below therefore exists, and every one of them is answered
+ * ACROSS THE WALL by the host's own `Intl` (./boot.ts `answerIntl`) through the
+ * same synchronous host function the tool bridge is built from. Formatted text is
+ * text, so nothing new crosses.
+ *
+ * WHAT IS PINNED. A locale or a `timeZone` the screen NAMES is honoured — it wrote
+ * it. What it leaves out comes from the host's boot options and never from the
+ * machine the VM happens to be running on, so one screen over one set of data
+ * prints the same string on a laptop in Cairo and on a worker in Iowa.
+ *
+ * A VALUE CROSSES AS TEXT. JSON has no `NaN` and no `Infinity`, and `Intl` prints
+ * both ("NaN", "∞"); as JSON they would arrive as `null` and format as zero — a
+ * date in 1970 where a browser throws. So a value rides as its decimal spelling
+ * and the host reads it back with `Number`.
+ *
+ * THE SURFACE IS THE TYPINGS' SURFACE, EXACTLY. What a screen may write is what
+ * `lib.es2020.d.ts` declares (server/checking/screen-typings.ts
+ * `COMPONENT_SCREEN_LIB`), so every value-side name in that lib's `Intl` is here
+ * and nothing else is: `Collator`, `DateTimeFormat`, `DisplayNames`, `Locale`,
+ * `NumberFormat`, `PluralRules`, `RelativeTimeFormat`, `getCanonicalLocales`,
+ * each with the methods that lib gives it. A name the lib admits and this file
+ * omits is a screen that passes every gate and then dies on its first paint with
+ * "not a function" — the pre-bridge trap, reborn on the edges — and a name here
+ * that the lib does not declare is unreachable code. `screen-intl-parity.test.ts`
+ * walks both sides and refuses any difference, in either direction; `ListFormat`,
+ * `Segmenter` and the `formatRange` family are absent here because that lib does
+ * not declare them, and adding them means moving the lib pin first.
+ */
+const INTL_SOURCE = `(function () {
+  var ask = globalThis.__vendo_intl;
+  delete globalThis.__vendo_intl;
+  // Captured before the screen's own code can reassign either: what the host is
+  // asked is what this file said to ask.
+  var stringify = JSON.stringify, parse = JSON.parse, isArray = Array.isArray;
+
+  /** A locales argument as the list of TAGS it names. A \`Locale\` from below reads
+   *  as its own tag, the way a real one does when it is passed as a locale. */
+  function tags(locales) {
+    return locales === undefined ? [] : (isArray(locales) ? locales : [locales]).map(String);
+  }
+
+  /** The same list, or NOTHING where the screen named no locale at all — what it
+   *  left out is the wall's, and an empty list is the machine's default in a
+   *  browser, which is the one answer this box may never give. */
+  function named(locales) {
+    var list = tags(locales);
+    return list.length === 0 ? undefined : list;
+  }
+
+  // \`unit\` is \`RelativeTimeFormat\`'s alone; \`stringify\` drops it where it is
+  // undefined, so every other ask crosses the wall the shape it always did.
+  function answer(op, locale, options, value, unit) {
+    return ask(stringify({ op: op, locale: named(locale), options: options, value: value, unit: unit }));
+  }
+
+  /** The same ask for the formats whose argument is TEXT rather than a number: a
+   *  collation's two operands, a display name's code, one locale tag, or the
+   *  whole locales list a \`supportedLocalesOf\` is asked about. */
+  function about(op, locale, options, text) {
+    return ask(stringify({ op: op, locale: named(locale), options: options, text: text }));
+  }
+
+  /** Any value as the decimal spelling of a number. A Date reads as its instant,
+   *  which is what \`Intl\` does with one too. */
+  function spell(value) { return String(Number(value)); }
+
+  /** The instant to format: the one passed, or — where a screen passed none — the
+   *  clock, which is the host's frozen instant or, if the host withheld it, the
+   *  same ReferenceError every other clock read gets. */
+  function when(value) { return value === undefined ? String(Date.now()) : spell(value); }
+
+  // All four are callable with \`new\` and without, the way \`Intl\`'s own
+  // declarations describe them: a constructor that returns an object returns that
+  // object.
+  function NumberFormat(locale, options) {
+    return {
+      format: function (value) { return answer("number", locale, options, spell(value)); },
+      formatToParts: function (value) { return parse(answer("numberParts", locale, options, spell(value))); },
+      resolvedOptions: function () { return parse(answer("numberResolved", locale, options)); },
+    };
+  }
+  function DateTimeFormat(locale, options) {
+    return {
+      format: function (value) { return answer("date", locale, options, when(value)); },
+      formatToParts: function (value) { return parse(answer("dateParts", locale, options, when(value))); },
+      resolvedOptions: function () { return parse(answer("dateResolved", locale, options)); },
+    };
+  }
+  // "2 hours ago", "in 3 days" — the phrasing a screen writes for a timestamp,
+  // and one nobody hand-rolls correctly. The unit rides beside the count because
+  // it is the only ask whose format takes two arguments.
+  function RelativeTimeFormat(locale, options) {
+    return {
+      format: function (value, unit) { return answer("relative", locale, options, spell(value), unit); },
+      formatToParts: function (value, unit) { return parse(answer("relativeParts", locale, options, spell(value), unit)); },
+      resolvedOptions: function () { return parse(answer("relativeResolved", locale, options)); },
+    };
+  }
+  // Which plural form a count takes ("one", "other", and the four more some
+  // locales have) — the half of "1 item / 2 items" that an \`=== 1\` gets wrong
+  // everywhere but English.
+  function PluralRules(locale, options) {
+    return {
+      select: function (value) { return answer("plural", locale, options, spell(value)); },
+      resolvedOptions: function () { return parse(answer("pluralResolved", locale, options)); },
+    };
+  }
+  // Where two strings sort in a locale's own alphabet — the half of an
+  // alphabetical list that \`<\` gets wrong the moment a name leaves ASCII ("ä"
+  // sorts after "z" by codepoint and beside "a" in German). \`compare\` reads
+  // nothing off \`this\`, so \`rows.sort(collator.compare)\` works detached, the way
+  // a real one does.
+  function Collator(locale, options) {
+    return {
+      compare: function (x, y) { return Number(about("collate", locale, options, [String(x), String(y)])); },
+      resolvedOptions: function () { return parse(answer("collateResolved", locale, options)); },
+    };
+  }
+  // A region, language, script or currency code as the words a person reads:
+  // "US" → "United States". \`of\` answers \`undefined\` for a code the locale has no
+  // name for, which JSON cannot carry, so \`null\` crosses and reads back as the
+  // \`undefined\` the standard promises.
+  function DisplayNames(locale, options) {
+    return {
+      of: function (code) {
+        var name = parse(about("display", locale, options, [String(code)]));
+        return name === null ? undefined : name;
+      },
+      resolvedOptions: function () { return parse(answer("displayResolved", locale, options)); },
+    };
+  }
+  // One tag taken apart — the language, region and script a screen reads off it.
+  // Resolved by the host in a single ask, \`maximize\`/\`minimize\` included: those
+  // two answer out of CLDR's likely-subtags table, which is exactly the data this
+  // VM does not carry, so each returns the tag the host resolved rather than a
+  // guess made in here.
+  function Locale(tag, options) {
+    var facts = parse(about("locale", undefined, options, [String(tag)]));
+    return {
+      baseName: facts.baseName,
+      calendar: facts.calendar,
+      caseFirst: facts.caseFirst,
+      collation: facts.collation,
+      hourCycle: facts.hourCycle,
+      language: facts.language,
+      numberingSystem: facts.numberingSystem,
+      numeric: facts.numeric,
+      region: facts.region,
+      script: facts.script,
+      maximize: function () { return Locale(facts.maximized); },
+      minimize: function () { return Locale(facts.minimized); },
+      toString: function () { return facts.tag; },
+    };
+  }
+
+  /** \`supportedLocalesOf\`, which every one of these constructors carries. It is
+   *  per-constructor because each format has its own locale data — a locale the
+   *  host can count in can be one it cannot phrase an interval in. */
+  function supported(op) {
+    return function (locales, options) { return parse(about(op, undefined, options, tags(locales))); };
+  }
+  NumberFormat.supportedLocalesOf = supported("numberSupported");
+  DateTimeFormat.supportedLocalesOf = supported("dateSupported");
+  RelativeTimeFormat.supportedLocalesOf = supported("relativeSupported");
+  PluralRules.supportedLocalesOf = supported("pluralSupported");
+  Collator.supportedLocalesOf = supported("collateSupported");
+  DisplayNames.supportedLocalesOf = supported("displaySupported");
+
+  globalThis.Intl = {
+    Collator: Collator,
+    DateTimeFormat: DateTimeFormat,
+    DisplayNames: DisplayNames,
+    Locale: Locale,
+    NumberFormat: NumberFormat,
+    PluralRules: PluralRules,
+    RelativeTimeFormat: RelativeTimeFormat,
+    getCanonicalLocales: function (locales) { return parse(about("canonical", undefined, undefined, tags(locales))); },
+  };
+
+  Number.prototype.toLocaleString = function (locale, options) {
+    return answer("number", locale, options, spell(this));
+  };
+  // \`Collator\` by another name, and the one every model reaches for to sort a
+  // column of names. Unbridged it was WORSE than missing: QuickJS answers it by
+  // codepoint, so it returned a number — the wrong one — and painted a list in an
+  // order nobody would notice was wrong.
+  String.prototype.localeCompare = function (that, locale, options) {
+    return Number(about("collate", locale, options, [String(this), String(that)]));
+  };
+  // Only where the host gave a clock: withheld, \`Date\` was deleted above and
+  // there is no prototype left to reach.
+  if (typeof Date !== "undefined") {
+    Date.prototype.toLocaleDateString = function (locale, options) { return answer("day", locale, options, spell(this)); };
+    Date.prototype.toLocaleTimeString = function (locale, options) { return answer("time", locale, options, spell(this)); };
+    Date.prototype.toLocaleString = function (locale, options) { return answer("stamp", locale, options, spell(this)); };
+  }
+})();`;
 
 /** How deep the emitter walks into one prop's value before it stops. Deeper
  *  than any real prop and shallow enough that a cycle cannot spin. */
@@ -171,7 +385,9 @@ const ENGINE = `(function () {
   // ── the emitter ───────────────────────────────────────────────────────────
   // One handler id per (structural path, prop name), minted once and kept
   // forever: a re-render that moves a row does not renumber the rows above it,
-  // and a keyed row keeps its handlers even when a row is inserted over it.
+  // and a keyed row keeps its handlers even when a row is inserted over it. A
+  // per-row slot puts the row's index IN that path, which is the whole of how one
+  // slot written once becomes one handler per row (see emitSlot below).
   var slots = {}, minted = 0, drawer = {};
 
   // A key that would mean the prototype chain rather than data once the host
@@ -212,14 +428,67 @@ const ENGINE = `(function () {
     return out;
   }
 
-  function emitProps(props, slot, depth) {
+  // The Kit's slot law as data (contract/kit/specs.ts KIT_SLOT_PROPS), onto a bare
+  // object so a component NAME can never answer off Object.prototype.
+  var SLOT_PROPS = Object.assign(create(null), ${JSON.stringify(KIT_SLOT_PROPS)});
+
+  // A slot written as a FUNCTION returning its element: called HERE, and what it
+  // returns is emitted at the slot's own path. No \`rows\` in the declaration means
+  // the Kit paints the slot once, so the call takes no arguments; a per-row slot is
+  // called once for every row, each call under its OWN path — and distinct paths
+  // mint distinct handler ids, which is the whole of what makes a closure over one
+  // row a real closure. What comes out then is a list the component matches to its
+  // rows.
+  function emitSlot(fn, props, declared, slot, depth) {
+    if (declared.rows === undefined) return emitValue(fn(), slot, depth);
+    var rows = props[declared.rows];
+    if (!isArray(rows)) return emitValue(fn(rows, 0), slot, depth);
+    var out = [];
+    for (var i = 0; i < rows.length; i++) out.push(emitValue(fn(rows[i], i), slot + "[" + i + "]", depth));
+    return out;
+  }
+
+  // One prop that carries a slot: the slot itself (\`footer\`, \`rowActions\`), or a
+  // list of field descriptions each of which may carry one (\`columns[].cell\`).
+  // An ELEMENT written in either place still emits as the element it is.
+  function emitSlotProp(value, props, declared, slot, depth) {
+    var field = declared.field;
+    if (field === undefined) {
+      return typeof value === "function" ? emitSlot(value, props, declared, slot, depth) : emitValue(value, slot, depth);
+    }
+    if (!isArray(value)) return emitValue(value, slot, depth);
+    var out = [];
+    for (var i = 0; i < value.length; i++) {
+      var entry = value[i], path = slot + "." + i;
+      if (entry === null || typeof entry !== "object" || typeof entry[field] !== "function") {
+        out.push(emitValue(entry, path, depth + 1));
+        continue;
+      }
+      var described = create(null), fields = keys(entry);
+      for (var at = 0; at < fields.length; at++) {
+        var name = fields[at];
+        if (unsafe(name)) continue;
+        described[name] = name === field
+          ? emitSlot(entry[name], props, declared, path + "." + name, depth + 1)
+          : emitValue(entry[name], path + "." + name, depth + 1);
+      }
+      out.push(described);
+    }
+    return out;
+  }
+
+  function emitProps(props, type, slot, depth) {
     var out = create(null);
     if (props === null || typeof props !== "object") return out;
-    var names = keys(props);
+    var slotProps = SLOT_PROPS[type], names = keys(props);
     for (var at = 0; at < names.length; at++) {
       var key = names[at];
       if (key === "children" || key === "key" || key === "ref" || unsafe(key)) continue;
-      var value = emitValue(props[key], slot + "#" + key, depth);
+      var declared = slotProps === undefined ? undefined : slotProps[key];
+      var path = slot + "#" + key;
+      var value = declared === undefined
+        ? emitValue(props[key], path, depth)
+        : emitSlotProp(props[key], props, declared, path, depth);
       if (value !== undefined) out[key] = value;
     }
     return out;
@@ -240,7 +509,7 @@ const ENGINE = `(function () {
     }
     var children = [];
     collect(childrenOf(vnode), children, slot, depth);
-    var node = { component: type, props: emitProps(vnode.props, slot, depth + 1), children: children };
+    var node = { component: type, props: emitProps(vnode.props, type, slot, depth + 1), children: children };
     if (vnode.key != null) node.key = String(vnode.key);
     return node;
   }
@@ -280,6 +549,38 @@ const ENGINE = `(function () {
     }
     if (typeof node === "string") return;
     for (var i = 0; i < node.children.length; i++) measure(node.children[i], depth + 1);
+  }
+
+  // ── the screen's data ─────────────────────────────────────────────────────
+  // Keyed by the tool AND the input, because a screen reads one tool as many
+  // times as it has questions — a detail panel beside a list is two reads of the
+  // same tool. A key nobody has answered yet is a MISS: the host runs the read
+  // and hands the answer to \`supply\`, which re-renders THIS root, so the hooks
+  // the first paint set up survive.
+  //
+  // The host keys its half the same way — \`queryKey\` in ./types.ts. The two
+  // copies are one law and must agree.
+  var data = create(null), missing = create(null);
+
+  // What a MISS hands back. An OBJECT, never \`undefined\`: react-query's shape is
+  // the one trained code knows, and there \`useQuery\` always returns an object
+  // whose \`data\` is simply absent until the answer lands. So the first paint's
+  // \`rows.data\` is a read that yields undefined rather than a throw on
+  // undefined, and \`rows.data ?? []\` and \`rows?.data\` keep meaning what they
+  // say. \`undefined\` and not \`[]\`: a screen may not be handed an empty result it
+  // would then assert — "no rows yet" is not "no rows".
+  //
+  // ONE value for every miss, so it is the same object on every render and a
+  // \`useMemo\`/\`useEffect\` dependency on a pending read does not churn.
+  var MISS = { data: undefined };
+
+  function keyOf(tool, input) { return input === undefined ? tool : tool + " " + stringify(input); }
+
+  function useQuery(tool, input) {
+    var key = keyOf(tool, input);
+    if (key in data) return data[key];
+    missing[key] = { tool: tool, input: input };
+    return MISS;
   }
 
   // ── the driver ────────────────────────────────────────────────────────────
@@ -329,11 +630,31 @@ const ENGINE = `(function () {
       });
     })([]),
 
+    useQuery: useQuery,
+
     mount: function (loaded, props) {
       component = loaded;
       root = new Node("#root");
       eventPhase = false;
       preact.render(preact.createElement(component, props || null), root);
+    },
+
+    /** The reads this screen asked for and had no answer to, as JSON. TAKEN, not
+     *  copied: the host answers them and asks again, and a key the host could not
+     *  answer is asked once per round rather than forever. */
+    misses: function () {
+      var out = [], taken = missing;
+      missing = create(null);
+      for (var key in taken) out.push(taken[key]);
+      return stringify(out);
+    },
+
+    /** Answers, keyed the way \`useQuery\` keys its reads, merged in and painted
+     *  into the SAME root — a re-render, never a re-boot, so useState survives. */
+    supply: function (json) {
+      var got = JSON.parse(json);
+      for (var key in got) data[key] = got[key];
+      if (root !== null) preact.render(preact.createElement(component, null), root);
     },
 
     fire: function (id, event) {
@@ -480,18 +801,10 @@ export interface InstallInput {
  */
 export function installSource(input: InstallInput): string {
   return `(function () {
-  var queries = JSON.parse(${JSON.stringify(JSON.stringify(input.queries))});
   var props = ${input.props === undefined ? "null" : `JSON.parse(${JSON.stringify(JSON.stringify(input.props))})`};
   var names = JSON.parse(${JSON.stringify(JSON.stringify(input.catalog))});
-  var screen = {
-    useQuery: function (tool) {
-      if (!Object.prototype.hasOwnProperty.call(queries, tool)) {
-        throw new Error('useQuery("' + tool + '") — this screen declared no such query; it has ' + (Object.keys(queries).join(", ") || "none"));
-      }
-      return queries[tool];
-    },
-    tools: __vendo.tools,
-  };
+  __vendo.supply(${JSON.stringify(JSON.stringify(input.queries))});
+  var screen = { useQuery: __vendo.useQuery, tools: __vendo.tools };
   for (var i = 0; i < names.length; i++) screen[names[i]] = names[i];
   // The last module the space will ever hold. Frozen, and named nowhere the
   // screen's own code can reach, before that code runs.

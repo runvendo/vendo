@@ -31,6 +31,23 @@ export default defineConfig(async ({ command }) => {
       retryable: true,
       prompt: "a board showing where my money goes each month",
     });
+    // (/remixable) — the ✦'s own dead end, over the REAL wire: the seed row
+    // lands first and is listable, so the wrapper discovers a remix, and the
+    // build then fails, so `open` answers the terminal `failed` envelope
+    // forever. That order is what put a settled "Edit" over a screen that never
+    // existed. The reason carries the same developer sentence the rest of the
+    // harness uses, because the page must not print any of it.
+    wire.state.apps.push({
+      ...fixtureApp("app_remix_failed", "FailedMerchants remix"),
+      seed: { component: "FailedMerchants", baseline: "sha256:fixture", wishes: ["make it a chart"] },
+    });
+    wire.state.failedApps.set("app_remix_failed", {
+      reason: "This app wasn't created, because it didn't pass the checks that keep an app honest:"
+        + " the `value` expression is a declarative string that the DataTable does not evaluate,"
+        + " not JavaScript: amount / sum(spending.data.amount)",
+      retryable: true,
+      prompt: "make it a chart",
+    });
     // (/slot-states, /slot-building) — the slot's own build vocabulary over the
     // real wire. `app_slot_building` lands on the second placements read; the
     // spec places it itself so each attempt rewinds that window. `slot-ready`

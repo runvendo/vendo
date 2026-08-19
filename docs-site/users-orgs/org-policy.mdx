@@ -1,0 +1,146 @@
+---
+title: "Org policy"
+sidebarTitle: "Org policy"
+description: "Rules an org's own admin sets, applied on top of the guardrails your deployment already ships — the file, the tighten-only rule, and how it fails."
+---
+
+Your deployment's guard is the floor: what the product will never let anyone do.
+An org's own admin can raise it for their own people, and the two are layered,
+never traded.
+
+## Two layers, one verdict
+
+Your policy decides first. Then the strictest matching rule from the orgs this
+request asserted may tighten that decision, and only tighten it.
+
+Strictness is a rank — run, then ask, then block — and an org rule moves a
+verdict up it or leaves it alone. It can never turn your `ask` into a `run`.
+
+When an org rule blocks, its `note` becomes the reason the person is shown.
+
+<Warning>
+  One documented hole: a one-time approval that has already been tapped skips the
+  org layer entirely, `block` included. A standing grant stays clamped. An org
+  rule adopted between a park and its approval is not applied to that one call.
+</Warning>
+
+---
+
+## The file
+
+One file per org, inside the org's own [workspace](/users-orgs/org-workspace):
+
+```json /orgs/acme/policy.json highlight={2}
+{
+  "format": "vendo/org-policy@1",
+  "rules": [
+    { "match": { "risk": "destructive" }, "action": "ask", "note": "Ask Priya in #ops first." },
+    { "match": { "tool": "refunds_*", "venue": "automation" }, "action": "block" }
+  ]
+}
+```
+
+`format` and `rules` are both required, and both objects are strict — an unknown
+key is a parse failure, not a warning.
+
+A rule is a match and an action.
+
+| Field | What it takes |
+| --- | --- |
+| `match.tool` | A tool name, `*` glob allowed |
+| `match.risk` | `read`, `write`, `destructive`, or `ungraded` |
+| `match.venue` | `chat`, `app`, `automation`, or `mcp` |
+| `match.presence` | `present` or `away` |
+| `action` | `ask` or `block` |
+| `note` | The sentence a blocked member reads |
+
+Every `match` field is optional and they are ANDed. An omitted field matches
+anything, so `{}` matches every call.
+
+This is not your deployment's `.vendo/policy.json` with a field removed: an org
+file has no `directions`, and its `rules` array is mandatory.
+
+---
+
+## Why there is no "run"
+
+Tighten-only is the whole design, and it is enforced three times.
+
+- The schema has no permissive action, so a console that sends `run` is told at
+  the moment the mistake is made rather than having its rule silently ignored on
+  every call.
+- Within the org layer, the strictest matching rule wins.
+- At the seam where the layer applies, the clamp is monotone: it raises the rank
+  or does nothing.
+
+An org can therefore only ever be stricter than you are. Nothing an org writes can
+widen what your deployment allows.
+
+---
+
+## Who may edit it
+
+Every member of the org may read the file. Only a member your `memberships` seam
+asserted with `admin: true` may write it.
+
+That is a workspace rule, not a policy one, and nothing in the runtime writes the
+file — today it is managed from the console.
+
+---
+
+## Freshness and failure
+
+The file is re-read per request behind a 30-second cache, so an admin's edit binds
+within half a minute. The cache holds the file body, keyed on org id; the rules are
+re-parsed on each check.
+
+Failure is per-org and never widens anything:
+
+- A missing file means that org simply has no rules, and that answer is cached like
+  any other.
+- A file that cannot be read or does not parse drops **that one org's** rules. Every
+  other org in the request still binds. A read failure is deliberately not cached,
+  so a blip cannot disarm an org for the whole window.
+- Every drop is reported, never silently swallowed: a console warning naming the org
+  and the path, and an audit row with reason `org-policy-unavailable`. A resolver that
+  fails outright logs `guard.org-policy-unavailable`.
+
+Because org rules can only raise strictness, a dropped file leaves your own verdict
+standing. There is no failure mode in which losing an org's rules loosens anything.
+
+<Note>
+  A keyed deployment with no local workspace can read no org policy at all. It says
+  so once, loudly, rather than pretending the layer is armed.
+</Note>
+
+---
+
+## What a member sees
+
+The same approval or refusal your own guard produces, because the org layer moves
+the verdict rather than replacing the experience.
+
+A call an org tightened to `ask` parks for approval. A call an org blocked is
+refused with the rule's `note`, which is where an admin gets to say who to ask.
+
+---
+
+## Where to go next
+
+<CardGroup cols={3}>
+  <Card title="Orgs & memberships" href="/users-orgs/orgs-and-memberships">
+    The seam that decides whose rules load, and who counts as an admin.
+
+    `admin: true`
+  </Card>
+  <Card title="The org workspace" href="/users-orgs/org-workspace">
+    The mount the file lives in, and the rest of the tree around it.
+
+    `/orgs/<orgId>/**`
+  </Card>
+  <Card title="Handler options" href="/reference/handler-options">
+    Your deployment's own guard — the floor an org builds on.
+
+    `guard`
+  </Card>
+</CardGroup>

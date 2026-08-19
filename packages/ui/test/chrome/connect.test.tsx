@@ -63,10 +63,13 @@ describe("ConnectCard", () => {
     // capitalized) were deleted, which is the whole reason it exists.
     const notes = screen.getByRole("article", { name: "Connect Gmail" })
       .querySelector("ul.fl-approval-sub")!;
+    // ⚠️ TEST EDIT (clipboard separator): the " · " leads every item but the
+    // first as real text now — it was CSS `content`, which never reaches the
+    // clipboard, so this line copied as one run-together sentence.
     expect([...notes.querySelectorAll("li")].map(item => item.textContent)).toEqual([
       "Connect your gmail account to run gmail_GMAIL_SEND_EMAIL",
-      "Read and send mail as you",
-      "Secured with OAuth",
+      " · Read and send mail as you",
+      " · Secured with OAuth",
     ]);
     fireEvent.click(screen.getByRole("button", { name: "Connect Gmail" }));
 

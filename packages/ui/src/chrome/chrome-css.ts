@@ -1439,8 +1439,8 @@ html[data-vendo-dock] {
 .fl-remix-pill:focus-visible { outline: 2px solid var(--vendo-accent); outline-offset: 2px; }
 /* The ✦ pill floats over the wrapper's top-right corner, on top of whatever the
    remix renders. A notice underneath it must not run its text beneath the pill:
-   the half of the drift warning the pill was covering is the half that says the
-   person's own changes would be replaced, and a warning you cannot finish
+   the half of the drift warning the pill was covering is the half that says
+   which of the person's own changes no longer fit, and a warning you cannot finish
    reading is worse than no warning — it looks like it did its job. The notice
    sets its padding inline, so the gutter it needs is a margin. */
 .fl-remixable [data-vendo-notice] { margin-right: 104px; }
@@ -1452,12 +1452,12 @@ html[data-vendo-dock] {
   .fl-remix-pill { transition: opacity 180ms cubic-bezier(.23,1,.32,1), transform 180ms cubic-bezier(.23,1,.32,1); }
 }
 
-/* ---- ✦ management popover (2026-08-02 final shape) ----
-   The pill on an already-remixed component opens this instead of forking:
-   status line, open-in-panel, revert. Borrows the slot menu's glass look.
-   The wrap carries the pill's absolute position so pill and menu share an
-   anchor; the pill inside it drops its own offset. No entry animation — the
-   popover appears in place (reduced motion needs no special case). */
+/* ---- the ✦ menu (pin-chrome.tsx) ----
+   The one popover over an app the page is showing on the person's behalf, a
+   remix and a pinned app alike: edit in chat, update, revert. The wrap carries
+   the pill's absolute position so pill and menu share an anchor; the pill
+   inside it drops its own offset. No entry animation — the popover appears in
+   place (reduced motion needs no special case). */
 .fl-remix-menu-wrap { position: absolute; top: 3px; right: 4px; z-index: 7; }
 .fl-remix-menu-wrap .fl-remix-pill { position: static; }
 .fl-remix-menu { position: absolute; top: 26px; right: 0; min-width: 188px; padding: 6px;
@@ -1465,6 +1465,8 @@ html[data-vendo-dock] {
   border: 1px solid var(--vendo-border-strong); border-radius: 12px;
   background: var(--vendo-surface);
   box-shadow: var(--vendo-shadow-float); font-family: var(--vendo-font-family); }
+/* The unsettled app's one line, above the actions: quieter and smaller than
+   them, because it is what IS rather than something to do. */
 .fl-remix-status { padding: 6px 9px 7px; font: 500 11px/1.4 var(--vendo-font-family);
   color: var(--vendo-fg-muted); border-bottom: 1px solid var(--vendo-border); margin-bottom: 3px; }
 .fl-remix-menu button { text-align: left; font: 500 12.5px/1.2 var(--vendo-font-family); padding: 7px 9px;
@@ -1472,12 +1474,6 @@ html[data-vendo-dock] {
 .fl-remix-menu button:hover { background: var(--vendo-accent-soft); }
 .fl-remix-menu button:disabled { color: var(--vendo-fg-muted); cursor: default; }
 .fl-remix-menu button.is-danger { color: var(--vendo-danger); }
-/* The ✦ gesture's own popover: the instruction it collects before it fires. */
-.fl-remix-ask { width: 220px; margin: 1px 0 4px; padding: 7px 9px;
-  border: 1px solid var(--vendo-border); border-radius: 8px;
-  background: var(--vendo-surface); color: var(--vendo-fg);
-  font: 500 12.5px/1.2 var(--vendo-font-family); }
-.fl-remix-ask:focus-visible { outline: 2px solid var(--vendo-accent); outline-offset: 1px; }
 
 /* ---- filled state ---- */
 .fl-slot-filled { position: relative; flex: 1; }
@@ -2007,11 +2003,13 @@ html[data-vendo-dock] {
 .fl-approval-sub { margin: 4px 0 0; font: 400 12px/1.5 var(--vendo-font);
   color: var(--vendo-fg-muted); overflow-wrap: anywhere; white-space: pre-line; }
 /* The ask's notes are a LIST (each remaining input, what approving does, who
-   asked) that reads as one line: the items run inline and the " · " between
-   them is drawn here, as punctuation a screen reader never announces. */
+   asked) that reads as one line: the items run inline, and the " · " leading
+   each one after the first is REAL text in the markup (NOTE_SEPARATOR), not a
+   \`content\` rule here. Generated content was never hidden from a screen
+   reader — Chromium hands it to the accessibility tree — but it is hidden from
+   the CLIPBOARD, so the copied line read "…as you.asked in an app". */
 ul.fl-approval-sub { padding: 0; list-style: none; }
 .fl-approval-sub li { display: inline; }
-.fl-approval-sub li + li::before { content: " · "; }
 /* A settled receipt that FAILED keeps the thread's error register — the same
    danger ✕ its beat wears. Colour is never the only carrier (the glyph is). */
 .fl-approval-sub--failed { color: var(--vendo-danger); }

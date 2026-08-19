@@ -5,6 +5,9 @@ export type * from "@vendoai/core";
 export type * from "@vendoai/apps/contract";
 export type { VendoStore } from "@vendoai/store";
 export type { Thread, ThreadSummary } from "./threads.js";
+// What `vendo.putUserFile` answers, and what the ui client's `files.upload`
+// mirrors: where the file landed and how big it was.
+export type { UploadedFile } from "./harness-turn.js";
 export type {
   ActionsRegistry,
   // Task 15a — the actions-file shapes a host names when composing the
@@ -19,6 +22,12 @@ export type {
   SyncReport,
 } from "@vendoai/actions";
 export type { ConnectionsService, InitiatedConnection, InitiateOptions } from "./connections.js";
+export type {
+  TenantConnectorInput,
+  TenantConnectorResult,
+  TenantConnectorSummary,
+  TenantConnectors,
+} from "./tenant-connectors.js";
 export type {
   ChannelsService,
   InboundEvent,
@@ -81,3 +90,6 @@ export {
   type ConnectorDiscoveryPorts,
   type ServiceToolMatch,
 } from "./connector-discovery.js";
+// Writing a tool by hand for the `tools:` slot — beside the registries above
+// for the same reason: it is a VALUE a host composing capability needs.
+export { defineTool } from "@vendoai/core";

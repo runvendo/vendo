@@ -18,10 +18,12 @@
   },
   "style": [
     "uses the theme exactly: concrete-gray page, white cards, hi-vis amber buttons with near-black label text, Inter, 4-10px corners — no invented colors or fonts",
-    "money always shows 2 decimals with a $ symbol, a loss shows in the danger red with a minus sign, and an unpaid invoice balance shows in the danger color",
+    "money always shows 2 decimals with a $ symbol",
+    "a loss shows in the danger red with a minus sign",
+    "an unpaid invoice balance shows in the danger color",
     "every job is named by its job number and its customer together — 'J-2418 · Harbor Point Dental' — never a bare id",
     "hours read with one decimal and an h — '9.5 h' — and are never dressed up as money",
-    "anything that bills a customer, approves payroll or writes an expense asks for confirmation first",
+    "the two actions here that cannot be taken back — emailing a customer a payment reminder, and approving payroll hours — ask for confirmation first, and the host's own approval step counts as the confirmation",
     "dates read as 'Aug 4' style, never ISO"
   ],
   "tools": {

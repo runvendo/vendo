@@ -7,7 +7,9 @@ sidebarTitle: "Quickstart"
 Vendo brings the loop, the model, and the chat surface. You paste three things
 into your own client.
 
-This picks up where [`vendo init`](/) left off:
+This picks up after the two commands on the [main quickstart](/) —
+`npm install @vendoai/vendo`, then `npx vendo init` (`pnpm add @vendoai/vendo`
+and `pnpm exec vendo init` on pnpm). Those leave you
 `app/api/vendo/[...vendo]/route.ts` written, and a model credential settled.
 
 Which credential depends on how you answered init's models question. **Vendo
@@ -25,24 +27,23 @@ answer. [Model credentials](/production/model-credentials) covers all three.
 Paste what init printed into your client layout. Your paths and theme are
 already filled in.
 
-```tsx app/layout.tsx focus={10}
+```tsx app/layout.tsx focus={7}
 import { VendoProvider } from "@vendoai/vendo/react";
 import type { VendoTheme } from "@vendoai/vendo";
-import type { ReactNode } from "react";
 import theme from "../.vendo/theme.json";
 
-export default function RootLayout({ children }: { children: ReactNode }) {
-  return (
-    <html lang="en">
-      <body>
-        <VendoProvider baseUrl="/api/vendo" theme={theme as VendoTheme}>
-          {children}
-        </VendoProvider>
-      </body>
-    </html>
-  );
-}
+// in your own RootLayout, props type untouched:
+<body>
+  <VendoProvider baseUrl="/api/vendo" theme={theme as VendoTheme}>
+    {children}
+  </VendoProvider>
+</body>
 ```
+
+Leave that props type alone. Next already types `children` for you —
+create-next-app writes `Readonly<{ children: React.ReactNode }>`, and an app on
+typed routes has a generated props type of its own — so annotating it again as
+`{ children: ReactNode }` only throws away what your app already knows.
 
 `baseUrl` is where the route is mounted, path prefix included. An app served
 under `/maple` passes `baseUrl="/maple/api/vendo"`.
@@ -77,6 +78,11 @@ Put a slot where a card would go. A screen the agent builds can live there
 instead of in the panel.
 
 `VendoSlot` comes from the package you already installed — no second one.
+
+The id and the file are both yours. `spend-breakdown` on a bank's overview page
+is this example's choice: pick any string, and put the slot on whichever page you
+want the surface to appear on. The one rule is that the same string appears in
+both places — on `VendoSlot` here, and on the provider's `pinSlot` below.
 
 ```tsx app/overview/page.tsx focus={3,9}
 "use client";

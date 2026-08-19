@@ -5,9 +5,23 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { cannedResponse, type World } from "./world.js";
 
-/** A banking app's column. Every contender is shot at the same size, so the
- *  screenshots stack side by side in the report. */
-const VIEWPORT = { width: 480, height: 900 } as const;
+/**
+ * The frame every screen is graded in: a desktop panel, 1280x900 (2026-08-18).
+ *
+ * Widened from a 480px phone column, and the HEIGHT did not move — one variable,
+ * so a column's score before and after differs by room across and nothing else.
+ * The narrow frame was measuring the wrong thing: a desk product's screen is
+ * opened on a laptop, and a table that had to scroll sideways in a phone column
+ * simply fits here.
+ *
+ * Exported because this number is the frame TWICE — the size the shot is taken at
+ * down in `openBrowser`, and the surface the vendo column hands its own screen
+ * agent (`vendo.ts`, read back by `surfaceNote` in `screen-agent.ts` and measured
+ * against by the reviewer). Two spellings of it would let a column write for one
+ * frame and be graded in another. Every contender is shot at the same size, so the
+ * screenshots stack side by side in the report.
+ */
+export const VIEWPORT = { width: 1280, height: 900 } as const;
 
 /**
  * The mechanical seam every page is scored through, in the ONE wording every
@@ -37,9 +51,9 @@ export const HARNESS_CONTRACT = `THE PAGE — the seam every screen is scored th
 
 - SELF-CONTAINED. Inline every style and every script. The page is opened with NO network at all, so a CDN link, a webfont URL or an import of anything paints a blank screen.
 - WIRED. Every control a person can press must call \`window.vendo.callTool("<tool name>", { ...arguments })\`, with arguments that tool's input schema accepts. \`window.vendo\` is already on the page before anything you write runs — use it, do not define it.
-- CONFIRMED. A step that confirms before acting must carry \`role="dialog"\`. The harness records that it opened and the text it shows, and presses nothing inside it — what the dialog SAYS is what is graded.
+- CONFIRMED. A step that confirms before acting must carry \`role="dialog"\`. The harness records the text it shows, then presses EACH control inside it once, on a fresh screen each time: the one that goes through must call the tool that does the work, and the one that backs out must not call it.
 - FINISHED. The screen is considered settled two frames after the page loads, and it is shot then. Draw synchronously: anything painted later may not be in the picture anyone grades.
-- HONEST. Every number and every date on the screen must come from the tool data above — shown as it is, or computed from it. Anything else is graded as invented.
+- HONEST. Every number and every date on the screen must come from what a tool answered — shown as it is, or computed from it. Nothing above says what any tool answers with, so a screen only knows by asking. Anything else is graded as invented.
 - SIZED. It is shot at ${VIEWPORT.width}x${VIEWPORT.height}, and what a person sees there is all anyone sees.`;
 
 /** How long a page gets to commit and draw before the shot is taken anyway. */
@@ -68,6 +82,107 @@ export async function bundleMount(): Promise<string> {
 export const jsonScript = (id: string, value: unknown): string =>
   `<script type="application/json" id="${id}">${JSON.stringify(value).replaceAll("<", "\\u003c")}</script>`;
 
+/** The tag `jsonScript` writes, as the pattern that reads it back — one spelling
+ *  of the seam for everything that has to find it again: the clock below, and
+ *  the liveness mutation that rewrites the tools inside it. */
+export const jsonScriptRe = (id: string): RegExp =>
+  new RegExp(`<script type="application/json" id="${id}">([\\s\\S]*?)</script>`);
+
+/** The months a world writes a date with, in the order `Date.UTC` numbers them. */
+const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+
+/**
+ * One date as a world wrote it, as an instant.
+ *
+ * Anything carrying no zone is read as UTC. The worlds speak Z — `2026-08-12`,
+ * `2026-08-15 07:20`, `2026-08-12T15:10:00Z` are all in `worlds/` today — and
+ * reading a zoneless one in the operator's zone is the same drift the page's own
+ * `timezoneId` exists to stop, moved into the harness.
+ */
+function instant(written: string): number {
+  const text = written.trim();
+  const named = /^([A-Za-z]{3,9})\.?\s+(\d{1,2}),?\s+(\d{4})$/.exec(text);
+  if (named !== null) {
+    const month = MONTHS.indexOf(named[1]!.slice(0, 3).toLowerCase());
+    return month < 0 ? Number.NaN : Date.UTC(Number(named[3]), month, Number(named[2]));
+  }
+  const [day, clock] = text.split(/[T ]/);
+  if (clock === undefined) return Date.parse(day!);
+  return Date.parse(/(?:Z|[+-]\d{2}:?\d{2})$/.test(clock) ? `${day}T${clock}` : `${day}T${clock}Z`);
+}
+
+/**
+ * A world's own word on when it is being looked at, in every spelling `worlds/`
+ * uses today: "Today is 2026-08-15 and it is about 10:00 AM", "Today is Aug 12,
+ * 2026", "as of today, 2026-08-12", "`sla_minutes_remaining` is measured from
+ * now, 2026-08-12T15:10:00Z".
+ *
+ * The date, then the rest of the sentence, because several worlds put the hour
+ * beside the day and a screen that reads a clock deserves the one the world set.
+ */
+const DECLARED =
+  /\b(?:today is|today,|from now,)\s+(\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}(?::\d{2})?Z?)?|[A-Za-z]{3,9}\.? \d{1,2},? \d{4})([^.]*)/gi;
+
+/** "and it is about 10:00 AM", "about 14:22" — the hour beside the day. */
+const ABOUT = /\babout (\d{1,2}):(\d{2})\s*(AM|PM)?/i;
+
+/** That hour as milliseconds into the day. A world writing 24-hour time says no
+ *  meridiem, so its hour is already the hour. */
+function intoTheDay([, written, minute, meridiem]: RegExpExecArray): number {
+  const said = Number(written);
+  const hour = meridiem === undefined ? said : (said % 12) + (meridiem.toUpperCase() === "PM" ? 12 : 0);
+  return (hour * 60 + Number(minute)) * 60_000;
+}
+
+/** Every date a tool answered with, wherever it sits in the rows. */
+const DATED = /\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?)?/g;
+
+const A_DAY = 86_400_000;
+
+/**
+ * The moment a world is being looked at — decided by the WORLD, never by the
+ * laptop the run happens to be on.
+ *
+ * Every page used to be painted at the real wall-clock date, so a screen that
+ * printed "5 days ago" for a ticket dated 2026-08-12 was right on one morning
+ * and stale on the next, and the same saved page re-painted next year would say
+ * something different again. A benchmark whose answer moves overnight is not
+ * measuring the contender. The live run caught it: `support-desk/duplicate-merge`
+ * was failed for calling 2026-08-12 "5 days ago" while calling the OLDER
+ * 2026-08-10 "last week" — arithmetic against a clock the world does not share.
+ *
+ * Eleven of the fourteen worlds STATE when it is, in prose their contenders are
+ * given verbatim, so that word is the answer wherever it exists. The obvious
+ * alternative — the newest date in the rows, plus a day — is wrong for almost
+ * every world here, because rows carry the FUTURE as readily as the past: a
+ * lease that ends 2027-05-31, a coupon that expires 2026-12-31, an SLA due four
+ * days out. Taken literally it puts `property-management`'s today in June 2027,
+ * ten months past the "today is Aug 12 2026" its own tool descriptions state,
+ * which would render every active lease expired. So it is only the FALLBACK, for
+ * a world that says nothing — where it is at least deterministic, which is the
+ * property that matters most. A world with neither a statement nor a date in it
+ * pins nothing, and says so by answering `undefined`.
+ */
+export function worldToday(world: World): string | undefined {
+  const says = [world.app, ...world.style, ...world.tools.map((tool) => tool.descriptor.description ?? "")].join("\n");
+  // The LATEST of them, so a world that repeats itself does not depend on the
+  // order its tools happen to be declared in, and the statement that names an
+  // hour beats the one that names only the day.
+  const declared = [...says.matchAll(DECLARED)]
+    .map(([, day, tail]) => {
+      const at = instant(day!);
+      const about = ABOUT.exec(tail!);
+      return about === null || Number.isNaN(at) ? at : at + intoTheDay(about);
+    })
+    .filter((at) => !Number.isNaN(at));
+  if (declared.length > 0) return new Date(Math.max(...declared)).toISOString();
+
+  const dated = [...JSON.stringify(world.tools.map(cannedResponse)).matchAll(DATED)]
+    .map(([written]) => instant(written))
+    .filter((at) => !Number.isNaN(at));
+  return dated.length === 0 ? undefined : new Date(Math.max(...dated) + A_DAY).toISOString();
+}
+
 /**
  * The one seam every contender's page answers through, injected as the SAME
  * bytes whoever wrote the page: the recorder the click probe reads, answering
@@ -84,30 +199,92 @@ export const jsonScript = (id: string, value: unknown): string =>
  * The feed itself is `parent.postMessage`: that is what lets the report page
  * show a press in an embedded screen as it happens, tagged with the contender
  * whose frame fired it — with no server and no shared state.
+ *
+ * The world's own `today` rides along beside the rows, and for the same reason
+ * they do: `openBrowser` reads it back out and pins the page's clock to it, so
+ * the clock TRAVELS WITH THE PAGE. A saved page re-painted by the regrade pass
+ * or by the liveness pass — neither of which has a world in hand — is painted
+ * under the very clock it was shot under, months later, on any laptop.
+ *
+ * A WRITE IS GUARDED (2026-08-18), because that is what this product does with
+ * one. A destructive call is confirmed OUTSIDE the screen: the host answers
+ * `pending-approval` with an id at press time, the renderer paints "Waiting for
+ * your approval" in that control's own outcome slot
+ * (`outcomeNotice` in `ui/src/tree/renderer.tsx`), and the decision arrives from a
+ * surface the screen does not draw. The seam answered EVERY call `{status:"ok"}`
+ * on the spot, so the only confirmation this product actually ships was
+ * unrenderable on any page here — while a contender following its doctrine and
+ * building no confirm step of its own was failed on rubric lines asking for one.
+ * A write is parked and then approved a moment later, so the round trip completes
+ * where nobody has an approvals queue to answer with; the ask and its approval
+ * both reach the live feed, and the call the floor grades carries what the guard
+ * did with it. Which tools those are is `riskOf`'s answer and nobody else's — the
+ * same reading the write row and `checkConfirmation` use — so a world declares
+ * its own destructive verbs by not writing rows for them.
+ *
+ * READS are untouched: a screen fetching what it shows must never wait on an
+ * approval to draw. And a page that brings its own `window.vendo` answers itself,
+ * exactly as it already does for reads — the contract tells every contender the
+ * recorder is already there and not to define one.
  */
 function seam(world: World, contender: string): string {
   const tools = Object.fromEntries(world.tools.map((tool) => [tool.name, cannedResponse(tool) as Json]));
+  const writes = world.tools.filter((tool) => tool.descriptor.risk === "write").map((tool) => tool.name);
+  const today = worldToday(world);
+  // Prefixed, unlike the three ids beside it, because this one is the harness
+  // talking to ITSELF: no page reads it, and `today` unqualified is an id a real
+  // screen would plausibly use for a real panel — whose `getElementById("today")`
+  // would then find this tag instead. Written as a script so `shot()` strips it
+  // with the others: the clock the harness set is not evidence about the screen.
   return `${jsonScript("tools", tools)}
+${today === undefined ? "" : jsonScript("genbench-today", today)}
 <script>
 (function () {
   var tools = JSON.parse(document.getElementById("tools").textContent);
+  var writes = ${JSON.stringify(writes)};
   var contender = ${JSON.stringify(contender)};
+  var post = function (message) {
+    message.genbench = "call";
+    message.contender = contender;
+    message.ts = Date.now();
+    try {
+      parent.postMessage(message, "*");
+    } catch (ignored) {}
+  };
+  var asks = 0;
   window.vendo = {
     calls: [],
     callTool: function (name, args) {
-      window.vendo.calls.push({ name: name, args: args });
-      return Object.hasOwn(tools, name)
-        ? { status: "ok", output: tools[name] }
-        : { status: "error", error: { code: "not-found", message: "no tool " + name } };
+      var call = { name: name, args: args };
+      window.vendo.calls.push(call);
+      if (!Object.hasOwn(tools, name)) {
+        return { status: "error", error: { code: "not-found", message: "no tool " + name } };
+      }
+      if (writes.indexOf(name) < 0) return { status: "ok", output: tools[name] };
+      asks += 1;
+      var approvalId = "apr_" + asks;
+      call.status = "pending-approval";
+      call.approvalId = approvalId;
+      // Approved once the press's own work is done, and recorded on the very
+      // call it released — so a guarded write reads as one round trip and never
+      // as two presses. A MICROtask rather than a timer: the page still gets the
+      // parked answer back from its handler, while anything reading the record
+      // from outside the page (the probe, a test) reads it after the queue has
+      // drained, so the trace does not depend on which side of a frame the read
+      // landed on. With a timer it did, and one page recorded its first press
+      // approved and its second still pending.
+      queueMicrotask(function () {
+        call.status = "ok";
+        post({ name: name, args: args, approved: approvalId });
+      });
+      return { status: "pending-approval", approvalId: approvalId };
     },
   };
   addEventListener("load", function () {
     var vendo = window.vendo;
     var inner = vendo.callTool;
     vendo.callTool = function (name, args) {
-      try {
-        parent.postMessage({ genbench: "call", contender: contender, name: name, args: args, ts: Date.now() }, "*");
-      } catch (ignored) {}
+      post({ name: name, args: args });
       return inner.call(vendo, name, args);
     };
   });
@@ -197,8 +374,137 @@ ${seam(world, contender)}
  */
 const CHART_SCAFFOLDING = '[class*="recharts-cartesian-axis-tick"], #recharts_measurement_span';
 
+/** How many wide tables one screen gets a picture of. Past three, another
+ *  picture buys less than the judge's attention on the screen itself costs. */
+const MOST_WIDE_TABLES = 3;
+
+/**
+ * How much a scroller has to hide before it counts as hiding anything.
+ *
+ * A one- or two-pixel reading is not a column past a fold, it is arithmetic:
+ * rounded column widths summed against a rounded room, a fractional border, a
+ * scrollbar gutter — the same overshoot `unrounded` exists for in the Kit's own
+ * `data-table.tsx`. Believing one is expensive. A 2px artifact on
+ * `subscription-billing/renewal-schedule`'s root Stack armed this whole path on
+ * 45 of 54 vendo cases, and on that one it cost the case. 8px is under one
+ * character at any size any screen here draws, so nothing a person could read
+ * hides beneath this.
+ */
+const PAST_THE_FOLD_PX = 8;
+
+/**
+ * The widest picture worth taking.
+ *
+ * `max-content` leaves the expanded block's own width INDEFINITE, and a
+ * `width:100%` child of an indefinite block resolves against Chromium's 1e6px
+ * sentinel — measured at 1,000,002px on the case above, where a `<select>` did
+ * exactly that and Chromium answered the element shot with `Unable to capture
+ * screenshot`. A ceiling keeps the picture inside what Chromium will capture
+ * whatever the layout does, and past a few thousand pixels a shot of a table is
+ * unreadable anyway.
+ */
+const WIDEST_SHOT_PX = 4000;
+
+/** The mark the expansion below leaves on a container so the shooter out here can
+ *  find it again, taken off with the widths it set. */
+const WIDE = "data-genbench-wide";
+
+/**
+ * A table that scrolls sideways, shot at its FULL width (2026-08-18).
+ *
+ * The graded shot is the `VIEWPORT`, and a table wider than that keeps its
+ * right-hand columns past the fold — where a person reaches them by scrolling and
+ * the judge could not reach them at all. Three style lines were failed on
+ * conventions that were on the screen the whole time, in the columns nobody
+ * scrolled to. So the fold gets its own picture, and the judge is told what it is
+ * looking at (`SYSTEM_PROMPT` in `judge.ts`). Written against the frame rather
+ * than against a width, so widening the frame is one edit up there and none here.
+ *
+ * The container is found from the TABLE outwards, and the walk STOPS at the first
+ * ancestor that clips the table at all — that element is where the table's
+ * overflow ends, so the Kit's `overflow-x:auto` wrapper (`data-table.tsx`) and a
+ * hand-written one are found by one rule, and a column that draws its table with
+ * `role="table"` divs is read the same way. If that wrapper scrolls, its picture
+ * is what scrolling reveals; if it merely clips (`hidden`, `clip`) then nothing
+ * past it is reachable by a person either, so there is nothing to reveal.
+ *
+ * Nothing further out is ever the answer, and the page itself never is. Walking
+ * on until SOMETHING measured wide is what broke the case this guard is written
+ * from: the walk climbed past a scroll wrapper with nothing to scroll, out to
+ * `subscription-billing/renewal-schedule`'s root Stack, and widened the page's own
+ * layout — which resolved a `width:100%` `<select>` to 1e6px and threw out of the
+ * shot. Anything with nothing to scroll pays one `evaluate` and no screenshots,
+ * which is most cases.
+ *
+ * `max-content` rather than a measured width: it is whatever the table asks for,
+ * including columns a resize observer hands back once the room is there. And the
+ * page is put back exactly as it was, because the probe walks it next — a table
+ * left expanded is not the screen that was graded.
+ */
+async function wideTables(page: Page): Promise<Buffer[]> {
+  const was = await page.evaluate(
+    ([mark, most, fold, widest]: [string, number, number, number]) => {
+      const scrollers = new Set<HTMLElement>();
+      for (const table of document.querySelectorAll<HTMLElement>('table, [role="table"]')) {
+        // Never `document.body` or the element above it: a document that scrolls
+        // sideways is the page's own layout, not a table's fold.
+        for (let node: HTMLElement | null = table; node !== null && node !== document.body; node = node.parentElement) {
+          const overflowX = getComputedStyle(node).overflowX;
+          if (overflowX === "visible") continue;
+          if ((overflowX === "auto" || overflowX === "scroll") && node.scrollWidth - node.clientWidth > fold) {
+            scrollers.add(node);
+          }
+          break;
+        }
+      }
+      return [...scrollers].slice(0, most).map((node, index) => {
+        const style = node.getAttribute("style");
+        node.setAttribute(mark, String(index));
+        node.style.width = "max-content";
+        node.style.maxWidth = `${widest}px`;
+        node.style.overflow = "visible";
+        return style;
+      });
+    },
+    [WIDE, MOST_WIDE_TABLES, PAST_THE_FOLD_PX, WIDEST_SHOT_PX] as [string, number, number, number],
+  );
+
+  const shots: Buffer[] = [];
+  // One at a time: two element shots of one page would race each other's scroll.
+  for (let index = 0; index < was.length; index += 1) {
+    try {
+      shots.push(await page.locator(`[${WIDE}="${index}"]`).screenshot());
+    } catch {
+      // A BONUS picture, and the screen it belongs to has already been shot and
+      // read. So a shot that cannot be taken costs nothing but itself: no record,
+      // the styles below still come off, and the next one is still tried. It cost
+      // a whole case once — `Unable to capture screenshot` threw out of `shot()`
+      // and auto-failed all eleven of one case's rubric lines.
+    }
+  }
+
+  await page.evaluate(
+    ([mark, styles]: [string, Array<string | null>]) => {
+      styles.forEach((style, index) => {
+        const node = document.querySelector(`[${mark}="${index}"]`);
+        if (node === null) return;
+        node.removeAttribute(mark);
+        if (style === null) node.removeAttribute("style");
+        else node.setAttribute("style", style);
+      });
+    },
+    [WIDE, was] as [string, Array<string | null>],
+  );
+  return shots;
+}
+
 export interface Shot {
   readonly png: Buffer;
+  /** Every horizontally scrollable table on the settled screen, shot at its full
+   *  scroll width — what a person reaches by scrolling sideways and the viewport
+   *  shot above cannot hold. Empty for a screen with nothing to scroll, which is
+   *  most of them. */
+  readonly tables: readonly Buffer[];
   /** The page's visible text minus chart axis ticks — the same extraction for
    *  every contender, which is what makes the fabrication check comparable
    *  across artifact formats. */
@@ -232,12 +538,34 @@ export interface Shooter {
   close(): Promise<void>;
 }
 
+/** The world's `today` as `seam` wrote it into the page. */
+const TODAY = jsonScriptRe("genbench-today");
+
 /** One browser for the whole run; every case reuses it. */
 export async function openBrowser(): Promise<Shooter> {
   const browser: Browser = await chromium.launch();
   return {
     async visit(html) {
-      const page = await browser.newPage({ viewport: { ...VIEWPORT } });
+      // UTC, because the worlds speak Z and the screens must too. Chromium takes
+      // the operator's zone otherwise, so every `2026-08-12T15:10:00Z` a tool
+      // answered painted seven hours earlier than it says on a Pacific laptop —
+      // and the judge, comparing the screen against the tool data it is given in
+      // Z, correctly reported the difference as invention. It failed the honesty
+      // line on `support-desk/ticket-detail` and `queue-split` for exactly that
+      // ("message timestamps like 'Aug 10, 1:12 AM' do not correspond to any
+      // tool value (08:12Z)"), in both columns, which is a harness bug both
+      // columns were charged for.
+      const page = await browser.newPage({ viewport: { ...VIEWPORT }, timezoneId: "UTC" });
+      // And the DAY the page believes it is, from the world rather than from the
+      // calendar. `setFixedTime` rather than `install`: it freezes what `Date`
+      // reads while leaving every timer running on real time, which the settle
+      // depends on — the double `requestAnimationFrame` in `authoredPage` and in
+      // `mount.tsx`, `mount.tsx`'s VM grace `setTimeout`, and the polling behind
+      // `waitForFunction` below. `install` would stop all four and nothing would
+      // ever settle. Set before the first `setContent`, and it rides an init
+      // script, so `reset()` re-paints under the same clock.
+      const today = TODAY.exec(html);
+      if (today !== null) await page.clock.setFixedTime(new Date(JSON.parse(today[1]!) as string));
       // "NO network at all" is a rule every contender is graded on, so the
       // harness has to be held to it too: a CDN font that happens to resolve on
       // the operator's laptop is a screen that cannot be reproduced anywhere
@@ -327,6 +655,11 @@ export async function openBrowser(): Promise<Shooter> {
             // person sees at this size is all anyone sees, and a full-page shot
             // handed the judge a screen no person was ever shown.
             png: await page.screenshot(),
+            // Then the fold's own pictures — taken after the shot and after the
+            // reading above, both of which are of the screen exactly as it was
+            // graded. This is the only thing here that touches the page, and it
+            // puts back what it moved.
+            tables: await wideTables(page),
             visibleText,
             dom,
             renders: mounted && consoleErrors.length === 0,

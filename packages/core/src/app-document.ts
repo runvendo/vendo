@@ -190,14 +190,26 @@ export const appMemorySchema = z.object({
  * never the location of record — that is a placement ROW), and `review` carries
  * the captured baseline's review kind.
  *
- * `instruction` is what the person asked for when they made the remix, VERBATIM.
- * There are no bare forks — the ✦ gesture collects it before it fires — and it is
- * what a re-seed replays against the host's new baseline.
+ * `wishes` is EVERY change the person has asked of this remix, VERBATIM and in
+ * order, the ✦ gesture's own first. There are no bare forks — the gesture
+ * collects the first wish before it fires — and a re-seed replays the WHOLE list
+ * against the host's new baseline, so a wish missing here is an edit the person
+ * silently loses. Unlike {@link AppMemory.asks}, a capped working set, this list
+ * is never trimmed: it IS the remix.
  */
 export interface AppSeed {
   component: string;
   baseline: string;
-  instruction: string;
+  wishes: string[];
+  /**
+   * The key in {@link AppDocument.components} holding the PORT — the host
+   * component re-split against `baseline` for this remix to build its wishes on.
+   * Absent until a re-split has run.
+   */
+  port?: string;
+  /** Wishes the last re-seed could not land on the new baseline. Still in
+   *  `wishes` — kept and reported, never dropped. */
+  unapplied?: string[];
   slot?: string;
   review?: boolean;
 }
@@ -206,15 +218,21 @@ export interface AppSeed {
 export const appSeedSchema = z.object({
   component: z.string(),
   baseline: z.string(),
-  // Seeds stored before the ✦ gesture collected an instruction have none, and a
-  // required field would make every one of those apps unreadable. Defaulted on
-  // READ so the field stays required for everything that writes a seed.
-  instruction: z.string().default(""),
+  wishes: z.array(z.string()).optional(),
+  // Seeds stored before the wish list carry one `instruction` (and the oldest of
+  // all carry none), and a required field would make every one of those apps
+  // unreadable. Lifted on READ so the list stays required for everything that
+  // writes a seed — the parsed shape is still an AppSeed; only the INPUT is
+  // looser than one.
+  instruction: z.string().optional(),
+  port: z.string().optional(),
+  unapplied: z.array(z.string()).optional(),
   slot: z.string().optional(),
   review: z.boolean().optional(),
-  // The parsed shape is still an AppSeed; only the INPUT is looser than one,
-  // which is what a default means.
-}).passthrough() satisfies z.ZodType<AppSeed, z.ZodTypeDef, unknown>;
+}).passthrough().transform(({ instruction, wishes, ...seed }) => ({
+  ...seed,
+  wishes: wishes ?? (instruction === undefined || instruction === "" ? [] : [instruction]),
+})) satisfies z.ZodType<AppSeed, z.ZodTypeDef, unknown>;
 
 /**
  * The stable generated-component name a seeded app's copy of the host component

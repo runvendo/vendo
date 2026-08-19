@@ -404,7 +404,7 @@ describe("vendo_make (the pack's app door)", () => {
     expect(description).toMatch(/never describe|never say it is created/i);
   });
 
-  it("takes vendo_make's own arguments: request required, context/app/slot optional", async () => {
+  it("takes vendo_make's own arguments: request required, context/app/slot/component optional", async () => {
     const { byName } = await pack({
       implementations: { ...hostTools(), [VENDO_MAKE_TOOL]: makeTool({ appId: "app_schema", name: "x" }) },
     });
@@ -416,10 +416,42 @@ describe("vendo_make (the pack's app door)", () => {
         context: { type: "string", minLength: 1 },
         app: { type: "string", minLength: 1 },
         slot: { type: "string", minLength: 1 },
+        component: { type: "string", minLength: 1 },
       },
       required: ["request"],
       additionalProperties: false,
     });
+  });
+
+  /** Parity with the door, and the reason it matters: this schema is CLOSED, so
+   *  an argument missing here is not a smaller loadout — it is an affordance
+   *  that cannot be reached at all. The ✦ on a host component shipped dead
+   *  through every adopted agent for exactly this reason. */
+  it("takes `component` and forwards it to vendo_make", async () => {
+    const seen: Json[] = [];
+    const implementations = {
+      ...hostTools(),
+      [VENDO_MAKE_TOOL]: {
+        descriptor: makeTool({ appId: "app_remix", name: "Net worth" }).descriptor,
+        execute: (args: Json): Json => {
+          seen.push(args);
+          return { id: "app_remix", title: "Net worth", status: "ready", say: "Net worth is on your screen." };
+        },
+      },
+    };
+    const { byName } = await pack({ implementations });
+    const tool = byName.get(VENDO_MAKE_TOOL)!;
+
+    // The SCHEMA assertion is the load-bearing half: `execute` forwards whatever
+    // it is handed either way, so a forwarding check alone passes on a door the
+    // model can never send this argument through.
+    expect((tool.inputSchema as { properties: Record<string, unknown> }).properties.component).toEqual({
+      type: "string",
+      minLength: 1,
+    });
+    await tool.execute({ request: "add a sparkline", component: "NetWorthCard" }, { ctx: ctx() });
+
+    expect(seen).toEqual([{ request: "add a sparkline", component: "NetWorthCard" }]);
   });
 
   /** Parity with the MCP door: an in-process agent can say where the screen

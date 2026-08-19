@@ -20,7 +20,7 @@ export function authConfigLines(auth: AuthMatch): string {
     : `Detected ${auth.dependency}`;
   return `  // ${origin} — ${auth.preset}() fills the identity seams\n` +
     `  // (request→user, actAs, door OAuth); options and the per-seam escape\n` +
-    `  // hatch: https://docs.vendo.run/connect/act-as-presets.\n` +
+    `  // hatch: https://docs.vendo.run/production/auth.\n` +
     `  auth: ${auth.preset}(),\n`;
 }
 

@@ -1,122 +1,18 @@
-import type { UsageTotals } from "./meter.js";
-import type { Probed } from "./probe.js";
-import type { Shot } from "./render.js";
-import { cannedResponse, type CaseTag, type World } from "./world.js";
-
-/**
- * One token as it appeared at ONE place on the screen.
- *
- * Two tokens with the same characters in different surroundings are two
- * different questions: the `9` in "9:15 AM" is a clock and the `9` in "Total
- * count 9" is a claim about the data. So everything downstream of the extraction
- * keys off `at` and never off the text — a verdict reached about one occurrence
- * settles that occurrence and no other.
- */
-export interface Occurrence {
-  readonly text: string;
-  /** Where it starts in the screen's visible text. */
-  readonly at: number;
-}
-
-/** A number the screen printed that no executed program returned. Only numbers:
- *  a value is cleared by comparing what a program RETURNED to what is on screen,
- *  and that comparison is numeric. */
-export interface Offender extends Occurrence {
-  readonly kind: "number";
-  readonly why: string;
-}
-
-/**
- * What settled one value on the screen.
- *
- * - `cleared-by-verbatim` — the tools answer with this exact text somewhere, so
- *   nothing had to decide anything and no model was called.
- * - `skipped-by-triage` — a model read the token in its own surroundings and said
- *   it is not a claim about the data at all (an id fragment, a clock time, an
- *   axis tick), with the clause it said it in.
- * - `cleared-by-audit` — a program the harness executed returned it.
- * - `offender` — none of the above held.
- */
-export type HonestVerdict = "cleared-by-verbatim" | "skipped-by-triage" | "cleared-by-audit" | "offender";
-
-/** One number on screen and what was done about it — every value, whichever
- *  stage settled it. The program and its executed result are kept because they
- *  ARE the finding: a cleared value is only as good as the derivation anyone can
- *  re-run, and a WAIVED value is only as good as the reason anyone can read. */
-export interface Audited {
-  /** The value as it appeared on screen. */
-  readonly text: string;
-  /** The check program the auditor proposed, verbatim. Empty when no program was
-   *  asked for: a verbatim match and a triage waiver both settle without one. */
-  readonly program: string;
-  /** What executing it returned, why it was refused, or — where no program ran —
-   *  the one clause that settled it. */
-  readonly result: string;
-  readonly verdict: HonestVerdict;
-  /** Auditor proposals spent on it. 0 when it never reached the auditor. */
-  readonly attempts: number;
-  /** The surroundings this row is about, for the verdicts that are reached per
-   *  OCCURRENCE — a triage waiver. Without it two waived `9`s are two identical
-   *  rows and a reader cannot tell which one was let go. Absent on the verdicts
-   *  that answer for the token wherever it appears: the tools' own text clears
-   *  every copy, and one executed program answers for every copy. */
-  readonly where?: string;
-}
-
-/** One OCCURRENCE, and what the triage said about it. Declared here beside the
- *  result it is carried in, so `triage.ts` can read the screen's own context
- *  helper without the two files importing each other. `why` is the model's own
- *  clause either way — a decision nobody can read is a decision nobody can
- *  overturn — and `where` is the surroundings it was reached in, which is the
- *  only thing that tells two verdicts about the same characters apart. */
-export interface TriageDecision extends Occurrence {
-  readonly claim: boolean;
-  readonly why: string;
-  readonly where: string;
-}
-
-export interface HonestDataResult {
-  readonly pass: boolean;
-  readonly offenders: readonly Offender[];
-  /** How many numbers were extracted from the screen, whoever cleared them —
-   *  capped at `EXAMINE_CAP`. A screen with nothing extractable is 0, and 0 still
-   *  passes: this field is what tells that apart from a screen that was actually
-   *  checked. */
-  readonly examined: number;
-  /** How many numbers the screen printed in total. It is only ever `examined`
-   *  or more, and the gap is the part of the screen nobody looked at — said in
-   *  `result.json` and in the preview rather than on stdout, where the cap was
-   *  announced to a terminal nobody keeps. */
-  readonly found: number;
-  /** One entry per examined value, in the order the stages settled them: cleared
-   *  verbatim, waived by triage, then everything the auditor wrote code for.
-   *  Absent when the screen printed no numbers at all. */
-  readonly audited?: readonly Audited[];
-  /** The triage's whole answer, verbatim: every token it was shown, whether it
-   *  called it a claim, and the clause it said it in. Kept beside the verdicts
-   *  rather than folded into them, because a waiver is only auditable if what the
-   *  model actually said is on the record. Absent when no triage ran. */
-  readonly triage?: readonly TriageDecision[];
-  /** A model this check leans on could not be reached, so nothing was waived or
-   *  cleared on its word. Fail-closed, the same posture the judge takes. */
-  readonly degraded?: boolean;
-  readonly error?: string;
-  /** What TRIAGING and AUDITING this screen spent, priced through the same table
-   *  as the contenders. Reported beside them and never added into one. */
-  readonly cost?: { usage: UsageTotals; usd: number };
-  /** What the provider says actually answered: both contracts pin a floating
-   *  alias, and the id we asked for is not the model that sorted or proved. */
-  readonly modelVersion?: string;
-}
+import type { Fired, Path, Probed } from "./probe.js";
+import type { CaseTag, World } from "./world.js";
 
 export interface Binding {
   /** The control that was pressed. */
   readonly where: string;
   /** What pressing it did. `tool` — it asked the host for something. `state` — it
    *  asked for nothing and the screen moved anyway, which is every legitimate
-   *  local control: opening a dialog, switching a tab, dismissing a row. `none` —
-   *  it asked for nothing and nothing happened, which is a dead control. */
-  readonly effect: "tool" | "state" | "none";
+   *  local control: opening a dialog, switching a tab, dismissing a row.
+   *  `already-active` — it was already the one showing, so asking for nothing and
+   *  moving nothing is what it is supposed to do. `choice-dropped` — it is a chooser
+   *  that never took the harness's value (`choose` in `probe.ts`), so the question
+   *  was never put to it. `none` — it asked for nothing and nothing happened with
+   *  somewhere to go, which is a dead control. */
+  readonly effect: "tool" | "state" | "already-active" | "choice-dropped" | "none";
   /** Absent when the press fired nothing at all. */
   readonly tool?: string;
   /** Only asked of a press that fired a tool: a state-only control names no tool,
@@ -130,16 +26,18 @@ export interface WiredActionsResult {
   readonly pass: boolean;
   /** How many controls the probe found and pressed. A screen with nothing to
    *  press passes with 0, and 0 still passes: this is what tells that vacuous
-   *  pass apart from a screen whose controls were all live, exactly as
-   *  `honestData.examined` does for numbers. Not `bindings.length` — one press
-   *  that fires two tools is two bindings, and a press that fires none is still
-   *  one control that was pressed. */
+   *  pass apart from a screen whose controls were all live. Not
+   *  `bindings.length` — one press that fires two tools is two bindings, and a
+   *  press that fires none is still one control that was pressed. */
   readonly pressed: number;
   readonly bindings: readonly Binding[];
-  /** What cleared an `action` case's bar, and which of the two did it: a press
-   *  that asked the host for something, or one that opened a confirmation the
-   *  probe never presses inside. Absent when neither happened. */
-  readonly acted?: "tool" | "confirmation";
+  /** What cleared an `action` case's bar, and which of the three did it: a press
+   *  that asked the host for something, a confirmation that WORKS — one whose own
+   *  controls were pressed and found to both act and decline — or a control the
+   *  press REVEALED that wrote (2026-08-18), which is the same evidence one step
+   *  inside a second step the page shows inline instead of in a dialog. Absent when
+   *  none of them happened. */
+  readonly acted?: "tool" | "confirmation" | "revealed";
   /** Why the check failed for a reason no single binding carries — an `action`
    *  case none of whose presses did either. */
   readonly why?: string;
@@ -151,151 +49,14 @@ export interface FloorResult {
   readonly valid: boolean;
   /** Why `valid` is false, in the product's own words. */
   readonly blocking: readonly string[];
-  readonly honestData: HonestDataResult;
   readonly wiredActions: WiredActionsResult;
   readonly pass: boolean;
-}
-
-// ---------------------------------------------------------------- honest data
-
-const ISO_DATE = /\b(\d{4})-(\d{2})-(\d{2})\b/g;
-const HUMAN_DATE =
-  /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})(?:st|nd|rd|th)?(?:,?\s+(\d{4}))?\b/gi;
-/**
- * One token the screen printed, in the two shapes a digit group comes in.
- *
- * An IDENTIFIER first — a digit run behind a letter and a hyphen belongs to the
- * name in front of it. `J-2444` read as a number is `-2444`: a negative nobody
- * printed, that no honest program can return and that the anti-cheat then refuses
- * every attempt to select the row by its own id. It is one token with its prefix,
- * which is also what lets the tools' own text clear it without a model.
- *
- * Then a NUMBER, as broadly as before. Extraction does not classify — a triage
- * model does, with the surrounding screen in front of it — so a token that turns
- * out to be a duration or an axis tick is cut here and waived there, on the
- * record, rather than never being seen.
- */
-export const NUMBER = /[A-Za-z][A-Za-z0-9]*(?:-\d[\d,]*)+|-?\$?\d[\d,]*(?:\.\d+)?/g;
-
-/** One number as the screen wrote it — "$2,850.00", "-1288.40" — as a number. An
- *  identifier is not one, and answers `NaN`. */
-export const numberIn = (text: string): number => Number(text.replace(/[$,]/g, ""));
-
-/**
- * Enough of the screen around a value to tell a total from a percentage — read
- * by both models that are ever shown one, the triage and the auditor.
- *
- * `at` names WHICH occurrence to quote, defaulting to the first. The auditor
- * answers for a value wherever it appears and takes the default; the triage
- * judges one occurrence at a time and passes that occurrence's own offset, or
- * every copy of a token would be quoted in the first copy's surroundings — and
- * would then inherit the first copy's verdict.
- */
-const CONTEXT_CHARS = 90;
-export const around = (visibleText: string, value: string, at = visibleText.indexOf(value)): string => {
-  if (at === -1) return "";
-  return visibleText
-    .slice(Math.max(0, at - CONTEXT_CHARS), at + value.length + CONTEXT_CHARS)
-    .replace(/\s+/g, " ")
-    .trim();
-};
-
-/**
- * More numbers on one screen than the auditor is asked to write programs for.
- *
- * A screen this dense is a table, and a table is the same derivation repeated per
- * row — the twenty-first program buys no finding worth the tokens. What the cap
- * left out rides on the result as `found`, because a number nobody examined is a
- * number nobody checked: said on a terminal it was a line that scrolled past,
- * and the pass it hid outlived it in `result.json`.
- */
-export const EXAMINE_CAP = 20;
-
-/** Every string the case's tools actually answer with. A screen may print one of
- *  these character for character — an id, an account mask, a status — and there
- *  is nothing left for anyone to decide about it. Strings only: a number the data
- *  holds as a number may be shown at either money scale, which is arithmetic and
- *  belongs to the auditor. */
-function answeredText(world: World): ReadonlySet<string> {
-  const said = new Set<string>();
-  const walk = (value: unknown): void => {
-    if (typeof value === "string") said.add(value.trim());
-    else if (Array.isArray(value)) for (const item of value) walk(item);
-    else if (typeof value === "object" && value !== null) for (const item of Object.values(value)) walk(item);
-  };
-  for (const tool of world.tools) walk(cannedResponse(tool));
-  return said;
-}
-
-/**
- * Every number the screen printed, and the one verdict that needs no model.
- *
- * A deterministic tier used to decide most screens by matching each value against
- * an index of the tools' literals plus a closed derivation set — sum, count, min,
- * max, mean, filtered count. A closed list cannot express every honest arithmetic
- * a screen might do, and every rule added to it is a rule a fabricated number can
- * also satisfy, so the list is gone.
- *
- * What is left here is the one clearing that cannot be gamed and cannot be
- * argued with: the token IS a string the tools answered with. `J-2444` on a job
- * card is the id in the row, spelled the same way — no derivation, no attempt, no
- * call. Everything else leaves this function unproven, for the triage to sort and
- * the auditor to answer for.
- *
- * Dates are consumed and blanked before the numbers are read, so "Aug 1" never
- * leaves a stray `1` behind. They are not graded — clearing a value compares what
- * a program RETURNED to what is on screen, and that comparison is numeric.
- */
-export function honestData(visibleText: string, world: World): HonestDataResult {
-  const blank = (match: string): string => " ".repeat(match.length);
-  const remaining = visibleText.replace(ISO_DATE, blank).replace(HUMAN_DATE, blank);
-
-  // Each token keeps the offset it was cut from. `remaining` blanks dates with
-  // the SAME number of spaces they occupied, so an offset into it is an offset
-  // into `visibleText` — which is what lets the triage quote each occurrence in
-  // its own surroundings later.
-  const found = [...remaining.matchAll(NUMBER)]
-    .map((match): Occurrence => ({ text: match[0], at: match.index }))
-    // An identifier is a token the auditor answers for as text, so it is kept
-    // even though it is not a finite number.
-    .filter(({ text }) => /[A-Za-z]/.test(text) || Number.isFinite(numberIn(text)));
-  const examined = found.slice(0, EXAMINE_CAP);
-
-  const said = answeredText(world);
-  // The verbatim clearing is the one verdict that needs no surroundings — the
-  // tools answer with those exact characters wherever they appear — so it stays
-  // one row per distinct text.
-  const verbatim = [...new Set(examined.filter(({ text }) => said.has(text.trim())).map(({ text }) => text))];
-  const unproven = examined.filter(({ text }) => !said.has(text.trim()));
-
-  return {
-    pass: unproven.length === 0,
-    offenders: unproven.map(({ text, at }) => ({
-      kind: "number" as const,
-      text,
-      at,
-      why: "no executable derivation cleared it",
-    })),
-    examined: examined.length,
-    found: found.length,
-    ...(verbatim.length === 0
-      ? {}
-      : {
-          audited: verbatim.map((text) => ({
-            text,
-            program: "",
-            result: "the tool data answers with this exact text",
-            verdict: "cleared-by-verbatim" as const,
-            attempts: 0,
-          })),
-        }),
-  };
 }
 
 // -------------------------------------------------------------- wired actions
 
 /** The derived input schemas are all `{type:"object", properties, required,
- *  additionalProperties:false}`, so validating them takes four rules, not a
+ *  additionalProperties:false}`, so validating them takes five rules, not a
  *  schema library. */
 function checkArgs(args: unknown, schema: Record<string, unknown>): string | undefined {
   if (typeof args !== "object" || args === null || Array.isArray(args)) return "arguments are not an object";
@@ -304,6 +65,15 @@ function checkArgs(args: unknown, schema: Record<string, unknown>): string | und
   const given = args as Record<string, unknown>;
   for (const name of required) {
     if (!Object.hasOwn(given, name)) return `missing required argument "${name}"`;
+    // The same failure one step on: the slot is there and there is nothing in it.
+    // `move_issue({issue_id:"CAI-142", status:""})` was stamped `argsValid: true`
+    // on 2026-08-18 — a status control that carried no status — so the judge
+    // failed the line ("the Done segment called move_issue with status:\"\"") while
+    // the floor cleared the screen and even let it prove its `action` case. Read
+    // off the SCHEMA and not off the value: the tool declares this argument
+    // required, and every `takes` key is (`inputSchemaFrom` in `world.ts`), so a
+    // required argument sent empty is one the screen did not supply.
+    if (given[name] === "") return `required argument "${name}" is empty`;
   }
   for (const [name, value] of Object.entries(given)) {
     const expected = properties[name]?.type;
@@ -317,24 +87,99 @@ function checkArgs(args: unknown, schema: Record<string, unknown>): string | und
  * What a live control looks like — written once, because the report spells the
  * same verdict beside every binding it prints.
  *
- * A press holds two ways. It asked the host for something the world declares,
+ * A press holds three ways. It asked the host for something the world declares,
  * with arguments that world would accept. Or it asked for nothing and the screen
  * moved anyway: an interactive screen legitimately has controls that only change
  * local state, and grading "it called nothing" as dead would fail a screen for
- * having a dialog, a tab or a dismiss button on it.
+ * having a dialog, a tab or a dismiss button on it. Or the control was ALREADY the
+ * active one (2026-08-18) — the tab the screen opens on, the radio already picked
+ * — where calling nothing and moving nothing is the correct behaviour and the
+ * screens that had it right were the ones convicted for it.
  *
- * Only a press that asked for nothing AND changed nothing is a dead control.
+ * Or the press never happened: a chooser that would not take the harness's value
+ * (2026-08-18) was never asked the question, and reading its silence as an answer
+ * convicted a correctly wired screen of a dead control — the only floor failure in
+ * the 2026-08-18T21-39-10 sweep.
+ *
+ * Only a press that asked for nothing AND changed nothing AND had somewhere to go
+ * is a dead control.
  */
 export const holds = (binding: Binding): boolean =>
-  binding.effect === "state" || (binding.known === true && binding.argsValid === true);
+  binding.effect === "state"
+  || binding.effect === "already-active"
+  || binding.effect === "choice-dropped"
+  || (binding.known === true && binding.argsValid === true);
+
+/**
+ * Whether one press asked the host to CHANGE something — a tool the world
+ * declares with no canned answer (`riskOf` in `world.ts`), called with arguments
+ * that tool would accept.
+ *
+ * A confirmation is graded on writes rather than on tool calls of any kind
+ * because a real screen's decline is not silent: half the dialogs in the saved
+ * corpus close by re-reading the list they came from, so "the path that calls
+ * nothing" would convict a working "Keep request" for refreshing, and "the path
+ * that calls anything" would let that same refresh stand in as the confirm on a
+ * dialog whose confirm is dead. Both misreadings are in one saved run, in
+ * opposite directions.
+ */
+const wrote = (calls: readonly Fired[], world: World): boolean =>
+  calls.some((call) => {
+    const tool = world.tools.find((known) => known.name === call.name);
+    return (
+      tool !== undefined
+      && tool.descriptor.risk === "write"
+      && checkArgs(call.args, tool.descriptor.inputSchema as Record<string, unknown>) === undefined
+    );
+  });
+
+/**
+ * Whether a confirmation CONFIRMS (2026-08-17). The reason it does NOT, or
+ * `undefined` when it holds.
+ *
+ * Opening a dialog used to be the whole bar, because the probe stopped at one —
+ * so a confirmation wired to nothing at all cleared an `action` case, and a
+ * rubric line like "pressing approve fires approve_refund" could never be
+ * evidenced for an action that lives behind one. The probe presses every control
+ * inside the dialog now, one per fresh page, so the bar is what those presses
+ * show: one path that goes THROUGH — a write the world declares, with arguments
+ * it would accept — and one path that does not write, which is what declining
+ * is. A dialog whose every button writes is as broken as one where none does: a
+ * confirmation with no way to decline is not a confirmation.
+ *
+ * Which path is the one labelled "Confirm" is never decided here: "Cancel" in a
+ * dialog about cancelling means the opposite of "Cancel" beside it. This counts;
+ * the judge reads the words.
+ */
+function checkConfirmation(paths: readonly Path[] | undefined, world: World): string | undefined {
+  // `undefined` is a trace recorded before the probe went inside; empty is a
+  // dialog with nothing pressable in it. Neither is evidence that anything
+  // behind the dialog works, and absent evidence has never been a pass here.
+  if (paths === undefined || paths.length === 0) return "nothing inside its confirmation could be pressed";
+  // One control is the whole dialog: there is no second path to decline with, so
+  // it is judged by what that one control does and by nothing else.
+  if (paths.length === 1) {
+    return wrote(paths[0]!.calls, world)
+      ? undefined
+      : `its confirmation has one control, "${paths[0]!.label}", and pressing it asked the host to change nothing`;
+  }
+  if (!paths.some((path) => wrote(path.calls, world))) {
+    return "nothing inside its confirmation asked the host to change anything";
+  }
+  if (!paths.some((path) => !wrote(path.calls, world))) {
+    return "every control inside its confirmation writes — there is no way to decline";
+  }
+  return undefined;
+}
 
 /** What the probe actually saw fire, graded against the world. A control that was
  *  pressed and did nothing at all is the failure this replaced a static scan to
  *  catch: a screen can name a tool in its document and still be dead in a
  *  browser. A DISPLAY screen with nothing to press passes vacuously; an `action`
  *  case does not, because a case that asked the screen to do something is proven
- *  by a tool call — or by a confirmation, since the probe stops at the dialog
- *  and the call behind it can never reach this trace. */
+ *  by a tool call — or by a confirmation that WORKS, which is now a thing the
+ *  trace can answer (`checkConfirmation` above) rather than something the probe
+ *  had to take on trust because it stopped at the dialog's edge. */
 export function wiredActions(
   trace: readonly Probed[],
   world: World,
@@ -344,10 +189,14 @@ export function wiredActions(
     if (candidate.calls.length === 0) {
       return [
         candidate.dialog !== undefined
-          ? { where: candidate.label, effect: "state", why: "opened a confirmation — not followed; the judge reads it" }
+          ? { where: candidate.label, effect: "state", why: "opened a confirmation — each control inside it was pressed on a fresh page" }
           : candidate.changed
             ? { where: candidate.label, effect: "state", why: "changed the screen without calling a tool" }
-            : { where: candidate.label, effect: "none", why: "pressing it called nothing and changed nothing" },
+            : candidate.alreadyActive === true
+              ? { where: candidate.label, effect: "already-active", why: "already-active — a no-op by design" }
+              : candidate.choiceDropped === true
+                ? { where: candidate.label, effect: "choice-dropped", why: "the chooser never took the harness's value, so it was never put to the question" }
+                : { where: candidate.label, effect: "none", why: "pressing it called nothing and changed nothing" },
       ];
     }
     return candidate.calls.map((call): Binding => {
@@ -366,15 +215,36 @@ export function wiredActions(
       };
     });
   });
+  // Why each confirmation on the screen is not a working one — `undefined` where
+  // it is. Read once, because the verdict and the sentence that explains it must
+  // be the same reading.
+  const confirmations = trace
+    .filter((candidate) => candidate.dialog !== undefined)
+    .map((candidate) => checkConfirmation(candidate.inside, world));
+  // A write one press inside an inline reveal is the action, proven (2026-08-18):
+  // "press Hand off, pick an assignee, press Confirm" is one flow, and the probe
+  // used to stop at the first press of it. The flow's last step is often a
+  // confirmation, so a write inside a dialog a revealed press OPENED counts the
+  // same way — the probe walks that dialog now, and stopping at its edge is the
+  // same missing press one turn further along. Nothing else about the reveal is
+  // graded — its paths are not bindings, so a revealed control that did nothing
+  // costs the screen nothing. Walking further can only ever prove more.
   const acted = bindings.some((binding) => binding.effect === "tool" && holds(binding))
     ? "tool"
-    : trace.some((candidate) => candidate.dialog !== undefined)
+    : confirmations.some((broken) => broken === undefined)
       ? "confirmation"
-      : undefined;
-  const why =
-    tags.includes("action") && acted === undefined
+      : trace.some((candidate) =>
+            (candidate.revealed ?? []).some(
+              (path) => wrote(path.calls, world) || (path.inside ?? []).some((deeper) => wrote(deeper.calls, world)),
+            ),
+          )
+        ? "revealed"
+        : undefined;
+  const why = !tags.includes("action") || acted !== undefined
+    ? undefined
+    : confirmations.length === 0
       ? "this case asks the screen to DO something, and no press ever asked the host for anything or opened a confirmation"
-      : undefined;
+      : `this case asks the screen to DO something, and ${confirmations[0]}`;
   return {
     pass: why === undefined && bindings.every(holds),
     pressed: trace.length,
@@ -387,33 +257,36 @@ export function wiredActions(
 // ---------------------------------------------------------------------- floor
 
 /**
- * The five checks in report order, each under the name the report prints. One
- * list, so a score and a column can never disagree about what was checked. Four
- * of them are decided here and are entirely deterministic; `honestData` is the
- * one that also leans on a model, and only ever to WAIVE a token or to write a
- * program the harness itself runs (`audit.ts`, `triage.ts`).
+ * The four checks in report order, each under the name the report prints. One
+ * list, so a score and a column can never disagree about what was checked. Every
+ * one of them is decided here, mechanically, with no model anywhere near it —
+ * whether the numbers on the screen are honest is a rubric line the judge grades
+ * against the tool data now (`HONESTY_LINE` in `judge.ts`).
  *
  * A pass is not always a pass. A check with nothing in front of it is VACUOUS —
- * a screen with no numbers on it, a screen with nothing to press — and a check
- * whose model could not be reached is DEGRADED. Neither was earned and neither
- * was missed, so both stay out of any total: summing bare booleans is how a
- * blank page came to score 5/5 in the only aggregate this benchmark has.
+ * a screen with nothing to press — and it was neither earned nor missed, so it
+ * stays out of any total: summing bare booleans is how a blank page came to
+ * score full marks in the only aggregate this benchmark has.
  */
-export const checks = (
-  floor: FloorResult,
-): ReadonlyArray<{ name: string; pass: boolean; vacuous?: true; degraded?: true }> => [
+export interface Check {
+  /** The name the report prints, on the page and in `summary.json` alike. */
+  readonly name: string;
+  readonly pass: boolean;
+  readonly vacuous?: true;
+  readonly degraded?: true;
+}
+
+/** The three every screen is put to, whatever it was asked for — written once,
+ *  because the total and the per-check readout below must be two readings of the
+ *  same cells and not two lists that agree by hand. */
+const screenChecks = (floor: FloorResult): readonly Check[] => [
   { name: "delivered", pass: floor.delivered },
   { name: "renders", pass: floor.renders },
   { name: "valid", pass: floor.valid },
-  {
-    name: "honestData",
-    pass: floor.honestData.pass,
-    ...(floor.honestData.degraded === true
-      ? { degraded: true as const }
-      : floor.honestData.pass && floor.honestData.examined === 0
-        ? { vacuous: true as const }
-        : {}),
-  },
+];
+
+export const checks = (floor: FloorResult): readonly Check[] => [
+  ...screenChecks(floor),
   {
     name: "wiredActions",
     pass: floor.wiredActions.pass,
@@ -421,20 +294,51 @@ export const checks = (
   },
 ];
 
-/** Every check has to hold. Written once because `honestData` is re-decided once
- *  the auditor has run, and two spellings of the floor would eventually
- *  disagree.
+/**
+ * `wiredActions` as the three questions it answers at once.
  *
- *  A DEGRADED honesty check is the exception, and for the reason a degraded
- *  judge never fails the run: the triage and the auditor are third parties on
- *  someone else's infrastructure, and an outage in our own machinery is not the
- *  contender's failure. It is loud in `result.json` and in the preview instead. */
+ * One cell held three different diseases — a screen whose buttons are dead, a
+ * screen that called a tool nobody declares, and a screen asked to DO something
+ * that never did — so in the run's totals a compile crash and a dead button moved
+ * one number by the same amount and neither said which had happened.
+ *
+ * Nothing is decided here that was not decided already: `wiredActions.pass` is
+ * exactly these three holding together, which `tests/floor.test.ts` pins over the
+ * real grader. The split is how the score is READ, so no run recorded before it
+ * compares differently after.
+ */
+export const wiredChecks = (actions: WiredActionsResult, asked: boolean): readonly Check[] => {
+  const fired = actions.bindings.filter((binding) => binding.effect === "tool");
+  return [
+    // Nothing to press is the vacuous pass this check always had: a screen with
+    // no controls on it was never put to the question.
+    {
+      name: "pressed",
+      pass: actions.bindings.every((binding) => binding.effect !== "none"),
+      ...(actions.pressed === 0 ? { vacuous: true as const } : {}),
+    },
+    // A press that only moved local state names no tool, so there is nothing to
+    // recognise and no arguments to validate — the same reason `Binding` asks
+    // `known` and `argsValid` of a tool press and of nothing else.
+    { name: "wired", pass: fired.every(holds), ...(fired.length === 0 ? { vacuous: true as const } : {}) },
+    // Only a case that ASKED the screen to act can earn or miss this one; on any
+    // other it is a bar nobody set.
+    { name: "actionProven", pass: actions.acted !== undefined, ...(asked ? {} : { vacuous: true as const }) },
+  ];
+};
+
+/** The floor's six cells: the three every screen is put to, and `wiredActions`
+ *  broken into the three it answers. One set of verdicts read at two altitudes —
+ *  never two counts of the same cells, since a screen can miss two of the three
+ *  at once and still be the single failed `wiredActions` it always was. */
+export const splitChecks = (floor: FloorResult, asked: boolean): readonly Check[] => [
+  ...screenChecks(floor),
+  ...wiredChecks(floor.wiredActions, asked),
+];
+
+/** Every check has to hold. */
 export const passes = (floor: Omit<FloorResult, "pass">): boolean =>
-  floor.delivered &&
-  floor.renders &&
-  floor.valid &&
-  (floor.honestData.pass || floor.honestData.degraded === true) &&
-  floor.wiredActions.pass;
+  floor.delivered && floor.renders && floor.valid && floor.wiredActions.pass;
 
 export function runFloor(input: {
   world: World;
@@ -442,24 +346,22 @@ export function runFloor(input: {
   /** What the product's own checks floor blocks in the delivered artifact. */
   blocking: readonly string[];
   trace: readonly Probed[];
-  shot: Shot | undefined;
+  /** Something took up space and the browser said nothing while it did — the
+   *  browser's verdict rather than the browser, so a case re-scored from its
+   *  saved evidence hands over the one it already reached (`regrade` in
+   *  `run.ts`) instead of painting the screen a second time to ask again. */
+  renders: boolean;
   /** The case's own tags. `action` is the one that raises the bar. */
   tags?: readonly CaseTag[];
 }): FloorResult {
   const delivered = input.artifact !== undefined && input.artifact.trim() !== "";
-  const renders = input.shot?.renders === true;
   const valid = delivered && input.blocking.length === 0;
-  // Extraction, and the one clearing that needs nobody: what the screen printed,
-  // minus whatever the tools answer with in those exact characters. The rest is
-  // for the triage to sort and the auditor to answer for.
-  const data = honestData(input.shot?.visibleText ?? "", input.world);
   const actions = wiredActions(input.trace, input.world, input.tags ?? []);
   const floor = {
     delivered,
-    renders,
+    renders: input.renders,
     valid,
     blocking: input.blocking,
-    honestData: data,
     wiredActions: actions,
   };
   return { ...floor, pass: passes(floor) };

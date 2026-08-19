@@ -19,18 +19,18 @@ The pack takes the caller you already resolved, so it is built inside the handle
 <CodeGroup>
 
 ```bash npm
-npm install @vendoai/vendo ai@^6 @ai-sdk/react@^3
+npm install @vendoai/vendo ai@^6 @ai-sdk/react@^3 @ai-sdk/anthropic@^3
 npx vendo init
 ```
 
 ```bash pnpm
-pnpm add @vendoai/vendo ai@^6 @ai-sdk/react@^3
+pnpm add @vendoai/vendo ai@^6 @ai-sdk/react@^3 @ai-sdk/anthropic@^3
 pnpm exec vendo init
 ```
 
 </CodeGroup>
 
-Pin the majors. Vendo peers `ai` at 6, and a bare `ai` installs 7 today — npm accepts the conflict, then every turn fails at runtime and `vendo doctor` reports [E-DEP-001](/production/troubleshooting/e-dep-001).
+Pin the majors. Vendo peers `ai` at 6 and `@ai-sdk/anthropic` at 3, and bare installs pull 7 and 4 today — npm accepts the conflict, then every turn fails at runtime and `vendo doctor` reports [E-DEP-001](/production/troubleshooting/e-dep-001).
 
 Answer the first question with **Through my own agent loop (AI SDK / Mastra)**, and take **Vendo Cloud** on the model one. Init writes the wire route and lands a `VENDO_API_KEY` in `.env.local`.
 
@@ -47,7 +47,24 @@ export const vendo = createVendo({ auth });
 
 Every snippet on this track imports those two from there. Swap `authJs()` for your own provider's preset — [Auth](/production/auth) lists all five.
 
-```ts AI SDK · app/api/chat/route.ts focus={14}
+No provider yet? Then init wrote a demo principal in place of a preset, and the resolver you export beside it hands your chat route that same subject:
+
+```ts lib/vendo.ts
+import { createVendo } from "@vendoai/vendo/server";
+
+// init writes the principal; the resolver is
+// yours. Swap both for a real session lookup.
+const principal = async () => ({
+  kind: "user" as const,
+  subject: "demo-user",
+});
+export const resolvePrincipal = (_req: Request) => principal();
+export const vendo = createVendo({ principal });
+```
+
+Both sides have to resolve the SAME subject. Your loop and the wire route the embeds call are two different requests, and an app or approval created under one subject is invisible to a surface asking as another — the embed then polls a screen it will never be shown. Everything below stays as written: the demo resolver never returns `null`, so the 401 guard simply never fires.
+
+```ts AI SDK · app/api/chat/route.ts focus={13,15}
 import { convertToModelMessages, streamText } from "ai";
 import { vendoTools } from "@vendoai/vendo/ai-sdk";
 import { vendoModel } from "@vendoai/vendo/server";
@@ -60,11 +77,14 @@ export async function POST(req: Request) {
   return streamText({
     model: vendoModel(),
     messages: await convertToModelMessages(messages),
+    system: "…your system prompt as it is",
     // your own tools spread in here too
     tools: { ...(await vendoTools(vendo, { principal: caller })) },
   }).toUIMessageStreamResponse();
 }
 ```
+
+That `system` line is yours and stays yours — Vendo assembles nothing into it, and a turn that loses it answers like a different product. The section at the bottom of this page is what you ADD to it.
 
 ```ts Mastra · src/mastra/agents/your-agent.ts focus={10}
 import { Agent } from "@mastra/core/agent";

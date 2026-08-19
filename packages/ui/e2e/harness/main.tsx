@@ -23,6 +23,7 @@ import {
   GrantSetCard,
   useApprovalModal,
   NoPolicyNotice,
+  Remixable,
   VendoOverlay,
   VendoPalette,
   VendoSlot,
@@ -31,7 +32,9 @@ import {
   VendoToolResult,
   vendoToast,
   type VendoCommand,
+  type VendoThreadProps,
 } from "../../src/chrome/index.js";
+import { DataTable } from "../../src/kit/index.js";
 import { AppFrame, PayloadView, TreeView } from "../../src/tree/index.js";
 import { browserTreeFixture } from "../fixtures/tree.js";
 import {
@@ -1841,6 +1844,74 @@ const pinnedViewTree: UIPayload = {
   ],
 };
 
+/** S2 — the ✦ is ONE DOOR. Two host components side by side: an unremixed one,
+ *  whose ✦ opens the conversation about it, and a remixed one, wearing the pin
+ *  chrome's single menu (Edit in chat · Update · Revert). */
+function PlainMerchants() {
+  return <section style={{ padding: 16 }}><h2 style={{ margin: 0, fontSize: 16 }}>Top merchants</h2><p style={{ margin: "6px 0 0" }}>Blue Bottle · $124.50</p></section>;
+}
+
+function RemixedMerchants() {
+  return <section style={{ padding: 16 }}><h2 style={{ margin: 0, fontSize: 16 }}>Recent payees</h2><p style={{ margin: "6px 0 0" }}>Ritual · $88.00</p></section>;
+}
+
+/** The third case: a remix the build never produced. Its seed row exists, so
+ *  the ✦ is the remix's chrome — over the host's own untouched markup. */
+function FailedMerchants() {
+  return <section style={{ padding: 16 }}><h2 style={{ margin: 0, fontSize: 16 }}>Subscriptions</h2><p style={{ margin: "6px 0 0" }}>Netflix · $15.49</p></section>;
+}
+// A production bundle erases `Function.name`, so a wrapped component must carry
+// `displayName` for the affordance to exist at all (remixable.tsx `slotOf`) —
+// and this harness is built for real, which is how the browser gate catches it.
+PlainMerchants.displayName = "PlainMerchants";
+RemixedMerchants.displayName = "RemixedMerchants";
+FailedMerchants.displayName = "FailedMerchants";
+
+function remixClient(client: VendoClient): VendoClient {
+  const remix = {
+    format: "vendo/app@1", id: "app_remix", name: "Recent payees", ui: "tree" as const,
+    seed: { component: "RemixedMerchants" },
+  };
+  // The FAILED remix is not stubbed: its seed row and its terminal `failed`
+  // envelope both come from the wire fixture (vite.config.ts), so the wrapper
+  // discovers it and reads its dead end through the ordinary client — the same
+  // path a real build failure travels. Only the SUCCEEDING remix is canned,
+  // because the harness has no model to write one.
+  return {
+    ...client,
+    apps: {
+      ...client.apps,
+      get: async (id: string) => (id === remix.id ? remix : await client.apps.get(id)),
+      list: async () => [remix, ...(await client.apps.list()).filter(app => app.seed !== undefined)],
+      open: async (id: string, options?: { pending?: boolean }) => (id === remix.id
+        ? { kind: "tree", payload: pinnedViewTree }
+        : await client.apps.open(id, options)),
+    } as VendoClient["apps"],
+  };
+}
+
+/** The host's own starter cards on the empty landing — what the panel shows a
+ *  person who opened it with nothing in mind, exactly as the demo host wires
+ *  them (VendoLayer). The ✦ opens the SAME panel about a particular component,
+ *  which is where these five have to get out of the way. */
+function StarterThread(props: VendoThreadProps) {
+  return <VendoThread {...props} suggestions={MAPLE_SUGGESTIONS} discoverability="quiet" />;
+}
+
+function RemixableScenario() {
+  const client = useMemo(() => remixClient(baseClient), []);
+  return (
+    <VendoProvider client={client} components={components} theme={mapleTheme}>
+      <div style={{ display: "grid", gap: 32, maxWidth: 560 }}>
+        <Remixable><PlainMerchants /></Remixable>
+        <Remixable><RemixedMerchants /></Remixable>
+        <Remixable><FailedMerchants /></Remixable>
+      </div>
+      <VendoOverlay launcher="none" thread={StarterThread} />
+    </VendoProvider>
+  );
+}
+
 /** Existing-agents polish — a BYO chat page: plain host markup (Georgia serif,
  *  no Vendo chrome, like the examples' quickstarts) rendering a `vendo_*` tool
  *  output through `VendoToolResult` against the real wire fixture. */
@@ -1911,6 +1982,44 @@ function SlotHintScenario() {
   );
 }
 
+/**
+ * A six-column table in a 480px frame — a phone.
+ *
+ * THE RULING: no column ever leaves on its own. The table used to drop the ones
+ * it could not fit off its own measurement, so exactly this shape rendered as two
+ * columns and a reader with no way to know it. Every column renders now, at the
+ * width its content asks for, and the FRAME scrolls to reach them (MUI's DataGrid
+ * and AntD's Table both).
+ *
+ * Only a browser can hold this law: jsdom lays nothing out, so every width a unit
+ * test measures is one the test itself wrote. The frame is a fixed 480 rather than
+ * the viewport, so the proof is about the surface the table was handed.
+ */
+const NARROW_INVOICES = [
+  { id: "in_1", client: "Hartwell Logistics", number: "INV-2041", amount: 2_500, dueDate: "2026-03-14", status: "Overdue", owner: "R. Okafor" },
+  { id: "in_2", client: "Acme Interiors", number: "INV-2042", amount: 900, dueDate: "2026-03-21", status: "Sent", owner: "L. Marchetti" },
+  { id: "in_3", client: "Borealis Foods", number: "INV-2043", amount: 1_750, dueDate: "2026-04-02", status: "Paid", owner: "R. Okafor" },
+  { id: "in_4", client: "Kestrel Dental", number: "INV-2044", amount: 420, dueDate: "2026-04-09", status: "Draft", owner: "S. Yun" },
+];
+
+function NarrowTableScenario() {
+  return (
+    <div data-testid="narrow-frame" style={{ width: 480 }}>
+      <DataTable
+        rows={NARROW_INVOICES}
+        columns={[
+          { key: "client", label: "Client" },
+          { key: "number", label: "Invoice" },
+          { key: "amount", label: "Amount", format: "money", align: "end" },
+          { key: "dueDate", label: "Due", format: "date" },
+          { key: "status", label: "Status" },
+          { key: "owner", label: "Owner" },
+        ]}
+      />
+    </div>
+  );
+}
+
 function scenario(pathname: string): { title: string; theme?: Partial<VendoTheme>; content: ReactNode; ownProvider?: boolean } {
   switch (pathname) {
     case "/thread": return { title: "Thread — dark theme", theme: darkTheme, content: <VendoThread threadId="thr_1" /> };
@@ -1944,6 +2053,7 @@ function scenario(pathname: string): { title: string; theme?: Partial<VendoTheme
     case "/tree-stream": return { title: "Streaming completion", content: <StreamCompletionScenario /> };
     case "/tree-wire": return { title: "vendo-genui/v2 — tree payload + stored render", content: <TreeWireScenario /> };
     case "/tree-wire-shape": return { title: "vendo-genui/v2 — shape-aware binding (wave 3)", content: <TreeWireShapeScenario /> };
+    case "/kit-table-narrow": return { title: "DataTable — six columns in a 480px frame", content: <NarrowTableScenario /> };
     case "/unknown-format": return { title: "Unknown UI format", content: <UnknownFormatScenario />, ownProvider: true };
     case "/build-failed": return { title: "Failed app build — turn ends with the reason", content: <BuildFailedScenario />, ownProvider: true };
     case "/limit": return { title: "Usage limit — the host's policy denied the request", content: <LimitScenario />, ownProvider: true };
@@ -1958,6 +2068,7 @@ function scenario(pathname: string): { title: string; theme?: Partial<VendoTheme
     case "/slot-building": return { title: "Inline slot — a build landing in place", content: <SlotBuildingScenario /> };
     case "/slot-states": return { title: "Inline slot — ready / failed", content: <SlotStatesScenario /> };
     case "/slot-picker": return { title: "Add to… — embed writes a placement", content: <SlotPickerScenario />, ownProvider: true };
+    case "/remixable": return { title: "Remixable — the ✦ is one door into the chat", content: <RemixableScenario />, ownProvider: true };
     case "/appframe": return { title: "App execution planes", content: <AppFrameScenario /> };
     case "/appframe-resize": return { title: "App frame resize — the host's bounds win", content: <AppFrameResizeScenario /> };
     case "/appframe-devserver": return { title: "Live dev-server preview (HMR)", content: <DevServerPreviewScenario /> };

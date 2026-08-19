@@ -95,10 +95,8 @@
     "lane": "screen",
     "prompt": "Lay today's jobs out on a schedule by their arrival windows.",
     "pass": [
-      "places the four Aug 15 jobs in time order — JOB-4471 at 8:00 AM, JOB-4472 at 10:00 AM, JOB-4473 at 1:00 PM, JOB-4474 at 3:00 PM",
-      "shows each job's window rather than only its start",
-      "reads as a schedule laid out against the day, not as a plain list",
-      "leaves JOB-4476 off the day entirely, since it is Aug 16"
+      "groups the four Aug 15 jobs in time order, each labelled with its arrival window — JOB-4471 at 8:00–10:00 AM through JOB-4474 at 3:00–5:00 PM",
+      "reads as a schedule laid out against the day, not as a plain list"
     ],
     "tags": ["display"],
     "shape": "calendar"

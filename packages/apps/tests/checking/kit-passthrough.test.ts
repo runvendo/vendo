@@ -70,7 +70,10 @@ describe("an engine's own props are legal on the component that renders it", () 
 describe("style is legal everywhere, and passthrough opens nothing else", () => {
   it("takes an inline style on a component that wraps no engine", async () => {
     expect(await bespoke("Stack", { gap: 8, style: { borderRadius: 12 } })).toEqual([]);
-    expect(tsc('<Card title="Spend" style={{ borderRadius: 12, background: "#FFF7ED" }} />', "Card")).toEqual([]);
+    // A themed fill rides `backgroundColor`: the `background` shorthand carries
+    // `url()`, so the paint allowlist has never had it and the compiler now says
+    // so instead of the renderer dropping it in silence.
+    expect(tsc('<Card title="Spend" style={{ borderRadius: 12, backgroundColor: "#FFF7ED" }} />', "Card")).toEqual([]);
   });
 
   it("still refuses a misspelled prop on a component that wraps no engine", async () => {

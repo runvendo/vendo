@@ -1,0 +1,19 @@
+{
+  "run": "2026-08-18T15-25-05",
+  "world": "trades-accounting",
+  "case": "chase-money-owed",
+  "worldHash": "4437955695805b44",
+  "caseHash": "47ab45015db1e85f",
+  "screens": {
+    "vendo-sonnet": {
+      "verdict": "fail",
+      "claim": "the 31-60 bucket reads $25,925.00 but the tool reports 2592500 cents = $25,925.00 — correct; however the Kirkwood J-2377 row for INV-1002 shows $11,050.00 against the tool's balance 1105000 = $11,050.00 — correct; the 'Who owes' Kirkwood balance $17,200.00 matches 1720000, yet the days-late column shows 'Current' for Larkspur and Harbor Point where the tool reports days_late 0, so all figures reconcile except none — no invented number found",
+      "text": "genbench Receivables aging Total outstanding $100,375.00 Past due $35,275.00 As of Aug 12, 2026 Aging buckets Current $65,100.00 1-30 days late $3,200.00 31-60 days late $25,925.00 61-90 days late $0.00 Over 90 days late $6,150.00 Who owes, by customer Customer Balance Days late Larkspur Apartments LLC $42,000.00 Current Harbor Point Dental $19,900.00 Current Kirkwood Elementary School District $17,200.00 102 days Vance Residence $14,875.00 31 days Sutter Street Lofts HOA $6,400.00 23 days Past-due invoices Job Due Balance Days late Status J-2440 · Sutter Street Lofts HOA Jul 20 $3,200.00 23 days Sent Send reminder J-2395 · Vance Residence Jul 12 $14,875.00 31 days Sent Send reminder J-2377 · Kirkwood Elementary School District Jul 1 $11,050.00 42 days Partial Send reminder J-2377 · Kirkwood Elementary School District May 2 $6,150.00 102 days Sent Send reminder"
+    },
+    "thesys-c1": {
+      "verdict": "fail",
+      "claim": "every money figure is the tool's cent value divided by 100 twice — e.g. bucket 6510000 shown as $65,100.00 and total 10037500 shown as $10,037.50, inconsistent with each other and both wrong",
+      "text": "genbench Receivables As of Aug 12, 2026 · $10,037.50 outstanding · $3,527.50 past due Aging Summary All open balances by age bucket Current 3 invoices $65,100.00 1–30 Days Late 1 invoice $3,200.00 31–60 Days Late 2 invoices $25,925.00 61–90 Days Late 0 invoices $0.00 Over 90 Days Late 1 invoice $6,150.00 Customer Balance Owed Oldest Invoice Late Kirkwood Elementary School District $17,200.00 102 days late Sutter Street Lofts HOA $3,200.00 23 days late Vance Residence $14,875.00 31 days late Past-Due Invoices 4 invoices with outstanding balances · click to send a reminder INV-0961 · Kirkwood Elementary School District J-2377 Issued Apr 2 Due May 2 Invoice Amount $6,150.00 Balance Due $6,150.00 102 days late sent Email Reminder INV-1002 · Kirkwood Elementary School District J-2377 Issued Jun 1 Due Jul 1 Invoice Amount $39,025.00 Balance Due $11,050.00 42 days late partial Email Reminder INV-1009 · Vance Residence J-2395 Issued Jun 12 Due Jul 12 Invoice Amount $14,875.00 Balance Due $14,875.00 31 days late sent Email Reminder INV-1016 · Sutter Street Lofts HOA J-2440 Issued Jun 20 Due Jul 20 Invoice Amount $3,200.00 Balance Due $3,200.00 23 days late sent Email Reminder"
+    }
+  }
+}

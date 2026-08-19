@@ -18,20 +18,18 @@
  * A real browser, because the claim is about which assignment won.
  */
 import { chromium } from "@playwright/test";
-import type { UIPayload } from "@vendoai/core";
+import type { Json, UIPayload } from "@vendoai/core";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { FloorResult } from "../src/floor.js";
-import { AUDITOR_CONTRACT } from "../src/audit.js";
 import { JudgeContract, type JudgeResult } from "../src/judge.js";
 import { writePreview } from "../src/report.js";
 import { authoredPage, bundleMount, openBrowser, pageHtml, type Shooter, type Shot } from "../src/render.js";
 import { writeCase, type CaseResult } from "../src/run.js";
-import { TriageContract } from "../src/triage.js";
-import { loadWorld, type World } from "../src/world.js";
+import { cannedResponse, loadWorld, type World } from "../src/world.js";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 let world: World;
@@ -70,11 +68,22 @@ const PAYLOAD: UIPayload = {
 interface Pressed {
   /** What the feed would have shown: the page's own posts to its parent. */
   readonly posted: ReadonlyArray<Record<string, unknown>>;
-  /** What the probe reads and the floor scores. */
-  readonly calls: ReadonlyArray<{ name: string; args: unknown }>;
+  /** What the probe reads and the floor scores. A guarded call carries what the
+   *  guard did with it as well (`status`, `approvalId`). */
+  readonly calls: ReadonlyArray<{ name: string; args: unknown; status?: string; approvalId?: string }>;
   /** The page's own answer, which the harness must not have swallowed. */
   readonly answer: unknown;
 }
+
+/** The world's cancel — a tool with no canned rows, so the world declares it a
+ *  write and the seam guards it. */
+const WRITE = { name: "cancel_transfer", args: { id: "tr_1" } } as const;
+
+/** And one that HAS rows, which is what makes it a read: answered on the spot. */
+const READ = { name: "list_transfers", args: { limit: 5 } } as const;
+
+/** What that read answers with, out of the world itself. */
+const transferRows = (): unknown => cannedResponse(world.tools.find((tool) => tool.name === READ.name)!);
 
 /**
  * One press, in a real browser, watched from both sides.
@@ -83,21 +92,32 @@ interface Pressed {
  * this same page's `message` listener — the report's listener reads the exact
  * same event (`report.ts`, `FEED_SCRIPT`).
  */
-async function press(html: string): Promise<Pressed> {
+async function press(html: string, call: { name: string; args: Json } = WRITE): Promise<Pressed> {
   const visit = await shooter.visit(html);
   try {
-    return await visit.page.evaluate(async () => {
+    return await visit.page.evaluate(async (asked: { name: string; args: Json }) => {
       const posted: Array<Record<string, unknown>> = [];
       addEventListener("message", (event: MessageEvent) => posted.push(event.data as Record<string, unknown>));
-      const answer = window.vendo.callTool("cancel_transfer", { id: "tr_1" });
-      // postMessage to self is delivered as a task, so one turn of the loop.
-      await new Promise((settle) => setTimeout(settle, 0));
+      const answer = window.vendo.callTool(asked.name, asked.args);
+      // A post to self is delivered as a TASK, and the guard's approval posts one
+      // more from a microtask, so the read waits for the loop to go quiet rather
+      // than for a fixed number of turns — which is what the two kinds of message
+      // racing each other's task source would otherwise make this depend on.
+      let seen = -1;
+      while (seen !== posted.length) {
+        seen = posted.length;
+        await new Promise((settle) => setTimeout(settle, 5));
+      }
       return { posted, calls: window.vendo.calls, answer };
-    });
+    }, call);
   } finally {
     await visit.close();
   }
 }
+
+/** Every row the live feed would have drawn, in the order it heard them. */
+const feed = (pressed: Pressed): ReadonlyArray<Record<string, unknown>> =>
+  pressed.posted.filter((message) => message["genbench"] === "call");
 
 describe("the call feed", () => {
   it("carries a press from a page that defines its own recorder", async () => {
@@ -125,8 +145,12 @@ describe("the call feed", () => {
     const own = await press(authoredPage(OWN_RECORDER, world, "claude-code-sonnet"));
     const harness = await press(authoredPage(NO_RECORDER, world, "diy-sonnet"));
 
+    // The PRESS, once each. The harness's own recorder guards a write and posts
+    // the approval that follows it, which is the guard's row and not a second
+    // reading of the press — so the count is taken on rows that carry no
+    // approval, which is what a doubled press would show up in.
     expect(own.posted.filter((message) => message["genbench"] === "call")).toHaveLength(1);
-    expect(harness.posted.filter((message) => message["genbench"] === "call")).toHaveLength(1);
+    expect(feed(harness).filter((message) => message["approved"] === undefined)).toHaveLength(1);
   }, 120_000);
 });
 
@@ -141,17 +165,98 @@ describe("scoring", () => {
   }, 120_000);
 
   it("still answers with the world's canned response where the harness owns the recorder", async () => {
-    const { calls, answer } = await press(authoredPage(NO_RECORDER, world, "diy-sonnet"));
+    const { calls, answer } = await press(authoredPage(NO_RECORDER, world, "diy-sonnet"), READ);
 
-    expect(calls).toEqual([{ name: "cancel_transfer", args: { id: "tr_1" } }]);
-    expect(answer).toEqual({ status: "ok", output: { ok: true } });
+    expect(calls).toEqual([READ]);
+    expect(answer).toEqual({ status: "ok", output: transferRows() });
   }, 120_000);
 
   it("holds on the page the product rendered too", async () => {
-    const { posted, calls } = await press(pageHtml(PAYLOAD, world, bundle, "vendo-sonnet"));
+    const { posted, calls } = await press(pageHtml(PAYLOAD, world, bundle, "vendo-sonnet"), READ);
 
-    expect(calls).toEqual([{ name: "cancel_transfer", args: { id: "tr_1" } }]);
+    expect(calls).toEqual([READ]);
     expect(posted).toContainEqual(expect.objectContaining({ genbench: "call", contender: "vendo-sonnet" }));
+  }, 120_000);
+});
+
+// ------------------------------------------------------------- the guard
+
+/**
+ * What a WRITE answers with (2026-08-18), and where the guard's round trip lands.
+ *
+ * The real product confirms a destructive call OUTSIDE the screen: the host
+ * answers `pending-approval` at press time, the control's own outcome slot paints
+ * "Waiting for your approval", and the decision arrives from somewhere the screen
+ * does not draw. The benched seam answered every call `{status:"ok"}` on the spot,
+ * so the one confirmation this product actually ships could not paint on any page
+ * here — while a contender following its doctrine and building no confirm step of
+ * its own was failed on rubric lines asking for one.
+ *
+ * So a tool the world declares a write is parked and then approved, by the same
+ * injected bytes on every column's page. Reads are untouched: a screen fetching
+ * what it shows must never wait on an approval to draw.
+ */
+describe("the guard", () => {
+  it("parks a write at press time, and approves it a tick later", async () => {
+    const pressed = await press(authoredPage(NO_RECORDER, world, "diy-sonnet"));
+
+    expect(pressed.answer).toEqual({ status: "pending-approval", approvalId: "apr_1" });
+    // ONE call — the guard is a round trip, not a second press — carrying what
+    // the guard did with it beside the name and arguments the floor grades.
+    expect(pressed.calls).toEqual([{ ...WRITE, status: "ok", approvalId: "apr_1" }]);
+    // And both halves reach the live feed: the ask, then the approval that
+    // released it, tagged with the id that ties them together.
+    expect(feed(pressed)).toEqual([
+      expect.objectContaining({ contender: "diy-sonnet", name: WRITE.name, args: WRITE.args }),
+      expect.objectContaining({ contender: "diy-sonnet", name: WRITE.name, approved: "apr_1" }),
+    ]);
+  }, 120_000);
+
+  it("answers a read on the spot, with no approval anywhere in it", async () => {
+    const pressed = await press(authoredPage(NO_RECORDER, world, "diy-sonnet"), READ);
+
+    expect(pressed.answer).toEqual({ status: "ok", output: transferRows() });
+    expect(pressed.calls[0]).not.toHaveProperty("approvalId");
+    expect(feed(pressed)).toHaveLength(1);
+  }, 120_000);
+
+  it("guards the page the product rendered by the same bytes", async () => {
+    const pressed = await press(pageHtml(PAYLOAD, world, bundle, "vendo-sonnet"));
+
+    expect(pressed.answer).toEqual({ status: "pending-approval", approvalId: "apr_1" });
+    expect(pressed.calls).toEqual([{ ...WRITE, status: "ok", approvalId: "apr_1" }]);
+  }, 120_000);
+});
+
+/** A screen whose one control is bound to a write, as the paint gate emits an
+ *  action binding: the Kit's Button, its `onClick` naming the tool
+ *  (`isActionBinding` in `ui/src/tree/renderer.tsx`). */
+const GUARDED: UIPayload = {
+  formatVersion: "vendo-genui/v2",
+  root: "root",
+  nodes: [{
+    id: "root",
+    component: "Button",
+    props: { label: "Cancel transfer", onClick: { $action: WRITE.name, payload: WRITE.args } },
+  }],
+} as UIPayload;
+
+describe("what the product paints on a guarded press", () => {
+  it("is its own pending-approval notice, in the control's outcome slot", async () => {
+    const visit = await shooter.visit(pageHtml(GUARDED, world, bundle, "vendo-sonnet"));
+    try {
+      await visit.page.getByRole("button", { name: "Cancel transfer" }).click();
+      const notice = visit.page.locator("[data-vendo-notice=pending-approval]");
+      await notice.waitFor({ timeout: 10_000 });
+
+      // The product's own words for a parked call (`outcomeNotice` in
+      // `ui/src/tree/renderer.tsx`) — the confirmation this product actually
+      // ships, painting on a benchmark page for the first time.
+      expect(await notice.innerText()).toContain("Waiting for your approval");
+      expect(await visit.page.evaluate(() => window.vendo.calls.map((call) => call.name))).toEqual([WRITE.name]);
+    } finally {
+      await visit.close();
+    }
   }, 120_000);
 });
 
@@ -180,7 +285,6 @@ const PASSING: FloorResult = {
   renders: true,
   valid: true,
   blocking: [],
-  honestData: { pass: true, offenders: [], examined: 0, found: 0 },
   wiredActions: { pass: true, pressed: 1, bindings: [] },
   pass: true,
 };
@@ -206,16 +310,15 @@ const resultFor = (contender: string): CaseResult => ({
   caseHash: "case-hash",
   judged: GRADED,
   judgeContract: JudgeContract,
-  triageContract: TriageContract,
-  auditorContract: AUDITOR_CONTRACT,
   gitSha: "0".repeat(40),
   agentSdkVersion: "0.0.0",
 });
 
-const SHOT: Shot = { png: PNG, visibleText: "", dom: "", renders: true, consoleErrors: [] };
+const SHOT: Shot = { png: PNG, tables: [], visibleText: "", dom: "", renders: true, consoleErrors: [] };
 
-/** Every identity the feed is showing, top row first. */
-type Rows = Array<{ who: string; tool: string }>;
+/** Every identity the feed is showing, top row first, with whatever the guard
+ *  wrote on the row it resolved. */
+type Rows = Array<{ who: string; tool: string; tag: string }>;
 
 describe("the feed's identity", () => {
   it("reads a call's contender off the frame that sent it, never off what the frame said", async () => {
@@ -246,12 +349,19 @@ describe("the feed's identity", () => {
           [...document.querySelectorAll("#feed li")].map((row) => ({
             who: row.querySelector(".who")?.textContent ?? "",
             tool: row.querySelector("code")?.textContent ?? "",
+            tag: row.querySelector(".approved")?.textContent ?? "",
           })),
         );
 
-      // The honest press, through the real recorder, from the real frame.
+      // The honest press, through the real recorder, from the real frame. ONE
+      // row, because `cancel_transfer` is a write and the guard's approval is
+      // that call's outcome rather than a second call: it lands on the row
+      // already showing the ask, which is what a person who pressed one button
+      // has to be able to read.
       await frame!.evaluate(() => window.vendo.callTool("cancel_transfer", { id: "tr_1" }));
-      await expect.poll(rows, { timeout: 10_000 }).toEqual([{ who: "diy-sonnet", tool: "cancel_transfer" }]);
+      await expect.poll(rows, { timeout: 10_000 }).toEqual([
+        { who: "diy-sonnet", tool: "cancel_transfer", tag: "✓ approved" },
+      ]);
 
       // The same frame, now claiming to be the column beside it. A document a
       // contender wrote can name any contender; only the frame it arrived in
@@ -263,8 +373,8 @@ describe("the feed's identity", () => {
         ),
       );
       await expect.poll(rows, { timeout: 10_000 }).toEqual([
-        { who: "diy-sonnet", tool: "transfer_money" },
-        { who: "diy-sonnet", tool: "cancel_transfer" },
+        { who: "diy-sonnet", tool: "transfer_money", tag: "" },
+        { who: "diy-sonnet", tool: "cancel_transfer", tag: "✓ approved" },
       ]);
 
       // And a frame the report never embedded — a child a contender's own page

@@ -50,6 +50,41 @@ export interface NestedNode {
   key?: string;
 }
 
+/**
+ * A control that was pressed and did nothing: it asked for no tool call, and
+ * the screen painted nothing new. The node it sits on and the prop that carries
+ * its handler.
+ *
+ * A FACT about one press, never a verdict. The sentence a person or a model
+ * reads is written by whichever gate asked for the press ({@link pressControls}
+ * is used by the save-time gauntlet), because a repair instruction belongs to
+ * the gate that refuses — not to the engine that observed.
+ */
+export interface InertControl {
+  node: string;
+  prop: string;
+}
+
+/** One read a screen makes: the tool, and the input it asked with. */
+export interface ScreenQuery {
+  tool: string;
+  input?: unknown;
+}
+
+/**
+ * The name one read's answer is filed under.
+ *
+ * A screen reads one tool as many times as it has questions — a detail panel
+ * beside a list is two reads of the same tool — so the answer cannot be keyed by
+ * the tool alone. The VM keys its own store the same way (`keyOf` in
+ * ./vm-program.ts): the two copies are one law and must agree.
+ *
+ * A read with no input keys as the bare tool name, so the common screen's data
+ * reads the way it always did.
+ */
+export const queryKey = ({ tool, input }: ScreenQuery): string =>
+  input === undefined ? tool : `${tool} ${JSON.stringify(input)}`;
+
 /** A tool call an event handler asked for, awaiting the host's answer. */
 export interface Intent {
   id: string;
@@ -86,6 +121,24 @@ export interface ScreenInstance {
    * `null` means nothing moved — no repaint, no new intents, nothing to do.
    */
   settle(intentId: string, result: unknown): FireResult | null;
+  /**
+   * The reads the paints so far asked for and had no answer to.
+   *
+   * A query input may be computed — `useQuery("invoices", { client: chosen })` —
+   * so it cannot be known before the screen renders. The screen paints with
+   * `{ data: undefined }` there — react-query's shape, so reading a field off a
+   * pending read is a read and not a throw — and NAMES what it wanted; the host
+   * runs those reads and hands them back through {@link supply}. Taken, not
+   * copied: a read the host could not answer is asked once per round rather than
+   * forever.
+   */
+  misses(): ScreenQuery[];
+  /**
+   * Answers to {@link misses}, keyed by {@link queryKey}, merged into the
+   * screen's data — which RE-RENDERS the component rather than rebooting it, so
+   * everything `useState` holds is still there.
+   */
+  supply(results: Record<string, unknown>): NestedNode;
   /** Tear the VM down. Idempotent. */
   dispose(): void;
 }
@@ -93,7 +146,9 @@ export interface ScreenInstance {
 export interface BootScreenOptions {
   /** The component, compiled to plain CommonJS JavaScript — not TSX. */
   compiledSource: string;
-  /** Query results, keyed by tool name, resolved BEFORE the screen boots. */
+  /** Query results, keyed by {@link queryKey}, resolved BEFORE the screen boots.
+   *  A read whose input the screen computes is not in here — it arrives through
+   *  {@link ScreenInstance.supply} after the first paint names it. */
   queries: Record<string, unknown>;
   /** The props the component mounts with — a PORT's paint can depend on what
    *  its host call site passed. JSON only, enforced by construction: they
@@ -107,6 +162,19 @@ export interface BootScreenOptions {
    * keeps, so one screen over one set of data paints the same twice.
    */
   now?: number;
+  /**
+   * The wall a screen's formatting resolves against: the locale and the IANA zone
+   * that `Intl`, `toLocaleString` and `toLocaleDateString`/`toLocaleTimeString`
+   * DEFAULT to in there. Unset is `"en-US"` and `"UTC"`.
+   *
+   * The host's, never the machine's — the VM has no ICU of its own, so every one
+   * of those calls is answered by the host's real `Intl` (./boot.ts) and would
+   * otherwise read whatever zone the process happens to sit in, which is the
+   * frozen clock's problem one field over. A screen that passes its own locale or
+   * `timeZone` gets it: it wrote it.
+   */
+  locale?: string;
+  timeZone?: string;
   /**
    * What stops a screen that will not stop. Unset is `wallClockBudget()` — a
    * fifth of a second an event, two seconds a boot. A venue whose clock does not
@@ -167,7 +235,21 @@ export type ScreenErrorKind =
  * passed through rather than summarized.
  */
 export class ScreenError extends Error {
-  constructor(readonly kind: ScreenErrorKind, message: string, readonly vmStack?: string) {
+  constructor(
+    readonly kind: ScreenErrorKind,
+    message: string,
+    readonly vmStack?: string,
+    /**
+     * The reads the paint had already NAMED and had no answer to when it threw.
+     *
+     * A first paint that throws while it is still waiting on a read threw
+     * against data it was never given: that is a LOADING paint, not a verdict on
+     * the screen. A caller running the supply loop answers these and paints
+     * again. Empty is the other case — the screen threw with everything it asked
+     * for in hand — and that one IS the verdict.
+     */
+    readonly misses: readonly ScreenQuery[] = [],
+  ) {
     super(message);
     this.name = "ScreenError";
   }

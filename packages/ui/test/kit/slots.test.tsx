@@ -8,58 +8,66 @@ import { DataTable } from "../../src/kit/data/data-table.js";
 import { Stat } from "../../src/kit/data/stat.js";
 import { Button } from "../../src/kit/forms/button.js";
 import { Divider, Stack } from "../../src/kit/layout.js";
-import { EnumBadge, Money, Text } from "../../src/kit/values.js";
+import { EnumBadge, Text } from "../../src/kit/values.js";
 
-// A slot holds an ELEMENT, not a function of the row: the screen VM would
-// serialize a function prop as a `$handler` door. So the container renders the
-// SAME element once per row and publishes the row it is painting, and the value
-// components inside name the field they read.
 const rows = [
   { id: 1, client: { name: "Hartwell" }, number: "INV-1", status: "overdue" },
   { id: 2, client: { name: "Acme" }, number: "INV-2", status: "paid" },
 ];
 
+/**
+ * What a per-row slot ARRIVES as. The screen wrote `cell: (row) => elements` and
+ * the VM called it once per row, in `rows` order, handing the Kit a list — this
+ * is that map, done by hand (apps genui/component/vm-program.ts `emitSlot`).
+ */
+const perRow = <T,>(of: (row: (typeof rows)[number]) => T): T[] => rows.map(of);
+
 const columns = [
   {
     key: "client.name",
     label: "Client",
-    cell: (
+    cell: perRow((row) => (
       <Stack gap={2}>
-        <Text field="client.name" />
-        <Text field="number" variant="caption" />
+        <Text text={row.client.name} />
+        <Text text={row.number} variant="caption" />
       </Stack>
-    ),
+    )),
   },
   {
     key: "status",
     label: "Status",
-    cell: <EnumBadge field="status" tones={{ overdue: "danger", paid: "success" }} />,
+    cell: perRow((row) => <EnumBadge value={row.status} tones={{ overdue: "danger", paid: "success" }} />),
   },
 ];
 
 describe("cell slots", () => {
-  it("renders a column's slot once per row, against THAT row's fields", () => {
+  it("gives each row the element the slot wrote for THAT row", () => {
     render(<DataTable rows={rows} columns={columns} />);
     const [first, second] = screen.getAllByRole("row").slice(1);
     expect(within(first!).getByText("Hartwell")).toBeTruthy();
     expect(within(first!).getByText("INV-1")).toBeTruthy();
     expect(within(second!).getByText("Acme")).toBeTruthy();
-    // One element, two rows, two different values — and two different tones.
+    // Two rows, two elements, two different tones.
     expect(within(first!).getByText("Overdue").getAttribute("data-tone")).toBe("danger");
     expect(within(second!).getByText("Paid").getAttribute("data-tone")).toBe("success");
   });
 
   // The slot changes what a cell SHOWS, never what the column IS: sorting,
-  // filtering and search still run off `key` + `format`.
-  it("still filters a slotted column on its key", () => {
+  // filtering and search still run off `key`. What the dropdown OFFERS is the
+  // other half — the pill's own word, because that is what the person is picking
+  // between. It used to offer the raw `overdue` under a column of "Overdue"
+  // pills, which named a value nobody on that screen could see.
+  it("still filters a slotted column on its key, in the words its pills paint", () => {
     render(<DataTable rows={rows} columns={columns} filterableBy={["status"]} />);
     const filter = screen.getByRole("combobox", { name: "Filter by Status" });
-    expect(within(filter).getByRole("option", { name: "overdue" })).toBeTruthy();
+    expect(within(filter).getByRole("option", { name: "Overdue" })).toBeTruthy();
 
-    fireEvent.change(filter, { target: { value: "overdue" } });
+    fireEvent.change(filter, { target: { value: "Overdue" } });
     expect(screen.getByText("Hartwell")).toBeTruthy();
     expect(screen.queryByText("Acme")).toBeNull();
-    expect(screen.queryByText("Paid")).toBeNull();
+    // In the TABLE: "Paid" is a word the dropdown now offers too, and the
+    // filtered-out row's pill is the one that has to be gone.
+    expect(within(screen.getByRole("table")).queryByText("Paid")).toBeNull();
   });
 
   it("searches a slotted column on the text its key produces", () => {
@@ -74,7 +82,11 @@ describe("cell slots", () => {
       <CardList
         items={rows}
         titleField="client.name"
-        fields={[{ key: "status", label: "Status", cell: <EnumBadge field="status" tones={{ overdue: "danger" }} /> }]}
+        fields={[{
+          key: "status",
+          label: "Status",
+          cell: perRow((row) => <EnumBadge value={row.status} tones={{ overdue: "danger" }} />),
+        }]}
       />,
     );
     expect(screen.getAllByText("Status")).toHaveLength(2); // one label per card
@@ -84,7 +96,7 @@ describe("cell slots", () => {
 
   it("renders Stat's children under the value", () => {
     render(
-      <Stat label="Balance" value={2500} format="money" trend="+12% MoM">
+      <Stat label="Balance" value="$2,500.00" trend="+12% MoM">
         <Text text="last 30 days" variant="caption" />
       </Stat>,
     );
@@ -104,10 +116,16 @@ describe("cell slots", () => {
  */
 describe("what a slot promises beyond landing", () => {
   it("paints rowActions once per row, against THAT row", () => {
-    render(<DataTable rows={rows} columns={[{ key: "number" }]} rowActions={<Text field="client.name" />} />);
+    render(
+      <DataTable
+        rows={rows}
+        columns={[{ key: "number" }]}
+        rowActions={perRow((row) => <Text text={row.client.name} />)}
+      />,
+    );
     const [first, second] = screen.getAllByRole("row").slice(1);
-    // One element, two rows, two different values — the cell contract, on the
-    // half of it that may be operated.
+    // Two rows, two elements — the cell contract, on the half of it that may be
+    // operated because the function had a row to act on.
     expect(within(first!).getByText("Hartwell")).toBeTruthy();
     expect(within(second!).getByText("Acme")).toBeTruthy();
   });
@@ -125,11 +143,19 @@ describe("what a slot promises beyond landing", () => {
   });
 
   it("composes a chart tooltip against the hovered point", () => {
-    // recharts hands its `content` the payload of whatever is under the pointer;
-    // the slot reads it through `field`, exactly as a table cell reads its row.
-    const Hover = slotTooltip(<Money field="amount" />);
-    render(<Hover payload={[{ graphicalItemId: "amount", payload: { month: "Mar", amount: 1250 } }]} />);
+    // recharts names no index it stands behind, so the point under the pointer is
+    // matched by IDENTITY against the array the chart plotted — the same match a
+    // DataTable row gets, per point.
+    const plotted = [{ month: "Feb", amount: 400 }, { month: "Mar", amount: 1_250 }];
+    const Hover = slotTooltip(
+      plotted.map((point) => (
+        <Text text={point.amount.toLocaleString("en-US", { style: "currency", currency: "USD" })} />
+      )),
+      plotted,
+    );
+    render(<Hover payload={[{ graphicalItemId: "amount", payload: plotted[1] }]} />);
     expect(screen.getByText("$1,250.00")).toBeTruthy();
+    expect(screen.queryByText("$400.00")).toBeNull();
   });
 
   it("lets a donut's legend be taken away, or replaced", () => {

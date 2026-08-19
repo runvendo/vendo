@@ -83,7 +83,7 @@ for (const backend of backends()) {
       expect((await made.sql("SELECT value FROM vendo_meta WHERE key = 'schema_version'"))[0]?.value).toBe(11);
       const rows = await made.sql(
         `SELECT table_name FROM information_schema.tables
-         WHERE table_schema = 'public' AND table_name IN ('vendo_mcp_clients', 'vendo_mcp_grants')
+         WHERE table_schema = current_schema() AND table_name IN ('vendo_mcp_clients', 'vendo_mcp_grants')
          ORDER BY table_name`,
       );
       expect(rows).toEqual([
@@ -114,7 +114,7 @@ for (const backend of backends()) {
 
     it("creates all 24 contract tables with every contracted key column", async () => {
       const rows = await made.sql(
-        "SELECT table_name, column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name LIKE 'vendo_%'",
+        "SELECT table_name, column_name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name LIKE 'vendo_%'",
       );
       const actual = new Map<string, Set<string>>();
       for (const row of rows) {
@@ -167,7 +167,7 @@ for (const backend of backends()) {
         ["vendo_quarantine", "data"],
       ];
       const rows = await made.sql(
-        "SELECT table_name, column_name, data_type FROM information_schema.columns WHERE table_schema = 'public' AND table_name LIKE 'vendo_%'",
+        "SELECT table_name, column_name, data_type FROM information_schema.columns WHERE table_schema = current_schema() AND table_name LIKE 'vendo_%'",
       );
       const typeOf = new Map(rows.map((row) => [`${row.table_name}.${row.column_name}`, String(row.data_type)]));
       for (const [table, column] of jsonbColumns) {
@@ -182,7 +182,7 @@ for (const backend of backends()) {
     for (const table of ["vendo_records", "vendo_mcp_clients", "vendo_mcp_grants", "vendo_knowledge_docs", "vendo_knowledge_chunks"] as const) {
       it(`creates a GIN index on ${table}.refs`, async () => {
         const rows = await made.sql(
-          "SELECT indexdef FROM pg_indexes WHERE schemaname = 'public' AND tablename = $1",
+          "SELECT indexdef FROM pg_indexes WHERE schemaname = current_schema() AND tablename = $1",
           [table],
         );
         expect(rows.some((row) => /USING gin \(refs/.test(String(row.indexdef)))).toBe(true);
@@ -195,7 +195,7 @@ for (const backend of backends()) {
       // for the user. Without this index each of those is a seq scan of every
       // grant row in the deployment, on the hot list path.
       const rows = await made.sql(
-        "SELECT indexdef FROM pg_indexes WHERE schemaname = 'public' AND tablename = 'vendo_app_grants'",
+        "SELECT indexdef FROM pg_indexes WHERE schemaname = current_schema() AND tablename = 'vendo_app_grants'",
       );
       expect(rows.some((row) => /\(principal\)/.test(String(row.indexdef)))).toBe(true);
     });
@@ -210,7 +210,7 @@ for (const backend of backends()) {
 
       const rows = await made.sql(
         `SELECT table_name FROM information_schema.tables
-         WHERE table_schema = 'public' AND table_name = 'vendo_sessions'`,
+         WHERE table_schema = current_schema() AND table_name = 'vendo_sessions'`,
       );
       expect(rows).toEqual([]);
     });
@@ -221,7 +221,7 @@ for (const backend of backends()) {
 
       const rows = await made.sql(
         `SELECT table_name FROM information_schema.tables
-         WHERE table_schema = 'public' AND table_name = 'vendo_sessions'`,
+         WHERE table_schema = current_schema() AND table_name = 'vendo_sessions'`,
       );
       expect(rows).toEqual([]);
     });
@@ -237,7 +237,7 @@ for (const backend of backends()) {
 
       const rows = await made.sql(
         `SELECT column_name FROM information_schema.columns
-         WHERE table_name = 'vendo_apps' AND column_name LIKE 'trigger%'`,
+         WHERE table_schema = current_schema() AND table_name = 'vendo_apps' AND column_name LIKE 'trigger%'`,
       );
       expect(rows).toEqual([]);
     });

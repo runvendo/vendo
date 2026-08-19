@@ -20,8 +20,10 @@ export interface CalendarProps extends KitStyled {
   dateField?: string;
   /** Field for each item's label. */
   titleField?: string;
-  /** Field holding each item's amount in MAJOR units — a cents field is divided
-   *  by 100 where it is read, as everywhere in the Kit. */
+  /** Field shown under each item's label, AS GIVEN — the last limb of the dead
+   *  value tier used to force money onto it, so a field of HOURS came out
+   *  "$520.00". A figure is formatted where the items are prepared, like every
+   *  other value the Kit displays. */
   amountField?: string;
   /** Field whose value labels and tones each item. */
   statusField?: string;
@@ -180,7 +182,7 @@ function Entry({
   tones,
 }: Pick<CalendarProps, "titleField" | "amountField" | "statusField" | "tones"> & { item: Record<string, unknown> }) {
   const status = statusField === undefined ? null : applyFormat(readField(item, statusField), "text");
-  const amount = amountField === undefined ? null : applyFormat(readField(item, amountField), "money");
+  const amount = amountField === undefined ? null : applyFormat(readField(item, amountField), "text");
   const paint = toneStyle[toneFor(tones, status ?? "")];
   return (
     <div

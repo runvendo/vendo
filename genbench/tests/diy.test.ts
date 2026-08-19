@@ -3,11 +3,13 @@
  *
  * Every number this benchmark reports rests on one claim: each in-house
  * contender was handed EXACTLY what the product's own pipeline was handed. So
- * the bytes are compared. The design brief the vendo driver composes, the
- * descriptors its registry serves, and the responses that registry really
- * returns must all appear verbatim in the prompt EACH baseline sends. If any
- * side ever drifts — a reformatted brief, a hand-rolled schema dump, a
- * different canned response — this test fails and the comparison is void.
+ * the bytes are compared. The design brief the vendo driver composes and the
+ * descriptors its registry serves must appear verbatim in the prompt EACH
+ * baseline sends — and the responses that registry returns must appear in NONE
+ * of them, because handing a baseline the rows is handing it the answer to a
+ * question the vendo column has to call a tool to ask. If any side ever drifts —
+ * a reformatted brief, a hand-rolled schema dump, a canned response creeping
+ * back into a prompt — this test fails and the comparison is void.
  *
  * The two baselines share one serializer (`worldBlock`) precisely so they
  * cannot drift apart, but a shared helper is not the assertion: the prompt
@@ -27,7 +29,7 @@ import { codexDriver, type CodexSpawn } from "../src/codex.js";
 import { diyDriver, diySystemPrompt } from "../src/diy.js";
 import type { Meter } from "../src/meter.js";
 import { authoredPage, HARNESS_CONTRACT, openBrowser } from "../src/render.js";
-import { worldBlock, worldBriefing, worldRegistry } from "../src/vendo.js";
+import { TOOL_ACCESS, worldBlock, worldBriefing, worldRegistry } from "../src/vendo.js";
 import { cannedResponse, loadCases, loadWorld, worldForCase, type Case, type World } from "../src/world.js";
 
 type Sent = Parameters<MockLanguageModelV3["doStream"]>[0]["prompt"];
@@ -142,7 +144,7 @@ async function execBriefFor(scoped: World, testCase: Case): Promise<string> {
       kill: () => undefined,
     };
   };
-  await codexDriver({ model: "sol", spawn }).run({ world: scoped, testCase, meter: replying(PAGE).meter });
+  await codexDriver({ model: "terra", spawn }).run({ world: scoped, testCase, meter: replying(PAGE).meter });
   return brief;
 }
 
@@ -185,22 +187,51 @@ describe.each(BASELINES)("$name is handed exactly what vendo is handed", ({ brie
     }
   });
 
-  it("carries the response that registry actually returns for each tool", async () => {
+  /** The correction of 2026-08-17: a baseline used to read every tool's real rows
+   *  in its prompt, so it could paste them into static markup and be right, while
+   *  the vendo column spent its loop calling for the same rows. Same game for
+   *  everyone now — access, never values. */
+  it("carries NONE of the responses that registry returns, in any spelling", async () => {
     const sent = await briefFor(world, cases[0]!);
     const registry = worldRegistry(world);
 
     for (const descriptor of await registry.descriptors()) {
       const outcome = await registry.execute({ id: "c1", tool: descriptor.name, args: {} }, CTX);
       expect(outcome.status).toBe("ok");
-      expect(sent).toContain(JSON.stringify((outcome as { output: unknown }).output, null, 2));
+      const output = (outcome as { output: unknown }).output;
+      // Both spellings, so re-indenting the rows is not a way back in.
+      expect(sent).not.toContain(JSON.stringify(output, null, 2));
+      expect(sent).not.toContain(JSON.stringify(output));
     }
+  });
+
+  it("tells the page to CALL for its data, through the bridge the harness really installs", async () => {
+    const sent = await briefFor(world, cases[0]!);
+
+    expect(sent).toContain("window.vendo.callTool(name, args)");
+    expect(sent).toContain(`{ status: "ok", output:`);
+    // The guard's answer too (2026-08-18): the seam parks a write, so a prompt
+    // promising only ok-or-error is a prompt that lies about the seam — the same
+    // added bytes for every column, which is what keeps them comparable.
+    expect(sent).toContain(`{ status: "pending-approval", approvalId }`);
+    expect(sent).toContain("RETURNS that object synchronously — it is not a Promise");
+    // The label that used to introduce every tool's rows.
+    expect(sent).not.toContain("returns:");
   });
 
   it("is scoped to the case, so an overridden world reaches it and the authored one does not", async () => {
     const empty = cases.find((entry) => entry.id === "no-pending-transfers")!;
-    const sent = await briefFor(worldForCase(world, empty), empty);
+    const scoped = worldForCase(world, empty);
+    const sent = await briefFor(scoped, empty);
+    const overridden = scoped.tools.find((tool) => tool.name === "list_transfers")!;
+    const authored = world.tools.find((tool) => tool.name === "list_transfers")!;
 
-    expect(sent).toContain(JSON.stringify({ data: [] }, null, 2));
+    // The override moves the DERIVED output schema, which is the only place a
+    // case's data reaches a prompt at all now: an empty read declares an array of
+    // nothing, and the authored one declares an array of rows.
+    expect(overridden.descriptor).not.toEqual(authored.descriptor);
+    expect(sent).toContain(JSON.stringify(overridden.descriptor, null, 2));
+    expect(sent).not.toContain(JSON.stringify(authored.descriptor, null, 2));
     expect(sent).not.toContain("Alex Rivera");
   });
 
@@ -239,21 +270,23 @@ describe("the harness contract is the ONLY place either baseline is coached on t
     /role\s*=\s*"?dialog/i,
     /\bdialog\b/i,
     /viewport/i,
-    /480/,
+    /1280/,
     /\bnetwork\b/i,
     /\binline\b/i,
     /\bsum, count\b/i,
     /\ballowlist\b/i,
   ];
 
-  /** What a baseline says on its own account: its brief minus the three blocks
-   *  every column shares. */
+  /** What a baseline says on its own account: its brief minus the blocks it
+   *  shares — the world, the contract, the tool-access text every column with a
+   *  working directory gets, and the case. */
   const ownWords = async (
     baseline: (typeof BASELINES)[number],
   ): Promise<string> =>
     (await baseline.briefFor(world, cases[0]!))
       .replace(worldBlock(world), " ")
       .replace(HARNESS_CONTRACT, " ")
+      .replace(TOOL_ACCESS, " ")
       .replace(cases[0]!.prompt, " ");
 
   it("hands both baselines the identical contract, and it is identical to the one the harness pins", async () => {
@@ -263,10 +296,26 @@ describe("the harness contract is the ONLY place either baseline is coached on t
       expect(brief).toContain(HARNESS_CONTRACT);
       // The contract is not a paraphrase of the seam, it is the seam: the size
       // it names is the size the shooter really uses.
-      expect(HARNESS_CONTRACT).toContain("480x900");
+      expect(HARNESS_CONTRACT).toContain("1280x900");
     }
     // One text, one occurrence each — a second copy would mean two sources.
     for (const brief of briefs) expect(brief.split(HARNESS_CONTRACT)).toHaveLength(2);
+  });
+
+  /** The third shared text, and the one only a column with hands can use: the two
+   *  agentic drivers write `world-tools` into the workspace they open, so each can
+   *  see the data its page will fetch — which is what the vendo column's loop and
+   *  an in-house team's own API both already have. `diy` is one model call with no
+   *  directory, so it is told about no such thing; its access is the page's, at
+   *  render time, and that is the whole of what a one-shot generation gets. */
+  it("hands both agentic baselines the identical tool-access text, and diy none of it", async () => {
+    for (const baseline of BASELINES.filter((entry) => entry.name !== "diy")) {
+      const brief = await baseline.briefFor(world, cases[0]!);
+      expect(brief.split(TOOL_ACCESS)).toHaveLength(2);
+    }
+
+    const diy = BASELINES.find((entry) => entry.name === "diy")!;
+    expect(await diy.briefFor(world, cases[0]!)).not.toContain(TOOL_ACCESS);
   });
 
   it.each(BASELINES)("$name says nothing else about the harness at all", async (baseline) => {
@@ -328,6 +377,38 @@ describe("the page answers the way the prompt promised", () => {
         // either the envelope or whether it has to await the call.
         expect(diySystemPrompt(world)).toContain(`{ status: "ok", output:`);
         expect(diySystemPrompt(world)).toContain("RETURNS that object synchronously — it is not a Promise");
+      } finally {
+        await visit.close();
+      }
+    } finally {
+      await shooter.close();
+    }
+  }, 120_000);
+
+  /** The premise of the whole contract, in a real browser: no contender is handed
+   *  any data, so every page has to fetch its own AS IT RENDERS. `authoredPage`
+   *  injects the recorder at the top of the document, so a script the contender
+   *  wrote reaches it while the document is still being parsed — before `load`,
+   *  before any framework, with nothing to await. If this ever stops holding,
+   *  every column is being asked for something the harness will not answer. */
+  it("answers a page that calls it during its own initial script execution", async () => {
+    const shooter = await openBrowser();
+    try {
+      const fetching = `<!doctype html><html lang="en"><head><title>t</title></head><body><div id="out"></div>
+<script>
+  var answered = window.vendo.callTool("list_transfers", { limit: 20 });
+  document.getElementById("out").textContent = answered.output.data[0].to;
+</script>
+</body></html>`;
+      const visit = await shooter.visit(authoredPage(fetching, world, "diy-sonnet"));
+      try {
+        const shot = await visit.shot();
+
+        // The row is on the screen, and fetching is the only way it could have
+        // got there: nothing in any prompt says what this tool answers with.
+        expect(shot.visibleText).toContain("Alex Rivera");
+        expect(shot.consoleErrors).toEqual([]);
+        expect(shot.renders).toBe(true);
       } finally {
         await visit.close();
       }

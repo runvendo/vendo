@@ -1,15 +1,14 @@
-/** Stat — a KPI/metric summary with semantic formatting (W2 §The Kit). */
+/** Stat — a KPI/metric summary tile (W2 §The Kit). */
 import type { ReactNode } from "react";
-import { applyFormat, type ValueFormat } from "../format.js";
+import { applyFormat } from "../format.js";
 import { densityVars, font, hairline, microLabel, numeric, resolveTone, t, toneColor, type KitDensity, type KitStyled, type KitTone } from "../tokens.js";
 
 export interface StatProps extends KitStyled {
   /** Metric name. */
   label: string;
-  /** Raw value; formatted by `format` (money takes major units, never cents). */
+  /** The figure, DISPLAYED AS GIVEN — the screen formats it (`toLocaleString`)
+   *  and the tile does the typography. */
   value: number | string;
-  /** Value-tier format. */
-  format?: ValueFormat;
   /** A unit written after the value — "ms", "min", "h". */
   unit?: string;
   /** A trend / delta caption, e.g. "+12% MoM". */
@@ -29,10 +28,14 @@ export interface StatProps extends KitStyled {
  *  so longer text renders truncated with the full text in the tooltip. */
 const STAT_VALUE_MAX_CHARS = 40;
 
-export function Stat({ label, value, format = "text", unit, trend, tone, density, icon, style, children }: StatProps) {
+export function Stat({ label, value, unit, trend, tone, density, icon, style, children }: StatProps) {
   const resolvedTone = resolveTone(tone, "neutral");
   const emphasis = toneColor(resolvedTone);
-  const shown = applyFormat(value, format);
+  // The value is text the screen already formatted (`total.toLocaleString(…)`),
+  // so the tile prints it. The coercion is still the total one: an absent or
+  // blank value answers `null`, which is what paints the em dash below instead
+  // of the word "undefined" in 27px type.
+  const shown = applyFormat(value, "text");
   const formatted = shown !== null && unit !== undefined ? `${shown} ${unit}` : shown;
   const empty = formatted === null;
   const overflow = !empty && formatted.length > STAT_VALUE_MAX_CHARS;

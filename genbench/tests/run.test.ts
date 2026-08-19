@@ -5,29 +5,41 @@
  * what lets the row be gathered with `Promise.all` — and so what keeps the
  * report's column order the contender order, whatever order they finish in.
  */
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import { WALL_CLOCK_MS } from "../src/claude-code.js";
 import type { FloorResult } from "../src/floor.js";
-import { AUDITOR_CONTRACT } from "../src/audit.js";
-import { JudgeContract, type JudgeResult } from "../src/judge.js";
+import { HonestyContract } from "../src/honesty.js";
+import { HONESTY_LINE, JudgeContract, type JudgeResult } from "../src/judge.js";
+import { usdFor } from "../src/meter.js";
+import type { RunSummary } from "../src/report.js";
 import {
   attempt,
   CASE_TIMEOUT_MS,
   contenders,
+  door,
   exitCode,
   harnessStamp,
   missingKey,
   parseArgs,
+  parseRegrade,
+  parseReport,
   pool,
+  report,
+  SALVAGE_MS,
   shouldOpen,
   ungraded,
+  unjudged,
   worldsFor,
+  writeCase,
   type Args,
   type CaseResult,
 } from "../src/run.js";
-import { TriageContract } from "../src/triage.js";
 
 describe("attempt", () => {
   it("hands back what the work returned", async () => {
@@ -75,6 +87,74 @@ describe("attempt", () => {
 
     expect(toldItLost).toBe(false);
   });
+
+  /**
+   * A screen painted before the bell is a real screen, and it used to be thrown
+   * away: the case was recorded as a timeout, the floor failed `delivered`, and
+   * a judge failed every rubric line on a screen that existed. So the budget is
+   * announced a salvage window BEFORE the case is recorded, and a driver that
+   * answers it is reported as having delivered — with the cap riding along as
+   * its own failure sentence rather than instead of the screen.
+   */
+  it(
+    "asks the work for what it has before the case is recorded, and reports what it hands back",
+    async () => {
+      const salvaged = await attempt(async (lost, spent) => {
+        await new Promise((settle) => spent.addEventListener("abort", settle, { once: true }));
+        // A salvage is not free, and this is why the window is a window and not
+        // a promise resolved on the way past: the driver reads back what landed,
+        // re-runs the product's gate on it, then the case paints and presses the
+        // screen. Anything real after the ask lands on the far side of the bell.
+        await new Promise((settle) => setTimeout(settle, 20));
+        // Nobody's timeout yet: the case has not been recorded, so what this
+        // hands back is what the case gets.
+        return lost.aborted ? "a screen nobody is waiting for" : "the last screen it painted";
+      }, SALVAGE_MS + 50);
+
+      expect(salvaged).toEqual({ done: "the last screen it painted" });
+    },
+    // The ask lands 50ms in, so this passes in 50ms. The budget itself is a
+    // salvage window plus that, which is longer than the suite's own default —
+    // and a version that only asks at the bell has to be allowed to reach the
+    // bell, or this reads as a hang instead of the wrong answer.
+    SALVAGE_MS + 15_000,
+  );
+});
+
+/**
+ * The zombie that killed a run: a case hit its budget, the row moved on, and the
+ * driver that was still going rejected — an audit write into a store already
+ * closed — with nobody left to catch it. Node ends a process over that, and it
+ * did: 38 other cases' work sat on disk and `summary.json` was never written.
+ *
+ * Proven in a REAL child process, because "the process does not die" is not
+ * something this one can answer — vitest listens for unhandled rejections too,
+ * and a handler tested against a stand-in proves only the stand-in.
+ */
+describe("a late failure", () => {
+  const zombie = `
+import { surviveLateFailures } from ${JSON.stringify(pathToFileURL(join(dirname(dirname(fileURLToPath(import.meta.url))), "src", "run.ts")).href)};
+surviveLateFailures(new Set(["vendo-sonnet / spend-by-merchant"]));
+// The crash, verbatim: the timed-out case's guard, writing its row moments too late.
+Promise.reject(new Error("[vendo] store is closed"));
+await new Promise((settle) => setTimeout(settle, 50));
+console.log("the run wrote its summary");
+`;
+
+  it("does not take the rest of the run down with it", () => {
+    const ran = spawnSync(process.execPath, ["--import", "tsx", "--input-type=module", "-e", zombie], {
+      cwd: dirname(dirname(fileURLToPath(import.meta.url))),
+      encoding: "utf8",
+    });
+
+    // The run reached its end — the process outlived the rejection.
+    expect(ran.status).toBe(0);
+    expect(ran.stdout).toContain("the run wrote its summary");
+    // And said so, once and loudly: what it was, and what was running beside it.
+    expect(ran.stderr).toContain("LATE FAILURE");
+    expect(ran.stderr).toContain("[vendo] store is closed");
+    expect(ran.stderr).toContain("vendo-sonnet / spend-by-merchant");
+  });
 });
 
 describe("contenders", () => {
@@ -111,6 +191,15 @@ describe("the case budget", () => {
     expect(CASE_TIMEOUT_MS.vendo).toBe(5 * 60_000);
     expect(CASE_TIMEOUT_MS.diy).toBe(5 * 60_000);
   });
+
+  /** The salvage window is carved OUT of these numbers rather than added to
+   *  them, so a case still fits in one budget. A window as long as a column's
+   *  whole budget would tell that column it was over before it started. */
+  it("leaves every column room to generate inside its own budget", () => {
+    for (const [harness, budget] of Object.entries(CASE_TIMEOUT_MS)) {
+      expect(budget, harness).toBeGreaterThan(SALVAGE_MS);
+    }
+  });
 });
 
 // ---------------------------------------------------------------- the verdict
@@ -120,7 +209,6 @@ const floorAt = (pass: boolean): FloorResult => ({
   renders: pass,
   valid: pass,
   blocking: [],
-  honestData: { pass, offenders: [], examined: 0, found: 0 },
   wiredActions: { pass, pressed: 0, bindings: [] },
   pass,
 });
@@ -146,8 +234,6 @@ const scored = (floor: FloorResult, judged: JudgeResult): CaseResult => ({
   caseHash: "case-hash",
   judged,
   judgeContract: JudgeContract,
-  triageContract: TriageContract,
-  auditorContract: AUDITOR_CONTRACT,
   gitSha: "0".repeat(40),
   agentSdkVersion: "0.0.0",
 });
@@ -193,9 +279,22 @@ describe("a column with no screen", () => {
     expect(ungraded(["shows every pending transfer"], ["money always shows 2 decimals"])).toEqual({
       lines: [
         { line: "shows every pending transfer", source: "case", verdict: "fail", note: "no screen was delivered to grade" },
+        // The standing honesty line rides along, so a column that delivered
+        // nothing is failed on it too rather than quietly skipping it.
+        { line: HONESTY_LINE, source: "case", verdict: "fail", note: "no screen was delivered to grade" },
         { line: "money always shows 2 decimals", source: "style", verdict: "fail", note: "no screen was delivered to grade" },
       ],
       degraded: false,
+      // And the honesty fail says who did not check it, rather than being a fail
+      // with nothing beside it — the shape that left two accusations unexplained
+      // in run 2026-08-18T21-39-10.
+      honesty: {
+        judged: "fail",
+        claim: "no screen was delivered to grade",
+        verdict: "unadjudicated",
+        note: "no screen was delivered, so this screen displayed no figures to audit",
+        adjudicator: HonestyContract,
+      },
     });
   });
 });
@@ -212,6 +311,7 @@ describe("opening the preview", () => {
     world: "maple",
     contenders: ["vendo", "diy", "claude-code"],
     jobs: 1,
+    floorOnly: false,
   });
 
   it("opens for the single case a person is sitting and watching", () => {
@@ -310,8 +410,22 @@ describe("--models", () => {
 /** A row is every driver, and the reason to narrow it is money: measuring one
  *  harness should not spend the other two's tokens on the same case. */
 describe("--contenders", () => {
-  it("races every driver when nobody narrows the row", () => {
-    expect(parseArgs(["run"]).contenders).toEqual(["vendo", "diy", "claude-code", "thesys", "codex"]);
+  /** A bare run is every contender once, each on the model its column is bought
+   *  for — and all of them in one price band, because a flagship set against
+   *  another vendor's mid-tier measures a price tag rather than a product. */
+  it("races every contender on one price band when nobody narrows the row", () => {
+    // `opus` is passed and ignored: every column in the default row is a pinned
+    // pair, because crossing `--models` over it would hand `diy` the same Sonnet
+    // 5 twice — once first-party, once through the router.
+    expect(contenders(["opus"], parseArgs(["run"]).contenders).map((contender) => contender.slug)).toEqual([
+      "vendo-sonnet",
+      "diy-claude",
+      "diy-gpt",
+      "diy-gemini",
+      "claude-code-sonnet",
+      "thesys-c1",
+      "codex-terra",
+    ]);
   });
 
   it("narrows the row to the drivers named", () => {
@@ -390,10 +504,59 @@ describe("--contenders", () => {
 
   /** `codex` is a bought PRODUCT the way `thesys` is: it spawns OpenAI's own CLI
    *  and never reads the meter's model, so it runs its one alias and nothing
-   *  else, and no other column may run that alias. */
-  it("runs the Codex CLI on its own alias, and runs that alias nowhere else", () => {
-    expect(contenders(["sol"]).map((contender) => contender.slug)).toEqual(["codex-sol"]);
-    expect(contenders(["sonnet", "sol"]).map((contender) => contender.slug)).not.toContain("codex-sonnet");
+   *  else. That alias goes exactly one place beyond it — the vendo pipeline —
+   *  and nowhere near the two columns that spawn an engine of their own. */
+  it("runs the Codex CLI on its own alias, and lends that alias to the vendo column alone", () => {
+    expect(contenders(["terra"]).map((contender) => contender.slug)).toEqual(["vendo-terra", "codex-terra"]);
+    expect(contenders(["sonnet", "terra"]).map((contender) => contender.slug)).not.toContain("codex-sonnet");
+  });
+
+  /** Every other pair of columns moves the harness and the model at once, so the
+   *  gap between them says nothing about which one moved. This is the pair that
+   *  holds the model still. */
+  it("takes the borrowed column as the pair it was asked for", () => {
+    const only = parseArgs(["run", "--contenders", "vendo:terra"]).contenders;
+
+    expect(contenders([], only).map((contender) => contender.slug)).toEqual(["vendo-terra"]);
+  });
+});
+
+/** An alias only means something at a door, and the meter prices what the WIRE
+ *  answered. `terra` is the one alias with two doors, so it is the one that says
+ *  whether a column is priced where it really ran. */
+describe("the door a column answers at", () => {
+  it("sends the borrowed column through the router, under the id the router bills", () => {
+    expect(door({ harness: "vendo", model: "terra", slug: "vendo-terra" })).toEqual({
+      at: "openrouter",
+      modelId: "openai/gpt-5.6-terra",
+    });
+  });
+
+  /** The CLI is billed by OpenAI's platform directly rather than through the
+   *  router, so the two columns cannot share an id even though both now price at
+   *  the same list rate. */
+  it("leaves the codex column on OpenAI's own id, which is what prices its session", () => {
+    expect(door({ harness: "codex", model: "terra", slug: "codex-terra" }).modelId).toBe("gpt-5.6-terra");
+  });
+
+  it("keeps every other column at the door it already had", () => {
+    expect(door({ harness: "vendo", model: "sonnet", slug: "vendo-sonnet" })).toEqual({
+      at: "anthropic",
+      modelId: "claude-sonnet-5",
+    });
+    expect(door({ harness: "diy", model: "gpt", slug: "diy-gpt" }).at).toBe("openrouter");
+    expect(door({ harness: "vendo", model: "glm-fast", slug: "vendo-glm-fast" }).at).toBe("wafer");
+    expect(door({ harness: "thesys", model: "c1", slug: "thesys-c1" }).at).toBe("thesys");
+  });
+
+  /** Both doors are priced at Terra's list rate on purpose — not the router's
+   *  temporary discount on its OpenAI endpoint — so the two columns compare on
+   *  the same dollar and a coupon that can expire any day flatters neither. */
+  it("prices both terra doors the same, at the list rate", () => {
+    const usage = { inputTokens: 1_000_000, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, calls: 1 };
+
+    expect(usdFor(usage, door({ harness: "vendo", model: "terra", slug: "vendo-terra" }).modelId)).toBe(2);
+    expect(usdFor(usage, door({ harness: "codex", model: "terra", slug: "codex-terra" }).modelId)).toBe(2);
   });
 });
 
@@ -410,12 +573,24 @@ describe("the credential preflight", () => {
   });
 
   it("demands OpenAI's key for the codex column, which bills that account directly", () => {
-    expect(missingKey(contenders(["sol"]), {})).toMatch(/OPENAI_API_KEY is not set.*serves sol/);
-    expect(missingKey(contenders(["sol"]), { OPENAI_API_KEY: "sk-x" })).toBeUndefined();
+    const only = parseArgs(["run", "--contenders", "codex:terra"]).contenders;
+
+    expect(missingKey(contenders([], only), {})).toMatch(/OPENAI_API_KEY is not set.*serves terra/);
+    expect(missingKey(contenders([], only), { OPENAI_API_KEY: "sk-x" })).toBeUndefined();
+  });
+
+  /** Same alias, other door: the borrowed column reaches `terra` over the
+   *  router's wire and owes the router's key, and OpenAI's platform key would
+   *  buy it nothing. A key demanded off the alias would ask for the wrong one. */
+  it("demands the router's key for the borrowed column, and not OpenAI's", () => {
+    const only = parseArgs(["run", "--contenders", "vendo:terra"]).contenders;
+
+    expect(missingKey(contenders([], only), {})).toMatch(/OPENROUTER_API_KEY is not set.*serves terra/);
+    expect(missingKey(contenders([], only), { OPENROUTER_API_KEY: "sk-or-x" })).toBeUndefined();
   });
 
   it("demands nothing for an alias the narrowed row dropped", () => {
-    expect(missingKey(contenders(["sonnet", "gpt", "sol"], ["vendo"]), {})).toBeUndefined();
+    expect(missingKey(contenders(["sonnet", "gpt", "c1"], ["vendo"]), {})).toBeUndefined();
   });
 });
 
@@ -435,6 +610,209 @@ describe("--jobs", () => {
     for (const value of ["0", "-1", "2.5", "lots"]) {
       expect(() => parseArgs(["run", "--jobs", value])).toThrow(/--jobs/);
     }
+  });
+});
+
+/**
+ * The cheap sweep.
+ *
+ * A floor is mechanical, local and deterministic, so it can be run over all
+ * fourteen worlds the day something lands — but only if it costs no grader. At
+ * ~$0.03 a case a judged 200-case sweep is $6 of verdicts nobody asked to
+ * change, and a regression gate that expensive is a gate nobody runs.
+ */
+describe("--floor-only", () => {
+  it("asks the judge unless a run says not to", () => {
+    expect(parseArgs(["run"]).floorOnly).toBe(false);
+  });
+
+  /** It names a MODE, so it takes no value — and every flag beside it still
+   *  parses exactly as it does in a judged run. */
+  it("takes no value, and leaves the flags beside it their own", () => {
+    expect(parseArgs(["run", "--world", "all", "--floor-only", "--jobs", "4"])).toMatchObject({
+      floorOnly: true,
+      world: "all",
+      jobs: 4,
+    });
+    expect(
+      contenders(["sonnet"], parseArgs(["run", "--floor-only", "--contenders", "vendo"]).contenders).map(
+        (contender) => contender.slug,
+      ),
+    ).toEqual(["vendo-sonnet"]);
+  });
+
+  it("still refuses an argument nothing here takes", () => {
+    expect(() => parseArgs(["run", "--floor-only", "--rubric", "4"])).toThrow(/unexpected argument "--rubric"/);
+  });
+
+  /** Three different silences, and only one of them is about the contender: a
+   *  column that delivered nothing fails every line, a judge that was unwell
+   *  fails every line and says so, and a run that never asked has no lines at
+   *  all — so nothing downstream can count a skipped exam against anyone. */
+  it("records a skipped judgement as no rubric, never as a failed one", () => {
+    expect(unjudged).toEqual({ lines: [], degraded: false });
+    expect(ungraded(["shows every pending transfer"], []).lines.every((line) => line.verdict === "fail")).toBe(true);
+  });
+});
+
+/** The second subcommand. Re-scoring a run folder takes the folder and nothing
+ *  else, so the folder is positional — and `--jobs` means there what it means in
+ *  a run, because a judge call per case is still a queue. */
+describe("regrade", () => {
+  it("takes the run folder to re-score, and one case at a time unless asked otherwise", () => {
+    expect(parseRegrade(["runs/2026-08-17T09-09-03"])).toEqual({
+      runDir: resolve("runs/2026-08-17T09-09-03"),
+      jobs: 1,
+    });
+    expect(parseRegrade(["runs/x", "--jobs", "4"]).jobs).toBe(4);
+  });
+
+  it("refuses a regrade with no folder, and a flag a re-score has no meaning for", () => {
+    expect(() => parseRegrade([])).toThrow(/needs the run folder/);
+    expect(() => parseRegrade(["runs/x", "--models", "opus"])).toThrow(/unexpected argument "--models"/);
+  });
+});
+
+/**
+ * The third subcommand, and the only one that spends nothing.
+ *
+ * How the report READS a run moves without a single verdict moving — correctness
+ * just split the honesty line out into a column of its own — and `regrade` would
+ * answer that with a judge call per case, for verdicts nobody disputes. So both
+ * real halves over one real directory: the run's OWN writer puts a case on disk,
+ * `report` rewrites the two files that are read off it, and these read those
+ * back.
+ */
+describe("report", () => {
+  it("takes the run folder to read back, and nothing else", () => {
+    expect(parseReport(["runs/2026-08-17T09-09-03"])).toEqual({ runDir: resolve("runs/2026-08-17T09-09-03") });
+  });
+
+  it("refuses a report with no folder, and a flag a pass that grades nothing has no queue for", () => {
+    expect(() => parseReport([])).toThrow(/needs the run folder/);
+    expect(() => parseReport(["runs/x", "--jobs", "4"])).toThrow(/unexpected argument "--jobs"/);
+  });
+
+  const JUDGED_WITH_A_LIE: JudgeResult = {
+    lines: [
+      { line: LINE, source: "case", verdict: "pass", note: "three rows are listed" },
+      { line: HONESTY_LINE, source: "case", verdict: "fail", note: "the balance is on no tool's answer" },
+    ],
+    degraded: false,
+  };
+
+  /** One saved run folder, written by the code that writes them, under a `runs`
+   *  directory of its own — the real layout, so a path one keystroke short of it
+   *  is a real path here too. `had` is the summary the run already wrote — as
+   *  JSON rather than as a type, because what a saved summary holds is whatever
+   *  it held on the day, and only what this pass reads back matters here. */
+  const savedRun = async (results: readonly CaseResult[], had?: unknown): Promise<string> => {
+    const runDir = join(await mkdtemp(join(tmpdir(), "genbench-report-")), "runs", "2026-01-01T00-00-00");
+    await mkdir(runDir, { recursive: true });
+    for (const result of results) {
+      await writeCase(runDir, { outcome: undefined, html: undefined, shot: undefined, result });
+    }
+    if (had !== undefined) await writeFile(join(runDir, "summary.json"), JSON.stringify(had));
+    return runDir;
+  };
+
+  it("rewrites the summary and the page off the saved verdicts, and touches nothing else", async () => {
+    const was = scored(floorAt(true), JUDGED_WITH_A_LIE);
+    const runDir = await savedRun([was]);
+    const resultPath = join(runDir, was.contender, was.case, "result.json");
+    const before = await readFile(resultPath, "utf8");
+
+    expect(await report({ runDir })).toBe(0);
+
+    const summary = JSON.parse(await readFile(join(runDir, "summary.json"), "utf8")) as RunSummary;
+    // The split, said about a run that was graded before the split existed — and
+    // not one judge call was spent saying it.
+    expect(summary.run).toBe("2026-01-01T00-00-00");
+    expect(summary.columns[was.contender]!.honesty).toEqual({ pass: 0, fail: 1, flipped: 0, unadjudicated: 0 });
+    expect(summary.columns[was.contender]!.caseLines).toEqual({ pass: 1, fail: 0, na: 0 });
+    expect(await readFile(join(runDir, "preview.html"), "utf8")).toContain(`<span>honesty</span><b>0/1</b>`);
+    // The verdicts on disk are the evidence: a pass that edits its own input can
+    // only be run once.
+    expect(await readFile(resultPath, "utf8")).toBe(before);
+  });
+
+  /**
+   * The floor's per-check split, backfilled — no model, no browser, no probe.
+   *
+   * `result.json` already carries what the split is read from: the verdicts, the
+   * bindings under them and the check's own `why`. So a run graded before the
+   * split existed can be re-rendered under it, which is the whole reason this
+   * pass exists.
+   */
+  it("fills the floor's per-check split in for a run recorded before it existed", async () => {
+    const dead: FloorResult = {
+      delivered: true,
+      renders: true,
+      valid: false,
+      blocking: ["the screen the agent saved would not compile"],
+      wiredActions: {
+        pass: false,
+        pressed: 1,
+        bindings: [{ where: "Cancel", effect: "none", why: "pressing it called nothing and changed nothing" }],
+        why: "this case asks the screen to DO something, and no press ever asked the host for anything or opened a confirmation",
+      },
+      pass: false,
+    };
+    const runDir = await savedRun([scored(dead, JUDGED_WITH_A_LIE)]);
+
+    expect(await report({ runDir })).toBe(0);
+
+    const summary = JSON.parse(await readFile(join(runDir, "summary.json"), "utf8")) as RunSummary;
+    expect(summary.columns["vendo-sonnet"]!.floorChecks).toEqual({
+      delivered: { earned: 1, failed: 0, vacuous: 0 },
+      renders: { earned: 1, failed: 0, vacuous: 0 },
+      valid: { earned: 0, failed: 1, vacuous: 0 },
+      pressed: { earned: 0, failed: 1, vacuous: 0 },
+      // The press named no tool, so there was nothing on it to recognise.
+      wired: { earned: 0, failed: 0, vacuous: 1 },
+      // This case's stamps match no case in today's corpus, so the corpus cannot
+      // say it asked — the check's own `why` can, since only an `action` case is
+      // ever given one, and without that the split would stop adding up to the
+      // failed `wiredActions` above it.
+      actionProven: { earned: 0, failed: 1, vacuous: 0 },
+    });
+    // A compile crash and a dead button now read as two diseases on the page too.
+    expect(await readFile(join(runDir, "preview.html"), "utf8")).toContain(`<th>actionProven</th>`);
+  });
+
+  /** Rewriting a page in place costs the page it replaces, so what this pass
+   *  cannot work out for itself has to come off the summary already there: the
+   *  disk's order is not the order the row was raced in, and a run holding
+   *  another run's screens goes on saying whose they were. */
+  it("keeps the column order and the provenance the folder already had", async () => {
+    const runDir = await savedRun(
+      [
+        { ...scored(floorAt(true), JUDGED_WITH_A_LIE), contender: "vendo-sonnet" },
+        { ...scored(floorAt(true), JUDGED_WITH_A_LIE), contender: "diy-claude" },
+      ],
+      // A row raced as `--contenders diy,vendo`: the opposite of the harness
+      // order a report falls back to, so the disk cannot produce this by luck.
+      { regradedFrom: "2025-12-31T00-00-00", columns: { "diy-claude": {}, "vendo-sonnet": {} } },
+    );
+
+    expect(await report({ runDir })).toBe(0);
+
+    const summary = JSON.parse(await readFile(join(runDir, "summary.json"), "utf8")) as RunSummary;
+    expect(Object.keys(summary.columns)).toEqual(["diy-claude", "vendo-sonnet"]);
+    expect(summary.regradedFrom).toBe("2025-12-31T00-00-00");
+  });
+
+  /** `runs/` is one keystroke from `runs/<id>`, and read whole it is every run at
+   *  once — added up as one, into a summary and a page dropped in `runs/` itself.
+   *  A result names the folder it belongs in, so a folder that is not one run
+   *  says so before anything is written. */
+  it("refuses a path that is not one run folder, and leaves nothing behind there", async () => {
+    const runDir = await savedRun([scored(floorAt(true), JUDGED_WITH_A_LIE)]);
+
+    expect(await report({ runDir: dirname(runDir) })).toBe(1);
+
+    expect(existsSync(join(dirname(runDir), "summary.json"))).toBe(false);
+    expect(existsSync(join(dirname(runDir), "preview.html"))).toBe(false);
   });
 });
 

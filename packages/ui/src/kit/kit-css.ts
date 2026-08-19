@@ -33,9 +33,8 @@ const focus = FIELDS.map((f) => `${f}:focus-visible`).join(", ");
  * it belongs — inline, on the brick, where the theme owns it.
  */
 export const KIT_CSS = `
-[data-kit="Button"][data-variant="primary"]:not([disabled]):hover { background: color-mix(in srgb, ${t.accent} 88%, ${t.text}) !important; }
-[data-kit="Button"][data-variant="danger"]:not([disabled]):hover { background: color-mix(in srgb, ${t.danger} 88%, ${t.text}) !important; }
-[data-kit="Button"][data-variant="secondary"]:not([disabled]):hover { background: ${t.surfaceRaised} !important; border-color: color-mix(in srgb, ${t.accent} 35%, ${t.border}) !important; }
+[data-kit="Button"]:not([disabled]):hover { background: var(--vendo-kit-button-hover) !important; }
+[data-kit="Button"][data-tone="neutral"]:not([disabled]):hover { border-color: color-mix(in srgb, ${t.accent} 35%, ${t.border}) !important; }
 [data-kit="Button"]:not([disabled]):active { transform: translateY(0.5px); }
 ${hover} { border-color: color-mix(in srgb, ${t.accent} 35%, ${t.border}) !important; }
 [data-kit-close]:hover { background: ${t.surfaceRaised} !important; color: ${t.text} !important; }

@@ -29,7 +29,7 @@
     "motion": "reduced"
   },
   "style": [
-    "dark console: near-black #0A0C10 page, #12161D panels, hairline #1E2530 borders — never a light background",
+    "dark console: never a light background",
     "uses the theme exactly: the blue accent, Inter for prose and the theme's mono family for shas, branches and log output — no invented colors or fonts",
     "build status reads as a labelled word or pill — passed, failed, running, cancelled — never color alone",
     "durations read as '3m 12s', never a raw count of seconds",
@@ -51,7 +51,7 @@
       }
     },
     "get_build_stages": {
-      "does": "The stages of one pipeline run, in the order they run. The rows are the `data` array and are build 4188's stages. `status` is one of passed, failed, running, skipped.",
+      "does": "The stages of one pipeline run, in the order they run. This fixture does not vary by build_id — the rows are always build 4188's stages, so only ask about build 4188. `status` is one of passed, failed, running, skipped.",
       "takes": { "build_id": "string" },
       "data": {
         "data": [
@@ -64,7 +64,7 @@
       }
     },
     "get_build_log": {
-      "does": "The raw output of one stage of one run, line by line. The rows are the `data` array and are build 4188's test stage. `stream` is stdout or stderr.",
+      "does": "The raw output of one stage of one run, line by line. This fixture does not vary by build_id or stage — the rows are always build 4188's test stage, so only ask about build 4188's test stage. `stream` is stdout or stderr.",
       "takes": { "build_id": "string", "stage": "string" },
       "data": {
         "data": [

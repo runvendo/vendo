@@ -9,7 +9,13 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { createAutomation, createStack, ownerCtx, resetFixture, type Stack } from "../src/harness.js";
 import { ADA, BOB, approve } from "../src/support.js";
 
-const surface = ["host_invoices_list", "host_invoices_send"];
+/** Two tools a standing grant can really buy. Neither is destructive,
+ *  `ungraded`, or confirm-each on purpose: arming captures only the powers a
+ *  firing could hold, so `host_invoices_send` — which this record declared
+ *  until 2026-08-18 — is never carded and never granted, THE LAW refusing it
+ *  away whatever the owner answers. What a yes MINTS is this file's subject, so
+ *  the surface has to be two tools a yes can actually mint. */
+const surface = ["host_invoices_list", "host_invoices_update"];
 
 /** A disarmed steps record, so `enable` is what arms it and captures for it. */
 const stepsRecord = (event: string): CreateAutomationInput => ({
@@ -19,7 +25,7 @@ const stepsRecord = (event: string): CreateAutomationInput => ({
     kind: "steps",
     steps: [
       { id: "list", tool: "host_invoices_list" },
-      { id: "send", tool: "host_invoices_send", args: { id: "event.id" } },
+      { id: "update", tool: "host_invoices_update", args: { id: "event.id" } },
     ],
   },
   authoredBy: "chat",

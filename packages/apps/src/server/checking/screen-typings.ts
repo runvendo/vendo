@@ -29,8 +29,12 @@ import {
 import {
   ACTION_PROP_DESCRIPTION,
   DISPLAY_TAG_NAMES,
+  ICON_NAME_DESCRIPTION,
   KIT_COMPONENT_NAMES,
+  KIT_ICON_NAMES,
   KIT_SCREEN_COMPONENT_NAMES,
+  KIT_SLOT_PROPS,
+  SAFE_STYLE_PROPERTIES,
   SLOT_PROP_DESCRIPTION,
   kitSpec,
   type KitComponentSpec,
@@ -82,24 +86,69 @@ export const SCREEN_TYPINGS_FILE = "/vendo-screen-typings.d.ts";
 // ---- zod → TS type text ---------------------------------------------------
 
 /**
- * What a slot may hold — an element tree, and NOT a function.
+ * What a slot may hold — an element tree, or a function that returns one.
  *
- * The screen VM serializes a function prop as a `$handler` door
- * (`genui/component/vm-program.ts` `emitValue`), so `cell={(row) => <Money/>}`
- * hands the table a callback where an element belongs and the cell paints
- * BLANK. Printed as `any`, that screen passed the whole gauntlet — compile,
- * types, paint, tree — and rendered a column of empty cells. Named, the
- * compiler refuses it at the check.
+ * One law for every slot: the element, or the function that makes it. The VM
+ * calls whichever it was given (`genui/component/vm-program.ts` `emitSlot`) and
+ * emits the result where the slot sits, so `header={() => <Text/>}` is as real as
+ * `header={<Text/>}`.
+ *
+ * The ARITY is the only thing that differs, and it is what this alias states: a
+ * slot painted ONCE has no row to be a function of, so its function takes
+ * nothing. A `(row) => …` written here would be called with no row and read a
+ * field off `undefined` — the compiler is the only thing that can refuse it, and
+ * {@link ROW_SLOT_TYPE} is the other arity.
  *
  * The wire printer keeps the permissive alias: a stored document's slot holds a
  * SERIALIZED element (an `$element`-sigilled object) that no type here
- * describes, and JSON cannot carry a closure, so the door this shuts was never
- * open there.
+ * describes, and JSON cannot carry a closure, so neither form reaches it.
  */
 export const SLOT_TYPE = "VendoSlot";
 const SLOT_DECLARATION =
-  `declare type ${SLOT_TYPE} = JSX.Element | string | number | boolean | null | undefined | readonly ${SLOT_TYPE}[];`;
+  `declare type ${SLOT_TYPE} = JSX.Element | string | number | boolean | null | undefined | readonly ${SLOT_TYPE}[] | (() => ${SLOT_TYPE});`;
 const WIRE_SLOT_DECLARATION = `declare type ${SLOT_TYPE} = any;`;
+
+/**
+ * The same law at the other arity: a slot the Kit paints once PER ROW, whose
+ * function is handed the row.
+ *
+ * A per-row slot is painted once for every row, so a function of the row is the
+ * only way to say something different in each — and it is what React trains
+ * anyone to write. The VM calls it once per row and hands the component that
+ * row's own element (`vm-program.ts` `emitSlot`), so the closure is real: the
+ * handler inside `rowActions={(row) => <Button onClick={() => …row.id…}/>}` is
+ * that row's handler and nobody else's.
+ *
+ * A separate alias rather than a widened {@link SLOT_TYPE} because the ARGUMENTS
+ * differ, not the law: a function of the row written in a slot painted once is
+ * called with no row, and this is the only place that can say so.
+ */
+export const ROW_SLOT_TYPE = "VendoRowSlot";
+const ROW_SLOT_DECLARATION =
+  `declare type ${ROW_SLOT_TYPE} = ${SLOT_TYPE} | ((row: any, index: number) => ${SLOT_TYPE});`;
+
+/**
+ * Every glyph the Kit ships, as a closed union of literals.
+ *
+ * `<Icon name="invented-glyph"/>` paints an EMPTY SPAN — the renderer draws a
+ * name it has no path data for as nothing at all (`ui` kit/icon.tsx), on purpose,
+ * because a missing glyph must never be a crash. So the name is a value no gate
+ * downstream can question: the screen compiles, type-checks, paints and validates
+ * with a hole where it said there was an icon.
+ *
+ * Printed closed, the compiler is the one thing that can refuse it, and it
+ * refuses it the way it refuses any wrong literal — naming the prop, and
+ * suggesting the nearest real name it can spell. `KIT_ICON_NAMES` is generated
+ * from the same lucide export the renderer's path data is (icon-names.gen.ts), so
+ * the set this admits is exactly the set that draws. A couple of hundred literals
+ * is nothing to tsc, and it is the whole vocabulary now: the catalog stopped
+ * spending ~575 tokens per generation teaching the list.
+ *
+ * A prop typed this way still takes a BINDING in the wire printer
+ * ({@link BINDING_TYPE}), so a stored screen resolving the name at render time is
+ * untouched.
+ */
+const ICON_NAME_TYPE = KIT_ICON_NAMES.map((name) => JSON.stringify(name)).join(" | ");
 
 /** The Kit's zod vocabulary is closed — it is our own schema file — so a
  *  direct walker beats a converter dependency (see the module note in the PR).
@@ -112,7 +161,9 @@ export const zodTypeText = (schema: ZodTypeAny | undefined, depth = 0, note?: Ty
   }
   const shape = zodShape(schema);
   switch (shape.kind) {
-    case "string": return "string";
+    // A described string is not just a string: an icon NAME is the closed set the
+    // renderer has path data for ({@link ICON_NAME_TYPE}).
+    case "string": return schema?.description === ICON_NAME_DESCRIPTION ? ICON_NAME_TYPE : "string";
     case "number": return "number";
     case "boolean": return "boolean";
     case "null": return "null";
@@ -426,7 +477,22 @@ export const screenCatalog = (
 ];
 
 /** `Promise`, and no DOM: a handler awaits a tool call, and `document`/`fetch`
- *  must stay undeclared so reaching for them is an error. */
+ *  must stay undeclared so reaching for them is an error.
+ *
+ *  It is also what declares `Intl` — `NumberFormat`, `formatToParts`, `dateStyle`,
+ *  and the locale-taking `toLocaleString`/`toLocaleDateString` overloads — and
+ *  those declarations are TRUE inside the box: the VM carries no ICU and borrows
+ *  the host's real `Intl` across the wall (`genui/component/vm-program.ts`
+ *  `INTL_SOURCE`). A smaller lib here would refuse the one idiom every model
+ *  writes for money and dates while the VM ran it perfectly well.
+ *
+ *  THIS PIN DECIDES WHAT THE BRIDGE MUST CARRY. Every value-side name in this
+ *  lib's `Intl` is a name a screen may write and the box therefore has to answer;
+ *  one that is declared and unbridged is a green check over a screen that dies on
+ *  its first paint. Moving the pin moves that obligation — `ListFormat` and the
+ *  `formatRange` family arrive with es2021 and es2023 — so a bump lands together
+ *  with the bridge's new methods, and `tests/checking/screen-intl-parity.test.ts`
+ *  walks the two surfaces and refuses any difference either way. */
 export const COMPONENT_SCREEN_LIB = ["lib.es2020.d.ts"];
 
 export interface ComponentScreenTypingsInput {
@@ -469,6 +535,15 @@ const HANDLER_TYPE = "(event?: { target: { value?: string; checked?: boolean } }
  *  one cannot be imported by a screen either. */
 const IDENTIFIER = /^[A-Za-z_$][\w$]*$/u;
 
+/** The paint allowlist, as a TYPE. The renderer drops an unnamed property at
+ *  paint (`@vendoai/ui` `safeStyle`), so leaving it legal here shipped screens
+ *  that compiled clean and then did not paint what they wrote. Printed from the
+ *  contract's one list, so the compiler and the renderer cannot disagree. */
+const SAFE_STYLE_TYPE = "VendoStyle";
+const SAFE_STYLE_DECLARATION = `interface ${SAFE_STYLE_TYPE} {
+${SAFE_STYLE_PROPERTIES.map((property) => `  ${property}?: string | number;`).join("\n")}
+}`;
+
 /** Everything the frame needs and nothing more. `IntrinsicElements` lists the
  *  display bricks and NOTHING else — that is what keeps `<img>` and `<script>`
  *  errors while `<div>` compiles — and each one takes only children and an
@@ -489,7 +564,8 @@ const IDENTIFIER = /^[A-Za-z_$][\w$]*$/u;
  *
  *  `Element` is BRANDED rather than empty. `{}` is the type every value is
  *  assignable to — a closure included — so an empty `Element` made
- *  {@link SLOT_TYPE} admit exactly the function it exists to refuse. A JSX
+ *  {@link SLOT_TYPE} admit every function, including the two it must refuse: one
+ *  that reads a row where there is no row, and one that returns no element. A JSX
  *  expression is typed `JSX.Element` by the compiler whatever its shape, so the
  *  brand costs a screen nothing; the name is the VM's own sigil for a serialized
  *  element (`genui/component/vm-program.ts` `emitValue`). */
@@ -498,7 +574,7 @@ const jsxFrame = (ported: boolean): string => `declare namespace JSX {
   interface ElementChildrenAttribute { children: {} }
   interface IntrinsicAttributes { key?: string | number }
   interface IntrinsicElements {
-${DISPLAY_TAG_NAMES.map((tag) => `    ${tag}: { children?: any; style?: Record<string, string | number>${ported ? "; className?: string; key?: string | number" : ""} };`).join("\n")}
+${DISPLAY_TAG_NAMES.map((tag) => `    ${tag}: { children?: any; style?: ${SAFE_STYLE_TYPE}${ported ? "; className?: string; key?: string | number" : ""} };`).join("\n")}
   }
 }`;
 
@@ -513,8 +589,10 @@ const REACT_MODULE = `declare module "react" {
   export function useRef<T>(initial: T): { current: T };
   export function createElement(...args: any[]): JSX.Element;
   export const Fragment: (props: { children?: any }) => JSX.Element;
-  /** So a screen can name the type of a style it hoists out of the JSX. */
-  export interface CSSProperties { [property: string]: string | number }
+  /** So a screen can name the type of a style it hoists out of the JSX. It is
+   *  the SAME allowlist: an open index signature here would be the one spelling
+   *  that smuggles a dropped property past the check. */
+  export type CSSProperties = ${SAFE_STYLE_TYPE};
   const React: {
     useState: typeof useState; useMemo: typeof useMemo; useCallback: typeof useCallback;
     useEffect: typeof useEffect; useRef: typeof useRef;
@@ -525,20 +603,32 @@ const REACT_MODULE = `declare module "react" {
 
 /** The splitter's `<button>` rewrite target, in the PORTED dialect only: a
  *  ported Button is the host's own button mechanically rewritten, so it carries
- *  exactly what the host tag carried — its class, its inline style, and its
- *  children in place of `label`. The model-authored dialect keeps Button as the
- *  spec wrote it, for the same reason display tags keep `className` out of that
- *  dialect: a capability a model cannot write is one it cannot borrow. */
-const PORTED_BUTTON_EXTRAS = ["className?: string", "style?: Record<string, string | number>"];
+ *  exactly what the host tag carried — its class, and its children in place of
+ *  `label` (`style` is every Kit component's now, through the one allowlist).
+ *  The model-authored dialect keeps Button as the spec wrote it, for the same
+ *  reason display tags keep `className` out of that dialect: a capability a
+ *  model cannot write is one it cannot borrow. */
+const PORTED_BUTTON_EXTRAS = ["className?: string"];
 
 const componentPropsText = (spec: KitComponentSpec, note?: TypeNote, ported = false): string => {
   const portedButton = ported && spec.name === "Button";
+  const slots = KIT_SLOT_PROPS[spec.name];
   const fields = Object.entries(spec.props).map(([name, prop]) => {
+    // `style` prints as the paint allowlist, not as its own zod — which still
+    // has to say `Record<string, string | number>` because it validates stored
+    // documents, while what a Kit root may actually paint is the same list a
+    // display brick gets.
     const text = prop.schema.description === ACTION_PROP_DESCRIPTION
       ? HANDLER_TYPE
-      : zodTypeText(prop.schema, 0, at(note, `prop "${name}"`));
+      : name === "style"
+        ? SAFE_STYLE_TYPE
+        : zodTypeText(prop.schema, 0, at(note, `prop "${name}"`));
+    // Every slot this prop prints is a PER-ROW slot when the prop's slot maps over
+    // rows — `rowActions` is the slot itself, `columns[].cell` is a field of one — so
+    // the substitution is over the printed text rather than threaded through the walk.
+    const typed = slots?.[name]?.rows === undefined ? text : text.replaceAll(SLOT_TYPE, ROW_SLOT_TYPE);
     const required = prop.required === true && !(portedButton && name === "label");
-    return `${name}${required ? "" : "?"}: ${text}`;
+    return `${name}${required ? "" : "?"}: ${typed}`;
   });
   const engine = spec.engine === undefined ? [] : [ENGINE_INDEX];
   return `{ ${[...fields, ...(portedButton ? PORTED_BUTTON_EXTRAS : []), "children?: any", ...engine].join("; ")} }`;
@@ -579,8 +669,10 @@ export function componentScreenTypings(input: ComponentScreenTypingsInput): stri
   const note = input.note;
   const lines: string[] = [
     "// GENERATED by @vendoai/apps componentScreenTypings — do not edit.",
+    SAFE_STYLE_DECLARATION,
     jsxFrame(input.ported === true),
     SLOT_DECLARATION,
+    ROW_SLOT_DECLARATION,
     REACT_MODULE,
     `declare module ${JSON.stringify(SCREEN_MODULE)} {`,
   ];
@@ -611,9 +703,14 @@ export function componentScreenTypings(input: ComponentScreenTypingsInput): stri
 
   const overloads = input.tools.filter((tool) => !isMutatingTool(tool)).map((tool) => {
     const { text, required } = toolInputText(tool, at(note, `useQuery("${tool.name}") input`));
+    // `Partial`, because a read whose input the screen COMPUTES has no answer on
+    // the first paint: the VM hands back `{ data: undefined }` there and the host
+    // supplies the real result a paint later (`genui/component/vm-program.ts`
+    // `MISS`). Declaring the fields as always-present would be a green check over
+    // a screen whose every field is undefined for one render.
     const result = tool.outputSchema === undefined
       ? "any"
-      : jsonSchemaTypeText(tool.outputSchema, "result", 0, at(note, `useQuery("${tool.name}") result`));
+      : `Partial<${jsonSchemaTypeText(tool.outputSchema, "result", 0, at(note, `useQuery("${tool.name}") result`))}>`;
     return `  export function useQuery(tool: ${JSON.stringify(tool.name)}, input${required ? "" : "?"}: ${text}): ${result};`;
   });
   // No read tools at all: the surface still exports `useQuery`, so a screen that

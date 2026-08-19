@@ -102,7 +102,7 @@ export default function UpcomingBills() {
   const total = ${total};
   return (
     <Stack gap={12}>
-      <Stat label="Due this month" value={total / 100} format="money" />
+      <Stat label="Due this month" value={total / 100} />
     </Stack>
   );
 }

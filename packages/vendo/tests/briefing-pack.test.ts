@@ -351,9 +351,9 @@ describe("the briefing pack reaches both rungs", () => {
 
     // The screen agent reads the dialect manual and an environment note about a
     // loop with no disk. The box has a disk, a shell and a skin contract.
-    expect(walked.screenPrompt).toContain("COMPONENTS (generated from the component schemas");
+    expect(walked.screenPrompt).toContain("# Components (generated from the component schemas)");
     expect(walked.screenPrompt).toContain(SCREEN_MARKER);
-    expect(walked.boxContext).not.toContain("COMPONENTS (generated from the component schemas");
+    expect(walked.boxContext).not.toContain("# Components (generated from the component schemas)");
     expect(walked.boxContext).not.toContain(SCREEN_MARKER);
 
     expect(walked.boxContext).toContain("SKIN CONTRACT (the box boundary you build against):");

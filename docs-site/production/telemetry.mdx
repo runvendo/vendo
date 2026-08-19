@@ -45,10 +45,16 @@ a contract change on both the SDK and the console.
 | Event | Fires when | Carries |
 | --- | --- | --- |
 | `deployment_boot` | `createVendo` finishes composing | `adapters` (the filled slot names), `blocks`, `framework` |
-| `agent_run` | One agent turn ends | `durationMs`, `steps`, `toolCalls`, `tools`, `modelFamily`, `outcome`, `errorCode` |
+| `agent_run` | One agent turn ends | `durationMs`, `ttftMs`, `storeMs`, `promptMs`, `modelMs`, `toolsMs`, `guardMs`, `steps`, `toolCalls`, `tools`, `modelFamily`, `outcome`, `errorCode` |
 | `app_generated` | One app generation finishes | `components` (uses per name), `durationMs`, `outcome`, `kind` |
 | `guard_decision` | The guard renders a decision | `kind`, `decision`, `tool` |
 | `sdk_error` | Vendo's own logger emits `warn` or `error` | `code`, `level`, `message`, `data`, `stack`, `runtime` |
+
+`agent_run`'s time fields are durations only, never content. `ttftMs` is how
+long the person waited for the first word, and the five phase marks say where
+the turn's wall time went, never what was read, prompted, thought, called, or
+judged. `modelMs` is whatever the other four leave over, so the split adds up to
+`durationMs`.
 
 `sdk_error` is the one with free text, and the text is Vendo's own authored
 sentence. `data` carries each logged key's shape, never its value, and `stack`

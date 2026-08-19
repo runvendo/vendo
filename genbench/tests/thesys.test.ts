@@ -22,7 +22,7 @@ import { authoredPage, HARNESS_CONTRACT, openBrowser } from "../src/render.js";
 import type { RunOutcome } from "../src/run.js";
 import { crayonTheme, thesysDriver, thesysProvider, THESYS_CALL_USD } from "../src/thesys.js";
 import { worldBlock } from "../src/vendo.js";
-import { loadCases, loadWorld, worldForCase, type Case, type World } from "../src/world.js";
+import { cannedResponse, loadCases, loadWorld, worldForCase, type Case, type World } from "../src/world.js";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 let world: World;
@@ -36,35 +36,71 @@ beforeAll(async () => {
 
 const caseFor = (id: string): Case => cases.find((entry) => entry.id === id)!;
 
+/** What one call to their endpoint answers with: their DSL, or the tools their
+ *  model wants run before it will write one. */
+type Answer = string | { readonly calls: ReadonlyArray<{ name: string; args: unknown }> };
+
+const PER_CALL = { prompt_tokens: 18_105, completion_tokens: 254, total_tokens: 18_359 };
+
 /** What their endpoint really answered with, in the shape it really answered in. */
-const completion = (content: string): unknown => ({
+const completion = (answer: Answer): unknown => ({
   id: "chatcmpl-genbench",
   object: "chat.completion",
   created: 0,
   model: MODEL_IDS.c1,
-  choices: [{ index: 0, message: { role: "assistant", content }, finish_reason: "stop" }],
-  usage: { prompt_tokens: 18_105, completion_tokens: 254, total_tokens: 18_359 },
+  choices: [
+    typeof answer === "string"
+      ? { index: 0, message: { role: "assistant", content: answer }, finish_reason: "stop" }
+      : {
+          index: 0,
+          message: {
+            role: "assistant",
+            content: null,
+            tool_calls: answer.calls.map((call, at) => ({
+              id: `call_${at}`,
+              type: "function",
+              function: { name: call.name, arguments: JSON.stringify(call.args) },
+            })),
+          },
+          finish_reason: "tool_calls",
+        },
+  ],
+  usage: PER_CALL,
 });
 
 interface Wire {
-  readonly messages: ReadonlyArray<{ role: string; content: string }>;
+  readonly messages: ReadonlyArray<{ role: string; content: string | null }>;
+  /** The world's tools, in the OpenAI shape their loop reads
+   *  (docs.thesys.dev/guides/integrate-data/tool-calling). */
+  readonly tools?: ReadonlyArray<{
+    type: string;
+    function: { name: string; description?: string; parameters: unknown };
+  }>;
   /** Their custom actions ride here, as a JSON STRING rather than an object. */
   readonly metadata?: { thesys: string };
 }
 
-/** One run of the real driver through the real provider: the request bytes it
- *  produced, and the outcome it returned. */
+/** One run of the real driver through the real provider, with their endpoint
+ *  answering the scripted turns in order: every request the driver put on the
+ *  wire, and the outcome it returned. */
 async function ran(
   scoped: World,
   testCase: Case,
-  content: string,
-): Promise<{ wire: Wire; outcome: RunOutcome }> {
-  let body = "";
+  ...answers: readonly Answer[]
+): Promise<{ wire: Wire; wires: readonly Wire[]; outcome: RunOutcome }> {
+  const wires: Wire[] = [];
   const provider = thesysProvider({
     apiKey: "genbench-test",
     fetch: async (_url, init) => {
-      body = String(init?.body);
-      return Response.json(completion(content));
+      wires.push(JSON.parse(String(init?.body)) as Wire);
+      const next = answers[wires.length - 1];
+      // Loudly, rather than by repeating the last answer forever: a driver that
+      // asks for more turns than a test scripted is a loop nobody bounded, and
+      // every turn of it is a call this column pays for.
+      if (next === undefined) {
+        throw new Error(`the driver called ${wires.length} times for ${answers.length} scripted answers`);
+      }
+      return Response.json(completion(next));
     },
   });
   const outcome = await thesysDriver().run({
@@ -72,7 +108,9 @@ async function ran(
     testCase,
     meter: meteredModel(provider(MODEL_IDS.c1), MODEL_IDS.c1),
   });
-  return { wire: JSON.parse(body) as Wire, outcome };
+  // The FIRST request is what this driver says on its own account; everything
+  // after it is the loop answering itself.
+  return { wire: wires[0]!, wires, outcome };
 }
 
 describe("what the thesys column puts on the wire", () => {
@@ -100,10 +138,19 @@ describe("what the thesys column puts on the wire", () => {
 
   it("is scoped to the case, so an overridden world reaches the vendor and the authored one does not", async () => {
     const empty = caseFor("no-pending-transfers");
-    const { wire } = await ran(worldForCase(world, empty), empty, recorded);
+    const scoped = worldForCase(world, empty);
+    const { wire } = await ran(scoped, empty, recorded);
     const sent = wire.messages.map((message) => message.content).join("\n");
+    const overridden = scoped.tools.find((entry) => entry.name === "list_transfers")!;
+    const authored = world.tools.find((entry) => entry.name === "list_transfers")!;
 
-    expect(sent).toContain(JSON.stringify({ data: [] }, null, 2));
+    // The override moves the DERIVED output schema, which is the only place a
+    // case's data reaches a prompt at all now — the same reading `diy.test.ts`
+    // takes of the same block: an empty read declares an array of nothing, and
+    // the authored one declares an array of rows.
+    expect(overridden.descriptor).not.toEqual(authored.descriptor);
+    expect(sent).toContain(JSON.stringify(overridden.descriptor, null, 2));
+    expect(sent).not.toContain(JSON.stringify(authored.descriptor, null, 2));
     expect(sent).not.toContain("Alex Rivera");
   });
 
@@ -119,6 +166,23 @@ describe("what the thesys column puts on the wire", () => {
       Object.fromEntries(world.tools.map((tool) => [tool.name, tool.descriptor.inputSchema])),
     );
   });
+
+  /** Custom actions are what a GENERATED control dispatches; these are what the
+   *  model may call while it is still building. Two different features of their
+   *  product, and this column was buying only the first — so their model drew
+   *  every screen without seeing one value, because no contender is handed data
+   *  in a prompt. */
+  it("declares the world's tools as tools their model can call, with the registry's own schemas", async () => {
+    const { wire } = await ran(world, caseFor("pending-transfers"), recorded);
+
+    expect(wire.tools?.map((declared) => declared.function.name)).toEqual(world.tools.map((tool) => tool.name));
+    for (const tool of world.tools) {
+      const declared = wire.tools!.find((entry) => entry.function.name === tool.name)!;
+      expect(declared.type).toBe("function");
+      expect(declared.function.description).toBe(tool.descriptor.description);
+      expect(declared.function.parameters).toEqual(tool.descriptor.inputSchema);
+    }
+  });
 });
 
 describe("the thesys driver", () => {
@@ -127,6 +191,49 @@ describe("the thesys driver", () => {
     const usage = { inputTokens: 18_105, outputTokens: 254, cacheReadTokens: 0, cacheWriteTokens: 0, calls: 1 };
 
     expect(outcome.usd).toBeCloseTo(usdFor(usage, MODEL_IDS.c1) + THESYS_CALL_USD, 10);
+  });
+
+  /** Their model asking for data, and being answered — the loop their own guide
+   *  describes (docs.thesys.dev/guides/integrate-data/tool-calling). A tool
+   *  RESULT is the only door this benchmark opens to values: no contender reads
+   *  a row in its prompt, so a column that cannot call cannot draw the world's
+   *  data at all. */
+  it("answers a tool call with the world's own rows, and the screen is the last turn's DSL", async () => {
+    const asked = { calls: [{ name: "list_transfers", args: { limit: 20 } }] };
+    const { wires, outcome } = await ran(world, caseFor("pending-transfers"), asked, recorded);
+    const transfers = world.tools.find((tool) => tool.name === "list_transfers")!;
+
+    expect(wires).toHaveLength(2);
+    const answered = wires[1]!.messages.filter((message) => message.role === "tool");
+    expect(answered).toHaveLength(1);
+    // The same envelope `world-tools` prints for the agentic columns and the
+    // page's own bridge answers with, around the same canned rows.
+    expect(JSON.parse(answered[0]!.content!)).toEqual({ status: "ok", output: cannedResponse(transfers) });
+    // The screen is what the model said AFTER it had the rows, and it is graded.
+    expect(outcome.artifact).toContain("\\u003ccontent");
+    expect(outcome.failure).toBeUndefined();
+  });
+
+  it("bills the flat fee on every turn of that loop, not once for the case", async () => {
+    const asked = { calls: [{ name: "list_transfers", args: { limit: 20 } }] };
+    const { outcome } = await ran(world, caseFor("pending-transfers"), asked, recorded);
+    const usage = { inputTokens: 2 * 18_105, outputTokens: 2 * 254, cacheReadTokens: 0, cacheWriteTokens: 0, calls: 2 };
+
+    expect(outcome.usd).toBeCloseTo(usdFor(usage, MODEL_IDS.c1) + 2 * THESYS_CALL_USD, 10);
+  });
+
+  /** The bound the case's clock cannot supply: a model that keeps asking is
+   *  answered, and every answer is a paid call. */
+  it("stops buying turns for a model that never stops calling", async () => {
+    const asked = { calls: [{ name: "list_transfers", args: {} }] };
+    const { wires, outcome } = await ran(world, caseFor("pending-transfers"), ...Array<Answer>(20).fill(asked));
+
+    // It kept asking and it was cut off: a driver that never looped at all would
+    // also have stopped short, and that is the bug this column just had.
+    expect(wires.length).toBeGreaterThan(1);
+    expect(wires.length).toBeLessThan(20);
+    expect(outcome.artifact).toBeUndefined();
+    expect(outcome.failure).toBeDefined();
   });
 
   it("fails honestly when the vendor answers without a screen", async () => {
@@ -187,11 +294,13 @@ describe("the page the vendor's renderer paints", () => {
 
         // Their action dispatch, through `window.vendo.callTool`, with the
         // action's own type and params — which is what the floor scores.
+        // `objectContaining`, because a write also carries what the seam's guard
+        // did with it (`status`, `approvalId`) — evidence beside the name and
+        // arguments, never instead of them.
         const trace = await probe(visit);
-        expect(trace.flatMap((pressed) => pressed.calls)).toContainEqual({
-          name: "cancel_transfer",
-          args: { id: "tr_1" },
-        });
+        expect(trace.flatMap((pressed) => pressed.calls)).toContainEqual(
+          expect.objectContaining({ name: "cancel_transfer", args: { id: "tr_1" } }),
+        );
 
         // `toContainEqual` treats an undefined-valued key as absent, so the
         // assertion above holds even when the dispatch carries junk. The floor

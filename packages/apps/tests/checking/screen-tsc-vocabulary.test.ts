@@ -79,8 +79,8 @@ const BROAD_SCREEN = `<App name="Cash flow">
         spec IS the allowed prop set (there is no second, narrower legacy
         surface shadowing it any more). */}
     <Row gap={12} justify="between">
-      <Stat label="Money in" value={cashflow.data.reduce((total, row) => total + row.in, 0) / 100} format="money"/>
-      <Stat label="Money out" value={cashflow.data.reduce((total, row) => total + row.out, 0) / cashflow.data.length / 100} format="money"/>
+      <Stat label="Money in" value={cashflow.data.reduce((total, row) => total + row.in, 0) / 100} unit="USD"/>
+      <Stat label="Money out" value={cashflow.data.reduce((total, row) => total + row.out, 0) / cashflow.data.length / 100} unit="USD"/>
       <Stat label="Periods" value={cashflow.data.length}/>
       <Stat label="Spread" value={cashflow.data.reduce((top, row) => (row.in > top ? row.in : top), 0) - cashflow.data.reduce((low, row) => (row.out < low ? row.out : low), 0)}/>
     </Row>
@@ -88,22 +88,19 @@ const BROAD_SCREEN = `<App name="Cash flow">
       <MapleNetWorthCard valueCents={cashflow.data.reduce((total, row) => total + row.in, 0)} series={[1, 2, 3]} initialRange="1M"/>
       <Card title="Detail" description="This period" tone="accent"><Divider/><Badge label="Live" tone="accent"/></Card>
     </Grid>
+    <SplitPane size={280}><Text text="Periods"/><Text text="This period"/></SplitPane>
     <DataTable rows={cashflow.data} sortBy="label asc" limit={20} searchable={true} paginate={10}
-      columns={[{ key: "label", label: "Period" }, { key: "in", format: "money", align: "end" }]}
+      columns={[{ key: "label", label: "Period" }, { key: "in", align: "end", truncate: true, width: 160 }]}
       filterableBy={["label"]} emptyState="No periods" caption="Cash flow"/>
     <DataTable rows={cashflow.data} columns={[{ key: "label", label: "Period" }, { key: "in", label: "In", align: "end" }]}>
-      <TableRow><Text text="Period"/><Money amount={42}/></TableRow>
+      <TableRow><Text text="Period"/><Text text="$42.00"/></TableRow>
     </DataTable>
-    <CardList items={cashflow.data} titleField="label" fields={[{ key: "in", label: "In", format: "money" }]} columns={2}/>
+    <CardList items={cashflow.data} titleField="label" fields={[{ key: "in", label: "In" }]} columns={2}/>
     <Calendar items={cashflow.data} month="2026-01" dateField="label" titleField="label" amountField="in" statusField="label" tones={{ Jan: "success" }}/>
-    <KeyValue record={cashflow.data[0]} items={[{ key: "label", label: "Period" }, { key: "in", format: "money" }]} dividers={true}/>
+    <KeyValue record={cashflow.data[0]} items={[{ key: "label", label: "Period" }, { key: "in" }]} dividers={true}/>
     <Timeline entries={cashflow.data} titleField="label" emptyState="No history"/>
     <Avatar name="Ada Lovelace" size="sm"/>
     <CodeBlock language="json" code="const rate = 0.42;"/>
-    <Money amount={cashflow.data.reduce((total, row) => total + row.in, 0) / 100} currency="USD"/>
-    <Percent value={0.42} fractionDigits={1}/>
-    <Num value={12} notation="compact"/>
-    <DateTime value="2026-01-01" mode="date"/>
     <EnumBadge value="past_due" tones={{ past_due: "danger" }}/>
     <Icon name="trending-up" size={20} label="Trending up"/>
     <Progress value={0.4} max={1} label="Budget" showValue={true} tone="accent"/>
@@ -112,6 +109,7 @@ const BROAD_SCREEN = `<App name="Cash flow">
     <DonutChart data={cashflow.data} categoryKey="label" valueKey="in" format="money" donut={true}/>
     <Sparkline data={[1, 2, 3]} height={24}/>
     <Callout tone="info" title="Note">Numbers are integer cents.</Callout>
+    <Accordion items={[{ label: "Terms", content: <Text text="Net 30."/> }]} multiple={false} defaultOpen={[0]}/>
     <Surface title="Detail"><Text text="Nested"/></Surface>
     <Select label="Period" options={cashflow.data} labelField="label" valueField="label" multiple={false}/>
     <Input label="Search" type="search" onChange="host_search"/>

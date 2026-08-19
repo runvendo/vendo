@@ -1,0 +1,145 @@
+---
+title: "Erasing a user"
+sidebarTitle: "Erasing a user"
+description: "One call that removes everything a person owns, across every store table, with per-table counts you can log — and a clear account of what it deliberately leaves standing."
+---
+
+A right-to-erasure request arrives with one subject in it, and one call answers it.
+
+## One call, one subject
+
+```ts app/api/account/delete/route.ts highlight={3,5}
+import { eraseStore, storeFiles } from "@vendoai/store";
+
+const erase = eraseStore(vendo.store, { files: storeFiles(vendo.store) });
+
+const report = await erase.bySubject(subjectId);
+```
+
+`files` is required, and deliberately not defaulted: a silent default is how a host
+with a real bucket erases every row and quietly keeps the objects. Pass the same
+adapter you wired as `files`, or `storeFiles(store)` when blobs ride the store.
+
+That is the call for a local or BYO Postgres store. On Vendo Cloud the hosted store
+answers through its own door instead — see [On Vendo Cloud](#on-vendo-cloud) — and
+handing `eraseStore` a hosted handle throws `Unknown VendoStore handle`.
+
+The report is per-table deleted counts — every table present, zeroes included — plus
+`workspace_content_objects`, a count of workspace content objects removed rather than
+bytes. Log it or assert on it.
+
+This is also the only sanctioned way to delete rows from the append-only audit
+table; the ordinary store door refuses that.
+
+---
+
+## What it removes
+
+Apps the subject owns go first, to close the write gate, and each one takes its own
+data with it: records, the version history, blob namespaces, state, that app's
+grants, and quarantine rows.
+
+Then everything keyed to the subject: threads and their messages, automations and
+the runs those fired, permission grants, effects, approvals, audit rows, records
+that reference them, usage, MCP clients and grants, knowledge docs and chunks, and
+their workspace files and history.
+
+Workspace content is deleted **through the files adapter**, not just as rows — the
+cascade reads each row's blob reference before deleting it, because that reference
+is the object's only pointer.
+
+<Note>
+  It is deliberately not one transaction, because blob deletion is external work.
+  A failure part-way leaves less data, never a half-deleted row and orphaned object.
+</Note>
+
+---
+
+## What it leaves
+
+This is the part worth reading twice.
+
+- **Org-owned apps stand.** The selector is the subject, and an app the org holds
+  carries the *org* id, so erasing a member never reaches it. The org outlives the
+  person. What does go is that person's own access: their `user:` grant rows.
+- **Team and org grants stand.** They name no person, so they describe an
+  arrangement the departure does not change.
+- **Grants the person wrote are redacted, not deleted.** Their name comes off the
+  `createdBy` field and the row survives — deleting it would revoke a team's access
+  because whoever set it up left. The redaction is intentionally absent from the
+  report, which counts rows destroyed.
+- **Your own tables are untouched.** Vendo erases Vendo's store. Your user row,
+  your billing, your audit log are yours to handle.
+- **Connected accounts live broker-side** and are not part of this cascade.
+
+<Warning>
+  One table is out of reach by construction: the idempotency ledger is keyed by
+  operation rather than by subject, and a recorded response body there can carry
+  caller data. No subject selector reaches it.
+</Warning>
+
+---
+
+## Erasing one app instead
+
+```ts
+const report = await erase.byApp(appId);
+```
+
+The app's row, its record collections, blob namespaces, state, app-scoped grants,
+and audit rows. Useful for tearing down a test build.
+
+---
+
+## On Vendo Cloud
+
+`eraseStore` runs the SQL cascade against a local or BYO Postgres store. The hosted
+store carries **its own erase door** with the same two methods, so the cascade runs
+server-side with the same behavior:
+
+```ts highlight={2}
+const door = typeof (vendo.store as Partial<HostedStore>).erase?.bySubject === "function"
+  ? (vendo.store as HostedStore).erase
+  : eraseStore(vendo.store, { files: storeFiles(vendo.store) });
+
+await door.bySubject(subjectId);
+```
+
+That is exactly the branch the Maple demo ships, so one route works against either
+store.
+
+Erasure against Vendo Cloud needs an admin-scoped `VENDO_API_KEY` — see
+[Persistence](/production/persistence) for the scope and how to mint one.
+
+---
+
+## Wiring it to your own deletion flow
+
+There is no CLI command for this, on purpose. Erasure is programmatic, so it runs
+inside the delete-account path your product already owns — after your own
+confirmation, alongside your own tables, in one flow you can audit.
+
+Call it with the subject your resolver mints for that person. If your subjects are
+not stable, this is where you find out.
+
+---
+
+## Where to go next
+
+<CardGroup cols={3}>
+  <Card title="Your users" href="/users-orgs/your-users">
+    The subject this call takes, and why it has to be stable.
+
+    `principal.subject`
+  </Card>
+  <Card title="Persistence" href="/production/persistence">
+    Every table the cascade walks, and the admin key Cloud wants.
+
+    `vendo_threads`
+  </Card>
+  <Card title="Sharing" href="/users-orgs/sharing">
+    The grants that go, the ones that stay, and the one that gets redacted.
+
+    `appAccess(store).revoke`
+  </Card>
+</CardGroup>

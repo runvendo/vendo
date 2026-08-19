@@ -13,9 +13,12 @@
  * has no place for the tool set an authored plan declares, so the card can no
  * longer be the plan's own width: EVERY goal record gets the fallback surface and
  * the narrowing is the person's, card by card. What still holds — and what this
- * pins — is that the fallback never asks for a standing away grant on a tool THE
- * LAW would refuse away. Asking to allow a thing that can never happen is a false
- * choice, not consent.
+ * pins — is that the fallback never asks for a standing away grant a firing could
+ * not run on. Asking to allow a thing that can never happen is a false choice, not
+ * consent, and there are two ways to be that: a tool THE LAW refuses away
+ * (`destructive`/`ungraded`), and a confirm-each tool, which needs a person EVERY
+ * time and which no grant may ever suppress. `host_invoices_send` is the first
+ * kind; `host_invoices_send_critical` is the second.
  */
 import { planAutomation, type HostToolInfo } from "@vendoai/apps";
 import { scriptedLanguageModel } from "@vendoai/apps/testing";
@@ -85,11 +88,13 @@ describe("goal consent surface", () => {
       expect(enabled.enabled).toBe(true);
       // The headline of the finding: no card for a thing this run can never do.
       expect(enabled.missing.every((request) => !withheldFromUnattended(request.descriptor))).toBe(true);
+      // …and none for a confirm-each tool either: a standing power that cannot
+      // suppress the ask it exists to answer is the same false choice.
+      expect(enabled.missing.every((request) => request.descriptor.confirmEach !== true)).toBe(true);
       expect(enabled.missing.map((request) => request.call.tool).sort()).toEqual([
         "host_invoices_create",
         "host_invoices_get",
         "host_invoices_list",
-        "host_invoices_send_critical",
         "host_invoices_update",
       ]);
       // ONE grant set, so a single decision settles the whole card.

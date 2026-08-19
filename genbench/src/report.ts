@@ -1,18 +1,11 @@
 import { existsSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import {
-  checks,
-  holds,
-  type Audited,
-  type Binding,
-  type HonestDataResult,
-  type HonestVerdict,
-  type Offender,
-  type WiredActionsResult,
-} from "./floor.js";
-import type { JudgeResult, LineVerdict, Verdict } from "./judge.js";
+import { checks, holds, splitChecks, type Binding, type Check, type WiredActionsResult } from "./floor.js";
+import { HONESTY_LINE, type JudgeResult, type LineVerdict, type Verdict } from "./judge.js";
 import type { UsageTotals } from "./meter.js";
+import type { Fired } from "./probe.js";
+import { VIEWPORT } from "./render.js";
 import type { CaseResult } from "./run.js";
 import { cannedResponse, type World } from "./world.js";
 
@@ -22,39 +15,19 @@ const escape = (value: string): string =>
 const verdict = (ok: boolean): string =>
   `<span class="v ${ok ? "ok" : "no"}">${ok ? "✓" : "✕"} ${ok ? "pass" : "fail"}</span>`;
 
-/** honestData's own verdict: a fail reads exactly as any other failing check
- *  does, but a pass splits in three. `examined` values cleared is what a real
- *  pass earned — of `found`, where the cap bit, because a number nobody looked
- *  at must be visible rather than inferred. `examined` at 0 means the screen had
- *  nothing extractable, and a DEGRADED check means our own machinery could not
- *  be reached: both are muted, and neither wears the checkmark a screen that was
- *  actually examined gets. */
-const honestDataVerdict = (data: HonestDataResult): string => {
-  if (data.degraded === true) return `<span class="v muted">— not checked</span>`;
-  if (!data.pass) return verdict(false);
-  if (data.examined === 0) return `<span class="v muted">— nothing to check</span>`;
-  const of = data.found > data.examined ? ` of ${data.found}` : "";
-  return `<span class="v ok">✓ · ${data.examined}${of} value${data.examined === 1 ? "" : "s"} checked</span>`;
-};
-
-/** `wiredActions` splits the same two ways, and for the same reason: a screen
- *  with nothing to press passes without a single control having been proven
- *  live, and that must not wear the checkmark a screen full of working controls
- *  earned. */
+/** `wiredActions`'s own verdict: a fail reads exactly as any other failing check
+ *  does, but a pass splits in two. A screen with nothing to press passes without
+ *  a single control having been proven live, and that must not wear the
+ *  checkmark a screen full of working controls earned. */
 const wiredActionsVerdict = (actions: WiredActionsResult): string => {
   if (!actions.pass) return verdict(false);
   if (actions.pressed === 0) return `<span class="v muted">— nothing to press</span>`;
   return `<span class="v ok">✓ · ${actions.pressed} control${actions.pressed === 1 ? "" : "s"} pressed</span>`;
 };
 
-/** Every small list under a verdict — offenders, bindings, blocking findings —
- *  is this list. */
+/** Every small list under a verdict — bindings, blocking findings — is this
+ *  list. */
 const notes = (rows: readonly string[]): string => `<ul class="notes">${rows.join("")}</ul>`;
-
-const offenderList = (offenders: readonly Offender[]): string =>
-  offenders.length === 0
-    ? ""
-    : notes(offenders.map((o) => `<li><code>${escape(o.text)}</code> <span>${escape(o.why)}</span></li>`));
 
 /** One row per press, under the mark the floor gave it. The row's words are the
  *  binding's own `why` — which is what makes a state-only pass readable as a pass
@@ -75,70 +48,6 @@ const bindingList = (actions: WiredActionsResult): string =>
               .join(" — ")}</span> ${holds(b) ? '<i class="ok">✓</i>' : '<i class="no">✕</i>'}</li>`,
         )),
   ]);
-
-/** The row's mark and its CSS class, per verdict. A waiver is `na` — the same
- *  recessive row a rubric line whose subject is absent gets, because it is the
- *  same statement: there was nothing here to earn or miss. */
-const HONEST_MARK: Readonly<Record<HonestVerdict, { mark: string; row: string }>> = {
-  "cleared-by-verbatim": { mark: "✓", row: "pass" },
-  "cleared-by-audit": { mark: "✓", row: "pass" },
-  "skipped-by-triage": { mark: "–", row: "na" },
-  offender: { mark: "✕", row: "fail" },
-};
-
-/** What settled this value, in a sentence. Attempts are named only where any
- *  were spent: "0 attempts" beside a value the tools answered with verbatim
- *  reads as a failure to try. */
-const honestNote = (record: Audited): string => {
-  const attempts = record.attempts === 0 ? "" : ` · ${record.attempts} attempt${record.attempts === 1 ? "" : "s"}`;
-  switch (record.verdict) {
-    case "cleared-by-verbatim":
-      return `cleared — ${record.result}`;
-    case "skipped-by-triage":
-      return `not a data claim — ${record.result}`;
-    case "cleared-by-audit":
-      return `cleared — executed to ${record.result}${attempts}`;
-    default:
-      return `${record.result}${attempts}`;
-  }
-};
-
-/**
- * The honesty check's evidence: every value the screen printed, and what settled
- * it — the tools' own text, a triage waiver in the model's own clause, or a
- * program that was executed and what it returned.
- *
- * On the page rather than behind a hover, for the same reason the judge's notes
- * are — these verdicts were reached by a model waiving and by code running, and
- * neither is something a reader should have to take on trust. The value stays
- * the thing you scan for; the program is demoted to a muted well beneath it.
- */
-const auditList = (data: HonestDataResult): string => {
-  const audited = data.audited ?? [];
-  if (audited.length === 0) return "";
-  const waived = audited.filter((record) => record.verdict === "skipped-by-triage").length;
-  const cleared = audited.filter((record) => record.verdict.startsWith("cleared")).length;
-  return `<section class="audit">
-  ${
-    data.degraded === true
-      ? `<p class="degraded">honesty check degraded — nothing here was waived or cleared on a model's word${data.error === undefined ? "" : `: ${escape(data.error)}`}</p>`
-      : ""
-  }
-  <p class="half-head"><span>honesty · the tools' own text, then triage, then executed code</span><b>${cleared}/${audited.length - waived}${waived === 0 ? "" : ` · ${waived} waived`}</b></p>
-  <ul class="lines">${audited
-    .map((record) => {
-      const { mark, row } = HONEST_MARK[record.verdict];
-      return (
-        `<li class="${row}"><i aria-hidden="true">${mark}</i><span class="what">` +
-        `<span class="line"><code>${escape(record.text)}</code></span>` +
-        (record.program.trim() === "" ? "" : `<pre class="program">${escape(record.program)}</pre>`) +
-        `<span class="note">${escape(honestNote(record))}</span>` +
-        `</span></li>`
-      );
-    })
-    .join("")}</ul>
-</section>`;
-};
 
 /** `renders` can fail for a reason no screenshot shows, so the reason is on the
  *  page next to the verdict. */
@@ -175,6 +84,27 @@ export const tally = (lines: readonly LineVerdict[]): string => {
   return `${graded.filter((line) => line.verdict === "pass").length}/${graded.length}`;
 };
 
+/**
+ * Which part of the rubric a line belongs to — three of them, where the page
+ * used to read two.
+ *
+ * "Did this screen show what was asked" and "are the numbers on it real" are
+ * different things to know about a contender, and the standing honesty line
+ * answered the second inside the first's score: a screen that invented a figure
+ * and a screen that missed a row moved one number by the same amount, and
+ * neither said which had happened. The split is mechanical — honesty is the one
+ * case line no case is authored with.
+ *
+ * `half` stays the word because it is what the page's own rows are called.
+ */
+type Half = "correctness" | "honesty" | "design";
+
+const halfOf = (line: LineVerdict): Half =>
+  line.source === "style" ? "design" : line.line === HONESTY_LINE ? "honesty" : "correctness";
+
+const inHalf = (lines: readonly LineVerdict[], half: Half): LineVerdict[] =>
+  lines.filter((line) => halfOf(line) === half);
+
 /** One half of the rubric, its lines in the order they were asked, each under
  *  the evidence the judge named — on the page, not behind a hover, because an
  *  unarguable verdict is one you cannot check. */
@@ -195,25 +125,32 @@ const rubricHalf = (label: string, lines: readonly LineVerdict[], degraded: bool
 
 /**
  * The judge's half of the score. The case's `pass` lines are correctness, the
- * world's `style` lines are design, and each verdict carries the evidence it
- * was reached on.
+ * standing honesty line is its own row beside them, the world's `style` lines
+ * are design, and each verdict carries the evidence it was reached on.
  *
  * A degraded judgement is the GRADER having a bad afternoon, not the contender
  * failing, so it says so at the top and prints no tally: every line reads
  * `fail` in that state, and "0/2" beside a column is a sentence about the
  * contender that would not be true.
+ *
+ * A rubric with NO lines is a third thing again: a run that never asked a judge
+ * (`--floor-only`). It says so rather than printing nothing, because a column
+ * whose verdicts are simply missing reads as a report that lost them.
  */
+// "the ask" is the human-facing label only (2026-08-18) — "correctness" stays
+// the internal half above and the judge's own prompt tag in judge.ts.
 const rubric = (judged: JudgeResult): string =>
   judged.lines.length === 0
-    ? ""
+    ? `<p class="unjudged">floor only — no judge was asked about this screen</p>`
     : `<section class="rubric">
   ${
     judged.degraded
       ? `<p class="degraded">judge degraded — this screen was not graded${judged.error === undefined ? "" : `: ${escape(judged.error)}`}</p>`
       : ""
   }
-  ${rubricHalf("correctness", judged.lines.filter((line) => line.source === "case"), judged.degraded)}
-  ${rubricHalf("design", judged.lines.filter((line) => line.source === "style"), judged.degraded)}
+  ${rubricHalf("the ask", inHalf(judged.lines, "correctness"), judged.degraded)}
+  ${rubricHalf("honesty", inHalf(judged.lines, "honesty"), judged.degraded)}
+  ${rubricHalf("design", inHalf(judged.lines, "design"), judged.degraded)}
 </section>`;
 
 /**
@@ -238,6 +175,33 @@ const earned = (
     aside: count("vacuous") + count("degraded"),
   };
 };
+
+/** A set of cells as both tables print them: earned out of what was really in
+ *  front of the screens, with what was not counted beside it. Nothing graded in
+ *  it is muted rather than 0/0 — green on a question nobody put a column to is a
+ *  claim about that column nobody tested. */
+const scoreCell = (scored: readonly Check[]): string => {
+  const { passed, of, aside } = earned(scored);
+  return of === 0
+    ? `<td class="muted">—${escape(aside)}</td>`
+    : `<td class="${passed === of ? "ok" : "no"}">${passed}/${of}${escape(aside)}</td>`;
+};
+
+/**
+ * Whether a case asked its screen to DO something — `action` in `cases.json`.
+ *
+ * The corpus answers wherever it still holds the case. Where it does not, the
+ * floor's own `why` does: only an `action` case is ever given one. Without that
+ * fallback a case whose world has moved would take `actionProven` out of the
+ * totals while the `wiredActions` verdict above it still failed on that very
+ * line, and the split would stop adding up to the check it splits.
+ */
+const askedToAct = (result: CaseResult, actionCases: ReadonlySet<string>): boolean =>
+  actionCases.has(result.case) || result.floor.wiredActions.why !== undefined;
+
+/** One column's floor cells, split, in the order `splitChecks` asks them. */
+const splitOf = (rows: readonly CaseResult[], actionCases: ReadonlySet<string>): readonly Check[] =>
+  rows.flatMap((row) => splitChecks(row.floor, askedToAct(row, actionCases)));
 
 async function column(runDir: string, result: CaseResult): Promise<string> {
   const caseDir = join(result.contender, result.case);
@@ -270,17 +234,11 @@ async function column(runDir: string, result: CaseResult): Promise<string> {
   <dl class="floor">${scored
     .map((check) => {
       const shown =
-        check.name === "honestData"
-          ? honestDataVerdict(result.floor.honestData)
-          : check.name === "wiredActions"
-            ? wiredActionsVerdict(result.floor.wiredActions)
-            : verdict(check.pass);
+        check.name === "wiredActions" ? wiredActionsVerdict(result.floor.wiredActions) : verdict(check.pass);
       return `<div><dt>${check.name}</dt><dd>${shown}</dd></div>`;
     })
     .join("")}</dl>
   ${result.floor.blocking.length === 0 ? "" : notes(result.floor.blocking.map((why) => `<li><span>${escape(why)}</span></li>`))}
-  ${result.floor.honestData.pass ? "" : offenderList(result.floor.honestData.offenders)}
-  ${auditList(result.floor.honestData)}
   ${bindingList(result.floor.wiredActions)}
   ${rubric(result.judged)}
   <dl class="metrics">
@@ -296,11 +254,10 @@ async function column(runDir: string, result: CaseResult): Promise<string> {
  * What one of the benchmark's OWN models cost, on its own line and in nobody's
  * column.
  *
- * The judge and the auditor are the benchmark's overhead, not a contender's
- * bill: folding either into a `cost` figure would quietly make every column more
- * expensive than the thing it measures, and two runs graded a different number
- * of times would stop comparing. So each is said here, once, and left out of
- * every column.
+ * The judge is the benchmark's overhead, not a contender's bill: folding it into
+ * a `cost` figure would quietly make every column more expensive than the thing
+ * it measures, and two runs graded a different number of times would stop
+ * comparing. So it is said here, once, and left out of every column.
  */
 const spendLine = (
   who: string,
@@ -320,6 +277,40 @@ const spendLine = (
 };
 
 /**
+ * What the floor FOUND, per check — the reading one number cannot give.
+ *
+ * Every other total on this page is a sum over all four checks, so a contender
+ * whose pages never compiled and a contender whose buttons are dead read as the
+ * same figure and a person cannot tell which disease they are looking at. These
+ * are those same verdicts, unsummed: the three checks every screen is put to, and
+ * `wiredActions` as the three questions it answers at once (`splitChecks` in
+ * `floor.ts`).
+ *
+ * A column per check and a row per contender, because it is the other way round
+ * that does not fit: seven contenders times six checks is a table nobody can
+ * read. Nothing is decided again here — a cell earned, missed, or never in front
+ * of a screen is the one the card below says it is, and the columns are named in
+ * the vocabulary `summary.json` uses so the page and the file cannot drift.
+ */
+const checkTable = (results: readonly CaseResult[], actionCases: ReadonlySet<string>): string => {
+  if (results.length === 0) return "";
+  const contenders = [...new Set(results.map((result) => result.contender))];
+  const names = [...new Set(splitOf(results, actionCases).map((check) => check.name))];
+  return `<table class="shapes">
+  <thead><tr><th>column</th><th>cases</th>${names.map((name) => `<th>${escape(name)}</th>`).join("")}</tr></thead>
+  <tbody>${contenders
+    .map((contender) => {
+      const rows = results.filter((result) => result.contender === contender);
+      const cells = splitOf(rows, actionCases);
+      return `<tr><th>${escape(contender)}</th><td>${rows.length}</td>${names
+        .map((name) => scoreCell(cells.filter((check) => check.name === name)))
+        .join("")}</tr>`;
+    })
+    .join("")}</tbody>
+</table>`;
+};
+
+/**
  * The run's floor score by shape — the only place on this page a contender's
  * screens are added up at all. Every column below is a single screen, so a
  * contender that holds the floor everywhere except charts says so here and
@@ -328,24 +319,24 @@ const spendLine = (
  * The cells are the columns' OWN checks, summed: `checks` is the same function
  * `column` scores with, so a cell can never disagree with the columns beneath it
  * except by being their total. A shape nobody ran a case for is muted rather
- * than scored, for the reason a vacuous `honestData` pass is — 0/0 painted green
- * is a claim about a contender that was never put to the test.
+ * than scored, for the reason a vacuous `wiredActions` pass is — 0/0 painted
+ * green is a claim about a contender that was never put to the test.
  *
- * And a vacuous or degraded check is out of the numerator AND the denominator,
- * counted beside them instead. Summing bare booleans is how a blank page — no
- * numbers to check, nothing to press — scored 5/5 here while the preview under
- * it was already muting both of those cells as unearned.
+ * And a vacuous check is out of the numerator AND the denominator, counted
+ * beside them instead. Summing bare booleans is how a blank page — nothing to
+ * press — scored full marks here while the preview under it was already muting
+ * that cell as unearned.
  */
-const shapeTable = (results: readonly CaseResult[]): string => {
+const shapeTable = (
+  results: readonly CaseResult[],
+  worlds: Readonly<Record<string, World>>,
+  actionCases: ReadonlySet<string>,
+): string => {
   if (results.length === 0) return "";
   const shapes = [...new Set(results.map((result) => result.shape))].sort();
   // First-seen, so the cells read left to right in the column order below.
   const contenders = [...new Set(results.map((result) => result.contender))];
-  const cell = (rows: readonly CaseResult[]): string => {
-    const { passed, of, aside } = earned(rows.flatMap((row) => checks(row.floor)));
-    if (of === 0) return `<td class="muted">—${escape(aside)}</td>`;
-    return `<td class="${passed === of ? "ok" : "no"}">${passed}/${of}${escape(aside)}</td>`;
-  };
+  const cell = (rows: readonly CaseResult[]): string => scoreCell(rows.flatMap((row) => checks(row.floor)));
   return `<table class="shapes">
   <thead><tr><th>shape</th><th>cases</th>${contenders
     .map((contender) => `<th>${escape(contender)}</th>`)
@@ -358,8 +349,167 @@ const shapeTable = (results: readonly CaseResult[]): string => {
         .join("")}</tr>`;
     })
     .join("")}</tbody>
+  <tfoot>${durationRow(results, contenders)}${livenessRow(results, contenders)}${writesRow(results, contenders, worlds, actionCases)}</tfoot>
 </table>`;
 };
+
+/** Nearest rank, on a list that sorts itself: every number printed here is a
+ *  case that really ran, never the mean of two that did not. */
+const at = (values: readonly number[], fraction: number): number => {
+  const sorted = [...values].sort((left, right) => left - right);
+  return sorted[Math.max(0, Math.ceil(fraction * sorted.length) - 1)] ?? 0;
+};
+
+/**
+ * How long a column took to answer, as the three numbers that describe one wait.
+ *
+ * Half the question this benchmark exists to answer is time, and one number is
+ * not a duration: a column with a fast median and a two-minute worst case is a
+ * different product from one without it. So the case a person should expect,
+ * and the tail they will actually feel, are both said.
+ */
+export const durations = (
+  results: readonly CaseResult[],
+): { median: number; p90: number; worst: number } => {
+  const settled = results.map((result) => result.timing.settledMs);
+  return { median: at(settled, 0.5), p90: at(settled, 0.9), worst: at(settled, 1) };
+};
+
+/** The same three numbers, in the same columns as the floor cells above them, so
+ *  a column's score and what it cost in time are read together. Whole seconds:
+ *  a case here is one to four minutes, and a tenth of a second on a wait that
+ *  long is precision the reader has to look past. The exact milliseconds are
+ *  still on every case's own card. */
+const durationRow = (results: readonly CaseResult[], contenders: readonly string[]): string => {
+  const seconds = (ms: number): string => `${Math.round(ms / 1000)}s`;
+  return `<tr><th>duration</th><td class="muted">median · p90 · worst</td>${contenders
+    .map((contender) => {
+      const { median, p90, worst } = durations(results.filter((result) => result.contender === contender));
+      return `<td>${seconds(median)} · ${seconds(p90)} · ${seconds(worst)}</td>`;
+    })
+    .join("")}</tr>`;
+};
+
+/**
+ * How much of what a set of screens showed followed the data when the data
+ * moved, added up — the aggregate the liveness row and `summary.json` both read.
+ *
+ * A screen that displayed none of the moved values is counted BESIDE the totals
+ * rather than in them, for the reason a vacuous `wiredActions` pass is: it was
+ * neither bound nor baked, and folding it in either direction is a claim about a
+ * screen that was never put to the test. A case with no liveness at all — no
+ * page painted, or a run recorded before the axis — is in none of the three.
+ */
+const bound = (results: readonly CaseResult[]): { live: number; displayed: number; vacuous: number } => {
+  const measured = results.flatMap((result) => result.liveness ?? []);
+  return {
+    live: measured.reduce((total, one) => total + one.live, 0),
+    displayed: measured.reduce((total, one) => total + one.displayed, 0),
+    vacuous: measured.filter((one) => one.vacuous === true).length,
+  };
+};
+
+/**
+ * Whether a column's screens were bound to the host's data, in the same columns
+ * as the floor cells above them, so what a screen scored and whether it would
+ * survive the data changing are read together.
+ *
+ * Uncoloured, like the clock beside it and unlike every cell above: this is
+ * REPORTED, not gated. Painting it green and red would read as a check the run
+ * passed or failed, and no exit code has ever depended on it.
+ */
+const livenessRow = (results: readonly CaseResult[], contenders: readonly string[]): string =>
+  `<tr><th>liveness</th><td class="muted">shown values that moved with the data</td>${contenders
+    .map((contender) => {
+      const { live, displayed, vacuous } = bound(results.filter((result) => result.contender === contender));
+      const aside = vacuous === 0 ? "" : ` · ${vacuous} vacuous`;
+      return displayed === 0
+        ? `<td class="muted">—${escape(aside)}</td>`
+        : `<td>${live}/${displayed}${escape(aside)}</td>`;
+    })
+    .join("")}</tr>`;
+
+/**
+ * How far one screen's presses actually got, read back off its own bindings.
+ *
+ * `wiredActions` says whether every press HELD; it never says whether any of
+ * them reached the host's write side. A screen that opens a confirmation and a
+ * screen that really calls `cancel_transfer` both clear that check — asking
+ * first is a product decision, not a failure — and they are not the same
+ * product. This is that third reading: a WRITE is a tool the world declares with
+ * no canned data (`riskOf` in `world.ts`), a DIALOG is a press that opened a
+ * confirmation and called no write, and NONE is neither. Nothing is probed,
+ * judged or scored again — the bindings and the trace on disk are the whole
+ * evidence, which is why a saved run gets this for free.
+ *
+ * A write one press inside an inline REVEAL is the screen's own write: "press
+ * Hand off, pick an assignee, press Confirm" is one flow, and since the probe
+ * walks what a press puts on the page (2026-08-18) those presses sit on the trace
+ * as PATHS rather than as bindings — so read off the bindings alone the whole
+ * flow counted as a dialog, or as nothing at all. Read the same way the dialog
+ * reading is read: off the trace, and only for a tool the world calls a write.
+ * Including the confirmation such a step ENDS in, since the probe walks that too
+ * (2026-08-18) — the `capacity-rebalance` shape, whose write is the Modal's button
+ * two presses in — because a flow the floor calls proven must not read as a flow
+ * that reached nothing here.
+ */
+const reached = (result: CaseResult, world: World | undefined): "write" | "dialog" | "none" => {
+  const writes = new Set(
+    (world?.tools ?? []).filter((tool) => tool.descriptor.risk === "write").map((tool) => tool.name),
+  );
+  const called = (calls: readonly Fired[]): boolean => calls.some((call) => writes.has(call.name));
+  const wrote = result.trace.some((probed) =>
+    (probed.revealed ?? []).some((path) => called(path.calls) || (path.inside ?? []).some((deeper) => called(deeper.calls))));
+  if (wrote || result.floor.wiredActions.bindings.some((binding) => binding.tool !== undefined && writes.has(binding.tool))) {
+    return "write";
+  }
+  return result.trace.some((probed) => probed.dialog !== undefined) ? "dialog" : "none";
+};
+
+/** The same reading added up over the cases that ASKED for it — the only ones
+ *  it means anything on, since a display screen was never told to write. A case
+ *  whose world has moved since is counted as having reached nothing rather than
+ *  left out: its writes cannot be named any more, and that is the report's
+ *  loss, not the column's. */
+const acted = (
+  results: readonly CaseResult[],
+  worlds: Readonly<Record<string, World>>,
+  actionCases: ReadonlySet<string>,
+): { write: number; dialog: number; none: number } => {
+  const far = { write: 0, dialog: 0, none: 0 };
+  for (const result of results) {
+    if (actionCases.has(result.case)) far[reached(result, worlds[result.case])] += 1;
+  }
+  return far;
+};
+
+/**
+ * Whether a column's ACTION screens reached the host's write side, in the same
+ * columns as the floor cells above them — so what a screen scored and how far
+ * pressing it really got are read together.
+ *
+ * Uncoloured, like the clock and the liveness row beside it: this is REPORTED,
+ * never gated, and no exit code has ever depended on it. A column with no
+ * action case says nothing rather than 0/0.
+ */
+const writesRow = (
+  results: readonly CaseResult[],
+  contenders: readonly string[],
+  worlds: Readonly<Record<string, World>>,
+  actionCases: ReadonlySet<string>,
+): string =>
+  `<tr><th>writes</th><td class="muted">action cases whose presses called a write tool</td>${contenders
+    .map((contender) => {
+      const { write, dialog, none } = acted(
+        results.filter((result) => result.contender === contender),
+        worlds,
+        actionCases,
+      );
+      const asked = write + dialog + none;
+      const aside = dialog === 0 ? "" : ` · ${dialog} dialog`;
+      return asked === 0 ? `<td class="muted">—</td>` : `<td>${write}/${asked}${escape(aside)}</td>`;
+    })
+    .join("")}</tr>`;
 
 const spent = <T,>(results: readonly CaseResult[], of: (result: CaseResult) => T | undefined): T[] =>
   results.flatMap((result) => {
@@ -412,9 +562,8 @@ body{margin:0;background:var(--page);color:var(--ink);
   font:450 15px/1.5 ui-sans-serif,-apple-system,"Segoe UI",sans-serif;
   -webkit-font-smoothing:antialiased;border-top:3px solid var(--ink);}
 /* Room for the fixed call feed, so the last column is never hidden under it.
-   The cap lives here rather than on the grid track: it is what stops a column
-   from stretching past the width its screen was designed at, and it is the one
-   number to move if a world ever ships more than three contenders. */
+   The width cap here is just a sane page width — each iframe caps itself at
+   VIEWPORT's own width below, so this isn't what keeps a screen life-sized. */
 .wrap{max-width:1560px;margin:0 auto;padding:32px 24px calc(var(--feed) + 32px)}
 h1{margin:0;font-size:28px;font-weight:600;letter-spacing:-.02em}
 .meta{margin:16px 0 0;font:450 11px/1 ui-monospace,SFMono-Regular,Menlo,monospace;
@@ -432,6 +581,11 @@ h1{margin:0;font-size:28px;font-weight:600;letter-spacing:-.02em}
 .shapes thead th{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--ter)}
 .shapes tbody th{font-weight:600;color:var(--ink)}
 .shapes tbody tr:last-child th,.shapes tbody tr:last-child td{border-bottom:0}
+/* What is measured beside the score rather than scored — the clock, and whether
+   the screens were bound to the data — ruled off under the cells they belong to:
+   same columns, so a column's floor and what it cost in time and in binding are
+   read in one glance. */
+.shapes tfoot th,.shapes tfoot td{border-top:1px solid var(--line);border-bottom:0}
 .shapes .muted{color:var(--ter)}
 /* The prompt is the heading a person reads; the case id is a filename. */
 .case{margin-top:48px}
@@ -441,16 +595,13 @@ h1{margin:0;font-size:28px;font-weight:600;letter-spacing:-.02em}
 /* Provenance, never a score: quieter than the prompt it sits under. */
 .source{margin:6px 0 0;font-size:12px;color:var(--ter);max-width:62ch}
 .source a{color:inherit}
-/* Every contender in ONE row, because the whole page is a comparison and a
-   column you have to scroll to find is a column you never compare.
-
-   The max track sizing function must stay FLEXIBLE. auto-fit counts its
-   repetitions off the max when that max is a definite length, so the previous
-   minmax(360px,540px) asked "how many 540px columns fit?" and answered two at
-   every viewport — the third wrapped a full row down, where lazy loading then
-   kept it blank. With 1fr the count comes off the 360px min instead: three
-   columns from ~1176px up, two below that, one on a phone. */
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:24px;margin-top:24px}
+/* One contender per row. Three abreast used to fit each iframe into a
+   360-540px box, but the grading frame is VIEWPORT below (1280x900) —
+   squeezed that narrow, a contender's page reflows into a layout nobody's
+   screen actually shows, so the preview stops resembling what the judge
+   saw. Stacking leaves the iframe room to sit at (up to) its own graded
+   width. */
+.grid{display:grid;grid-template-columns:1fr;gap:24px;margin-top:24px}
 .col{background:var(--card);border-radius:10px;padding:20px;box-shadow:0 1px 2px rgba(0,0,0,.04),0 8px 24px rgba(0,0,0,.05)}
 .col>header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
 h2{margin:0;font-size:15px;font-weight:600}
@@ -459,11 +610,12 @@ h2{margin:0;font-size:15px;font-weight:600}
 .score.ok{color:var(--ok);background:#e8f3ed}.score.no{color:var(--no);background:#fbeceb}
 /* Full-bleed to the card's edges: the card's own padding was costing the
    embedded screen 40px of width, which is the difference between a contender's
-   page fitting and its right-hand controls being clipped. The frame is the one
-   thing on this page that must be as close as possible to the 480px the
-   screenshots are shot at, so it gets the whole card. */
+   page fitting and its right-hand controls being clipped. The frame is capped
+   at VIEWPORT's own width and shaped to its aspect ratio — the exact box the
+   screenshot was shot in — and centered, so a monitor wide enough to fit it
+   renders the contender's page at the size it was graded at. */
 figure{margin:16px -20px 0;background:#fff;border-top:1px solid var(--line);border-bottom:1px solid var(--line);overflow:hidden}
-iframe{display:block;width:100%;height:660px;border:0;background:#fff}
+iframe{display:block;width:100%;max-width:${VIEWPORT.width}px;aspect-ratio:${VIEWPORT.width}/${VIEWPORT.height};margin:0 auto;border:0;background:#fff}
 .blank{padding:48px 16px;text-align:center;font-size:13px;color:var(--ter)}
 /* The judge's evidence, not the artifact: small, captioned, and inlined so it
    survives the file being moved. The live page above it does not. */
@@ -479,8 +631,8 @@ dl{margin:0}dl>div{display:flex;align-items:baseline;justify-content:space-betwe
 .floor>div{padding:7px 0;border-bottom:1px solid var(--line)}
 .floor dt{font-size:13px;color:var(--sec)}
 .v{font:600 13px/1 ui-monospace,Menlo,monospace}.ok{color:var(--ok)}.no{color:var(--no)}
-/* A vacuous pass: nothing was extractable, so nothing was actually cleared.
-   Same weight as the labels around it, never the green a real pass earns. */
+/* A vacuous pass: there was nothing to press, so no control was ever proven
+   live. Same weight as the labels around it, never the green a real pass earns. */
 .v.muted{color:var(--ter);font-weight:450}
 .notes{margin:10px 0 0;padding:0;list-style:none}
 .notes li{display:flex;gap:8px;align-items:baseline;padding:4px 0;font-size:12px;color:var(--ter)}
@@ -514,16 +666,11 @@ dl{margin:0}dl>div{display:flex;align-items:baseline;justify-content:space-betwe
 /* The one red block on the page, and it is about the GRADER. */
 .degraded{margin:0 0 12px;padding:9px 12px;border-left:3px solid var(--no);border-radius:0 6px 6px 0;
   background:#fbeceb;font-size:12px;font-weight:600;color:var(--no)}
-
-/* ---- the honesty check: every value, and what settled it ----
-   Same spacing step and the same verdict rows as the rubric above, because it
-   is the same kind of claim. The program is a filled well rather than a
-   bordered box — one less border in a column that already has plenty. */
-.audit{margin-top:20px;padding-top:16px;border-top:1px solid var(--line)}
-.audit .line code{font:600 12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--ink)}
-.program{margin:6px 0 0;padding:8px 10px;background:var(--page);border-radius:6px;
-  white-space:pre-wrap;overflow-wrap:anywhere;
-  font:450 11px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--sec)}
+/* No rubric at all: nobody was asked. Quiet and in the half-heads' own type,
+   because it is a fact about the run and not a verdict on the column. */
+.unjudged{margin:20px 0 0;padding-top:16px;border-top:1px solid var(--line);
+  font:450 10px/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--ter)}
 
 /* ---- the world panel: closed by default, because it is the reference you
        reach for, not the thing you came to look at ---- */
@@ -559,6 +706,9 @@ dl{margin:0}dl>div{display:flex;align-items:baseline;justify-content:space-betwe
 #feed .who{font-weight:600;color:var(--sec)}
 #feed code{color:var(--ink);background:var(--page);padding:1px 5px;border-radius:4px}
 #feed .args{color:var(--ter);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* The guard's resolution, on the row it resolves — pushed to the far edge so a
+   parked write reads as one call that came back, not as two calls. */
+#feed .approved{flex:none;margin-left:auto;color:var(--ok)}
 @starting-style{#feed li{opacity:0;transform:translateY(-4px)}}
 @media (prefers-reduced-motion:reduce){#feed li{transition:opacity 150ms ease-out}}
 `;
@@ -576,9 +726,18 @@ dl{margin:0}dl>div{display:flex;align-items:baseline;justify-content:space-betwe
  * embedded — a child frame of its own — could post as a column entirely. A
  * sender that is not one of this report's own frames is not a contender.
  *
+ * A GUARDED write posts twice — the ask, then the approval that released it
+ * (`seam` in `render.ts`) — and the second one is the first one's outcome, not
+ * another call. So it lands on the row already showing that ask, which is what a
+ * person watching a screen press one button has to see. Matched by column and
+ * tool name, which is enough: a write's approval is posted from the microtask its
+ * own press queued, so it always arrives before any later press of the same tool
+ * can post. A read's row is simply never claimed.
+ *
  * No server, no shared state: the file works from disk, offline, forever.
  */
 const FEED_SCRIPT = `
+var parked = {};
 addEventListener("message", function (event) {
   var call = event.data;
   if (call === null || typeof call !== "object" || call.genbench !== "call") return;
@@ -588,6 +747,17 @@ addEventListener("message", function (event) {
     if (frames[i].contentWindow === event.source) sender = frames[i].getAttribute("data-contender");
   }
   if (sender === null) return;
+  var key = sender + " " + call.name;
+  if (call.approved) {
+    var ask = parked[key];
+    delete parked[key];
+    if (ask === undefined) return;
+    var tag = document.createElement("span");
+    tag.className = "approved";
+    tag.textContent = "✓ approved";
+    ask.append(tag);
+    return;
+  }
   var row = document.createElement("li");
   var when = document.createElement("time");
   when.textContent = new Date(call.ts).toLocaleTimeString("en-US", { hour12: false });
@@ -603,9 +773,18 @@ addEventListener("message", function (event) {
     return key + ": " + (typeof value === "string" ? value : JSON.stringify(value));
   }).join(", ") + "}";
   row.append(when, who, tool, args);
+  parked[key] = row;
   document.getElementById("feed").prepend(row);
 });
 `;
+
+/** One check across a column's screens: earned and failed are the screens it was
+ *  really in front of, vacuous the ones it was not. */
+export interface CheckTally {
+  readonly earned: number;
+  readonly failed: number;
+  readonly vacuous: number;
+}
 
 /** One column's whole run in numbers. Floor cells and rubric lines are counted
  *  the way the page above counts them — through `checks` and through each
@@ -614,37 +793,134 @@ export interface ColumnSummary {
   readonly model: string;
   readonly cases: number;
   readonly floor: { earned: number; failed: number; vacuous: number; degraded: number };
-  /** A case line's `na` counts as a fail (`tally`); a style line's does not, and
-   *  is counted here instead. */
+  /** The cells `floor` sums, one tally per check instead of one total — with
+   *  `wiredActions` as the three questions it answers at once (`splitChecks` in
+   *  `floor.ts`): `pressed`, every control the probe pressed did something;
+   *  `wired`, every call that fired named a real tool with arguments the world
+   *  would accept; `actionProven`, a case that asked the screen to act showed its
+   *  write or a confirmation that works. Not a re-count of `floor`, which does not
+   *  move for any of this: a screen can miss two of the three at once and still be
+   *  the one failed `wiredActions` cell it always was, so these six say WHICH
+   *  disease a column has and `floor` goes on saying how much. Read off verdicts
+   *  already on disk, so `genbench report <run folder>` fills it in for a run
+   *  recorded before the split existed. */
+  readonly floorChecks: Readonly<Record<string, CheckTally>>;
+  /** The case's OWN lines: what this screen was asked to show. A case line's
+   *  `na` counts as a fail (`tally`); a style line's does not, and is counted
+   *  here instead. */
   readonly caseLines: { pass: number; fail: number; na: number };
+  /** The standing honesty line, alone: whether the numbers on the screen are the
+   *  tool data's. It was counted in `caseLines`, where a screen that invented a
+   *  figure and a screen that missed a row moved one number by the same amount.
+   *  Two buckets — a screen either showed honest numbers or it did not, so an
+   *  `na` is counted the way `tally` counts one on any case line, as a fail.
+   *
+   *  `flipped` is how many of those passes are fails an independent check
+   *  overturned, because it could not name the figure the judge said was
+   *  invented (`honesty.ts`). Counted rather than hidden inside `pass`: it is the
+   *  measure of how much of this line's score was the grader's noise, and a run
+   *  where it climbs is a run whose judge is drifting.
+   *
+   *  `unadjudicated` is how many of the FAILS nobody checked at all: no screen was
+   *  delivered, the judge never graded, or the call did not come back. It sits
+   *  beside `flipped` because the two are read together — a run with fails, no
+   *  flips and no unadjudicated is a run whose accusations were all confirmed,
+   *  while the same run with every fail unadjudicated is a run whose check never
+   *  answered, and until this was counted the summary printed the same numbers for
+   *  both. */
+  readonly honesty: { pass: number; fail: number; flipped: number; unadjudicated: number };
   readonly styleLines: { pass: number; fail: number; na: number };
+  /** Whether this column's screens are BOUND to the host's data or merely
+   *  decorated with it: of the values the screens displayed, how many moved when
+   *  the data under them moved (`liveness.ts`). Reported, never gated — no floor
+   *  cell and no exit code reads it. A screen that displayed none of the moved
+   *  values is `vacuous` and out of both totals, the doctrine a `wiredActions`
+   *  pass with nothing to press is counted under. All three are 0 for a run
+   *  recorded before the axis existed, until `genbench liveness` fills it in. */
+  readonly liveness: { live: number; displayed: number; vacuous: number };
+  /** Of the cases that ASKED this column's screens to do something (`action` in
+   *  `cases.json`), how far the presses got: `write` — one of them called a
+   *  tool the world declares a write (a tool with no canned data, `riskOf` in
+   *  `world.ts`); `dialog` — none did, and a press opened a confirmation the
+   *  probe stops at; `none` — neither. Re-read from bindings already on disk,
+   *  so `genbench report <run folder>` fills it in for a run recorded before
+   *  the axis existed, with no model, no browser and no probe. Reported, never
+   *  gated. All three are 0 for a run nothing could tell the action cases of. */
+  readonly actions: { write: number; dialog: number; none: number };
   readonly timeouts: number;
   readonly judgeDegraded: number;
+  /** How long this column took to answer, in milliseconds. Half the buy-versus-
+   *  build question is time, and it had no aggregate anywhere: the preview
+   *  printed one number per screen and the summary printed none. */
+  readonly settledMs: { median: number; p90: number; worst: number };
+  /** The middle case only, and only where a column reports a first render at
+   *  all: it is a snapshot a driver chose to take, so a column that never took
+   *  one says nothing rather than zero. */
+  readonly firstRenderMedianMs?: number;
   readonly tokens: number;
   readonly usd: number;
 }
 
 export interface RunSummary {
   readonly run: string;
+  /** The run this one re-scored, where it is one. The screens are that run's and
+   *  so are its timings; only the verdicts on them are this run's. */
+  readonly regradedFrom?: string;
   readonly gitSha: string;
   readonly rubricVersion: number;
-  readonly auditVersion: number;
-  readonly triageVersion: number;
   /** Every model id that answered, contenders and graders alike. */
   readonly models: readonly string[];
   readonly columns: Readonly<Record<string, ColumnSummary>>;
 }
 
-const lineCounts = (
-  lines: readonly LineVerdict[],
-  source: LineVerdict["source"],
-): { pass: number; fail: number; na: number } => {
-  const half = lines.filter((line) => line.source === source);
+const lineCounts = (lines: readonly LineVerdict[]): { pass: number; fail: number; na: number } => ({
+  pass: lines.filter((line) => line.verdict === "pass").length,
+  fail: lines.filter((line) => line.verdict === "fail").length,
+  na: lines.filter((line) => line.verdict === "na").length,
+});
+
+/** The honesty line in two buckets rather than three, for the reason `tally`
+ *  grades a case line's `na` rather than excusing it: an unanswered line about
+ *  the numbers on the screen is not a line that had no subject. Plus how many of
+ *  the passes are the judge's own fails, overturned by a check that could not
+ *  name the figure it accused (`honesty.ts`) — read off the record the flip left
+ *  behind, never off the flipped verdict, which is now indistinguishable from a
+ *  pass the judge reached itself. And how many of the fails nobody checked, read
+ *  off the record the same way: every fail carries one, so a fail with no record
+ *  is a bug in the writer rather than a case to count. */
+const honestyCounts = (
+  rows: readonly CaseResult[],
+): { pass: number; fail: number; flipped: number; unadjudicated: number } => {
+  const lines = inHalf(rows.flatMap((row) => row.judged.lines), "honesty");
   return {
-    pass: half.filter((line) => line.verdict === "pass").length,
-    fail: half.filter((line) => line.verdict === "fail").length,
-    na: half.filter((line) => line.verdict === "na").length,
+    pass: lines.filter((line) => line.verdict === "pass").length,
+    fail: lines.filter((line) => line.verdict !== "pass").length,
+    flipped: rows.filter((row) => row.judged.honesty?.verdict === "none").length,
+    unadjudicated: rows.filter((row) => row.judged.honesty?.verdict === "unadjudicated").length,
   };
+};
+
+/** The floor's cells kept apart by name, each counted exactly the way `floor`
+ *  counts all four at once: a vacuous cell out of both halves and beside them. */
+const checkTallies = (
+  rows: readonly CaseResult[],
+  actionCases: ReadonlySet<string>,
+): Record<string, CheckTally> => {
+  const cells = splitOf(rows, actionCases);
+  return Object.fromEntries(
+    [...new Set(cells.map((check) => check.name))].map((name) => {
+      const mine = cells.filter((check) => check.name === name);
+      const graded = mine.filter((check) => check.vacuous !== true);
+      return [
+        name,
+        {
+          earned: graded.filter((check) => check.pass).length,
+          failed: graded.filter((check) => !check.pass).length,
+          vacuous: mine.length - graded.length,
+        },
+      ];
+    }),
+  );
 };
 
 /**
@@ -662,13 +938,23 @@ export async function writeSummary(input: {
   runId: string;
   results: readonly CaseResult[];
   gitSha: string;
+  /** Set only by `regrade`, which re-scores another run's screens. */
+  regradedFrom?: string;
+  /** The world each case ran against, and which cases asked the screen to act —
+   *  what the write axis is read against. Absent where a caller has neither,
+   *  which costs that axis and nothing else. */
+  worlds?: Readonly<Record<string, World>>;
+  actionCases?: ReadonlySet<string>;
 }): Promise<string> {
+  const worlds = input.worlds ?? {};
+  const actionCases = input.actionCases ?? new Set<string>();
   const columns: Record<string, ColumnSummary> = {};
   for (const contender of new Set(input.results.map((result) => result.contender))) {
     const rows = input.results.filter((result) => result.contender === contender);
     const scored = rows.flatMap((row) => checks(row.floor));
     const graded = scored.filter((check) => check.vacuous !== true && check.degraded !== true);
     const lines = rows.flatMap((row) => row.judged.lines);
+    const firstRenders = rows.flatMap((row) => row.timing.firstRenderMs ?? []);
     columns[contender] = {
       model: rows[0]!.model,
       cases: rows.length,
@@ -678,10 +964,16 @@ export async function writeSummary(input: {
         vacuous: scored.filter((check) => check.vacuous === true).length,
         degraded: scored.filter((check) => check.degraded === true).length,
       },
-      caseLines: lineCounts(lines, "case"),
-      styleLines: lineCounts(lines, "style"),
+      floorChecks: checkTallies(rows, actionCases),
+      caseLines: lineCounts(inHalf(lines, "correctness")),
+      honesty: honestyCounts(rows),
+      styleLines: lineCounts(inHalf(lines, "design")),
+      liveness: bound(rows),
+      actions: acted(rows, worlds, actionCases),
       timeouts: rows.filter((row) => row.failure === "timeout").length,
       judgeDegraded: rows.filter((row) => row.judged.degraded).length,
+      settledMs: durations(rows),
+      ...(firstRenders.length === 0 ? {} : { firstRenderMedianMs: at(firstRenders, 0.5) }),
       tokens: rows.reduce(
         (total, { cost }) =>
           total + cost.usage.inputTokens + cost.usage.outputTokens + cost.usage.cacheReadTokens + cost.usage.cacheWriteTokens,
@@ -694,10 +986,9 @@ export async function writeSummary(input: {
   const first = input.results[0];
   const summary: RunSummary = {
     run: input.runId,
+    ...(input.regradedFrom === undefined ? {} : { regradedFrom: input.regradedFrom }),
     gitSha: input.gitSha,
     rubricVersion: first?.judgeContract.rubricVersion ?? 0,
-    auditVersion: first?.auditorContract.auditVersion ?? 0,
-    triageVersion: first?.triageContract.triageVersion ?? 0,
     models: [
       ...new Set(
         input.results.flatMap((result) => [result.modelVersion ?? result.model, result.judged.modelVersion]),
@@ -723,8 +1014,13 @@ export async function writePreview(input: {
   runId: string;
   results: readonly CaseResult[];
   worlds: Readonly<Record<string, World>>;
+  /** The cases that asked the screen to DO something. A saved result carries no
+   *  tags, so this is what says which screens the write row is about; without
+   *  it that row is the only thing on the page that goes quiet. */
+  actionCases?: ReadonlySet<string>;
 }): Promise<string> {
   const first = input.results[0];
+  const actionCases = input.actionCases ?? new Set<string>();
   // Grouped in first-seen order, and each group in the order the row was run:
   // which contender finished first never moves a column.
   const order = [...new Set(input.results.map((result) => result.case))];
@@ -746,8 +1042,8 @@ export async function writePreview(input: {
 <h1>genbench</h1>
 <p class="meta"><span>${escape(input.runId)}</span><span>world ${escape(first?.world ?? "")}</span><span>${escape(first?.lane ?? "screen")} lane</span></p>
 ${spendLine("judge", "graded", spent(input.results, (result) => result.judged.cost))}
-${spendLine("honesty check", "sorted and audited", spent(input.results, (result) => result.floor.honestData.cost))}
-${shapeTable(input.results)}
+${checkTable(input.results, actionCases)}
+${shapeTable(input.results, input.worlds, actionCases)}
 ${sections.join("")}
 </div>
 <aside class="feed"><p class="feed-label">tool calls</p><ol id="feed"></ol></aside>

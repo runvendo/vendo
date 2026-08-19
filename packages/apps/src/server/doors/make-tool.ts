@@ -1,7 +1,8 @@
 /**
  * `vendo_make` — the one door a calling agent asks for a screen through, and
- * the two routes behind it: a NEW thing (assembly, escalating to the builder)
- * and a change to one app the caller named.
+ * the three routes behind it: a NEW thing (assembly, escalating to the builder),
+ * a change to one app the caller named, and a REMIX of one of the host's own
+ * components (the ✦, which opens this conversation and mints nothing itself).
  *
  * It also arms the schedule half of a COMPOUND ask ("build me the board and
  * refresh it every Monday"), through the automation door — which is the same one
@@ -301,6 +302,64 @@ const changeExistingApp = async (
 };
 
 /**
+ * The ✦ ONE DOOR: the person asked for a change to one of the HOST's own
+ * components, so what they want is a REMIX — an ordinary app carrying a seed,
+ * which is what the wrapper discovers by component name and mounts in the
+ * original's place. Minting a plain app here instead leaves the ✦ doing nothing
+ * the person can see.
+ *
+ * Through the EXISTING seed door, never a second mint path: it validates the
+ * component against the captured baselines, dedupes per person, records the
+ * wish, and runs it through the ordinary edit door as one operation.
+ */
+const remixComponent = async (
+  make: MakeCall,
+  component: string,
+  request: string,
+  slot: string | undefined,
+): Promise<ToolOutcome> => {
+  // Asked BEFORE the mint, because afterwards the two cases are
+  // indistinguishable: a wish repeated VERBATIM leaves a deduped remix in
+  // exactly the state a fresh mint would be in, and reading the wish list back
+  // called it new — so the repeat landed nowhere and the receipt said "ready".
+  const before = await make.runtime.list(make.ctx);
+  // The person's OWN words, not `ask`: the `<context>` fence that named the
+  // component is this call's background, and a seed's wishes are replayed
+  // verbatim onto every future version the host ships.
+  const seeded = await make.runtime.seed.from({
+    component,
+    instruction: request,
+    ...(slot === undefined ? {} : { slot }),
+  }, make.ctx);
+  // No `remember` on this arm: the seed door already recorded the wish, and
+  // remembering it again would put it on the list twice.
+  //
+  // A component that already has a remix DEDUPES, and the seed door drops the
+  // riding wish when it does. The fence stays in the thread, so a follow-up wish
+  // arrives named this way too — that is an edit of the remix, and this being
+  // the one door, it has to land as one rather than vanish.
+  //
+  // The question is "did the seed door apply MY wish?", and it takes both halves
+  // to answer. The app existing beforehand catches the ordinary dedupe, INCLUDING
+  // a wish repeated verbatim, which leaves a remix in exactly the state a fresh
+  // mint would be in. The wish list catches the racing pair the seed door
+  // resolves after the fact: two gestures both find nothing, both mint, and the
+  // loser is handed the WINNER's app with the loser's own wish deleted alongside
+  // its app — an app that never existed for either caller to have seen.
+  const applied = !before.some(({ id }) => id === seeded.id)
+    && seeded.seed?.wishes.at(-1) === request;
+  if (!applied) return await changeExistingApp(make, seeded.id);
+  return receipt({
+    id: seeded.id,
+    title: seeded.name,
+    status: seeded.buildFailed === undefined ? "ready" : "failed",
+    say: seeded.buildFailed === undefined
+      ? `${seeded.name} is on the page, in place of the original.`
+      : `I couldn't remix ${component}.`,
+  });
+};
+
+/**
  * A COMPOUND ask: "build me the board AND refresh it every Monday".
  *
  * The app is built either way — this only decides whether the automation door is
@@ -359,9 +418,10 @@ export const runMakeTool = async (
   call: ToolCall,
   ctx: RunContext,
 ): Promise<ToolOutcome> => {
-  const args = input(call.args, ["request"], ["app", "context", "slot"]);
+  const args = input(call.args, ["request"], ["app", "context", "slot", "component"]);
   const app = optionalString(args.app, "app");
   const slot = optionalString(args.slot, "slot");
+  const component = optionalString(args.component, "component");
   // The slot, and ONLY the slot, needs a person there: it claims a place
   // on somebody's page and evicts whatever held it. Creation does not, so
   // an unattended run still builds what it was asked for and simply takes
@@ -410,9 +470,12 @@ export const runMakeTool = async (
       "`slot` says where a new app lands. To move an app that already exists, call vendo_apps_pin with that app and slot.",
     );
   }
-  const outcome = app === undefined
-    ? await makeNewApp(make, claimed)
-    : await changeExistingApp(make, app);
+  // `app` names one that already exists, `component` one of the HOST's own to
+  // remix; neither means something new. `app` first, because a caller who named
+  // a specific app has already answered the question `component` asks.
+  const outcome = app !== undefined ? await changeExistingApp(make, app)
+    : component !== undefined ? await remixComponent(make, component, request, claimed)
+      : await makeNewApp(make, claimed);
   // The schedule half of a compound ask, read from the person's OWN words — the
   // `<context>` fence is one calling agent's background, and a stale aside must
   // not arm anything.

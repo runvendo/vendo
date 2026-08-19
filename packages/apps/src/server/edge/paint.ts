@@ -20,6 +20,7 @@ import { newVariant, type CustomizeVariantOptions } from "quickjs-emscripten-cor
 import {
   bootScreen,
   flattenTree,
+  pressControls,
   ScreenError,
   warmScreenEngine,
   type ScreenBudget,
@@ -69,11 +70,13 @@ export const edgePaint = async (
   let instance: ScreenInstance | undefined;
   try {
     instance = bootScreen({ ...input, budget });
-    return { ok: true, tree: flattenTree(instance.tree(), input.source) };
+    const tree = flattenTree(instance.tree(), input.source);
+    const misses = instance.misses();
+    return { ok: true, tree, misses, inert: misses.length > 0 ? [] : pressControls(tree, () => bootScreen({ ...input, budget })) };
   } catch (error) {
     return error instanceof ScreenError
-      ? { ok: false, kind: error.kind, message: error.message }
-      : { ok: false, kind: "boot", message: error instanceof Error ? error.message : String(error) };
+      ? { ok: false, kind: error.kind, message: error.message, misses: error.misses }
+      : { ok: false, kind: "boot", message: error instanceof Error ? error.message : String(error), misses: [] };
   } finally {
     try { instance?.dispose(); } catch { /* ignore */ }
   }

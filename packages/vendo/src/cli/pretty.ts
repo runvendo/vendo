@@ -184,7 +184,7 @@ const MOUNT_WRAP = /^… then wrap: (<VendoProvider\b[^>]*>).*<\/VendoProvider>$
     pinned byte-for-byte by the receipt's `pasteEdits`, and a line added there
     would change that JSON. Emitted here, the --agent path never sees it (the
     rail is off in agent mode). */
-const MOUNT_DOCS = "docs.vendo.run/quickstart#the-client-mount — exact wording for layout.tsx and _app.tsx";
+const MOUNT_DOCS = "docs.vendo.run/product/mount-the-surface#the-provider — exact wording for layout.tsx and _app.tsx";
 const WIRED = /^(Wired \(\d+ files?\)):$/;
 const DIFF_MARKER = /^ {2}([+~]) (.+)$/;
 const THEME = /^Theme: (.*)$/;

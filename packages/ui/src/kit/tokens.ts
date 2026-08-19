@@ -27,6 +27,11 @@ export const t = {
   danger: `var(--vendo-color-danger, ${d.colors.danger})`,
   success: `var(--vendo-color-success, ${themeDefaults.colors.success})`,
   warning: `var(--vendo-color-warning, ${themeDefaults.colors.warning})`,
+  // The one status color no theme file names, so its fallback is stated here
+  // instead of read off one. NOT the accent: "running" painted in the brand's own
+  // colour reads as the brand, not as a state, which is the whole reason a
+  // fourth status colour exists at all.
+  info: "var(--vendo-color-info, #1f6fb5)",
   border: `var(--vendo-color-border, ${d.colors.border})`,
   // NOT `themeDefaults.colors.surfaceRaised`: that one mixes two `--vendo-*`
   // variables, which only resolve inside a host theme scope. Unthemed, they make
@@ -40,6 +45,7 @@ export const t = {
   shadowSmall: `var(--vendo-shadow-small, ${themeDefaults.shadow.small})`,
   fontFamily: `var(--vendo-font-family, ${d.typography.fontFamily})`,
   headingFamily: `var(--vendo-heading-family, var(--vendo-font-family, ${d.typography.fontFamily}))`,
+  monoFamily: `var(--vendo-mono-family, ${themeDefaults.typography.monoFamily})`,
   fontSize: `var(--vendo-font-size, ${d.typography.baseSize})`,
   weightNormal: `var(--vendo-font-weight-normal, ${themeDefaults.typography.weightNormal})`,
   weightEmphasis: `var(--vendo-font-weight-emphasis, ${themeDefaults.typography.weightEmphasis})`,
@@ -106,6 +112,12 @@ export const transitionFor = (...properties: string[]): string =>
 
 /** Figures line up by place value wherever the Kit prints one. */
 export const numeric: CSSProperties = { fontVariantNumeric: "tabular-nums" };
+
+/** An IDENTIFIER's face — a sha, a branch, an id, a code. Mono because it is
+ *  read character by character and compared against another one, not read as
+ *  prose; a touch smaller because a mono glyph is wider than the prose it sits
+ *  beside. The host's own code font when it has one (`--vendo-mono-family`). */
+export const mono: CSSProperties = { fontFamily: t.monoFamily, fontSize: "0.92em" };
 
 /** The structural micro-label: a column header, a caption, a tile's metric name.
  *  Uppercase and letterspaced so it reads as chrome, never as content. */
@@ -177,9 +189,14 @@ export const popupMotion = ({ transitionStatus }: { transitionStatus?: string })
 // a color or a spacing step the host did not agree to.
 // ---------------------------------------------------------------------------
 
-/** The ONE tone vocabulary. Card/Stat's "default" and Callout's "info" are the
- *  older spellings of `neutral`; both still parse. */
-export type KitTone = "neutral" | "accent" | "success" | "warning" | "danger";
+/** The ONE tone vocabulary. Card/Stat's "default" is the older spelling of
+ *  `neutral` and still parses.
+ *
+ *  `info` is a first-class tone rather than an alias for neutral: a state that is
+ *  neither good news nor bad — "running", "in progress", "pending review" — had
+ *  no word, so it reached for `accent` and painted the brand colour, which reads
+ *  as emphasis and not as a status at all. */
+export type KitTone = "neutral" | "accent" | "info" | "success" | "warning" | "danger";
 
 /** The ONE density vocabulary — the host theme's own (`VendoTheme.density`). */
 export type KitDensity = "comfortable" | "compact";
@@ -193,8 +210,14 @@ export const toneStyle: Record<KitTone, { color: string; background: string; bor
     border: t.border,
   },
   accent: { color: t.accentText, background: t.accent, border: t.accent },
-  // Darkened against `text`, not against `#000`: a literal black is not a token,
-  // and on a dark host theme it drove both foregrounds INTO the background.
+  // The three status tones are mixed the same way, off their own token: darkened
+  // against `text`, not against `#000` — a literal black is not a token, and on a
+  // dark host theme it drove both foregrounds INTO the background.
+  info: {
+    color: `color-mix(in srgb, ${t.info} 88%, ${t.text})`,
+    background: `color-mix(in srgb, ${t.info} 12%, ${t.surface})`,
+    border: `color-mix(in srgb, ${t.info} 30%, ${t.border})`,
+  },
   success: {
     color: `color-mix(in srgb, ${t.success} 88%, ${t.text})`,
     background: `color-mix(in srgb, ${t.success} 12%, ${t.surface})`,
@@ -224,12 +247,12 @@ export function toneColor(tone: string | undefined): string {
 /**
  * Read a tone off a prop. Generated code passes arbitrary strings, so an
  * unknown word falls back rather than crashing (the Callout lesson,
- * 2026-07-26), and the two legacy spellings resolve to what they always meant.
+ * 2026-07-26), and the legacy spelling resolves to what it always meant.
  * `Object.hasOwn`, not a bare index: "constructor" is a string too.
  */
 export function resolveTone(value: string | undefined, fallback: KitTone = "neutral"): KitTone {
   if (value === undefined) return fallback;
-  if (value === "default" || value === "info") return "neutral";
+  if (value === "default") return "neutral";
   return Object.hasOwn(toneStyle, value) ? (value as KitTone) : fallback;
 }
 

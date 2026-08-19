@@ -4,15 +4,16 @@
  */
 import { Radio as Base } from "@base-ui/react/radio";
 import { RadioGroup } from "@base-ui/react/radio-group";
-import type { ComponentProps } from "react";
-import { font, hairline, t, transitionFor, type KitStyled, type KitEngine, type KitRendered, given } from "../tokens.js";
+import { Fragment, type ComponentProps } from "react";
+import { font, hairline, microLabel, t, transitionFor, type KitStyled, type KitEngine, type KitRendered, given } from "../tokens.js";
 import { controlledHandler } from "../handler.js";
 import { FieldShell, useFieldIds } from "./field.js";
-import { choices, type KitOption } from "./options.js";
+import { choices, grouped, type KitOption } from "./options.js";
 
 interface RadioOwnProps extends KitStyled {
   label?: string;
-  /** Raw items — primitives or objects. */
+  /** Raw items — primitives or objects. An item's own `disabled` and `group`
+   *  keys make it unselectable and file it under a heading. */
   options: KitOption[];
   labelField?: string;
   valueField?: string;
@@ -44,37 +45,54 @@ export function Radio({ label, options: rawOptions, labelField, valueField, valu
           : screen({ target: { value: String(next) } })}
         style={{ ...font, display: "flex", flexDirection: "column", gap: "var(--vendo-density-field-gap, 6px)" }}
       >
-        {options.map((option, i) => (
-          // Positional ids, not the value's own text: a value is arbitrary tool
-          // output and an id may not carry whitespace.
-          <label
-            key={`${option.value}-${i}`}
-            htmlFor={`${fieldId}-${i}`}
-            style={{ display: "flex", alignItems: "center", gap: "var(--vendo-density-inline-gap, 7px)", cursor: disabled ? "not-allowed" : "pointer" }}
-          >
-            <Base.Root
-              id={`${fieldId}-${i}`}
-              value={option.value}
-              // Named by its OWN option, not by the field. The surrounding
-              // Field.Root offers every control the field's label, which would
-              // make all four radios answer to "Client".
-              aria-labelledby={`${fieldId}-${i}-label`}
-              style={({ checked }) => ({
-                display: "inline-flex",
-                alignItems: "center",
-                justifyContent: "center",
-                width: 16,
-                height: 16,
-                border: checked ? `${t.borderWidth} solid ${t.accent}` : hairline,
-                borderRadius: "50%",
-                background: t.surface,
-                transition: transitionFor("border-color"),
-              })}
-            >
-              <Base.Indicator style={{ width: 8, height: 8, borderRadius: "50%", background: t.accent }} />
-            </Base.Root>
-            <span id={`${fieldId}-${i}-label`}>{option.label}</span>
-          </label>
+        {grouped(options).map((run, g) => (
+          <Fragment key={g}>
+            {/* A heading only where the raw items named a group; an ungrouped list
+                is the plain column of radios it always was. */}
+            {run.group === undefined ? null : <span style={microLabel}>{run.group}</span>}
+            {run.items.map((option, i) => {
+              // Positional ids, not the value's own text: a value is arbitrary
+              // tool output and an id may not carry whitespace.
+              const id = `${fieldId}-${g}-${i}`;
+              return (
+                <label
+                  key={id}
+                  htmlFor={id}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "var(--vendo-density-inline-gap, 7px)",
+                    cursor: disabled || option.disabled ? "not-allowed" : "pointer",
+                    opacity: option.disabled ? 0.55 : 1,
+                  }}
+                >
+                  <Base.Root
+                    id={id}
+                    value={option.value}
+                    disabled={option.disabled}
+                    // Named by its OWN option, not by the field. The surrounding
+                    // Field.Root offers every control the field's label, which
+                    // would make all four radios answer to "Client".
+                    aria-labelledby={`${id}-label`}
+                    style={({ checked }) => ({
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      width: 16,
+                      height: 16,
+                      border: checked ? `${t.borderWidth} solid ${t.accent}` : hairline,
+                      borderRadius: "50%",
+                      background: t.surface,
+                      transition: transitionFor("border-color"),
+                    })}
+                  >
+                    <Base.Indicator style={{ width: 8, height: 8, borderRadius: "50%", background: t.accent }} />
+                  </Base.Root>
+                  <span id={`${id}-label`}>{option.label}</span>
+                </label>
+              );
+            })}
+          </Fragment>
         ))}
       </RadioGroup>
     </FieldShell>

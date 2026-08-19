@@ -75,6 +75,8 @@ await vendo.store.ensureSchema();
 
 Mastra streams tool calls as `dynamic-tool` or as `tool-<name>`, depending on how the tool was declared. Match both.
 
+Where that match lives is yours. The path below is a name, not a contract — only your own chat imports it, so a `components/` directory you do not have is a directory you do not need. [`examples/mastra-agent`](https://github.com/runvendo/vendo/tree/main/examples/mastra-agent) inlines the same branch in `src/app/page.tsx` instead.
+
 ```tsx components/vendo-part.tsx focus={5-8}
 import { getToolName, isToolUIPart, type UIMessage } from "ai";
 import { VendoToolResult } from "@vendoai/vendo/react";

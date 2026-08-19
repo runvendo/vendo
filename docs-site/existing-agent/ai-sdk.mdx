@@ -48,6 +48,8 @@ Resolve both from the same session, and never take a principal from the client. 
 
 The shim builds every tool with the AI SDK's `dynamicTool`, so `useChat` streams them as `dynamic-tool` parts rather than `tool-<name>`. Match on that.
 
+Where that match lives is yours. The path below is a name, not a contract — only your own chat imports it, so a `components/` directory you do not have is a directory you do not need. [`examples/ai-sdk-agent`](https://github.com/runvendo/vendo/tree/main/examples/ai-sdk-agent) inlines the same branch in `app/page.tsx` instead.
+
 ```tsx components/vendo-part.tsx focus={5-8}
 import type { UIMessage } from "ai";
 import { VendoToolResult } from "@vendoai/vendo/react";

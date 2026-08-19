@@ -64,7 +64,7 @@ describe("createVendoClient", () => {
     // There are no bare forks — the instruction rides with it and lands in the
     // provenance — and a `slot` also places the mint there.
     const seeded = await client.apps.seedFrom({ component: "hero", instruction: "make it blue" });
-    expect(seeded.seed).toEqual({ component: "hero", baseline: "sha256:fixture", instruction: "make it blue" });
+    expect(seeded.seed).toEqual({ component: "hero", baseline: "sha256:fixture", wishes: ["make it blue"] });
     expect((await client.apps.seedFrom({ component: "hero2", slot: "hero2", instruction: "make it blue" })).seed?.component).toBe("hero2");
     // Re-seeding moves the app onto the host's current version of that component.
     expect((await client.apps.reseed(seeded.id)).seed?.baseline).toBe("sha256:fixture-NEW");

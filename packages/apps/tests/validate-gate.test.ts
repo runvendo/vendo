@@ -72,6 +72,14 @@ describe("validateWrittenApps", () => {
     expect(failures).toEqual([{ path: APP, appId: "app_1", findings: [LYING] }]);
   });
 
+  it("reports a screen that only carries warnings — a warn is a repair too, exactly like the loop's own gate reads it", async () => {
+    const { tools } = answering({ app_1: { ok: true, findings: [THIN] } });
+
+    const failures = await validateWrittenApps({ tools, paths: [APP], review: true });
+
+    expect(failures).toEqual([{ path: APP, appId: "app_1", findings: [THIN] }]);
+  });
+
   it("keeps the apps apart when a turn wrote two and only one is broken", async () => {
     const { tools } = answering({
       app_1: { ok: true, findings: [] },

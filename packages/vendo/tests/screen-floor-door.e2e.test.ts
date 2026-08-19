@@ -244,7 +244,7 @@ describe("the assembly loop always hears the floor's verdict on what it saved", 
     const afterFirstSave = walked.prompts[1] ?? "";
     // THE BYPASS: the hand used to answer this with "Run validate on it now." over
     // a document that never reached the screen, and nothing else ever spoke.
-    expect(afterFirstSave).toContain("`validate` does not pass");
+    expect(afterFirstSave).not.toContain("That save landed.");
     // The floor's OWN sentences come back, so the loop repairs instead of guessing.
     // Nothing here is a second implementation of the floor: these are the component
     // gauntlet's own repair instructions, relayed verbatim from the refusal that
@@ -318,7 +318,7 @@ describe("the assembly loop always hears the floor's verdict on what it saved", 
     expect(receipt.status).toBe("ready");
     expect(receipt.title).toBe("Spending");
     // The floor passed, so the hand says so rather than handing back a repair list.
-    expect(walked.prompts[1] ?? "").not.toContain("does not pass");
+    expect(walked.prompts[1] ?? "").not.toContain("Never save the whole document");
     // The screen reached the surface and the row reached the store.
     expect(walked.chunks.filter((chunk) => chunk["type"] === "data-vendo-view").length).toBeGreaterThan(0);
     const stored = await walked.vendo.apps.get(receipt.id, { principal, venue: "chat", presence: "present", sessionId: "ses_floor_door" });

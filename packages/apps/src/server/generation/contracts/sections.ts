@@ -22,12 +22,14 @@ import {
 } from "../../../contract/index.js";
 
 /** The COMPONENTS section is GENERATED from the Kit specs (catalogPrompt); no
- *  hand-written component list survives here. One typed line per component and
- *  one worked example under it, rather than a section apiece — the whole
- *  catalog, the icon vocabulary and an example each for less than the sections
- *  cost without icons. Deps-independent, so it is rendered once per process
- *  (perf budget: gen-scripted:create). */
+ *  hand-written component list survives here. One short typed ENTRY per
+ *  component — heading, summary, props, slots, one example — rather than a
+ *  section apiece. Deps-independent, so it is rendered once per process (perf
+ *  budget: gen-scripted:create). */
 let componentsPromptCache: string | undefined;
-export const componentsPromptSection = (): string => componentsPromptCache ??= `COMPONENTS (generated from the component schemas — use these EXACT component and prop names; an unknown prop is silently dropped and fails validation):
+export const componentsPromptSection = (): string => componentsPromptCache ??= `# Components (generated from the component schemas)
+
+- Use these EXACT component and prop names.
+- An unknown prop is silently dropped and fails validation.
 
 ${catalogPrompt({ only: [...KIT_SCREEN_COMPONENT_NAMES] })}`;

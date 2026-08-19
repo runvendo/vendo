@@ -27,10 +27,13 @@ import {
   TREE_MAX_TOTAL_COMPONENT_BYTES as CORE_MAX_TOTAL_COMPONENT_BYTES,
 } from "@vendoai/core";
 import {
+  catalogPrompt,
   KIT_COMPONENT_NAMES,
   KIT_NON_SCREEN_NAMES,
   KIT_SCREEN_COMPONENT_NAMES,
   KIT_SPECS,
+  kitPrompt,
+  kitSpec,
   TREE_MAX_COMPONENT_SOURCE_BYTES,
   TREE_MAX_GENERATED_COMPONENTS,
   TREE_MAX_TOTAL_COMPONENT_BYTES,
@@ -50,12 +53,20 @@ const LIMITS = {
 /** The component vocabulary a generated app may name without a source map. */
 const VOCABULARY = [
   "Accordion", "Avatar", "Badge", "BarChart", "Button", "Calendar", "Callout", "Card", "CardList", "Checkbox",
-  "CodeBlock", "Combobox", "DataTable", "DatePicker", "DateRange", "DateTime", "Disclaimer", "Divider", "DonutChart",
+  "CodeBlock", "Combobox", "DataTable", "DatePicker", "DateRange", "Disclaimer", "Divider", "DonutChart",
   "EmptyState", "EnumBadge", "Form", "Grid", "Icon", "Input", "KeyValue", "LineChart", "Link", "Menu", "Modal",
-  "Money", "Num", "Percent", "Progress", "Radio", "Row", "SegmentedControl", "Select", "Sheet", "Slider",
-  "Sparkline", "Stack", "Stat", "Steps", "Surface", "Switch", "TableRow", "Tabs", "Text", "Textarea", "Timeline", "Toast",
+  "Progress", "Radio", "Row", "SegmentedControl", "Select", "Sheet", "Slider",
+  "Sparkline", "SplitPane", "Stack", "Stat", "Steps", "Surface", "Switch", "TableRow", "Tabs", "Text", "Textarea",
+  "Timeline", "Toast",
   "Tooltip",
 ];
+
+/** The four the value-formatting tier took with it. A screen formats its own
+ *  figures now, so these are names the model must never be shown again. */
+const DEAD_VALUE_COMPONENTS = ["DateTime", "Money", "Num", "Percent"] as const;
+
+/** Who is still TOLD what its figures mean, rather than handed text. */
+const CHARTS = ["LineChart", "BarChart", "DonutChart"] as const;
 
 describe("the three bundle limits have ONE definition", () => {
   it("core holds the values this file pins", () => {
@@ -97,5 +108,68 @@ describe("the component vocabulary is ONE list", () => {
     expect(KIT_SCREEN_COMPONENT_NAMES).toEqual(
       KIT_COMPONENT_NAMES.filter((name) => !KIT_NON_SCREEN_NAMES.includes(name)),
     );
+  });
+
+  // Accordion was the one name withheld, for an `items[].content` slot holding an
+  // ELEMENT — a thing no wire tree could express. A screen writes JSX, so it can,
+  // and the check has admitted it all along (`screenCatalog` takes the WHOLE
+  // Kit). What was left was a catalog filter hiding a component that renders:
+  // the model was never offered the collapsible sections a long app asks for.
+  it("withholds nothing from a screen — a JSX screen fills an element slot", () => {
+    expect(KIT_SCREEN_COMPONENT_NAMES).toContain("Accordion");
+    expect(catalogPrompt({ only: [...KIT_SCREEN_COMPONENT_NAMES], omitPreamble: true }))
+      .toContain("### <Accordion>");
+  });
+});
+
+/**
+ * THE VALUE TIER IS GONE — and the two model-facing prompts are where that has to
+ * be TRUE, not merely intended.
+ *
+ * A screen formats its own figures with `Intl` now, so a component that formats
+ * one, and a `format` token that names a formatting for one, are both dead. What
+ * makes them dangerous rather than merely stale is that the prompts are GENERATED:
+ * a spec left behind, or a token put back into a column description, teaches the
+ * model an idiom the checks refuse and the renderer drops — and every mirror
+ * downstream (the screen typings, the wire's allowed-prop set) follows the specs
+ * without complaint. The vocabulary above pins WHICH bricks exist; this pins what
+ * the model is offered, which is the half a name list cannot state.
+ *
+ * The exception is the whole reason this is two assertions instead of one: a chart
+ * keeps its axis tokens, because an axis tick is computed HOST-SIDE off a numeric
+ * scale — the one displayed value that never passes through the model's own code.
+ */
+describe("no value tier in the prompts, and one exception", () => {
+  it("names none of the four value components anywhere the model reads", () => {
+    for (const [which, prompt] of [["kitPrompt", kitPrompt()], ["catalogPrompt", catalogPrompt()]] as const) {
+      for (const name of DEAD_VALUE_COMPONENTS) {
+        // The TAG, not the bare word: "Money in" is a fine label for a Stat, and
+        // `amount_cents` prose may still say the word money.
+        expect(prompt, `${which} still shows <${name}>`).not.toMatch(new RegExp(`<${name}[ />]`, "u"));
+        expect(kitSpec(name), `${name} still has a spec`).toBeUndefined();
+      }
+    }
+    // …and the law itself is stated, not merely implied by the absence.
+    expect(kitPrompt()).toContain("YOU format every value");
+  });
+
+  it("offers a format token to the charts and to nothing else", () => {
+    // Both prompts render from the specs, so a token is offered to the model
+    // exactly where a spec declares one — and only a chart may.
+    expect(KIT_SPECS.filter((spec) => spec.props["format"] !== undefined).map((spec) => spec.name))
+      .toEqual([...CHARTS]);
+    for (const name of CHARTS) {
+      expect(catalogPrompt({ only: [name], omitPreamble: true }), name).toContain('`format: "money"');
+    }
+    // Including `duration`, which lives on an axis for the same reason the
+    // exception does, and the x axis, which had no token at all until it did.
+    expect(catalogPrompt({ only: ["LineChart"], omitPreamble: true })).toContain('"duration"');
+    expect(catalogPrompt({ only: ["LineChart"], omitPreamble: true })).toContain("`xFormat:");
+    // And nothing a CONTAINER holds takes one: a column, a card field and a
+    // KeyValue item each show the string the screen prepared. The token used to
+    // print as a `format?` field of the description object.
+    for (const name of ["DataTable", "CardList", "KeyValue"]) {
+      expect(catalogPrompt({ only: [name], omitPreamble: true }), name).not.toMatch(/format\?/u);
+    }
   });
 });

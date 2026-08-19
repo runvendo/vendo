@@ -42,7 +42,7 @@ beforeAll(async () => {
 const compile = (tsx: string): string =>
   transform(tsx, { transforms: ["typescript", "jsx", "imports"], production: true, jsxRuntime: "automatic" }).code;
 
-const CATALOG = ["Stack", "Row", "Card", "Text", "Money", "Button", "Input", "Callout", "Accordion", "EnumBadge"];
+const CATALOG = ["Stack", "Row", "Card", "Text", "Button", "Input", "Select", "Callout", "Accordion", "Badge", "DataTable", "EnumBadge"];
 
 /** The payload the server serves: the screen's FIRST paint, flattened, plus the
  *  interactive half that can produce the next one — built by the engine itself,
@@ -74,7 +74,9 @@ const payloadFor = (
 
 const TRANSFERS = `
 import { useState } from "react";
-import { Button, Card, Input, Money, Row, Stack, Text, tools, useQuery } from "@vendo/screen";
+import { Button, Card, Input, Row, Stack, Text, tools, useQuery } from "@vendo/screen";
+
+const money = (cents) => (cents / 100).toLocaleString("en-US", { style: "currency", currency: "USD" });
 
 export default function PendingTransfers() {
   const pending = useQuery("list_pending");
@@ -86,7 +88,7 @@ export default function PendingTransfers() {
       <Text text={"note: " + note} />
       {pending.data.map((row) => (
         <Card key={row.id} title={row.recipient}>
-          <Money amount={row.amount_cents / 100} />
+          <Text text={money(row.amount_cents)} />
           <Button label={"Cancel " + row.recipient} onClick={async () => {
             await tools.cancel_transfer({ id: row.id });
             setNote("cancelled " + row.recipient);
@@ -263,7 +265,45 @@ export default function Propped({ label }: { label?: string }) {
     await waitFor(() => expect(screen.getByText("Total:1")).toBeTruthy());
   });
 
-  it("routes a handler's tool call through the host pipe, then re-reads and re-boots", async () => {
+
+  it("hands a Select's change to the screen as an EVENT, whichever way the Kit reported it", async () => {
+    // `onChange={setAgent}` is the React reflex, and this is what it actually
+    // gets. The two ways a Kit Select can report a change CONVERGE: a controlled
+    // one (a `value` plus a screen handler) sends `{target:{value}}` itself
+    // (kit/forms/select.tsx), an uncontrolled one sends the bare string — and
+    // `makeEvent` in the VM wraps whatever arrives into the React-shaped event
+    // before the handler sees it (apps vm-program.ts). So a screen handler NEVER
+    // receives a bare value, and one that stores its argument stores the event.
+    const compiled = compile(`
+import { useState } from "react";
+import { Select, Stack, Text } from "@vendo/screen";
+
+export default function Handover() {
+  const [agent, setAgent] = useState("nobody");
+  return (
+    <Stack>
+      <Select label="Bound" value="theo" options={["theo", "priya"]} onChange={setAgent} />
+      <Select label="Loose" options={["june", "marco"]} onChange={setAgent} />
+      <Text text={"agent " + typeof agent + ": " + JSON.stringify(agent)} />
+    </Stack>
+  );
+}`);
+    const host = hostPipe(() => ok(null));
+    render(<PayloadView payload={payloadFor(compiled, {})} components={{}} onAction={host.onAction} />);
+    const asEvent = (value: string) =>
+      `agent object: {"target":{"value":"${value}"},"currentTarget":{"value":"${value}"},"value":"${value}"}`;
+
+    expect(screen.getByText('agent string: "nobody"')).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText("Bound"), { target: { value: "priya" } });
+    await waitFor(() => expect(screen.getByText(asEvent("priya"))).toBeTruthy());
+
+    fireEvent.change(screen.getByLabelText("Loose"), { target: { value: "marco" } });
+    await waitFor(() => expect(screen.getByText(asEvent("marco"))).toBeTruthy());
+  });
+
+
+  it("routes a handler's tool call through the host pipe, then re-reads and SUPPLIES", async () => {
     let rows = [...ROWS];
     const host = hostPipe((call) => {
       if (call.action !== "cancel_transfer") return ok({ data: rows });
@@ -282,15 +322,17 @@ export default function Propped({ label }: { label?: string }) {
     ]));
 
     // A successful mutation makes the screen's own data stale, so the served query
-    // plan re-runs and the screen re-boots on the answer. That is the whole
-    // refresh story: no generated handler hand-patches a list it did not fetch.
+    // plan re-runs and the answers are SUPPLIED to the screen that is standing.
+    // That is the whole refresh story: no generated handler hand-patches a list it
+    // did not fetch.
     await waitFor(() => expect(screen.getByText("Pending: 1")).toBeTruthy());
     expect(host.of("list_pending")).toHaveLength(1);
     expect(screen.queryByText("Ada")).toBeNull();
     expect(screen.getByText("Bob")).toBeTruthy();
-    // The re-boot starts from the source's own initial state — the accepted cost
-    // of never showing a row that is no longer there.
-    expect(noteText()).toBe("note: ");
+    // And the screen's own state is STILL THERE. A supply re-renders the running
+    // component; it does not boot a new one, so what the handler set survives the
+    // refresh that follows it — as does anything the person had typed.
+    expect(noteText()).toBe("note: cancelled Ada");
   });
 
   it("drops the second click while the first is in flight, and disables the control", async () => {
@@ -368,10 +410,8 @@ export default function Propped({ label }: { label?: string }) {
     expect(host.of("list_pending")).toHaveLength(2);
   });
 
-  it("keeps the old screen alive when the re-boot after a refresh cannot paint", async () => {
+  it("keeps the rows it had when the re-read after a refresh fails", async () => {
     const host = hostPipe((call) => call.action === "list_pending"
-      // The read failed, so that query's key is absent and this screen — which
-      // maps over `pending.data` — cannot render the answer at all.
       ? { status: "error", error: { code: "ledger", message: "the ledger is down" } }
       : ok({ cancelled: true }));
     transfersView(host, [{ tool: "list_pending" }]);
@@ -379,14 +419,78 @@ export default function Propped({ label }: { label?: string }) {
     fireEvent.click(screen.getByRole("button", { name: "Cancel Ada" }));
     await waitFor(() => expect(host.of("list_pending")).toHaveLength(1));
 
-    // Boot BEFORE dispose: the screen the re-boot would have replaced is still
-    // there, still interactive, showing the tree it already had.
-    // The engine's own sentence about the screen it could not boot — the read
-    // failed, so that query's key is simply absent from the fresh answer.
-    await waitFor(() => expect(screen.getByText(/this screen declared no such query/u)).toBeTruthy());
+    // A read that failed supplies NOTHING for its key, so the answer the screen
+    // already had stands — a failed read is not news that the data is gone. The
+    // failure itself is on the node that fired, through the renderer's own pipe.
+    await waitFor(() => expect(noteText()).toBe("note: cancelled Ada"));
+    expect(screen.getByText(/the ledger is down/u)).toBeTruthy();
     expect(screen.getByText("Pending: 2")).toBeTruthy();
     fireEvent.change(screen.getByLabelText("Note"), { target: { value: "still live" } });
     await waitFor(() => expect(noteText()).toBe("note: still live"));
+  });
+
+  /**
+   * A READ THE SCREEN ASKS FOR WHILE IT RENDERS.
+   *
+   * `useQuery("x", { client: chosen })` cannot be resolved before the screen runs
+   * — the input is state. So the paint NAMES what it wanted, this bridge runs it
+   * through the same host pipe every other call takes, and supplies the answer to
+   * the screen that is already standing.
+   */
+  it("answers a read the paint asked for, then the NEW one a click asks for", async () => {
+    const compiled = compile(`
+import { useState } from "react";
+import { Button, Stack, Text, useQuery } from "@vendo/screen";
+
+export default function Invoices() {
+  const [client, setClient] = useState("ada");
+  const rows = useQuery("list_for_client", { client });
+  return (
+    <Stack>
+      <Text text={rows.data === undefined ? "loading" : "rows: " + rows.data.join(",")} />
+      <Button label="Bob" onClick={() => setClient("bob")} />
+    </Stack>
+  );
+}`);
+    const host = hostPipe((call) => ok({ data: [`${(call.payload as { client: string }).client}-1`] }));
+    render(<PayloadView payload={payloadFor(compiled, {})} components={{}} onAction={host.onAction} />);
+
+    // The served paint has no answer for it — nothing could have.
+    expect(screen.getByText("loading")).toBeTruthy();
+    await waitFor(() => expect(screen.getByText("rows: ada-1")).toBeTruthy());
+    expect(host.of("list_for_client")).toEqual([
+      { nodeId: "root", action: "list_for_client", payload: { client: "ada" } },
+    ]);
+
+    // A click moves the input, so the next paint asks for a key nobody has
+    // answered — and the state that moved it survives, because a supply
+    // re-renders the screen rather than booting a new one.
+    fireEvent.click(screen.getByRole("button", { name: "Bob" }));
+    await waitFor(() => expect(screen.getByText("rows: bob-1")).toBeTruthy());
+    expect(host.of("list_for_client")).toHaveLength(2);
+  });
+
+  /** A screen that mints a new key on EVERY render would read forever. The loop
+   *  is bounded, so it reads three times and paints whatever it has. */
+  it("stops answering a screen that asks for a new read on every render", async () => {
+    const compiled = compile(`
+import { useRef } from "react";
+import { Stack, Text, useQuery } from "@vendo/screen";
+
+export default function Runaway() {
+  const seen = useRef(0);
+  seen.current += 1;
+  const rows = useQuery("list_for_client", { client: String(seen.current) });
+  return <Stack><Text text={"asked " + seen.current} /><Text text={rows.data === undefined ? "loading" : "got"} /></Stack>;
+}`);
+    const host = hostPipe(() => ok(["x"]));
+    render(<PayloadView payload={payloadFor(compiled, {})} components={{}} onAction={host.onAction} />);
+
+    await waitFor(() => expect(host.of("list_for_client")).toHaveLength(3));
+    // …and it stays at three: the screen is still asking, and nobody is answering.
+    await act(async () => { await Promise.resolve(); });
+    expect(host.of("list_for_client")).toHaveLength(3);
+    expect(screen.getByText(/^asked /u)).toBeTruthy();
   });
 
   it("does not re-read when the tool refused, and re-arms the control", async () => {
@@ -624,6 +728,52 @@ export default function Invoice() {
     expect(document.body.innerHTML).not.toContain("$element");
   });
 
+  /**
+   * A SLOT HOLDS WHATEVER THE KIT HOLDS — proven where it counts, on the page.
+   *
+   * A Badge in `rowActions` was refused by name for as long as the per-slot
+   * vocabularies existed (Button|Icon|Row), on the theory that the renderer drops
+   * anything else. It does not — and dropping the refusal without proving that
+   * would have traded a loud failure for a silent blank. Nothing here is stubbed:
+   * real TSX, the real VM serializing both elements, the server's own flatten,
+   * and the real Kit painting them.
+   */
+  it("paints a Badge in a table's rowActions and an EnumBadge in a Card's footer", async () => {
+    const compiled = compile(`
+import { Badge, Card, DataTable, EnumBadge, useQuery } from "@vendo/screen";
+
+export default function Ledger() {
+  const invoices = useQuery("list_invoices");
+  return (
+    <Card title="Invoices" footer={<EnumBadge value="past_due" tone="danger" />}>
+      <DataTable
+        rows={invoices.data}
+        columns={[{ key: "id", label: "Invoice" }]}
+        rowActions={(row) => <Badge label={"flag " + row.id} />}
+      />
+    </Card>
+  );
+}`);
+    const host = hostPipe(() => ok(null));
+    render(
+      <PayloadView
+        payload={payloadFor(compiled, { list_invoices: { data: [{ id: "inv_1" }, { id: "inv_2" }] } })}
+        components={{}}
+        onAction={host.onAction}
+      />,
+    );
+
+    // One Badge per row, each closing over its own row, inside the table — a
+    // dropped slot would leave the text nowhere at all.
+    expect(screen.getByText("flag inv_1").closest("table")).toBeTruthy();
+    expect(screen.getByText("flag inv_2").closest("table")).toBeTruthy();
+    // …and the Card's own footer, reified through the same path, outside the table.
+    const footer = screen.getByText("Past due");
+    expect(footer.getAttribute("data-kit")).toBe("EnumBadge");
+    expect(footer.closest("table")).toBeNull();
+    expect(document.body.innerHTML).not.toContain("$element");
+  });
+
   it("leaves a payload with no interactive half exactly as static as it was", async () => {
     const { interactive: _none, ...served } = payloadFor(compile(TRANSFERS), { list_pending: { data: ROWS } }) as unknown as Record<string, unknown>;
     const host = hostPipe(() => ok(null));
@@ -652,5 +802,45 @@ export default function Invoice() {
     expect(host.calls).toEqual([]);
     expect(screen.getByText("Pending: 2")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Cancel Ada" })).toBeTruthy();
+  });
+
+  it("boots the live screen on the WALL this surface passed, not the engine's default", async () => {
+    // The engine has no ICU: every `toLocaleDateString` in the box is answered by
+    // the host's real `Intl` against the locale and zone the boot pinned, and
+    // unset that is UTC — a server's wall, not the viewer's. 01:30Z is the 17th in
+    // UTC and the 16th in New York, so one screen over one instant paints two
+    // different strings and which one is on the page says which wall the box got.
+    const compiled = compile(`
+import { useState } from "react";
+import { Button, Stack, Text } from "@vendo/screen";
+
+export default function Due() {
+  const [seen, setSeen] = useState(0);
+  return (
+    <Stack>
+      <Text text={"due " + new Date(${Date.UTC(2026, 7, 17, 1, 30)}).toLocaleDateString("en-US")} />
+      <Button label={"Look " + seen} onClick={() => setSeen(seen + 1)} />
+    </Stack>
+  );
+}`);
+    const host = hostPipe(() => ok(null));
+    render(
+      <PayloadView
+        payload={payloadFor(compiled, {})}
+        components={{}}
+        onAction={host.onAction}
+        timeZone="America/New_York"
+      />,
+    );
+
+    // The SERVED paint, standing while the VM boots behind it — built with no wall
+    // at all, so it is the default's answer.
+    expect(screen.getByText("due 8/17/2026")).toBeTruthy();
+
+    // One press, and what replaces it is the live screen's own paint.
+    fireEvent.click(screen.getByRole("button", { name: "Look 0" }));
+
+    await waitFor(() => expect(screen.getByText("due 8/16/2026")).toBeTruthy());
+    expect(screen.queryByText("due 8/17/2026")).toBeNull();
   });
 });

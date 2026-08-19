@@ -80,6 +80,18 @@ const askedScreen = (runtime: () => AppsRuntime, seen: string[] = []) =>
     return `export default function Screen() {\n  return <b>${request.request}</b>;\n}\n`;
   });
 
+/** The wish the host's NEW version has nothing to change, so its replay refuses. */
+const REFUSED = "paint the total purple";
+
+/** The same builder, except that one wish no longer applies. */
+const refusingScreen = (runtime: () => AppsRuntime) =>
+  scriptedScreenAssembler(runtime, (request) =>
+    // The edit door leads its brief with the app's memory, so the wish being
+    // replayed is the last line of the request.
+    request.request.endsWith(REFUSED)
+      ? { kind: "unavailable", why: "the new version has no total to paint" }
+      : `export default function Screen() {\n  return <b>replayed</b>;\n}\n`);
+
 const runtimeWith = (store: ReturnType<typeof memoryStore>, overrides: Partial<AppsConfig> = {}) => createApps({
   store,
   guard: guardFixture(),
@@ -111,12 +123,12 @@ describe("seed.from — the ✦ gesture is a create that starts from something",
 
     const app = await runtime.seed.from({ component: SLOT, instruction: "add a sparkline" }, owner);
 
-    // Provenance is ONE record on the document, not a row set — and it now names
-    // the instruction, because a re-seed replays it.
+    // Provenance is ONE record on the document, not a row set — and it opens the
+    // wish list, because a re-seed replays every entry of it.
     expect(app.seed).toEqual({
       component: SLOT,
       baseline: "sha256:maple-base",
-      instruction: "add a sparkline",
+      wishes: ["add a sparkline"],
     });
     // The remix IS its screen: the ordinary artifact, through the ordinary door.
     expect(app.source?.[SCREEN_FILE]?.text).toContain("add a sparkline");
@@ -219,7 +231,7 @@ describe("seed drift — a warning, never an action", () => {
       id: "app_seeded",
       name: "Seeded",
       ui: "tree",
-      seed: { component: SLOT, baseline: "sha256:gone", instruction: "add a sparkline" },
+      seed: { component: SLOT, baseline: "sha256:gone", wishes: ["add a sparkline"] },
     };
     expect(seedDrift(doc, [])).toMatchObject({ reason: "baseline-missing" });
     expect(seedDrift(doc, [])?.current).toBeUndefined();
@@ -246,11 +258,11 @@ describe("seed.reseed — the recorded instruction, replayed on the new baseline
 
     const reseeded = await resynced.seed.reseed({ appId: app.id }, owner);
 
-    // The provenance moved, the instruction did not, and the builder ran it.
+    // The provenance moved, the wish list did not, and the builder ran it.
     expect(reseeded.seed).toEqual({
       component: SLOT,
       baseline: "sha256:maple-NEW",
-      instruction: "add a sparkline",
+      wishes: ["add a sparkline"],
     });
     expect(asked).toEqual(["add a sparkline"]);
     // The warning is gone because the app is now AT the current baseline.
@@ -305,6 +317,224 @@ describe("seed.reseed — the recorded instruction, replayed on the new baseline
     await seedAppRow(engineOverAdapter(store), plain, owner.principal.subject);
     await expect(runtime.seed.reseed({ appId: plain.id }, owner))
       .rejects.toThrow(/was not created from a host component/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// THE SEAM: the seed carries the WHOLE wish list, so an update replays all of
+// it. Every leg below is the shipped path — the ✦ door writes the first wish,
+// the agent tool chat calls writes the rest, the store holds them, and the
+// re-seed reads them back. Nothing on either side stands in for the other.
+// ---------------------------------------------------------------------------
+
+describe("the seed keeps EVERY wish, and a re-seed replays all of them in order", () => {
+  it("appends each chat edit's wish and replays the whole list on the new baseline", async () => {
+    const store = memoryStore();
+    const { runtime } = buildingRuntime(store);
+
+    // 1. WRITE, leg one — the ✦ gesture, through the real seed door.
+    const app = await runtime.seed.from({ component: SLOT, instruction: "add a sparkline" }, owner);
+    // 2. WRITE, leg two — two more edits, through the real `vendo_make` tool the
+    //    chat calls, on the real registry.
+    const tools = runtime.agentTools();
+    for (const request of ["make the number bigger", "put last month beside it"]) {
+      expect(await tools.execute({ id: `call_${request}`, tool: "vendo_make", args: { app: app.id, request } }, owner))
+        .toMatchObject({ status: "ok" });
+    }
+    // 3. READ — the stored row, through the ordinary read door.
+    const WISHES = ["add a sparkline", "make the number bigger", "put last month beside it"];
+    expect((await runtime.get(app.id, owner))?.seed?.wishes).toEqual(WISHES);
+
+    // 4. The host ships a new version. The update replays ALL of them, oldest
+    //    first — the remix is the whole list, never just the ask it started on.
+    const { runtime: resynced, asked: replayed } = buildingRuntime(store, {
+      seedBaselines: [baseline("sha256:maple-NEW")],
+    });
+    const reseeded = await resynced.seed.reseed({ appId: app.id }, owner);
+
+    // The edit door leads each brief with the app's memory, so the wish itself
+    // is the request's last line.
+    expect(replayed.map((request) => request.split("\n").at(-1))).toEqual(WISHES);
+    expect(reseeded.seed).toEqual({ component: SLOT, baseline: "sha256:maple-NEW", wishes: WISHES });
+    expect((await resynced.get(app.id, owner))?.seed?.wishes).toEqual(WISHES);
+  });
+
+  it("surfaces a wish the new version cannot take instead of dropping it", async () => {
+    const store = memoryStore();
+    const { runtime } = buildingRuntime(store);
+    const app = await runtime.seed.from({ component: SLOT, instruction: "add a sparkline" }, owner);
+    expect(await runtime.agentTools().execute(
+      { id: "call_colour", tool: "vendo_make", args: { app: app.id, request: REFUSED } },
+      owner,
+    )).toMatchObject({ status: "ok" });
+
+    // The host's new version has nothing for the second wish to change.
+    let resynced: AppsRuntime;
+    resynced = runtimeWith(store, {
+      model: basicLanguageModel(),
+      seedBaselines: [baseline("sha256:maple-NEW")],
+      screen: refusingScreen(() => resynced),
+    });
+
+    const outcome = await resynced.agentTools().execute(
+      { id: "call_reseed", tool: "vendo_apps_reseed", args: { appId: app.id } },
+      owner,
+    );
+
+    // SAID, in the chat that asked for the update — not swallowed. The `say` is
+    // the sentence the agent utters verbatim, so the wish has to be IN it, not
+    // merely somewhere in the document beside it.
+    expect(outcome).toMatchObject({ status: "ok", output: { say: expect.stringContaining(REFUSED) } });
+    // And KEPT: it is still a wish, so the next re-seed tries it again.
+    const stored = await resynced.get(app.id, owner);
+    expect(stored?.seed?.wishes).toEqual(["add a sparkline", REFUSED]);
+    expect(stored?.seed?.unapplied).toEqual([REFUSED]);
+    // The wish that DID land moved the app onto the host's new version.
+    expect(stored?.seed?.baseline).toBe("sha256:maple-NEW");
+  });
+
+  it("reports EVERY wish when the new version can take none of them", async () => {
+    const store = memoryStore();
+    const { runtime } = buildingRuntime(store);
+    const app = await runtime.seed.from({ component: SLOT, instruction: "add a sparkline" }, owner);
+    expect(await runtime.agentTools().execute(
+      { id: "call_colour", tool: "vendo_make", args: { app: app.id, request: REFUSED } },
+      owner,
+    )).toMatchObject({ status: "ok" });
+
+    // The host's new version can take NEITHER wish. This is the run with
+    // nothing else to show for itself, so it is the run that most has to speak.
+    const resynced = runtimeWith(store, {
+      model: basicLanguageModel(),
+      seedBaselines: [baseline("sha256:maple-NEW")],
+      screen: { assemble: async () => ({ kind: "unavailable", why: "the new version has nothing to change" }) },
+    });
+
+    const outcome = await resynced.agentTools().execute(
+      { id: "call_reseed", tool: "vendo_apps_reseed", args: { appId: app.id } },
+      owner,
+    );
+
+    expect(outcome).toMatchObject({ status: "ok", output: { say: expect.stringContaining("add a sparkline") } });
+    expect(outcome).toMatchObject({ output: { say: expect.stringContaining(REFUSED) } });
+    const stored = await resynced.get(app.id, owner);
+    expect(stored?.seed?.unapplied).toEqual(["add a sparkline", REFUSED]);
+    // Nothing landed, so the remix is still on the version it was made against
+    // and the warning stands for the retry.
+    expect(stored?.seed?.baseline).toBe("sha256:maple-base");
+    expect(await resynced.seed.drift(app.id, owner)).toMatchObject({ reason: "baseline-changed" });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// THE ✦ ONE DOOR. The wrapper's ✦ mints nothing: it opens the chat prefilled
+// ("Remix my <Slot>: ") and names the component in the conversation's context
+// ("The view being remixed is the "<Slot>" component on the host's page."). So
+// `vendo_make` is the only thing that can turn that wish into a REMIX, and if it
+// mints an ordinary app instead the wrapper never finds it and the ✦ silently
+// does nothing at all.
+// ---------------------------------------------------------------------------
+
+/** The wrapper's discovery rule, verbatim — `useRemixFork` in
+ *  `packages/ui/src/chrome/remixable.tsx` reads `client.apps.list()` (the wire's
+ *  `GET /apps`, which is `runtime.list()`) and takes the OLDEST app seeded from
+ *  this component. If this returns undefined the ✦ did nothing. */
+const discovered = (apps: AppDocument[], component: string): string | undefined =>
+  apps.filter((app) => app.seed?.component === component).at(-1)?.id;
+
+/** The call the agent makes after reading the ✦'s context fence. */
+const remixCall = (id: string, request: string) =>
+  ({ id, tool: "vendo_make", args: { request, component: SLOT } });
+
+describe("the ✦ one door — a wish naming the host component becomes a remix", () => {
+  it("mints a seeded app the wrapper discovers, carrying the wish already", async () => {
+    const store = memoryStore();
+    const { runtime } = buildingRuntime(store);
+
+    const outcome = await runtime.agentTools().execute(remixCall("call_remix", "add a sparkline"), owner);
+
+    expect(outcome).toMatchObject({ status: "ok" });
+    // READ BACK through the ordinary list door — the one the wrapper polls.
+    const appId = discovered(await runtime.list(owner), SLOT);
+    expect(appId, "the wrapper must find the remix, or the ✦ did nothing").toBeDefined();
+    const app = await runtime.get(appId!, owner);
+    // Provenance the wrapper matches on, and the wish a re-seed replays.
+    expect(app?.seed).toEqual({ component: SLOT, baseline: "sha256:maple-base", wishes: ["add a sparkline"] });
+    // And it IS a screen, so there is something to mount in the original's place.
+    expect(app?.source?.[SCREEN_FILE]?.text).toContain("add a sparkline");
+  });
+
+  it("lands a SECOND wish on the same remix instead of dropping it on the dedupe", async () => {
+    const store = memoryStore();
+    const { runtime } = buildingRuntime(store);
+    const tools = runtime.agentTools();
+
+    // The context fence stays in the thread, so a follow-up wish arrives named
+    // the same way. The seed door dedupes per (subject, component) and drops the
+    // riding instruction — this is the ONE door, so the wish must still land.
+    await tools.execute(remixCall("call_first", "add a sparkline"), owner);
+    const outcome = await tools.execute(remixCall("call_second", "make the number bigger"), owner);
+
+    expect(outcome).toMatchObject({ status: "ok" });
+    const seeded = (await runtime.list(owner)).filter(({ seed }) => seed?.component === SLOT);
+    expect(seeded, "a second wish must not mint a second remix").toHaveLength(1);
+    expect(seeded[0]?.seed?.wishes).toEqual(["add a sparkline", "make the number bigger"]);
+  });
+
+  it("lands a wish repeated VERBATIM as an edit rather than a silent no-op", async () => {
+    const store = memoryStore();
+    const { runtime, asked } = buildingRuntime(store);
+    const tools = runtime.agentTools();
+
+    await tools.execute(remixCall("call_first", "add a sparkline"), owner);
+    // The SAME wish again. The seed door dedupes it onto the remix that exists,
+    // which leaves that remix in exactly the state a fresh mint would be in —
+    // so reading the wish list back to tell the two apart called the repeat new
+    // and dropped it, on a receipt that said "ready".
+    const outcome = await tools.execute(remixCall("call_again", "add a sparkline"), owner);
+
+    expect(outcome).toMatchObject({ status: "ok" });
+    const seeded = (await runtime.list(owner)).filter(({ seed }) => seed?.component === SLOT);
+    expect(seeded, "a repeat must not mint a second remix").toHaveLength(1);
+    expect(seeded[0]?.seed?.wishes).toEqual(["add a sparkline", "add a sparkline"]);
+    // And it reached the builder, rather than being answered from the store.
+    expect(asked).toHaveLength(2);
+  });
+
+  it("keeps BOTH wishes when two gestures race past the seed door's pre-mint check", async () => {
+    const store = memoryStore();
+    const { runtime } = buildingRuntime(store);
+    const tools = runtime.agentTools();
+
+    // Both find no remix, both mint, and the seed door resolves it afterwards:
+    // the loser is handed the WINNER's app, with its own app — and the wish
+    // riding it — deleted. So the loser's wish exists nowhere unless this door
+    // lands it, and neither caller ever saw an app to recognise as pre-existing.
+    const [first, second] = await Promise.all([
+      tools.execute(remixCall("call_blue", "make it blue"), owner),
+      tools.execute(remixCall("call_green", "make it green"), owner),
+    ]);
+
+    expect(first).toMatchObject({ status: "ok" });
+    expect(second).toMatchObject({ status: "ok" });
+    const seeded = (await runtime.list(owner)).filter(({ seed }) => seed?.component === SLOT);
+    expect(seeded, "a race must not mint two remixes").toHaveLength(1);
+    expect(seeded[0]?.seed?.wishes).toEqual(["make it blue", "make it green"]);
+  });
+
+  it("refuses a component the host never captured rather than minting an orphan", async () => {
+    const { runtime } = buildingRuntime(memoryStore());
+
+    const outcome = await runtime.agentTools().execute({
+      id: "call_invented",
+      tool: "vendo_make",
+      args: { request: "add a sparkline", component: "invented-by-the-model" },
+    }, owner);
+
+    // The captured baselines ARE the allowlist: an id nothing captured names no
+    // component on the page, so nothing is minted and the model is told why.
+    expect(outcome).toMatchObject({ status: "error", error: { code: "not-found" } });
+    expect(await runtime.list(owner)).toHaveLength(0);
   });
 });
 

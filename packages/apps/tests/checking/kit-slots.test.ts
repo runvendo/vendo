@@ -12,8 +12,6 @@
 import { describe, expect, it } from "vitest";
 import { VENDO_TREE_FORMAT } from "@vendoai/core";
 import {
-  KIT_COMPONENT_NAMES,
-  KIT_SLOT_CONTENT_NAMES,
   KIT_SPECS,
   kitSlotPath,
   type KitSlotSpec,
@@ -41,19 +39,6 @@ const issuesFor = (component: string, props: Record<string, unknown>): string[] 
   }).map(({ where, message }) => `${where} ${message}`);
 
 describe("the Kit's slots", () => {
-  it("admits, for every declared slot, what that slot declares", () => {
-    for (const spec of KIT_SPECS) {
-      for (const [name, slot] of Object.entries(spec.slots ?? {})) {
-        const allowed = slot.content ?? KIT_SLOT_CONTENT_NAMES;
-        const at = `${spec.name}.${kitSlotPath(name, slot)}`;
-        // A vocabulary naming something the Kit does not have is a slot nothing
-        // can legally fill.
-        expect(allowed.filter((held) => !KIT_COMPONENT_NAMES.includes(held)), at).toEqual([]);
-        expect(issuesFor(spec.name, propsAt(name, slot, element(allowed[0]!))), at).toEqual([]);
-      }
-    }
-  });
-
   /** THE CLASS, swept from the table: a component reads its slot at exactly one
    *  place, so the floor must admit it there and refuse it everywhere else. A
    *  checker that takes an element the component never looks at is the same
@@ -62,7 +47,7 @@ describe("the Kit's slots", () => {
     for (const spec of KIT_SPECS) {
       for (const [name, slot] of Object.entries(spec.slots ?? {})) {
         const at = `${spec.name}.${kitSlotPath(name, slot)}`;
-        const held = element((slot.content ?? KIT_SLOT_CONTENT_NAMES)[0]!);
+        const held = element("Text");
         expect(issuesFor(spec.name, propsAt(name, slot, held)), at).toEqual([]);
         // The generic wrong place, derived from the declaration: a slot read out
         // of its prop's items is not read as a bare prop of the same name.
@@ -82,7 +67,7 @@ describe("the Kit's slots", () => {
     // The message names WHERE the real slot is read, not just its bare name —
     // a model told "cell" would write it on a row.
     expect(message).toContain("the slots on <DataTable> are: columns[].cell");
-    // …while a slot the Kit really renders admits its own vocabulary.
+    // …while a slot the Kit really renders admits an element.
     expect(issuesFor("Timeline", { marker: element("Icon") })).toEqual([]);
   });
 
@@ -103,11 +88,11 @@ describe("the Kit's slots", () => {
     expect(issuesFor("DataTable", { rows: [], columns: [{ key: "id", cell: element("Badge") }] })).toEqual([]);
   });
 
-  it("measures a component in a slot against its OWN contract, not just the slot's", () => {
-    // What sits in a slot is a component in its own right. Checked only against
-    // the outer slot's vocabulary, both of these passed clean while the renderer
-    // dropped the descendant: an element in a prop <Stack> has no slot for, and
-    // children under a component that renders none.
+  it("measures a component in a slot against its OWN contract", () => {
+    // What sits in a slot is a component in its own right. Unmeasured, both of
+    // these passed clean while the renderer dropped the descendant: an element in
+    // a prop <Stack> has no slot for, and children under a component that
+    // renders none.
     const [header] = issuesFor("Accordion", {
       items: [{ label: "Status", content: element("Stack", { props: { header: element("Text") } }) }],
     });
@@ -127,45 +112,46 @@ describe("the Kit's slots", () => {
   });
 
   it("says so when the component takes no element at all", () => {
-    expect(issuesFor("Money", { amount: element("Text") })[0])
-      .toContain("<Money> takes no element in its props");
+    expect(issuesFor("Badge", { label: element("Text") })[0])
+      .toContain("<Badge> takes no element in its props");
   });
 
-  it("keeps the read-only tier on a per-row slot, and takes the declared one beside it", () => {
-    // The same table, the same row: what is painted for every row may not be
-    // operated, and the actions written FOR the row may.
-    const [cell] = issuesFor("DataTable", { columns: [{ key: "status", cell: element("Button") }] });
-
-    expect(cell).toContain('prop "columns[0].cell" holds <Button> in a cell slot');
-    expect(cell).toContain("a cell is read, never operated");
-    expect(cell).toContain(`A cell may hold: ${KIT_SLOT_CONTENT_NAMES.join(", ")}`);
-    // …the entry body a Timeline paints per entry takes that same tier…
-    expect(issuesFor("Timeline", { cell: element("Button") })[0])
-      .toContain("a cell is read, never operated");
-    // …and the marker beside it takes the narrower one it declares.
-    expect(issuesFor("Timeline", { marker: element("Button") })[0])
-      .toContain("this slot may hold: Icon, Avatar, Badge, EnumBadge, Text");
+  /** WHAT goes in a slot is design, not bookkeeping: every one of these used to
+   *  be refused by a per-slot vocabulary, and every one of them renders. Where a
+   *  component belongs is the model's judgement and the judge's to grade. */
+  it("takes any Kit component in any slot, the way normal React does", () => {
+    expect(issuesFor("DataTable", { columns: [{ key: "status", cell: element("Button") }] })).toEqual([]);
+    expect(issuesFor("DataTable", { rows: [], rowActions: [element("Badge")] })).toEqual([]);
+    expect(issuesFor("Timeline", { cell: element("Button") })).toEqual([]);
+    expect(issuesFor("Timeline", { marker: element("Progress") })).toEqual([]);
   });
 
   it("lets an Accordion section hold a whole screen, and refuses a name the Kit has not got", () => {
     // `items[].content` is element-valued and was checked by nothing until the
-    // slots landed. A section is a REGION, so what goes in it is the Kit.
+    // slots landed. A section is a place, so what goes in it is the Kit.
     expect(issuesFor("Accordion", {
       items: [{ label: "Overdue", content: element("DataTable") }],
     })).toEqual([]);
 
+    // A NAME nothing implements is the one thing a slot still refuses: the
+    // renderer resolves the Kit and the display bricks and paints nothing else.
     const [message] = issuesFor("Accordion", {
       items: [{ label: "Ghost", content: element("Hallucinated") }],
     });
-    expect(message).toContain('prop "items[0].content" holds <Hallucinated> in a content slot');
+    expect(message).toContain('prop "items[0].content" holds <Hallucinated>');
+    expect(message).toContain("no Kit component or display tag has that name");
+    // …and a display brick in the same slot passes, because the renderer paints one.
+    expect(issuesFor("Accordion", {
+      items: [{ label: "Note", content: element("blockquote") }],
+    })).toEqual([]);
   });
 
   /**
    * THE OTHER HALF OF THE SAME LAW: a slot the catalog teaches must be a slot
    * the floor lets you WRITE.
    *
-   * `kit-nesting` governs what may go IN a slot, and passes silently on a prop
-   * it does not recognise — the refusal by NAME comes from `components-exist`,
+   * `kit-nesting` governs WHERE an element may be written, and passes silently on
+   * a prop it does not recognise — the refusal by NAME comes from `components-exist`,
    * which reads `wirePropNames` off `spec.props` and nothing else. So a slot
    * declared only in `SLOTS` is taught by `kitPrompt`, admitted by the nesting
    * check, and then blocked by name at the floor: the model is told to write
@@ -179,7 +165,7 @@ describe("the Kit's slots", () => {
     for (const spec of KIT_SPECS) {
       for (const [name, slot] of Object.entries(spec.slots ?? {})) {
         const at = `${spec.name}.${kitSlotPath(name, slot)}`;
-        const held = element((slot.content ?? KIT_SLOT_CONTENT_NAMES)[0]!);
+        const held = element("Text");
         const issues = await catalogIssues({
           formatVersion: VENDO_TREE_FORMAT,
           root: "n1",

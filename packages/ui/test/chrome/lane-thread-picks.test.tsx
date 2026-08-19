@@ -52,6 +52,30 @@ describe("lane pick 4B — landing starter cards", () => {
     });
   });
 
+  // Starters are for a landing with nothing on it. A ✦ opens this panel ABOUT
+  // something and hands the composer that intent, and cards proposing other
+  // things then argue against the thing the person just clicked — which is how
+  // clicking ✦ on a card read as a generic assistant (cold walk, 2026-08-18).
+  it("puts the starters away once the composer carries an intent", async () => {
+    render(
+      <VendoProvider client={client}>
+        <VendoThread
+          discoverability="quiet"
+          suggestions={[{ title: "Build a view", description: "Renewals sorted by risk", prompt: "p" }]}
+        />
+      </VendoProvider>,
+    );
+    expect(await screen.findByRole("button", { name: /Build a view/ })).toBeTruthy();
+
+    // The same bridge `openVendoConversation` drives behind the ✦.
+    fireEvent(window, new CustomEvent("vendo:prefill", { detail: { prompt: "Remix this view: " } }));
+
+    await waitFor(() => expect(screen.queryByRole("button", { name: /Build a view/ })).toBeNull());
+    // And the intent itself survived — the cards went, not the prefill.
+    const composer = screen.getByRole("textbox", { name: "Message" }) as HTMLTextAreaElement;
+    expect(composer.value).toBe("Remix this view: ");
+  });
+
   it("keeps plain string suggestions as pill chips (back-compat)", async () => {
     render(
       <VendoProvider client={client}>

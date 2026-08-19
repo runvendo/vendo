@@ -3,13 +3,12 @@
  *
  * A chart has to invent numbers to measure with: recharts picks a scale and
  * draws "$0.00 / $750.00 / $1,500.00 / $3,000.00" down the axis, and not one of
- * those is a value a tool returned. Asking the auditor to derive them fails every
- * honest chart, so the axis containers are cut out of the text the floor reads.
+ * those is a value a tool returned, so the axis containers are cut out of the
+ * text the harness extracts from a settled screen.
  *
- * Cutting anything out of a fabrication check is only safe if the cut is exactly
- * that: so this pins the pair. The scale labels really are in the page's own text
- * (and really would be put to the auditor), they are gone from the extraction,
- * and the screen's OWN copy is still asked about.
+ * Cutting anything out of that text is only safe if the cut is exactly that: so
+ * this pins the pair. The scale labels really are in the page's own text, they
+ * are gone from the extraction, and the screen's OWN copy survives it.
  *
  * A real browser, the real bundle, real recharts — no doubles.
  */
@@ -17,7 +16,6 @@ import type { UIPayload } from "@vendoai/core";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { honestData } from "../src/floor.js";
 import { authoredPage, bundleMount, openBrowser, pageHtml, type Shooter, type Shot } from "../src/render.js";
 import { loadWorld, type World } from "../src/world.js";
 
@@ -78,34 +76,24 @@ describe("chart axis ticks are measuring marks, not data", () => {
     // in the text the page reports for itself.
     expect(scale.length).toBeGreaterThan(1);
     expect(scale.filter((tick) => raw.includes(tick))).toEqual(scale);
-    // …and, ungraded, every one of them would be a value the auditor is asked to
-    // derive from data that never held it.
-    const askedOfRaw = honestData(raw, world).offenders.map((offender) => offender.text);
-    expect(askedOfRaw).toEqual(expect.arrayContaining(scale));
 
-    // What the floor actually reads: none of them, and the screen intact.
+    // What the extraction actually reads: none of them, and the screen intact.
     expect(scale.filter((tick) => shot.visibleText.includes(tick))).toEqual([]);
     expect(shot.visibleText).toContain("Total spent $4,243.11");
-    expect(honestData(shot.visibleText, world).offenders.map((offender) => offender.text)).toEqual(["$4,243.11"]);
 
     // The cost, pinned rather than hidden: the exclusion is a whole tick layer,
     // so the category axis goes with the scale. Numbers and dates that appear
-    // ONLY on a chart axis are therefore ungraded — README says so out loud.
+    // ONLY on a chart axis are therefore not in the extracted text at all.
     expect(raw).toContain("housing");
     expect(shot.visibleText).not.toContain("housing");
   }, 120_000);
 
-  it("still puts a fabricated number in the screen's own copy to the auditor", async () => {
+  it("still leaves a fabricated number in the screen's own copy", async () => {
     // One cent off the real total, on a page that also carries a chart: the
-    // exclusion takes the axis and leaves the copy, so this value is examined and
-    // nothing but an execution can clear it.
+    // exclusion takes the axis and leaves the copy.
     const { shot } = await seen("Total spent $4,243.12");
-    const result = honestData(shot.visibleText, world);
 
     expect(shot.visibleText).toContain("$4,243.12");
-    expect(result.pass).toBe(false);
-    expect(result.examined).toBe(1);
-    expect(result.offenders).toEqual([expect.objectContaining({ kind: "number", text: "$4,243.12" })]);
   }, 120_000);
 
   /**
@@ -118,10 +106,10 @@ describe("chart axis ticks are measuring marks, not data", () => {
    * Kit were failed for drawing the same picture. The exclusion is a property of
    * what the text IS, not of who emitted it.
    *
-   * The cost is real and is stated in the README: a number that appears ONLY on a
-   * chart axis is ungraded for everyone, and any contender may put one there —
-   * where nobody, its author included, can read it as a claim about the data. The
-   * screen's own copy is still read, which is the half that matters.
+   * The cost is real: a number that appears ONLY on a chart axis is out of the
+   * extracted text for everyone, and any contender may put one there — where
+   * nobody, its author included, reads it as a claim about the data. The screen's
+   * own copy survives, which is the half that matters.
    */
   it("reads a contender's own document by the same rule, ticks out and copy in", async () => {
     const authored = `<!doctype html><html lang="en"><body>
@@ -132,14 +120,12 @@ describe("chart axis ticks are measuring marks, not data", () => {
     const visit = await shooter.visit(authoredPage(authored, world, "diy-sonnet"));
     try {
       const shot = await visit.shot();
-      const result = honestData(shot.visibleText, world);
 
       // The axis goes, whoever drew it…
       expect(shot.visibleText).not.toContain("$3,000.00");
       expect(shot.visibleText).not.toContain("2031-01-01");
       // …and the screen's own copy is read exactly as it is on a compiled page.
       expect(shot.visibleText).toContain("$4,243.11");
-      expect(result.offenders.map((offender) => offender.text)).toEqual(["$4,243.11"]);
     } finally {
       await visit.close();
     }

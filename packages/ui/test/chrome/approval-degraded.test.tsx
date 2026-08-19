@@ -73,10 +73,16 @@ const rowsOf = (container: HTMLElement): Array<[string, string]> => {
   return rows;
 };
 
-/** One note per list item, in order — the " · " between them is CSS
-    punctuation now, so this is the exact set with no split heuristic. */
+/** One note per list item, in order — the exact set, with no split heuristic.
+    ⚠️ TEST EDIT (clipboard separator): the " · " is real text leading every item
+    but the first now (it has to be in the text to be copyable), and it is
+    stripped here rather than written into every expectation below — `rowsOf`
+    reads a LABEL off the front of each note, and " · Tags" is not a label this
+    card renders. `approval-notes-copy.test.tsx` owns the separator itself, in
+    both directions; a doubled one would survive this strip and fail these. */
 const notesOf = (container: HTMLElement): string[] =>
-  Array.from(container.querySelectorAll(".fl-approval-sub li")).map(li => li.textContent!);
+  Array.from(container.querySelectorAll(".fl-approval-sub li"))
+    .map(li => li.textContent!.replace(/^ · /, ""));
 
 describe("degraded data never changes the card", () => {
   it("keeps the mandatory line with an empty schema, no description and no host metadata", () => {

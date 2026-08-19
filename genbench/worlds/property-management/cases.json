@@ -190,7 +190,7 @@
     "lane": "screen",
     "prompt": "Wexler Row 2B and Alder Court 2B are both empty — pull up the marketing photos we already have on file for each so I know what's ready to post.",
     "pass": [
-      "shows seven tiles in a grid, four under Wexler Row · 2B and three under Alder Court · 2B",
+      "shows the captioned photos as a grid of cards — seven of them, four under Wexler Row · 2B and three under Alder Court · 2B",
       "the tiles are grouped by unit, each group headed by its unit name",
       "every tile is labelled with its own caption from the tool, which is all the tool returns — no image file stands behind it",
       "the two photos on Alder Court 2A are not shown"

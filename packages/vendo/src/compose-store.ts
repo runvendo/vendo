@@ -19,10 +19,14 @@ import { cloudKeyOptions } from "./compose-selection.js";
 import { keepAliveFetch } from "./keep-alive-fetch.js";
 import { environment } from "./wire/shared.js";
 
-/** Per-process latch for the hosted-store automations notice below — a dev
+/** Per-PROCESS latch for the hosted-store automations notice below — a dev
     server recomposes on nearly every request, and the paragraph is a boot
-    fact, not a per-request one (self-serve audit F7). */
-let hostedStoreNoticePrinted = false;
+    fact, not a per-request one (self-serve audit F7). On `globalThis` and not in
+    module scope, for the same reason boot-summary.ts's latch is: Next's dev
+    server re-instantiates the module too, so a module-scoped `let` resets with
+    it and the notice comes back every couple of seconds. */
+const NOTICE_PRINTED = Symbol.for("vendo.compose-store.hosted-notice");
+const latches = globalThis as unknown as Record<symbol, true | undefined>;
 
 /** A host may also pass hostedStore({...}) explicitly via createVendo({ store }).
     Recognised by the erase cascade it carries over the store wire — the one
@@ -147,8 +151,8 @@ export function selectStore(
 
 /** The hosted-store automations notice, printed at most once per process. */
 export function reportHostedStoreOnce(): void {
-  if (hostedStoreNoticePrinted) return;
-  hostedStoreNoticePrinted = true;
+  if (latches[NOTICE_PRINTED] === true) return;
+  latches[NOTICE_PRINTED] = true;
   console.warn(
     "[vendo] Vendo Cloud is the hosted store for this deployment. Every automation still runs HERE, in "
     + "this process — Cloud holds no schedule and decides nothing about what is due; it just knocks on "

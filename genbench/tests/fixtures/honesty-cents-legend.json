@@ -1,0 +1,14 @@
+{
+  "run": "2026-08-18T19-07-44",
+  "world": "maple",
+  "case": "spend-overview",
+  "worldHash": "339f5ea9c5aec55d",
+  "caseHash": "ecea48da9808961a",
+  "screens": {
+    "vendo-sonnet": {
+      "verdict": "fail",
+      "claim": "the donut legend shows housing $285,000.00, groceries $61,245.00 etc., rendering cent values as dollars, and the Total spent $4,243.11 does not match that legend",
+      "text": "genbench Where your money went this month Total spent $4,243.11 By category housing $285,000.00 groceries $61,245.00 dining $43,820.00 subscriptions $18,441.00 transport $9,675.00 coffee $6,130.00 Category breakdown Category Amount ▼ housing $2,850.00 groceries $612.45 dining $438.20 subscriptions $184.41 transport $96.75 coffee $61.30 By group All Group Food Drink Getting Around Home Lifestyle Group Category Amount ▼ Home housing $2,850.00 Food Drink groceries $612.45 Food Drink dining $438.20 Lifestyle subscriptions $184.41 Getting Around transport $96.75 Food Drink coffee $61.30 Budgets this month dining $438.20 of $400.00 x groceries $612.45 of $700.00 x transport $96.75 of $150.00 x"
+    }
+  }
+}

@@ -530,7 +530,8 @@ export function IconStrip() {
     // The hook cannot leave the component body — React pins it there — so the
     // cut carries hook and element together, and the call's argument becomes
     // the hole's prop.
-    await write(root, "src/components/CountCard.tsx", `import { useEffect, useState } from "react";
+    await write(root, "src/components/CountCard.tsx", `"use client"
+import { useEffect, useState } from "react";
 
 function useCountUp(target: number): number {
   const [value, setValue] = useState(0);
@@ -557,6 +558,10 @@ export function CountCard({ value }: { value: number }) {
     expect(card.ported?.source).not.toContain("useCountUp");
 
     const home = await fs.readFile(path.join(root, ".vendo/generated/remix-holes/CountCard.tsx"), "utf8");
+    // The host wrote a client component, and the cut half still is one: without
+    // the directive, Next refuses the hooks the moment the wiring rides into a
+    // server module's import graph.
+    expect(home.startsWith(`"use client";`)).toBe(true);
     expect(home).toContain("function useCountUp(target: number): number");
     expect(home).toContain("export function CountCardCountUp(");
     expect(home).toContain("const animated = useCountUp(target);");

@@ -15,7 +15,10 @@ export const limitActionSchema = z.enum(["message", "generation"]) satisfies z.Z
 
     `pool` counts the whole shared bucket rather than the one user — a seat pool,
     a team, an org — and is only answerable for a pool the user is actually in
-    ({@link LimitUser.pools}). */
+    ({@link LimitUser.pools}). Every org the host asserts in
+    `RunContext.memberships` is one of those pools already, named `org:<orgId>`
+    (§9.2's principal encoding, the same string an app grant names it by), so an
+    org-wide cap needs nothing wired for it. */
 export interface LimitWindow {
   days?: number;
   hours?: number;

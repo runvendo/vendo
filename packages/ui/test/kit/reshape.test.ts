@@ -70,12 +70,12 @@ describe("the eight reshape wrappers", () => {
     expect(reshape.format(1234.56, "klingon")).toBeUndefined();
   });
 
-  it("has no row form — a table column formats through its own token", () => {
+  it("has no row form — a table column is formatted by the screen's own code", () => {
     // The wrapper's one posture turns core's refusal into undefined; the REASON
     // is there for an app that asks, and it names the replacement.
     expect(reshape.format(rows, "money")).toBeUndefined();
     const direct = applyReshape(rows, [{ op: "format", args: ["money"] }]);
-    expect(direct.ok ? "" : direct.reason).toContain('columns={[{key:"amount", format:"money"}]}');
+    expect(direct.ok ? "" : direct.reason).toContain('(row) => row.amount.toLocaleString("en-US"');
   });
 
   it("reads the reason through applyReshape when the app wants one", () => {

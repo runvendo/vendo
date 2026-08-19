@@ -1,5 +1,5 @@
 /** Fetch/SSE bindings for the public wire route table (08-ui §2, 09-vendo §3). */
-import { VendoError, joinPath, mountMismatchMessage, type RunId, type VendoErrorCode } from "@vendoai/core";
+import { UPLOAD_HEADER, VendoError, joinPath, mountMismatchMessage, type RunId, type VendoErrorCode } from "@vendoai/core";
 import type { VendoClient, VendoClientConfig } from "./client.js";
 import type { ConnectableToolkit, ConnectionAccount } from "./wire-types.js";
 
@@ -188,6 +188,18 @@ export function createVendoClient(config: VendoClientConfig): VendoClient {
           body: "{}",
         });
       },
+    },
+    files: {
+      // The File IS the body — a browser sets no boundary to parse and the
+      // server reads bytes, so the name has to travel out of band. The upload
+      // header is what stands in for the wire's CSRF floor on a door that
+      // cannot be application/json; the door refuses without it.
+      upload: file =>
+        readJson(`/files?name=${encodeURIComponent(file.name)}`, {
+          method: "POST",
+          headers: { "Content-Type": file.type || "application/octet-stream", [UPLOAD_HEADER]: "1" },
+          body: file,
+        }),
     },
     approvals: {
       pending: () => readJson("/approvals"),

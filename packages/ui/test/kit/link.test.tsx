@@ -53,6 +53,26 @@ describe("Link — an unknown route is refused, not passed through", () => {
     expect(onNavigate).not.toHaveBeenCalled();
   });
 
+  /**
+   * Refusing to link was only half of it. Rendered in the ordinary text colour,
+   * the words of a dead link read as live content: "View account" sat in the page
+   * looking like prose written on purpose, and nobody — reader or reviewer —
+   * could tell the route was missing. Muted and marked, with NO link affordance:
+   * no accent, no underline, no cursor, no role.
+   */
+  it("renders it visibly inert, and marked", () => {
+    mount(<Link to="admin" label="Go" />, vi.fn());
+    const dead = link();
+    expect(dead.getAttribute("data-kit")).toBe("Link");
+    expect(dead.getAttribute("data-kit-inert")).toBe("");
+    expect(dead.style.color).toContain("var(--vendo-color-muted");
+    expect(dead.style.color).not.toContain("var(--vendo-color-accent");
+    expect(dead.style.textDecoration).toBe("");
+    expect(dead.style.cursor).toBe("");
+    expect(dead.getAttribute("role")).toBeNull();
+    expect(dead.getAttribute("tabindex")).toBeNull();
+  });
+
   it("never turns a model-written URL into a link at all", () => {
     mount(<Link to="javascript:alert(1)" label="Go" />, vi.fn());
     mount(<Link to="https://evil.example" label="Go" />, vi.fn());

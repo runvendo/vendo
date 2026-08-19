@@ -6,9 +6,9 @@
 import type { PropsWithChildren } from "react";
 import { font, resolveTone, t, toneColor, type KitStyled, type KitTone } from "../tokens.js";
 
-/** The shared vocabulary plus "info", which a Callout keeps as its own spelling:
- *  elsewhere it is the legacy name for neutral, but a notice has ALWAYS been
- *  brand-accented with the ⓘ, and it is still the default. */
+/** The shared vocabulary, with "info" read as a Callout has always read it: a
+ *  notice is brand-accented with the ⓘ, and it is still this component's default.
+ *  Elsewhere `info` is the status colour of a state in progress. */
 export type CalloutTone = KitTone | "info";
 
 const TONE: Record<CalloutTone, { accent: string; icon: string }> = {
@@ -29,9 +29,9 @@ export interface CalloutProps extends KitStyled {
 }
 
 export function Callout({ tone = "info", title, style, children }: PropsWithChildren<CalloutProps>) {
-  // "info" is read HERE, before the shared resolver would flatten it to neutral:
-  // it is this component's default and has always been the accented ⓘ. Every
-  // other word goes through the ONE resolver, so "default" lands on neutral like
+  // "info" is read HERE, before the shared resolver would give it the status
+  // colour: it is this component's default and has always been the accented ⓘ.
+  // Every other word goes through the ONE resolver, so "default" lands on neutral like
   // it does on a Card and an unvalidated string ("constructor") falls back
   // instead of picking up an Object.prototype member (review 2026-07-26).
   const resolved: CalloutTone = tone === "info" ? "info" : resolveTone(tone);

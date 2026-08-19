@@ -38,7 +38,7 @@ import { useVendoThemeOrDefault } from "../context.js";
 import { themeCssVariables } from "../theme.js";
 import type { InClientVenue, SeedDrift } from "../wire-types.js";
 import { resolvePointer } from "./bindings.js";
-import { DISPLAY_BRICKS, SURFACE_CONTAINMENT } from "./display-bricks.js";
+import { DISPLAY_BRICKS, SURFACE_CONTAINMENT, safeProps } from "./display-bricks.js";
 import { NodeErrorBoundary } from "./error-boundary.js";
 import { FluidReveal } from "./fluid-reveal.js";
 import { deriveFormShape, FormingContext, FormingSkeleton, PendingLeaf } from "./forming-skeleton.js";
@@ -90,6 +90,15 @@ export interface TreeViewProps {
    * payload before component screens — nothing boots and nothing changes.
    */
   interactive?: ScreenInteractive;
+  /**
+   * The wall a live screen's dates and money resolve against: a locale, and an
+   * IANA zone. The screen engine carries no ICU, so both are answered by the
+   * host's real `Intl` against these two — and unset they are `"en-US"` and
+   * `"UTC"`, which is a server's wall. A surface that wants the VIEWER's says so:
+   * `timeZone={Intl.DateTimeFormat().resolvedOptions().timeZone}`.
+   */
+  locale?: string;
+  timeZone?: string;
 }
 
 export interface PayloadRendererProps {
@@ -102,6 +111,9 @@ export interface PayloadRendererProps {
   /** As {@link TreeViewProps.onParked}. */
   onParked?: (parked: ParkedPress) => void;
   onStateChange?(state: Record<string, Json>): void;
+  /** As {@link TreeViewProps.locale} and {@link TreeViewProps.timeZone}. */
+  locale?: string;
+  timeZone?: string;
 }
 
 /**
@@ -289,7 +301,7 @@ function reifyElement(node: ElementBinding, bind: (value: unknown) => unknown): 
   const children = node.children?.map((child, index) => typeof child === "string"
     ? child
     : <Fragment key={index}>{isElementNode(child) ? reifyElement(child, bind) : null}</Fragment>);
-  return <Implementation {...bind(node.props ?? {}) as Record<string, unknown>}>{children}</Implementation>;
+  return <Implementation {...safeProps(bind(node.props ?? {}) as Record<string, unknown>)}>{children}</Implementation>;
 }
 
 /** The node's own handler dispatch, node-scoped by NodeRenderer. */
@@ -363,7 +375,9 @@ function bindValue(
 }
 
 /** Binds a node's props, reporting the first reshape mismatch with its prop
- *  name: the region shows one contained notice, not a broken component. */
+ *  name: the region shows one contained notice, not a broken component. The
+ *  bound props leave through {@link safeProps}, the one style door every node
+ *  passes (display-bricks.tsx). */
 function bindProps(
   props: Record<string, Json> | undefined,
   data: Record<string, Json>,
@@ -381,7 +395,7 @@ function bindProps(
     currentProp = key;
     return [key, bindValue(child, data, state, action, handle, onMismatch)];
   }));
-  return { bound, mismatch };
+  return { bound: safeProps(bound), mismatch };
 }
 
 /** Single-flight: while one of this node's handlers has an intent in flight the
@@ -496,7 +510,7 @@ interface NodeRendererProps {
   marks: ReadonlyMap<string, NodeMark>;
 }
 
-const EMPTY_LAYOUT_COMPONENTS = new Set(["Stack", "Row", "Grid"]);
+const EMPTY_LAYOUT_COMPONENTS = new Set(["Stack", "Row", "Grid", "SplitPane"]);
 
 /**
  * The `$expr` interpreter is a WebAssembly module that loads once. Evaluation
@@ -865,6 +879,8 @@ function StatefulTreeView({
   onParked,
   onStateChange,
   interactive,
+  locale,
+  timeZone,
 }: TreeViewProps) {
   // The surface is its own theme boundary. A host mounts one wherever it likes
   // — demo-bank's Apps page is a bare AppFrame on a host page, outside any
@@ -919,20 +935,22 @@ function StatefulTreeView({
   }, []);
   // What the screen may render: the Kit plus whatever this host registered.
   const catalog = useMemo(() => [...KIT_COMPONENT_NAMES, ...Object.keys(components)], [components]);
-  const screen = useScreen({ interactive, base: painted, catalog, runAction, onFailure: failNode });
+  const screen = useScreen({ interactive, base: painted, catalog, locale, timeZone, runAction, onFailure: failNode });
   // Every press still waiting on an approval, read straight off the outcome
   // slots that hold its notice — resolving one clears the slot, which is also
   // what stops the watch.
   const parked = useMemo(() => new Map(Object.entries(outcomes).flatMap(([nodeId, outcome]) =>
     outcome?.status === "pending-approval" ? [[nodeId, outcome.approvalId] as [string, string]] : [])), [outcomes]);
   // The approval's answer lands in the SAME per-node slot the press itself
-  // fills, and EVERY terminal answer re-reads the screen. Not just the happy
-  // one: the re-read is also the only thing that RE-BOOTS the screen, and a
-  // screen's own `useState` (the "Sending…" flag a generated handler sets
-  // before it awaits) has no other way back — a declined press used to leave
-  // its own controls locked forever over data that never changed. A tree with
-  // no query plan (a plain action tree) has nothing to re-read; its notice
-  // still settles.
+  // fills, and EVERY terminal answer re-reads the screen — but the two kinds of
+  // answer want different things from that re-read. An EXECUTED call moved the
+  // data, and the screen keeps its own state: a supply re-renders what is already
+  // standing, so a draft, a dialog and a selection all survive. A REFUSAL —
+  // declined, or expired unanswered — moved nothing, and the only thing that
+  // needs undoing is the screen's own `useState`: the "Sending…" flag a generated
+  // handler sets before it awaits, which used to leave a declined press locked
+  // forever. That one boots fresh. A tree with no query plan (a plain action tree)
+  // has nothing to re-read; its notice still settles.
   useParkedApprovals(parked, (nodeId, resolution) => {
     const settled: ToolOutcome = resolution.state === "executed" ? resolution.outcome : {
       status: "blocked",
@@ -944,7 +962,7 @@ function StatefulTreeView({
     // the repaint, because the re-read's reads run through `runAction` and an
     // ok read clears this very slot.
     setOutcomes((current) => ({ ...current, [nodeId]: undefined }));
-    void screen.refresh(nodeId).then(() => {
+    void screen.refresh(nodeId, resolution.state !== "executed").then(() => {
       if (settled.status !== "ok") setOutcomes((current) => ({ ...current, [nodeId]: settled }));
     });
   });
@@ -1053,14 +1071,14 @@ function StatefulTreeView({
     : null;
 
   // 06-apps §8 — the host moved on under a remix. This has to be LOUD and it has
-  // to be HONEST: updating no longer replays what the person changed on top of
-  // the new version (that machinery is gone), it hands them the fresh copy
-  // instead. So the notice says what the update costs, in those words, and
-  // nothing happens until they ask for it.
+  // to be HONEST: updating REPLAYS every change the person asked for onto the
+  // new version, and names the ones that no longer fit rather than dropping
+  // them. The copy promised a fresh copy that replaced their changes, which was
+  // written in the window before that replay existed.
   const driftNotice = seedDrift !== null
     ? (
       <ContainedNotice label="Newer version available">
-        {`"${seedDrift.component}" has changed in the app since you made this. You can switch to the new version, but it comes as a fresh copy — the changes you made here would be replaced. Nothing happens until you ask for it.`}
+        {`"${seedDrift.component}" has changed in the app since you made this. Updating replays every change you asked for onto the new version, and tells you about any that no longer fit. Nothing happens until you ask for it.`}
       </ContainedNotice>
     )
     : null;

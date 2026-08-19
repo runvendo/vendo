@@ -33,6 +33,7 @@ import {
   type VendoViewStreamUpdate,
 } from "@vendoai/core";
 import type { UIMessage, UIMessageStreamWriter } from "ai";
+import type { TurnTimings } from "./runtime.js";
 
 type VendoPart = VendoApprovalPart | VendoAutomationPart | VendoBuildFailedPart | VendoCitationsPart | VendoConnectPart | VendoLimitPart | VendoViewPart;
 
@@ -76,6 +77,12 @@ export interface ToolBridgeOptions {
    * matter how many of its tools the model called. Omit to disable deduping
    * (the away runner has no card surface). */
   connectCards?: Set<string>;
+  /** This turn's collector, for the two phases only this file stands in: the
+   *  guard's evaluation (`previewApproval`) and the tool's own run
+   *  (`guardedCall`). They are disjoint — the preview decides, the dispatch runs
+   *  on that verdict — so neither is counted into the other and `modelMs`'s
+   *  subtraction stays honest. Unset, nothing is measured. */
+  timings?: TurnTimings;
 }
 
 /** Runs one hook, reporting a throw instead of propagating it. */
@@ -247,6 +254,7 @@ export async function guardedCall(
   const finishCall = mergeToolCallHooks(options.onCall)(call);
   let outcome = options.gate?.(call);
   if (outcome === undefined) {
+    const ranAt = Date.now();
     try {
       outcome = await options.registry.execute(call, options.ctx);
     } catch (error) {
@@ -266,6 +274,9 @@ export async function guardedCall(
         outcome = executionError();
       }
     }
+    // After the catch, not in it: a tool that threw still spent the time, and
+    // neither arm rethrows.
+    options.timings?.add("tools", Date.now() - ranAt);
   }
 
   // A view part is emitted ONLY from the app runtime's own view-producing
@@ -356,10 +367,11 @@ export async function guardedCall(
  * wants a human.
  *
  * Exported for the same reason as {@link guardedCall}, and it is exactly why
- * `previewCheck` exists: a caller that will make the REAL dispatching call
- * moments later must not charge the write-budget/call-rate breakers twice, nor
- * run the judge twice. The harness runtime previews here, awaits the tap, then
- * executes ONCE.
+ * `previewCheck` exists: this is the ONE guard evaluation of a call the caller
+ * is about to dispatch. The verdict computed here is what the dispatching call
+ * runs on (guard.ts, `#decideForExecution`), so the write-budget/call-rate
+ * breakers are charged once and the judge is asked once. The harness runtime
+ * previews here, awaits the tap when the answer is "ask", then executes ONCE.
  */
 export async function previewApproval(
   descriptor: ToolDescriptor,
@@ -388,19 +400,20 @@ export async function previewApproval(
     }
   }
   try {
-    // genqa defect 1 (double-count): this is a PREVIEW — when it answers
-    // false, the caller makes the REAL call moments later for the SAME
-    // toolCallId, which re-enters the guard through
-    // `options.registry.execute` (the guard-bound registry; no unguarded
-    // path). `check()` alone would charge the write-budget and call-rate
-    // breakers on BOTH passes for one logical call, halving the effective
-    // budget. `previewCheck` (feature-detected; falls back to `check()` for a
-    // guard that predates it) answers identically but never commits a "run"
-    // verdict's spend — only the real call does.
+    // genqa defect 1 (double-count): when this answers false, the caller makes
+    // the REAL call moments later for the SAME toolCallId, which re-enters the
+    // guard through `options.registry.execute` (the guard-bound registry; no
+    // unguarded path). `check()` alone would evaluate and charge the
+    // write-budget and call-rate breakers on BOTH passes for one logical call,
+    // halving the effective budget. `previewCheck` (feature-detected; falls back
+    // to `check()` for a guard that predates it) commits nothing here and hands
+    // its verdict to the dispatch, which spends for the one call, once.
     const call: ToolCall = { id: toolCallId, tool: descriptor.name, args: input };
+    const decidedAt = Date.now();
     const decision = options.guard.previewCheck !== undefined
       ? await options.guard.previewCheck(call, descriptor, options.ctx)
       : await options.guard.check(call, descriptor, options.ctx);
+    options.timings?.add("guard", Date.now() - decidedAt);
     if (decision.action !== "ask") return false;
     writePart(options.writer, approvalPart(
       toolCallId,

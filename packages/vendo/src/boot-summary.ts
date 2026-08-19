@@ -139,10 +139,17 @@ export function renderBootSummary(summary: BootSummary, style: VendoStyle): stri
   return (style.pretty ? prettyLines(summary, style) : plainLines(summary)).join("\n");
 }
 
-/** ONE block per process (see the header). Module-scoped on purpose: the latch
-    belongs to the process, not to an instance — a host holding two `createVendo`
-    handles is one deployment and says "ready" once. */
-let announced = false;
+/** ONE block per process (see the header). The latch belongs to the PROCESS, not
+    to an instance — a host holding two `createVendo` handles is one deployment
+    and says "ready" once — and not to the module either: Next's dev server
+    re-instantiates this module on nearly every request, so a module-scoped `let`
+    is reborn with it and the block floods the log every couple of seconds.
+    `Symbol.for` so two copies of @vendoai/vendo in one tree still share it. */
+const ANNOUNCED = Symbol.for("vendo.boot-summary.announced");
+
+/** The process-wide latch table. Cast because `globalThis` carries no index
+    signature; the symbol keys above are the whole namespace. */
+const latches = globalThis as unknown as Record<symbol, true | undefined>;
 
 /**
  * Say it, once. Everything Vendo says out loud goes through core's sink
@@ -151,8 +158,8 @@ let announced = false;
  * arrive interleaved with something else.
  */
 export function announceBootSummary(summary: BootSummary, style: VendoStyle = vendoStyle()): void {
-  if (announced) return;
-  announced = true;
+  if (latches[ANNOUNCED] === true) return;
+  latches[ANNOUNCED] = true;
   log({
     code: "vendo.ready",
     level: summary.warnings.length > 0 ? "warn" : "info",
@@ -224,6 +231,7 @@ function modelRow(): BootRow | undefined {
 export function bootSummaryFor(composition: VendoComposition): BootSummary {
   const { config, composed, sandbox, inference, connections, guard, hostedStoreComposed, store }
     = composition;
+  const { membershipsSeam } = composition;
   const rows: BootRow[] = [];
   const warnings: BootWarning[] = [];
 
@@ -259,6 +267,13 @@ export function bootSummaryFor(composition: VendoComposition): BootSummary {
   // deployment can tell the operator.
   const ephemeral = ephemeralStoreWarning(store);
   if (ephemeral !== undefined) warnings.push(ephemeral);
+
+  // What bounds the users' file drawer. Only when the host actually filled the
+  // seam: unset, the store's own blobs back it and the store row above already
+  // names where those live, so a second row would say the same thing twice.
+  if (config.files !== undefined) {
+    rows.push({ label: "files", venue: "byo", detail: "createVendo({ files })" });
+  }
 
   if (inference.agent.venue === "custom") {
     rows.push({ label: "models", venue: "custom", detail: "createVendo({ models })" });
@@ -298,6 +313,14 @@ export function bootSummaryFor(composition: VendoComposition): BootSummary {
     rows.push({ label: "auth", venue: "preset", detail: "createVendo({ auth })" });
   } else {
     rows.push({ label: "auth", venue: "custom", detail: "createVendo({ principal })" });
+  }
+
+  // Tenant connectors are per-ORG, and an org only ever reaches a request
+  // through the memberships seam (build contract §9.1). Without one, no run can
+  // ever assert an org and no overlay can ever be selected — the seam is not
+  // serving, so it says nothing, like every other unfilled seam above.
+  if (membershipsSeam !== undefined) {
+    rows.push({ label: "tenants", venue: "store", detail: "vendo.tenantConnectors" });
   }
 
   const posture = guard.status().posture;

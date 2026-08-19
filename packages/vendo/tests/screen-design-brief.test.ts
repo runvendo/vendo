@@ -6,8 +6,8 @@
  * is measured is the text an assembly actually thinks with — never a helper
  * called by hand.
  *
- * Two halves, and they arrive by different routes on purpose. The design LAW is
- * shipped inside `buildingAppsSkill`, so both writers read the same words; the
+ * Two halves, and they arrive by different routes on purpose. The JOB DESCRIPTION
+ * is shipped inside `buildingAppsSkill`, so both writers read the same words; the
  * host's own theme, rules, product brief and components are CONFIGURATION
  * composition holds, and they arrive as one briefing pack the box rung is handed
  * byte for byte (`briefing-pack.test.ts` proves that half).
@@ -77,19 +77,23 @@ function harness(pack?: BriefingPack) {
 }
 
 describe("the writers' design brief", () => {
-  it("carries the shipped design law — the same words both writers read", async () => {
+  it("carries the shipped job description — the same words both writers read", async () => {
     const screen = harness();
     await screen.assemble();
     const brief = screen.model.systemPrompts[0] ?? "";
 
-    // The law: hierarchy, density, chart choice by data shape, the honest hole,
-    // and the one styling rule — a screen styles freely, but off the host's own
-    // CSS variables, because a hard-coded color is not the product's.
-    expect(brief).toContain("What a good screen looks like");
-    expect(brief).toContain("Lead with the answer.");
-    expect(brief).toContain("Never chart two data points");
-    expect(brief).toContain("A hole is a `<Disclaimer>`.");
-    expect(brief).toContain("`var(--vendo-color-accent)`");
+    // The job, and the two references it sends the writer to. The design law used
+    // to be inlined here; it moved into `references/format.md`
+    // (`VENDO_FORMAT_REFERENCE`, whose words are pinned in `@vendoai/apps`'s own
+    // format-reference.test.ts), so what this seam has to prove is that the
+    // POINTER travels — a reference nobody is told to open is a reference nobody
+    // reads.
+    expect(brief).toContain("# Building an app");
+    expect(brief).toContain("host/skills/building-apps/references/format.md");
+    expect(brief).toContain("host/components/");
+    // The one thing the body must never stop saying: the hands are the mechanism,
+    // so a writer does not go hunting for a build tool it has not got.
+    expect(brief).toContain("Your hands are how an app gets built.");
   });
 
   it("carries the WHOLE briefing pack when composition has one", async () => {
@@ -114,15 +118,45 @@ describe("the writers' design brief", () => {
     expect(screen.model.systemPrompts[0] ?? "").not.toContain("HOST DESIGN RULES:");
   });
 
+  it("makes the writer put every value the ask names in TEXT on the screen", async () => {
+    // Judged 2026-08-17: screens that answered the shape of an ask while quietly
+    // dropping a value it named by name. The writer is the cheapest place to catch
+    // that — it is holding the ask — and the rule is what the reviewer grades on
+    // afterwards, so the two halves say the same thing.
+    //
+    // ONE sentence of it. Writing the list out and reading it back was a ritual
+    // the model performed in prose and the screen never felt, and the reviewer
+    // carries the ask itself now (`judgeScreen`), so the checklist was being paid
+    // for twice.
+    const screen = harness();
+    await screen.assemble();
+    const brief = (screen.model.systemPrompts[0] ?? "").replace(/\s+/g, " ");
+    expect(brief).toContain("READABLE AS TEXT on the screen");
+    expect(brief).not.toContain("take the ask apart");
+    expect(brief).not.toContain("Read the list again");
+  });
+
+  it("never names the app id — the hands take none, and the brief is a cached prefix", async () => {
+    // `save_app` and `edit_app` have no `appId` argument and no path argument, so
+    // the sentence naming this app taught the model nothing it could act on — and
+    // it was interpolated into the head of a ~16k-token cached prefix, which made
+    // the prefix a different one for every app.
+    const screen = harness();
+    await screen.assemble();
+    expect(screen.model.systemPrompts[0] ?? "").not.toContain(APP);
+  });
 });
 
-/** Everything a measured surface adds to the brief, byte for byte. One constant,
- *  because the two cases below are the same claim from either side: this text is
- *  there when the host measured, and the brief is exactly this text away from the
- *  one it has always assembled when nobody did. */
-const SURFACE_PARAGRAPH = "\n\nYou are writing into `420×880` CSS pixels, and nothing wider than that is\n"
-  + "on the person's screen. Fewer, richer columns rather than a table that runs off\n"
-  + "the edge, and a stat grid that wraps rather than a fixed count that clips.";
+/** Everything a measured surface adds to the brief, byte for byte — two bullets
+ *  on the note's own opening list. One constant, because the two cases below are
+ *  the same claim from either side: this text is there when the host measured, and
+ *  the brief is exactly this text away from the one it has always assembled when
+ *  nobody did. */
+const SURFACE_PARAGRAPH = "\n- You are writing into `420×880` CSS pixels — nothing wider than that is on\n"
+  + "  the person's screen.\n"
+  + "- What a person sees in that frame is all anyone sees, and EVERYTHING the ask\n"
+  + "  names has to be in it — never dropped to make room. Fit is the Kit's job:\n"
+  + "  cells truncate, a narrow frame keeps columns by `priority`, panes stack.";
 
 /** One run through `assembleScreen`, which is where a `ScreenInput` — and the
  *  host's viewport with it — enters. Not the `vendo_make` route above: a
@@ -143,13 +177,17 @@ async function briefFor(viewport?: ScreenInput["viewport"]): Promise<string> {
 }
 
 describe("the surface the screen is written for", () => {
-  it("names the room the screen has, and what to spend it on", async () => {
+  it("names the room the screen has, and asks for everything inside it", async () => {
     // Judged 2026-08-12: eight-column tables whose "Status column is cut off
     // beyond the viewport" and a stat row clipped to "$1,113.1(" — every one of
     // them written by a writer that was never told how wide it was writing.
     const brief = await briefFor({ width: 420, height: 880 });
     expect(brief).toContain("`420×880` CSS pixels");
     expect(brief).toContain(SURFACE_PARAGRAPH);
+    // The frame is what is SEEN, never a budget to shed content into: the rubrics
+    // grade a screen on the ask being present, so a brief that told the writer to
+    // carry "fewer, richer columns" was coaching it to drop what it was asked for.
+    expect(brief).not.toContain("Fewer, richer columns");
   });
 
   it("says nothing about a surface nobody measured", async () => {

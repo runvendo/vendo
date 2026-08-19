@@ -219,8 +219,7 @@ export function TurnCitations({ message }: { message: UIMessage }) {
             <path d="M12 3l10 18H2L12 3z" /><path d="M12 10v5" /><path d="M12 18.2v.1" />
           </svg>
           <span>
-            I couldn&apos;t check the docs just now — the knowledge base is temporarily
-            unreachable, so this answer isn&apos;t verified against the documentation.
+            I couldn&apos;t check the docs just now, so this isn&apos;t verified against them.
           </span>
         </div>
       ) : null}
@@ -229,7 +228,7 @@ export function TurnCitations({ message }: { message: UIMessage }) {
           <svg width="12.5" height="12.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <circle cx="11" cy="11" r="7" /><path d="M21 21l-4.5-4.5" />
           </svg>
-          Searched the knowledge base — no matching documentation
+          Searched the docs — no answer for this one
         </div>
       ) : null}
     </>

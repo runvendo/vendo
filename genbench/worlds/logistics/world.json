@@ -18,9 +18,9 @@
   },
   "style": [
     "uses the theme exactly: slate console background, amber accent, Inter, square 4px corners — no invented colors or fonts",
-    "compact dispatcher density: dense rows and 13px text, no marketing whitespace or oversized hero headings",
+    "compact dispatcher density: dense rows and 13px text, no marketing whitespace — a figure the screen was asked to headline may be set large, and nothing else is",
     "amber is reserved for the primary action and at-risk markers — it never fills a whole row, header or card",
-    "money shows a $ and two decimals, weights read like '1,960 lb', shortfalls like '90 min' and dates like 'Aug 12', never ISO",
+    "money shows a $ and two decimals; where the screen writes a weight it reads like '1,960 lb', a shortfall like '90 min' and a date like 'Aug 12', never ISO",
     "statuses are small pills in sentence case ('Out for delivery'), never raw codes ('OUT_FOR_DELIVERY')",
     "anything that moves freight or money confirms before it fires"
   ],

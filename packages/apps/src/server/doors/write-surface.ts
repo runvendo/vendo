@@ -501,6 +501,14 @@ export const createWriteSurface = (
       await updateAppDocument(input.appId, (doc) => ({
         ...doc,
         memory: rememberedMemory(doc.memory, input),
+        // A REMIX keeps every wish beside the memory, because the two answer
+        // different questions. `memory.asks` is a capped working set for the
+        // next editor; `seed.wishes` is what a re-seed replays onto the host's
+        // new version, so a wish that fell off a cap would be an edit the person
+        // loses the next time the host ships.
+        ...(doc.seed === undefined || input.ask === undefined
+          ? {}
+          : { seed: { ...doc.seed, wishes: [...doc.seed.wishes, input.ask] } }),
       }));
     },
 

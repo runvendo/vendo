@@ -63,7 +63,7 @@ const doc = (slot: string, overrides: Partial<AppDocument> = {}): AppDocument =>
     seed: {
       component: slot,
       baseline: `sha256:${slot === "transfer-panel" ? "transfer" : "hero"}-base`,
-      instruction: "make it mine",
+      wishes: ["make it mine"],
     },
     components: { Fork: "export default function Fork() { return <b>fork</b>; }" },
     ...overrides,

@@ -29,9 +29,9 @@ const reduced = (result: ReshapeResult): number | undefined =>
   result.ok && typeof result.value === "number" ? result.value : undefined;
 
 /**
- * The nine live reshape ops, as functions. Shaped as one bundle for the same
- * reason `fmt` is: these are pure projections a code-land app reaches for by
- * name, and `reshape.sum` never collides with the `$expr` aggregate `sum`.
+ * The nine live reshape ops, as functions. One bundle rather than nine exports
+ * because these are pure projections a code-land app reaches for BY NAME, and
+ * `reshape.sum` never collides with the `$expr` aggregate `sum`.
  */
 export const reshape = {
   /** Keep only these fields (per row on an array, direct on an object). */

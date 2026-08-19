@@ -1,29 +1,33 @@
 /**
  * The save-time gauntlet for a COMPONENT screen — the new artifact: one plain
  * `.tsx` file, one default-exported React component, data through
- * `useQuery("tool_name", {literal input}?)`, actions through
+ * `useQuery("tool_name", input?)`, actions through
  * `tools.tool_name(args)` inside handlers, and nothing imported but `react` and
  * `@vendo/screen`.
  *
- * Five stages, and the order is not a preference: a file that does not compile
+ * Six stages, and the order is not a preference: a file that does not compile
  * has no AST to scan; a scan that cannot name the queries has no plan to
- * type-check against; and a screen that does not type-check must never be
- * EXECUTED. So each stage is the next one's precondition and the first one that
- * finds something is the last one that runs.
+ * type-check against; a screen that does not type-check must never be EXECUTED;
+ * and a screen whose tree is not a tree has no controls worth pressing. So each
+ * stage is the next one's precondition and the first one that finds something is
+ * the last one that runs.
  *
  *   1. COMPILE   esbuild, once per form (the CJS the engine evaluates, the
  *                module form the scan reads).
  *   2. SCAN      the two rules a compiler cannot state: the import surface is
  *                exactly two modules, and every query names a read tool with a
- *                literal name and a literal input. Plus the `tools` discipline —
- *                literal member access, called from a handler, never mid-render.
+ *                literal name. Plus the `tools` discipline — literal member
+ *                access, called from a handler, never mid-render.
  *   3. TYPECHECK the real compiler, against declarations derived from the Kit's
  *                zod specs and the host tools' own schemas, with NO DOM lib —
  *                so `document`, `fetch` and `<div>` are errors because they
  *                genuinely do not exist here.
- *   4. RUN ONCE  execute the query plan for real, boot the screen on the answers,
- *                take its tree.
+ *   4. RUN       execute the query plan for real, boot the screen on the answers,
+ *                answer whatever reads the paint itself asks for, take its tree,
+ *                and PRESS every control it drew.
  *   5. TREE      the tree validators the wire artifact already ships.
+ *   6. CONTROLS  the presses stage 4 took: a control that asked for no tool and
+ *                painted nothing new is a dead button, and it is refused.
  *
  * Every issue is written as a repair instruction. These messages are read by a
  * model, and a refusal that does not say what to write instead only costs a
@@ -39,7 +43,7 @@
  */
 import { parse } from "acorn";
 import type { Node, Program } from "acorn";
-import { VENDO_TREE_FORMAT, type TreeNode } from "@vendoai/core";
+import { isPlainObject, VENDO_TREE_FORMAT, type TreeNode } from "@vendoai/core";
 import {
   DISPLAY_TAG_NAMES,
   resolveIslandToolName,
@@ -51,8 +55,11 @@ import {
 } from "../../contract/index.js";
 // The screen engine, by its own path: the contract door does not carry it yet.
 import {
+  queryKey,
   SCREEN_TEXT_NODE,
+  type FlatNode,
   type FlatTree,
+  type InertControl,
   type ScreenErrorKind,
 } from "../../contract/genui/component/index.js";
 import { isMutatingTool, type HostToolInfo } from "./deps.js";
@@ -92,7 +99,8 @@ export interface ComponentScreenIssue {
   environment?: true;
 }
 
-/** One `useQuery` call, as the check will execute it. */
+/** One `useQuery` call, as the check will execute it. Structurally the engine's
+ *  own `ScreenQuery`, because a plan entry and a miss are the same ask. */
 export interface QueryPlanEntry {
   tool: string;
   input?: unknown;
@@ -103,9 +111,11 @@ export type ComponentScreenCheck = {
   issues: ComponentScreenIssue[];
   /** post-esbuild JS — what the engine evaluates. */
   compiled?: string;
+  /** Every read the screen makes: the ones a literal input made plannable, plus
+   *  the ones its own paint asked for. The surface re-reads exactly this list. */
   queryPlan?: QueryPlanEntry[];
   initialTree?: FlatTree;
-  /** What each query REALLY returned, keyed by tool — the answers stage 4 booted
+  /** What each query REALLY returned, keyed by `queryKey` — the answers stage 4 booted
    *  the screen on. Handed back because the two things that need them cannot get
    *  them anywhere else: the paint carries them so the renderer boots the same
    *  screen this check rendered, and the AI reviewer judges the numbers on screen
@@ -141,6 +151,13 @@ export interface ComponentScreenOptions {
   /** The trusted executor, injected by the caller: this check runs the screen's
    *  queries for real, and it is the caller who holds the guard-bound registry. */
   runQuery: (tool: string, input?: unknown) => Promise<unknown>;
+  /** The wall stage 4 paints on — the locale and the IANA zone the screen's
+   *  `Intl` and `toLocale*` calls DEFAULT to. Unset is `"en-US"` and `"UTC"`,
+   *  the same as the surface's. A host whose people read another one passes it
+   *  here as well as to the surface, so the dates this gate judged are the dates
+   *  the person is shown. */
+  locale?: string;
+  timeZone?: string;
   /** What compiles, type-checks and paints the screen — the one thing in this
    *  gauntlet that cannot run in every venue. Unset, this process's own
    *  ({@link defaultToolchain}); the floor names it one layer up. */
@@ -406,6 +423,174 @@ const defaultComponent = (program: Program): { node?: Node; declared: boolean } 
   return { declared: true };
 };
 
+/**
+ * THE LAST FORMATTING BOUNDARY: a chart told `format="money"` whose numbers come
+ * from a field named in cents.
+ *
+ * Every other displayed value in a screen passes through the author's own code,
+ * so the author divides there and hands the Kit finished text — that is what the
+ * value tier's death bought (`specs.ts`, "Charts"). A chart is the ONE exception
+ * left: its ticks, tooltips and bar labels are computed HOST-side off a numeric
+ * scale, so the series stay numeric and `format` is how the chart is told what
+ * they mean — and `money` means DOLLARS and converts nothing. So this is the only
+ * place in a screen where a hundred-times invention can still ORIGINATE, and it
+ * has originated twice on real screens: `maple/spend-overview` put six raw cent
+ * values in a donut legend ($285,000.00 of housing against a host holding 285000
+ * cents), and `buildlog/compute-spend` did the same to a chart of branch costs.
+ *
+ * Deliberately not a general cents heuristic, and it must not become one: one
+ * boundary, one prop, one refusal. No other component, no other prop, no `Money`,
+ * no `toLocaleString` — everywhere else the division is in code a compiler and a
+ * reviewer can already read, and a naming rule applied there would refuse honest
+ * screens by the dozen. The convention it reads is the one the write path already
+ * reads units off (`amountUnitIssue` in server/persistence/call.ts): a field whose
+ * name ends in `cents` is in minor units.
+ *
+ * It fails OPEN wherever the arithmetic is not plainly absent — any `/ 100` on the
+ * way clears the field, and a data expression this cannot follow is admitted.
+ * A false refusal costs a repair round; a miss ships a bill a hundred times too
+ * big, but so does refusing every chart, and only the plain shape is worth
+ * refusing mechanically. The reviewer still reads the rest (`reviewer-prompt.ts`).
+ */
+const CENTS_FIELD = /cents$/i;
+
+/** The charts that take a `format` and look their numbers up BY KEY, and the prop
+ *  that names those keys. Sparkline is absent because it has no `format` to lie
+ *  with; `screen-money-charts.test.ts` keeps this list honest against `KIT_SPECS`,
+ *  so a fourth chart cannot arrive unwatched. */
+const MONEY_CHARTS = new Map<string, "valueKey" | "series">([
+  ["LineChart", "series"],
+  ["BarChart", "series"],
+  ["DonutChart", "valueKey"],
+]);
+
+const stringLiteral = (node: Node | undefined): string | undefined => {
+  const value = node?.type === "Literal" ? (node as unknown as { value: unknown }).value : undefined;
+  return typeof value === "string" ? value : undefined;
+};
+
+/** A property's name, where it is written rather than computed. */
+const keyName = (node: Node): string | undefined => identifierName(node) ?? stringLiteral(node);
+
+/** What an object literal writes under one name, or undefined for anything else —
+ *  a spread, a computed key, a getter, or an expression that is not an object. */
+const propOf = (node: Node | undefined, name: string): Node | undefined => {
+  if (node?.type !== "ObjectExpression") return undefined;
+  for (const property of (node as unknown as { properties: Node[] }).properties) {
+    if (property.type !== "Property") continue;
+    const entry = property as unknown as { key: Node; value: Node; computed: boolean; kind: string };
+    if (entry.computed || entry.kind !== "init") continue;
+    if (keyName(entry.key) === name) return entry.value;
+  }
+  return undefined;
+};
+
+/** The value fields a chart plots: `valueKey="cost"`, or a `series` of bare keys
+ *  and `{ key, label }` entries. */
+const valueFields = (props: Node, names: "valueKey" | "series"): string[] => {
+  const written = propOf(props, names);
+  if (written === undefined) return [];
+  const one = stringLiteral(written);
+  if (one !== undefined) return [one];
+  if (written.type !== "ArrayExpression") return [];
+  return (written as unknown as { elements: Array<Node | null> }).elements.flatMap((element) => {
+    if (element === null) return [];
+    return stringLiteral(element) ?? stringLiteral(propOf(element, "key")) ?? [];
+  });
+};
+
+/** The cents-named thing a subtree reads, where it reads one: a bare identifier
+ *  (`costCents`) or a property (`row.compute_cost_cents`, `row["amount_cents"]`). */
+const centsSource = (node: Node): string | undefined => {
+  const own = node.type === "Identifier"
+    ? identifierName(node)
+    : node.type === "MemberExpression"
+      ? keyName((node as unknown as { property: Node }).property)
+      : undefined;
+  if (own !== undefined && CENTS_FIELD.test(own)) return own;
+  for (const child of childNodes(node)) {
+    const found = centsSource(child);
+    if (found !== undefined) return found;
+  }
+  return undefined;
+};
+
+/** Any `/ 100` under an expression. Not that the division lands on the cents
+ *  field — this is the fail-open half: arithmetic on the way is what clears a
+ *  field, and a screen that divides by a hundred here has thought about the unit. */
+const dividesByHundred = (node: Node): boolean => {
+  const binary = node as unknown as { operator?: string; right?: Node };
+  if (node.type === "BinaryExpression" && binary.operator === "/" && binary.right !== undefined) {
+    const right = literalValue(binary.right);
+    if (right.ok && right.value === 100) return true;
+  }
+  return childNodes(node).some(dividesByHundred);
+};
+
+/** The named key as an object literal writes it, anywhere under an expression. */
+const findProp = (node: Node, name: string): Node | undefined => {
+  const own = propOf(node, name);
+  if (own !== undefined) return own;
+  for (const child of childNodes(node)) {
+    const found = findProp(child, name);
+    if (found !== undefined) return found;
+  }
+  return undefined;
+};
+
+/** Every name the module binds to an expression, so a chart's `data` can be read
+ *  as the `.map` that built it rather than as the word standing in for it. */
+const boundNames = (program: Program): Map<string, Node> => {
+  const bound = new Map<string, Node>();
+  const visit = (node: Node): void => {
+    if (node.type === "VariableDeclarator") {
+      const entry = node as unknown as { id: Node; init?: Node | null };
+      const name = identifierName(entry.id);
+      if (name !== undefined && entry.init != null && !bound.has(name)) bound.set(name, entry.init);
+    }
+    for (const child of childNodes(node)) visit(child);
+  };
+  visit(program);
+  return bound;
+};
+
+const centsRefusal = (chart: string, field: string, source: string, repair: string): ComponentScreenIssue =>
+  issue("chart-money-cents", `plots "${field}" on <${chart}> with format="money", and "${field}" reads ${source} with nothing dividing it by 100 on the way — format="money" reads DOLLARS and converts nothing, so every tick, tooltip and label on this chart shows a hundred times the money the host holds. A chart reads its numbers BY KEY and has no cell to divide in: divide the cents field where you PREPARE the data — data={rows.map((row) => ({ ...row, ${field}: ${repair} }))}.`);
+
+/**
+ * One chart's money fields, traced back to what fills them.
+ *
+ * The data prop is followed through one hop of naming — `data={byBranch}` is the
+ * expression that built `byBranch` — and then the field is looked for as a key
+ * written in an object literal anywhere under it, which is what a `.map` that
+ * prepares rows always is. Where the field is written, its own initializer is the
+ * arithmetic; where it is not, the chart is reading the row's own field straight
+ * through, so the KEY is the source and its name is the whole evidence.
+ */
+const chartMoneyIssues = (
+  chart: string | undefined,
+  props: Node,
+  bound: ReadonlyMap<string, Node>,
+): ComponentScreenIssue[] => {
+  const names = chart === undefined ? undefined : MONEY_CHARTS.get(chart);
+  if (chart === undefined || names === undefined) return [];
+  if (stringLiteral(propOf(props, "format")) !== "money") return [];
+  const written = propOf(props, "data");
+  const named = identifierName(written);
+  const data = (named === undefined ? undefined : bound.get(named)) ?? written;
+  return valueFields(props, names).flatMap((field) => {
+    const prepared = data === undefined ? undefined : findProp(data, field);
+    // Nothing prepared this field, so the chart reads the row's own — and the key
+    // it names is the source, in its own words.
+    if (prepared === undefined) {
+      return CENTS_FIELD.test(field) ? [centsRefusal(chart, field, field, `row.${field} / 100`)] : [];
+    }
+    if (dividesByHundred(prepared)) return [];
+    const source = centsSource(prepared);
+    return source === undefined ? [] : [centsRefusal(chart, field, source, `row.${source} / 100`)];
+  });
+};
+
 interface ScanResult {
   issues: ComponentScreenIssue[];
   queryPlan: QueryPlanEntry[];
@@ -481,6 +666,21 @@ const scan = (moduleSource: string, source: string, tools: readonly HostToolInfo
   };
   visit(program, undefined);
 
+  // (c) the last host-side formatting boundary. An element is a call with the
+  // component in the first argument and its props in the second — true of the
+  // classic transform this form is compiled with AND of the automatic one, so the
+  // rule does not move if that pin does.
+  const bound = boundNames(program);
+  const elements = (node: Node): void => {
+    const call = asCall(node);
+    const props = call?.arguments[1];
+    if (call !== undefined && props !== undefined) {
+      issues.push(...chartMoneyIssues(identifierName(call.arguments[0]), props, bound));
+    }
+    for (const child of childNodes(node)) elements(child);
+  };
+  elements(program);
+
   // The shipped literal-access scan, verbatim: computed access and aliasing are
   // violations, and its sentences already teach the repair.
   for (const violation of scanIslandTools(blankImports(moduleSource, program)).violations) {
@@ -527,31 +727,34 @@ const scanQuery = (
     return;
   }
   if (extra.length > 0) {
-    context.issues.push(issue("query-input", `calls ${QUERY_HOOK}("${literal}", …) with ${call.arguments.length} arguments — it takes the tool name and, at most, one literal input object.`));
+    context.issues.push(issue("query-input", `calls ${QUERY_HOOK}("${literal}", …) with ${call.arguments.length} arguments — it takes the tool name and, at most, one input object.`));
     return;
   }
-  let value: unknown;
+  let entry: QueryPlanEntry = { tool: literal };
   if (input !== undefined) {
     const parsed = literalValue(input);
-    if (!parsed.ok) {
-      context.issues.push(issue("query-input", `passes a computed input to ${QUERY_HOOK}("${literal}", …) — a query input must be LITERAL JSON the tool can execute directly: the queries run before the component renders, so no prop, state, hook value or other query's result can reach one. Write the literal (${QUERY_HOOK}("${literal}", { status: "pending" })), and derive what you needed from the result where you DISPLAY it.`));
-      return;
-    }
-    value = parsed.value;
+    // A LITERAL input is resolved before the screen ever renders, so the first
+    // paint has its answer. A COMPUTED one is whatever this render worked out, so
+    // nothing can resolve it that early: it is left out of the plan, the screen
+    // paints `undefined` there and NAMES the read it wanted, and the loop below
+    // answers it (`ScreenInstance.misses`).
+    if (!parsed.ok) return;
+    entry = { tool: literal, input: parsed.value };
   }
-  const entry: QueryPlanEntry = input === undefined ? { tool: literal } : { tool: literal, input: value };
-  const already = context.queryPlan.find((planned) => planned.tool === entry.tool);
-  if (already === undefined) {
-    context.queryPlan.push(entry);
-    return;
-  }
-  // The engine resolves a screen's data as one result PER TOOL, so two reads of
-  // the same tool with different inputs cannot both be served — the second would
-  // silently paint the first one's rows.
-  if (JSON.stringify(already.input) !== JSON.stringify(entry.input)) {
-    context.issues.push(issue("query-input", `reads "${literal}" twice with DIFFERENT inputs — a screen resolves one result per tool, so both calls would receive the same rows. Read it once with the wider input and narrow it where you display it (rows.filter(…)), or read a tool that takes the narrower ask.`));
-  }
+  const key = queryKey(entry);
+  if (!context.queryPlan.some((planned) => queryKey(planned) === key)) context.queryPlan.push(entry);
 };
+
+/**
+ * How many times one screen is painted while it asks for reads.
+ *
+ * A parameterized read costs one round: the paint names it, the answer arrives,
+ * the screen paints again. A read whose input comes from the FIRST one's answer
+ * costs a second. Three is one more than any screen anybody writes needs, and a
+ * bound is what keeps a screen that invents a new key on every render from
+ * painting forever.
+ */
+const MAX_SUPPLY_ROUNDS = 3;
 
 // ---- stage 3: typecheck ---------------------------------------------------
 
@@ -645,46 +848,76 @@ export async function checkComponentScreen(opts: ComponentScreenOptions): Promis
   }
   if (typed.issues.length > 0) return refuse([...typed.issues], { compiled, queryPlan });
 
-  // The engine keys its results by TOOL, one entry each — which is why the scan
-  // refuses a screen that reads one tool with two different inputs.
+  // THE SUPPLY LOOP. The plan is only what could be read before the screen ran;
+  // a read whose input the screen computes is named by the paint itself. So: run
+  // what is asked for, paint, and if the paint asked for more, go round again —
+  // whether that paint finished or threw, because a paint that is still waiting
+  // on a read has not been given the data it is judged on. `queryPlan` grows with
+  // what it learns, because the surface re-reads exactly this list after a write.
   const queries: Record<string, unknown> = {};
-  for (const entry of queryPlan) {
-    try {
-      queries[entry.tool] = await opts.runQuery(entry.tool, entry.input);
-    } catch (error) {
-      return refuse([issue("run", `the query ${QUERY_HOOK}("${entry.tool}"${entry.input === undefined ? "" : `, ${JSON.stringify(entry.input)}`}) failed when this check ran it: ${error instanceof Error ? error.message : String(error)} — a screen may only read a tool that answers; check the input against the tool's own schema.`)], { compiled, queryPlan });
-    }
-  }
-
+  const now = Date.now();
   let painted: ScreenPaintResult;
-  try {
-    // A clock IS given: the surface renders with one, and a gate that is
-    // stricter than production blocks screens that work.
-    // `source` off the DIALECT this screen was type-checked in, which is the only
-    // thing that decides whether a brick may paint a host class — so the two can
-    // never disagree, and no screen can name its own provenance.
-    painted = await toolchain.paint({
-      compiledSource: compiled,
-      queries,
-      catalog: names,
-      now: Date.now(),
-      ...(opts.ported === true ? { source: "ported" } : {}),
-      ...(opts.props === undefined ? {} : { props: opts.props }),
-    });
-  } catch (error) {
-    // A paint answers a screen that failed with a verdict, so a THROW is the
-    // engine itself never starting — this deployment's third machine missing,
-    // not a screen to repair. Its own code for the same reason: `run` is the
-    // class for a screen that RAN, and these two must never read alike.
-    return refuse([unavailable("engine-unavailable", `the screen was never executed: the screen engine would not start (${error instanceof Error ? error.message : String(error)}). This check refuses to pass a screen it could not render.`)], { compiled, queryPlan });
-  }
-  if (!painted.ok) {
-    return refuse([issue("run", renderMessage(painted.kind, painted.message))], { compiled, queryPlan });
+  let asks: readonly QueryPlanEntry[] = queryPlan;
+  for (let round = 1; ; round += 1) {
+    for (const entry of asks) {
+      try {
+        queries[queryKey(entry)] = await opts.runQuery(entry.tool, entry.input);
+      } catch (error) {
+        return refuse([issue("run", `the query ${QUERY_HOOK}("${entry.tool}"${entry.input === undefined ? "" : `, ${JSON.stringify(entry.input)}`}) failed when this check ran it: ${error instanceof Error ? error.message : String(error)} — a screen may only read a tool that answers; check the input against the tool's own schema.`)], { compiled, queryPlan });
+      }
+    }
+    try {
+      // A clock IS given: the surface renders with one, and a gate that is
+      // stricter than production blocks screens that work. The same instant every
+      // round, so the rounds are one paint and not three different days.
+      painted = await toolchain.paint({
+        compiledSource: compiled,
+        queries,
+        catalog: names,
+        now,
+        locale: opts.locale,
+        timeZone: opts.timeZone,
+        // `source` off the DIALECT this screen was type-checked in — the only thing
+        // that decides whether a brick may paint a host class — and the PROPS the
+        // port's host call site passed; no screen can name either for itself.
+        ...(opts.ported === true ? { source: "ported" as const } : {}),
+        ...(opts.props === undefined ? {} : { props: opts.props }),
+      });
+    } catch (error) {
+      // A paint answers a screen that failed with a verdict, so a THROW is the
+      // engine itself never starting — this deployment's third machine missing,
+      // not a screen to repair. Its own code for the same reason: `run` is the
+      // class for a screen that RAN, and these two must never read alike.
+      return refuse([unavailable("engine-unavailable", `the screen was never executed: the screen engine would not start (${error instanceof Error ? error.message : String(error)}). This check refuses to pass a screen it could not render.`)], { compiled, queryPlan });
+    }
+    if (!painted.ok) {
+      // A paint that threw while it was still WAITING on a read is a LOADING
+      // paint, not a verdict: it rendered against data this check had not given
+      // it yet, and the screen the person sees is the one painted a round later
+      // on the real answers. So answer what it named and paint again. Only a
+      // throw with nothing outstanding — or one on the last round, where there is
+      // no next paint to be judged on — is the screen's own.
+      if (painted.misses.length > 0 && round < MAX_SUPPLY_ROUNDS) {
+        asks = painted.misses;
+        queryPlan.push(...asks);
+        continue;
+      }
+      return refuse([issue("run", renderMessage(painted.kind, painted.message))], { compiled, queryPlan });
+    }
+    // A screen still asking after the last round is one that invents a key on
+    // every render. Its paint stands, and `inert` is empty — an unsettled screen
+    // is not the one whose buttons this gate judges.
+    if (painted.misses.length === 0 || round === MAX_SUPPLY_ROUNDS) break;
+    asks = painted.misses;
+    queryPlan.push(...asks);
   }
 
   const initialTree = painted.tree;
   const treeIssues = await treeCheckIssues(initialTree, names, opts.routes);
   if (treeIssues.length > 0) return refuse(treeIssues, { compiled, queryPlan, initialTree });
+
+  const deadIssues = deadControlIssues(initialTree, painted.inert);
+  if (deadIssues.length > 0) return refuse(deadIssues, { compiled, queryPlan, initialTree });
 
   return { ok: true, issues: [], compiled, queryPlan, initialTree, queries };
 }
@@ -753,20 +986,347 @@ const treeCheckIssues = async (
   ];
 };
 
-// ---- the reviewer's input -------------------------------------------------
+// ---- stage 6: the controls ------------------------------------------------
 
 /**
- * What the AI reviewer reads: the TSX itself, plus what each query really
- * returned, truncated by the same rule the wire reviewer uses (reviewer.ts) so
- * one long table cannot crowd the screen out of the prompt.
+ * How many dead controls are NAMED before the rest become a count.
+ *
+ * These sentences are read by a model with one screen to repair, and forty
+ * copies of one repair instruction crowd out the file they are about. A screen
+ * with forty dead buttons has them from one `.map`, so the first few name the
+ * defect and the count says how far it reaches.
+ */
+const MAX_NAMED_CONTROLS = 5;
+
+/** The props a control carries its own words in, in the order a person would
+ *  read them off it: a Button's `label`, a Form's `submitLabel`, then the
+ *  headings a clickable card or row is named by. */
+const LABEL_PROPS: readonly string[] = ["label", "submitLabel", "title", "text"];
+
+/** What to CALL this control in the refusal — the words on it, so the person
+ *  repairing the screen can find it without counting nodes. Its own label
+ *  first, then whatever text is printed inside it, and only failing both the
+ *  bare component name. */
+const controlName = (flat: FlatTree, id: string): string => {
+  const node = flat.nodes[id];
+  if (node === undefined) return "a control";
+  for (const prop of LABEL_PROPS) {
+    const value = node.props[prop];
+    if (typeof value === "string" && value.trim() !== "") return clip(value.trim(), MAX_NODE_TEXT);
+  }
+  const said = node.children
+    .map((child) => flat.nodes[child])
+    .filter((child): child is FlatNode => child?.component === SCREEN_TEXT_NODE)
+    .map((child) => String(child.props["text"] ?? ""))
+    .join(" ")
+    .replace(/\s+/gu, " ")
+    .trim();
+  return said === "" ? `the ${node.component}` : clip(said, MAX_NODE_TEXT);
+};
+
+/**
+ * The controls the run pressed that did nothing, as refusals.
+ *
+ * This is the defect no other stage can see: the file compiles, the types are
+ * right, the tree is valid, and the screen paints a button that is scenery. The
+ * repair is one of three real things, so the sentence offers all three rather
+ * than only the one that happens to be most common.
+ */
+const deadControlIssues = (flat: FlatTree, inert: readonly InertControl[]): ComponentScreenIssue[] => {
+  const named = inert.slice(0, MAX_NAMED_CONTROLS).map(({ node, prop }) => issue(
+    "dead-control",
+    `pressing "${controlName(flat, node)}" calls nothing and changes nothing — wire it or remove it.`
+    + ` This check pressed every control on the screen as it first paints, and this one (${flat.nodes[node]?.component ?? "a component"} ${prop}) asked for no tool and painted nothing new.`
+    + ` Call the tool it is for inside the handler (${prop}={async () => { await tools.tool_name({ … }); }}), or make it change what the person sees — open a Modal, switch what the screen renders, set state the render reads.`
+    + ` If it is meant to do nothing yet, SAY so: set disabled where the control has it, or paint the reason (a Callout, a line under the field). A press that is silently refused reads as a broken button.`,
+  ));
+  const rest = inert.length - named.length;
+  return rest <= 0 ? named : [...named, issue(
+    "dead-control",
+    `and ${rest} more control(s) on this screen do nothing when pressed. The same repair applies to each: give it a tool to call, give it something to change, or take it off the screen.`,
+  )];
+};
+
+// ---- the reviewer's input -------------------------------------------------
+
+/** The first paint, and the surface it lands on. */
+export interface PaintedScreen {
+  /** Stage 4's tree — the screen rendered against the data its queries really
+   *  returned. */
+  tree: FlatTree;
+  /**
+   * The CSS pixels the screen renders into, as the host measured them.
+   *
+   * Its own fact, and it travels on its own: a FOLD cannot be judged against a
+   * frame nobody measured, so without one the paint outline is not written at
+   * all — but what the paint left unshown is true at every size, so the tree
+   * still comes through alone and {@link leftoversSection} still reads it.
+   */
+  viewport?: { width: number; height: number };
+}
+
+/** The outline's budget, one line of it, and one value on that line — the same
+ *  discipline {@link sampleLines} keeps over query data: a long screen must not
+ *  crowd the file it describes out of the prompt. */
+const MAX_PAINT_CHARS = 3_000;
+const MAX_PAINT_LINE = 200;
+const MAX_NODE_TEXT = 100;
+
+/** How many of a run of same-component siblings are written out before the rest
+ *  become a count. Three, so a short mixed stack survives whole and a forty-row
+ *  table still reads as three rows and a number. */
+const MAX_RUN_SHOWN = 3;
+
+const clip = (text: string, limit: number): string =>
+  (text.length > limit ? `${text.slice(0, limit)}…` : text);
+
+/**
+ * A prop as the outline says it: a scalar as itself, a list as its LENGTH, and
+ * everything else not at all.
+ *
+ * The length is the point. A Kit component carries its words in props rather
+ * than in children — `<Text text="Invoices" />`, `<Table rows={…} />` — so an
+ * outline of names alone says nothing about what is on the screen, and a table's
+ * row COUNT is the whole difference between a section that fits and one that
+ * pushes the next three below the fold. An object prop and a `{$handler}`
+ * reference say nothing either way, so they say nothing.
+ */
+const propNote = (name: string, value: unknown): string | undefined => {
+  if (typeof value === "string") {
+    return value.trim() === "" ? undefined : `${name}=${JSON.stringify(clip(value, MAX_NODE_TEXT))}`;
+  }
+  if (typeof value === "number" || typeof value === "boolean") return `${name}=${String(value)}`;
+  if (Array.isArray(value)) return `${name}=[${value.length}]`;
+  return undefined;
+};
+
+/**
+ * The first paint as an indented outline, in paint order.
+ *
+ * The SOURCE says what the screen might draw; this says what it did. A branch the
+ * real data did not take, a wizard step behind a click, a table with forty rows
+ * where the file shows one `.map` — none of those are readable in the file, and
+ * all of them decide whether the person can see the thing they asked for.
+ *
+ * A run of same-component siblings collapses to the first few plus a count: forty
+ * rows are one fact about how TALL a table is, not forty lines of outline.
+ */
+const paintOutline = (flat: FlatTree): string => {
+  const lines: string[] = [];
+  let budget = MAX_PAINT_CHARS;
+  let cut = 0;
+  const emit = (line: string): void => {
+    if (budget <= 0) {
+      cut += 1;
+      return;
+    }
+    lines.push(line);
+    budget -= line.length + 1;
+  };
+  const walk = (id: string, depth: number): void => {
+    const node = flat.nodes[id];
+    if (node === undefined) return;
+    const children = node.children
+      .map((child) => flat.nodes[child])
+      .filter((child): child is FlatNode => child !== undefined);
+    // What this node SAYS, on its own line: its props, then any raw text under
+    // it. How a reader tells the third table from the first.
+    const said = children
+      .filter(({ component }) => component === SCREEN_TEXT_NODE)
+      .map(({ props }) => String(props["text"] ?? ""))
+      .join(" ")
+      .replace(/\s+/gu, " ")
+      .trim();
+    const notes = Object.entries(node.props)
+      .map(([name, value]) => propNote(name, value))
+      .filter((note): note is string => note !== undefined);
+    emit(clip(
+      [`${"  ".repeat(depth)}${node.component}`, ...notes, ...(said === "" ? [] : [JSON.stringify(clip(said, MAX_NODE_TEXT))])]
+        .join(" "),
+      MAX_PAINT_LINE,
+    ));
+    const elements = children.filter(({ component }) => component !== SCREEN_TEXT_NODE);
+    for (let at = 0; at < elements.length;) {
+      const first = elements[at]!;
+      let run = 1;
+      while (elements[at + run]?.component === first.component) run += 1;
+      const shown = Math.min(run, MAX_RUN_SHOWN);
+      for (let index = 0; index < shown; index += 1) walk(elements[at + index]!.id, depth + 1);
+      if (run > shown) emit(`${"  ".repeat(depth + 1)}…and ${run - shown} more ${first.component}`);
+      at += run;
+    }
+  };
+  walk(flat.root, 0);
+  return cut === 0 ? lines.join("\n") : `${lines.join("\n")}\n…and ${cut} more nodes`;
+};
+
+/**
+ * What the person is actually shown, when the caller knows the surface.
+ *
+ * Nothing at all without a viewport, and that is the whole discipline: a paint
+ * with no surface to measure it against would leave the reader guessing the
+ * frame, which is the very mistake this block exists to end. Absent, the
+ * reviewer's prompt is byte for byte the one it always was.
+ */
+const paintedSection = (painted?: PaintedScreen): string => {
+  if (painted?.viewport === undefined) return "";
+  const { width, height } = painted.viewport;
+  return `\nPAINTED (what this screen really draws on first paint, in order, into ${width}×${height} CSS pixels`
+    + ` — only the first ${height}px is on the person's screen, anything after it is behind a scroll they may`
+    + ` never do, and anything behind a click or a later step is not on this screen at all):\n${paintOutline(painted.tree)}`;
+};
+
+// ---- fetched, and never shown ---------------------------------------------
+
+/**
+ * How deep into one answer the fields are read, how many rows of an array are
+ * read for them, how many leftovers one query names, and how long one sample
+ * value may be.
+ *
+ * More than one row, because a field that is null on the first row and set on the
+ * fourth is still a field the tool returned — and no more than a few, because the
+ * fields of a hundred rows are the fields of five and this runs on every save.
+ */
+const MAX_FIELD_DEPTH = 4;
+const MAX_ROWS_READ = 5;
+const MAX_LEFTOVERS_NAMED = 12;
+const MAX_LEFTOVER_VALUE = 60;
+
+/**
+ * Every leaf field of one query's answer, as a dot path, with one sample value.
+ *
+ * An array index is NOT a path segment: forty rows are one shape, and the reader
+ * is being told what the shape carried. The first non-null value wins, because
+ * `null` tells nobody what a field is for.
+ */
+const leafFields = (value: unknown, path: string, found: Map<string, unknown>, depth = 0): void => {
+  if (Array.isArray(value)) {
+    for (const item of value.slice(0, MAX_ROWS_READ)) leafFields(item, path, found, depth);
+    return;
+  }
+  if (isPlainObject(value)) {
+    if (depth >= MAX_FIELD_DEPTH) return;
+    for (const [key, child] of Object.entries(value)) {
+      leafFields(child, path === "" ? key : `${path}.${key}`, found, depth + 1);
+    }
+    return;
+  }
+  if (path === "") return;
+  if (!found.has(path) || found.get(path) === null) found.set(path, value ?? null);
+};
+
+/**
+ * The two ways a paint can account for a field, read off the tree once.
+ *
+ * `named` is every string the paint carries in its props at any depth, because
+ * that is how a Kit component says WHICH field it shows: a table's `columns`, a
+ * card's `fields`, a KeyValue's `items` are field KEYS, and the values behind them
+ * are never written out as text — they are handed over whole inside `rows`.
+ *
+ * `shown` is the other half: what the screen literally writes — a run of text, a
+ * scalar prop — as the whole value and as its separate words, so a field that
+ * arrives inside a sentence (`${build.author} shipped`) still counts as shown.
+ *
+ * They must stay two sets. Matching a value against every string in the tree would
+ * count the raw rows a table was HANDED as painted, and the failure this whole
+ * section exists for — eight fields fetched, three columns drawn — would be
+ * invisible.
+ */
+const paintedEvidence = (flat: FlatTree): { named: Set<string>; shown: Set<string> } => {
+  const named = new Set<string>();
+  const shown = new Set<string>();
+  const addNames = (value: unknown): void => {
+    if (typeof value === "string") {
+      named.add(value);
+      return;
+    }
+    if (Array.isArray(value)) {
+      for (const item of value) addNames(item);
+      return;
+    }
+    if (isPlainObject(value)) {
+      for (const item of Object.values(value)) addNames(item);
+    }
+  };
+  for (const node of Object.values(flat.nodes)) {
+    for (const value of Object.values(node.props)) {
+      addNames(value);
+      if (typeof value !== "string" && typeof value !== "number" && typeof value !== "boolean") continue;
+      const text = String(value);
+      shown.add(text);
+      for (const word of text.split(/\s+/u)) shown.add(word);
+    }
+  }
+  return { named, shown };
+};
+
+/** A field's path and every dotted tail of it: a column keyed `client.name` shows
+ *  `data.client.name`, because a table's keys are written relative to its ROW. */
+const pathTails = (path: string): string[] => {
+  const parts = path.split(".");
+  return parts.map((_, index) => parts.slice(index).join("."));
+};
+
+/**
+ * What the queries returned and the paint never shows.
+ *
+ * Mechanical, and no model: a field counts as shown when the paint NAMES it or
+ * when one of its values is written out somewhere in the tree; everything else is
+ * a leftover. A tool returns rows carrying eight fields, the screen draws three
+ * columns, and nothing in this pipeline ever computed the other five — which is
+ * how a build list ships without the commit message and a route without its
+ * stop counts.
+ *
+ * It says they were not shown and stops there. WHICH of them the person was
+ * entitled to is judgment — the ask, the screen's purpose, an id nobody wants —
+ * and judgment is the reviewer's job, not this function's.
+ *
+ * Nothing without a tree, and nothing when everything was shown: the section is
+ * absent and the prompt is byte for byte the one it always was.
+ */
+const leftoversSection = (
+  queryResults: Readonly<Record<string, unknown>>,
+  painted?: PaintedScreen,
+): string => {
+  if (painted === undefined) return "";
+  const { named, shown } = paintedEvidence(painted.tree);
+  const lines: string[] = [];
+  for (const [query, result] of Object.entries(queryResults)) {
+    const fields = new Map<string, unknown>();
+    leafFields(result, "", fields);
+    const left = [...fields].filter(([path, sample]) =>
+      !pathTails(path).some((tail) => named.has(tail))
+      && !(sample !== null && shown.has(String(sample))));
+    if (left.length === 0) continue;
+    const listed = left.slice(0, MAX_LEFTOVERS_NAMED)
+      .map(([path, sample]) => `${path} (${clip(JSON.stringify(sample) ?? "null", MAX_LEFTOVER_VALUE)})`);
+    const rest = left.length - listed.length;
+    lines.push(`${query}: ${[...listed, ...(rest > 0 ? [`…and ${rest} more`] : [])].join(", ")}`);
+  }
+  return lines.length === 0 ? "" : "\nLEFTOVERS (fields these queries returned that the screen never shows,"
+    + ` one sample value each):\n${lines.join("\n")}`;
+};
+
+/**
+ * What the AI reviewer reads: the TSX itself, what the screen drew with it, what
+ * each query really returned — truncated by the same rule the wire reviewer uses
+ * (reviewer.ts) so one long table cannot crowd the screen out of the prompt — and
+ * which of those fields the screen never showed.
  *
  * The TSX comes FIRST and whole: it is the thing being judged, and unlike the
  * wire artifact there is nothing to print — the file the model wrote is the file
- * the reviewer reads.
+ * the reviewer reads. LEFTOVERS comes LAST, after the rows it is about: it names
+ * fields of the data the reader has just been shown, and the rows may have been
+ * cut short before reaching them.
  */
 export function reviewComponentScreenInput(input: {
   source: string;
   queryResults: Readonly<Record<string, unknown>>;
+  /** The paint, and the surface it lands on when the caller knows one. Absent,
+   *  this reads byte for byte as it always did. */
+  painted?: PaintedScreen;
 }): string {
-  return `SCREEN (the .tsx file this app renders):\n${input.source}${sampleLines(input.queryResults)}`;
+  return `SCREEN (the .tsx file this app renders):\n${input.source}`
+    + `${paintedSection(input.painted)}${sampleLines(input.queryResults)}`
+    + leftoversSection(input.queryResults, input.painted);
 }

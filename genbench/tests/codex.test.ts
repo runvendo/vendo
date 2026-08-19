@@ -6,6 +6,7 @@
  * JSONL, so the line parsing, the file watching, the accounting and the cleanup
  * are the driver's own behaviour and not a fixture's.
  */
+import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -14,8 +15,8 @@ import { beforeAll, describe, expect, it, vi } from "vitest";
 import { codexDriver, type CodexSpawn } from "../src/codex.js";
 import { MODEL_IDS, usdFor, type Meter, type UsageTotals } from "../src/meter.js";
 import type { RunOutcome } from "../src/run.js";
-import { worldBlock } from "../src/vendo.js";
-import { loadCases, loadWorld, worldForCase, type Case, type World } from "../src/world.js";
+import { TOOL_ACCESS, worldBlock } from "../src/vendo.js";
+import { cannedResponse, loadCases, loadWorld, worldForCase, type Case, type World } from "../src/world.js";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 let world: World;
@@ -30,7 +31,7 @@ const caseFor = (id: string): Case => ({ id, lane: "screen", prompt: "Show my pe
 function clock(): Meter {
   let tick = 0;
   return {
-    model: MODEL_IDS.sol,
+    model: MODEL_IDS.terra,
     elapsedMs: () => (tick += 1),
     totals: () => ({ inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, calls: 0 }),
     usd: () => 0,
@@ -113,7 +114,7 @@ function hangingCodex(seen: Seen, turns = 0, revisions: readonly string[] = []):
 }
 
 const runCase = async (spawn: CodexSpawn, timeoutMs?: number): Promise<RunOutcome> =>
-  await codexDriver({ model: "sol", spawn, ...(timeoutMs === undefined ? {} : { timeoutMs }) }).run({
+  await codexDriver({ model: "terra", spawn, ...(timeoutMs === undefined ? {} : { timeoutMs }) }).run({
     world,
     testCase: caseFor("pending-transfers"),
     meter: clock(),
@@ -150,10 +151,39 @@ describe("driving Codex", () => {
       // Bash — a column that cannot fetch is a column handicapped by its wrapper.
       "sandbox_workspace_write.network_access=true",
       "-m",
-      MODEL_IDS.sol,
+      MODEL_IDS.terra,
     ]);
     expect(seen.args!.at(-1)).toContain(worldBlock(world));
     expect(seen.args!.at(-1)).toContain("Show my pending transfers");
+  });
+
+  /** The other half of the fairness correction: the prompt hands over no data, so
+   *  the column that has hands gets to CALL for it — the same look the vendo
+   *  column's loop has, and the same look an in-house team has at its own API. The
+   *  file lands in the WORKSPACE because `workspace-write` makes that the one
+   *  directory the session can see. The session really executes it, so the exec
+   *  bit and the envelope are proved rather than described. */
+  it("puts the world's tools in the session's workspace, callable, answering what the page will get", async () => {
+    const seen: Seen = {};
+    let printed = "";
+    const calling: CodexSpawn = (command, args, options) => {
+      Object.assign(seen, { command, args, options });
+      return {
+        output: (async function* () {
+          printed = execFileSync(join(options.cwd, "world-tools"), ["list_transfers", '{"limit":20}'], {
+            encoding: "utf8",
+          });
+          await writeFile(join(options.cwd, "index.html"), "<p>done</p>");
+          yield line({ type: "turn.completed", usage: TURN_USAGE });
+        })(),
+        kill: () => undefined,
+      };
+    };
+    await runCase(calling);
+
+    const transfers = world.tools.find((tool) => tool.name === "list_transfers")!;
+    expect(JSON.parse(printed)).toEqual({ status: "ok", output: cannedResponse(transfers) });
+    expect(seen.args!.at(-1)).toContain(TOOL_ACCESS);
   });
 
   /** The allowlist, and the one rename in it. A live `OPENAI_API_KEY` is a key
@@ -226,7 +256,7 @@ describe("driving Codex", () => {
     const outcome = await runCase(twoTurns);
 
     expect(outcome.usage).toEqual(billed(2));
-    expect(outcome.usd).toBe(usdFor(outcome.usage!, MODEL_IDS.sol));
+    expect(outcome.usd).toBe(usdFor(outcome.usage!, MODEL_IDS.terra));
     // How hard an agentic column had to work is the only thing the session says
     // about itself beyond its tokens, and the CLI names no price of its own.
     expect(outcome.session).toEqual({ turns: 2 });
@@ -308,7 +338,7 @@ describe("driving Codex", () => {
   it("stops the session when the case's own budget is spent", async () => {
     const seen: Seen = {};
     const lost = new AbortController();
-    const running = codexDriver({ model: "sol", spawn: hangingCodex(seen), timeoutMs: 200 }).run({
+    const running = codexDriver({ model: "terra", spawn: hangingCodex(seen), timeoutMs: 200 }).run({
       world,
       testCase: caseFor("pending-transfers"),
       meter: clock(),
@@ -337,7 +367,7 @@ describe.skipIf(!LIVE)("one live session", () => {
       const startedAt = performance.now();
       const meter: Meter = { ...clock(), elapsedMs: () => Math.round(performance.now() - startedAt) };
 
-      const outcome = await codexDriver({ model: "sol" }).run({
+      const outcome = await codexDriver({ model: "terra" }).run({
         world: worldForCase(world, testCase),
         testCase,
         meter,

@@ -226,7 +226,7 @@ describe("app data persistence", () => {
       automations: ["atm_7f3kchase"],
       egress: ["api.stripe.com"],
       secrets: ["STRIPE_KEY"],
-      seed: { component: "invoice-card", baseline: "sha256:ab12", instruction: "make it mine" },
+      seed: { component: "invoice-card", baseline: "sha256:ab12", wishes: ["make it mine"] },
       forkedFrom: "app_2c9d",
     };
 

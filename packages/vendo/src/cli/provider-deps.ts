@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { readFile } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import type { DevCredential, EnvKeyProvider } from "../dev-creds/resolve.js";
 import { installedVersion, installedZodVersion } from "./dep-versions.js";
@@ -50,6 +50,24 @@ async function readIfExists(root: string, name: string): Promise<string | null> 
 
 async function fileExists(root: string, name: string): Promise<boolean> {
   return (await readIfExists(root, name)) !== null;
+}
+
+/** Has this host installed ANYTHING yet? A host with no installed tree at all is
+    not a repair's business — its own install is the next thing to run, the same
+    rule `ensureVendoPackage` states below — and shelling a package manager at one
+    costs minutes for a dependency its install is about to resolve anyway.
+
+    Only TWO directories can answer: the app root, and the root the install would
+    run in (`installCommandFor`, which is the nearest lockfile or workspace
+    marker — that is the npm-workspaces case, where the tree is hoisted). A free
+    walk to `/` is what a stray `/tmp/node_modules` turns into a false yes, and
+    then a scratch directory gets a real package install shelled at it. */
+async function hasInstalledTree(root: string): Promise<boolean> {
+  const install = await installCommandFor(root);
+  for (const dir of new Set([resolve(root), resolve(install.cwd)])) {
+    if (await access(join(dir, "node_modules")).then(() => true, () => false)) return true;
+  }
+  return false;
 }
 
 export interface InstallCommand {
@@ -333,6 +351,95 @@ export async function ensureVendoPackage(options: { root: string; output: Output
   } else {
     options.output.error(
       `warning: could not install ${VENDO_PACKAGE_SPEC} — the wiring imports @vendoai/vendo/* and the vendoai alias keeps its copy nested, so the route will not compile; run \`${await vendoPackageInvocation(options.root)}\` yourself (E-WIRE-011).`,
+    );
+  }
+}
+
+/** Every BARE package a generated module imports, deduped: `@scope/name` or
+ *  `name`, subpath dropped. Relative and absolute specifiers are not packages,
+ *  and neither are node builtins. */
+function importedPackages(source: string): string[] {
+  const found = new Set<string>();
+  const specifiers = /(?:^|[\s;}])(?:import|export)\s[^;]*?from\s*["']([^"']+)["']|\bimport\s*\(\s*["']([^"']+)["']/g;
+  for (const match of source.matchAll(specifiers)) {
+    const specifier = match[1] ?? match[2] ?? "";
+    if (specifier === "" || specifier.startsWith(".") || specifier.startsWith("/") || specifier.startsWith("node:")) continue;
+    const parts = specifier.split("/");
+    found.add(specifier.startsWith("@") ? parts.slice(0, 2).join("/") : parts[0]!);
+  }
+  return [...found];
+}
+
+/** The version range each package init AUTHORS an import for is installed at.
+    Anything not listed is installed at its own latest — but nothing outside this
+    map is in a scaffold today, and a new one belongs here beside its siblings. */
+function specFor(packageName: string): string {
+  if (packageName === "@vendoai/vendo") return VENDO_PACKAGE_SPEC;
+  if (packageName === "ai") return AI_SPEC;
+  const provider = Object.values(PROVIDER_SPECS).find((entry) => entry.module === packageName);
+  return provider?.spec ?? packageName;
+}
+
+/**
+ * Every package the files this run GENERATED import, declared in the host's
+ * package.json — installing whatever is missing.
+ *
+ * Init authored those imports, so init owns their resolvability, exactly as it
+ * does for the model provider the first turn loads. `ensureVendoPackage` above
+ * covers only the alias case (`vendoai` declared, `@vendoai/vendo` nested), and
+ * it asks node_modules; this asks the MANIFEST, which is the half that bit the
+ * backend path — the docs there never install `@vendoai/vendo` at all, so a host
+ * following them got a generated `lib/vendo.ts` importing a package it does not
+ * depend on, and the build could not resolve it.
+ *
+ * The `vendoai` alias satisfies `@vendoai/vendo` here: a host that declared the
+ * alias has made its choice, and the nested-resolution half is
+ * `ensureVendoPackage`'s call to make. A host that has installed NOTHING yet is
+ * skipped for the same reason `ensureVendoPackage` skips it (hasInstalledTree).
+ * A failure degrades to the exact manual command, like every other repair here.
+ */
+export async function ensureGeneratedImports(options: {
+  root: string;
+  /** The source of every file this run created (generated code only — a file
+      init did not author says nothing about what init owes). */
+  sources: readonly string[];
+  output: Output;
+  run?: InstallRunner;
+}): Promise<void> {
+  const imported = new Set(options.sources.flatMap((source) => importedPackages(source)));
+  if (imported.size === 0) return;
+  if (!(await hasInstalledTree(options.root))) return;
+
+  const manifest = await readIfExists(options.root, "package.json");
+  if (manifest === null) return;
+  let declared: Record<string, unknown> = {};
+  try {
+    const parsed = JSON.parse(manifest) as {
+      dependencies?: Record<string, string>;
+      devDependencies?: Record<string, string>;
+    };
+    declared = { ...parsed.dependencies, ...parsed.devDependencies };
+  } catch {
+    // A manifest npm itself would refuse: init already fails loudly on it
+    // upstream, and adding a second voice here would only be noise.
+    return;
+  }
+  const missing = [...imported].filter((name) => {
+    if (Object.hasOwn(declared, name)) return false;
+    return !(name === "@vendoai/vendo" && Object.hasOwn(declared, "vendoai"));
+  }).sort();
+  if (missing.length === 0) return;
+
+  const specs = missing.map(specFor);
+  const install = await installCommandFor(options.root);
+  const invocation = invocationFor(install, specs, options.root);
+  options.output.log(`Installing what the generated files import: ${specs.join(" ")} (${install.command})…`);
+  const code = await (options.run ?? defaultRunner)(install.command, [...install.args, ...specs], install.cwd);
+  if (code === 0) {
+    options.output.log(`Installed ${specs.join(" ")}.`);
+  } else {
+    options.output.error(
+      `warning: could not install ${specs.join(" ")} — the files this run wrote import ${missing.join(", ")}, which your package.json does not declare, so the app will not compile; run \`${invocation}\` yourself.${installSaid(options.run)}`,
     );
   }
 }

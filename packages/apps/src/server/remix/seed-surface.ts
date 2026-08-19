@@ -10,8 +10,11 @@
  * THE PORT IS THE POINT. A fork whose first edit starts from an empty file is not
  * a fork of anything — it is a fresh generation wearing the component's name. So
  * the ported source lands FIRST, through the ordinary checks floor, and the
- * person's instruction is then an edit OF THE COMPONENT'S REAL CODE. Fork plus
- * first edit are still ONE operation, and its output is still a regular screen.
+ * person's wishes are then edits OF THE COMPONENT'S REAL CODE. Fork plus first
+ * edit are still ONE operation, and its output is still a regular screen
+ * (`app.tsx`, through the ordinary edit door). The captured baseline is
+ * provenance: what the remix started from, and what a re-seed replays the
+ * recorded wishes against.
  *
  * A baseline with no `ported` half was not provably splittable. It gets NO remix:
  * the gesture refuses, loudly, rather than falling back to regenerating the
@@ -132,7 +135,7 @@ const seedFrom = async (
     seed: {
       component: baseline.slot,
       baseline: baseline.hash,
-      instruction: input.instruction,
+      wishes: [input.instruction],
       ...(input.slot === undefined ? {} : { slot: input.slot }),
       ...(baseline.review === undefined ? {} : { review: baseline.review }),
     },
@@ -219,11 +222,13 @@ const seedFrom = async (
 };
 
 /**
- * The re-seed: the host shipped a new version of the component, so run the
- * RECORDED INSTRUCTION against it.
+ * The re-seed: the host shipped a new version of the component, so run EVERY
+ * recorded wish against it, oldest first.
  *
- * This REBUILDS the remix, so anything the person changed after the first edit
- * is gone. That is the trade the drift warning has to state out loud.
+ * The whole list, because the remix is the whole list — replaying only the ask
+ * it was forked with would silently undo every edit made since. A wish the new
+ * version cannot take is kept and reported (`seed.unapplied`, which the re-seed
+ * tool says out loud), never dropped.
  */
 const reseed = async (
   deps: SeedSurfaceDeps,
@@ -231,44 +236,65 @@ const reseed = async (
   ctx: RunContext,
 ): Promise<AppDocument> => {
   const app = await deps.requireOwned(input.appId, ctx);
-  if (app.seed === undefined) {
+  const seed = app.seed;
+  if (seed === undefined) {
     throw new VendoError("conflict", `app ${input.appId} was not created from a host component`);
   }
-  const baseline = baselineFor(deps, app.seed.component);
-  if (baseline.hash === app.seed.baseline) {
-    throw new VendoError("conflict", `${app.seed.component} has not changed since this app was created`);
+  const baseline = baselineFor(deps, seed.component);
+  if (baseline.hash === seed.baseline) {
+    throw new VendoError("conflict", `${seed.component} has not changed since this app was created`);
   }
   // The host's NEW port is what the replay starts from — that is the whole
   // point of an update, and replaying onto the stored pristine copy would
   // rebuild the person's changes on the component they are trying to leave.
-  // Published for this replay only, and NEVER painted into the row: the replay's
-  // own save is the single landing, so a replay that does not land leaves the
+  // Published for this replay only, and NEVER painted into the row: each
+  // wish's own save is the landing, so a replay that does not land leaves the
   // person's screen exactly where it was. Cleared in `finally` because a replay
   // that throws must not leave a port behind for the next ordinary edit of this
   // app to pick up.
+  //
+  // The replay goes FIRST and the provenance moves only once something has
+  // landed: `edit()` reports the common failure in `failure` rather than
+  // throwing, so rebasing ahead of it left the OLD screen claiming the host's
+  // current version — no drift warning, and every retry refused as a conflict
+  // above.
   deps.replaySources.set(app.id, portOf(baseline).source);
-  let replayed: EditResult;
+  const unapplied: string[] = [];
+  let replayed = app;
   try {
-    // The replay goes FIRST and the provenance moves only once it has landed:
-    // `edit()` reports the common failure in `failure` rather than throwing, so
-    // rebasing ahead of it left the OLD screen claiming the host's current
-    // version — no drift warning, and every retry refused as a conflict above.
-    replayed = await deps.runtime().edit(app.id, app.seed.instruction, ctx);
+    for (const wish of seed.wishes) {
+      const edited = await deps.runtime().edit(app.id, wish, ctx);
+      if (edited.failure === undefined) replayed = edited.app;
+      else unapplied.push(wish);
+    }
   } finally {
     deps.replaySources.delete(app.id);
   }
-  if (replayed.failure !== undefined) return replayed.app;
-  const rebased = { ...replayed.app, seed: { ...app.seed, baseline: baseline.hash } };
+  // Nothing landed when EVERY wish failed, so the provenance stays where it is
+  // and the version says so: the remix never reached the host's new version,
+  // and the drift warning has to survive for the retry. The report is written
+  // either way — this used to return early, which dropped the whole list on the
+  // one run where the person most needs to hear which wishes were left behind.
+  const anyLanded = unapplied.length < seed.wishes.length;
+  const nextBaseline = anyLanded ? baseline.hash : seed.baseline;
+  // The report REPLACES the previous run's rather than adding to it: a wish that
+  // lands this time has stopped being one to report.
+  const rebased = {
+    ...replayed,
+    seed: { ...seed, baseline: nextBaseline, unapplied: unapplied.length === 0 ? undefined : unapplied },
+  };
   const version: VersionEntry = {
     at: new Date().toISOString(),
-    intent: `Update ${app.seed.component} to the host's current version`,
+    intent: anyLanded
+      ? `Update ${seed.component} to the host's current version`
+      : `Update ${seed.component}: no recorded wish could be replayed`,
     rung: deps.rungFor(rebased),
   };
-  const landed = await deps.persistEdit(replayed.app, rebased, version, ctx.principal.subject, { origin: "seed" });
+  const landed = await deps.persistEdit(replayed, rebased, version, ctx.principal.subject, { origin: "seed" });
   await deps.reportLifecycle("reseed", app.id, ctx, {
-    component: app.seed.component,
-    fromBaseline: app.seed.baseline,
-    toBaseline: baseline.hash,
+    component: seed.component,
+    fromBaseline: seed.baseline,
+    toBaseline: nextBaseline,
   });
   return landed;
 };

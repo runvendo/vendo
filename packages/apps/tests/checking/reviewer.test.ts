@@ -15,6 +15,7 @@ import {
 import { describe, expect, it } from "vitest";
 import { createCheckingLayer, judgmentRules } from "../../src/server/checking/layer.js";
 import { reviewerCheck } from "../../src/server/checking/reviewer.js";
+import { REVIEWER_SYSTEM } from "../../src/server/checking/reviewer-prompt.js";
 import { inlineSourceFile } from "../../src/server/persistence/app-source.js";
 import type { Check, CheckInput } from "../../src/server/checking/types.js";
 import type { FloorDependencies, HostToolInfo } from "../../src/server/checking/deps.js";
@@ -77,6 +78,120 @@ const samples = {
 const reported = (findings: unknown): { tool: string; input: unknown } =>
   ({ tool: "report_findings", input: { findings } });
 
+/** The connectives and verbs a remedy shows up as in English, plus the phrase the
+ *  reviewer's prompt AND its tool schema both used to ask for outright ("what is
+ *  wrong AND the real alternative"). Read against both, because they ride in one
+ *  call and a model handed two charters picks one. */
+const ADVISORY = /\binstead\b|\brather\b|\bshould\b|\bought\b|\bsuggest|\brecommend|\bconsider\b|the real alternative/iu;
+
+describe("a finding is a fact, and a fact only", () => {
+  /**
+   * A FINDING IS AN ORDER, NOT A NOTE. It travels verbatim under "Fix each of
+   * these, then write the file again" (`generation/validate-gate.ts`
+   * `repairInstruction`) to a builder that cannot see the reviewer's reasoning, so
+   * a word of advice in it is a word that gets carried out. Run
+   * 2026-08-18T15-25-05, case team-permissions: the reviewer advised "answer
+   * honestly rather than substituted" and the repair deleted a wired
+   * `update_team_role` select. So the section that tells the reviewer what a
+   * message IS gets read for the words advice arrives in, rather than trusted.
+   */
+  const FORMAT_HEADING = "Each finding has three fields";
+
+  it("asks the findings format for evidence, and never for a remedy", () => {
+    const at = REVIEWER_SYSTEM.indexOf(FORMAT_HEADING);
+    expect(at, `the reviewer's prompt no longer has a "${FORMAT_HEADING}" section`).toBeGreaterThan(-1);
+    const format = REVIEWER_SYSTEM.slice(at);
+
+    // The charter itself, so this can never pass by the section going missing.
+    expect(format).toContain("every word of it checkable");
+    expect(format).toContain("no remedy, no redesign");
+    expect(format).not.toMatch(ADVISORY);
+  });
+
+  it("keeps the checks it talked itself out of off the list", () => {
+    // In that same run, 31% of blocks and 16% of warns were the reviewer flagging
+    // something, checking its own arithmetic, concluding there was no issue — and
+    // reporting it anyway; another 18% of warns asked the reader to "verify" or
+    // "confirm". Both reach the repair round as an order to change a screen that
+    // was right, so the prompt names them and this pins that it does.
+    expect(REVIEWER_SYSTEM).toContain("EMIT ONLY WHAT YOU VERIFIED");
+    expect(REVIEWER_SYSTEM).toMatch(/talks itself back out[\s\S]*?hedges/u);
+  });
+});
+
+describe("a finding has to be worth the repair round it buys", () => {
+  /**
+   * TRUE IS NOT THE BAR. Every finding buys a ~20-second repair round the person
+   * sits and waits through, and a reviewer reporting every true thing it could see
+   * moved the median 15s — so a label it would have phrased differently cost real
+   * seconds to reword. The bar is what a person USING the screen loses by it.
+   */
+  it("bars everything a person using the screen would not lose anything to", () => {
+    expect(REVIEWER_SYSTEM).toContain("MISLED OR BLOCKED");
+    // The bar sentence itself, which is the whole ruling in one line.
+    expect(REVIEWER_SYSTEM).toContain(
+      "If the screen would ship fine without the fix, it is not a finding",
+    );
+    // What clears it, in the reviewer's own terms…
+    expect(REVIEWER_SYSTEM).toContain("a control that does not work");
+    expect(REVIEWER_SYSTEM).toContain("anything the ask named by name that nothing here delivers");
+    expect(REVIEWER_SYSTEM).toContain("a displayed value breaking a rule this product's owner stated");
+    // …and what does not, named so a model cannot rule its own taste material.
+    expect(REVIEWER_SYSTEM).toMatch(/a label's phrasing[\s\S]*?polish suggestion/u);
+  });
+
+  it("keeps the severity split the bar sits on top of", () => {
+    // The bar decides WHETHER to report; the split decides how loud. A bar that
+    // ate either half would be a rewrite of the verdict, not a filter on it.
+    expect(REVIEWER_SYSTEM).toMatch(/Severity: "block" ONLY for what the person cannot detect themselves/u);
+    expect(REVIEWER_SYSTEM).toContain('"warn" for everything else');
+  });
+});
+
+describe("the ask's own nouns are walked one by one", () => {
+  /**
+   * THE BIGGEST CLUSTER THERE IS. Run 2026-08-18T21-39-10 failed 11 cases on one
+   * shape: a screen better than its predecessor in every other way that quietly
+   * dropped a noun the ask named — a field on a team form, an owner's name beside a
+   * row, the person's own reason echoed back. The walk it was given listed
+   * DELIVERABLES (a reminder, a schedule, a column), so a noun smaller than one fell
+   * between the rule and the bar and nothing reported it.
+   */
+  const RULE_FIVE = "5. WORK QUIETLY DROPPED.";
+
+  it("walks the ask's named ELEMENTS, down to a field, a name and an echo", () => {
+    const at = REVIEWER_SYSTEM.indexOf(RULE_FIVE);
+    expect(at, "the reviewer's prompt no longer has a dropped-work rule").toBeGreaterThan(-1);
+    const rule = REVIEWER_SYSTEM.slice(at, REVIEWER_SYSTEM.indexOf("Severity:", at));
+
+    expect(rule).toContain("WALK THE ASK'S NAMED ELEMENTS ONE BY ONE");
+    // The three the run lost, in the reviewer's own terms.
+    expect(rule).toContain("a field it says a form takes");
+    expect(rule).toContain("a person or a team it says the screen shows");
+    expect(rule).toContain("a word of their own it says to echo back");
+    // Still a fact and never a remedy, exactly like every other rule.
+    expect(rule).toContain("quote the ask's own words for it");
+    expect(rule).not.toMatch(ADVISORY);
+  });
+
+  it("rules an ask-named element material by definition, so the bar cannot eat the walk", () => {
+    // THE TWO PULL AGAINST EACH OTHER. The bar (15de735a1) exists to silence an
+    // eager reviewer, and a missing team field is small enough to read as a nit —
+    // so the walk says outright that the person asking for it IS the materiality,
+    // and the bar's own list carries it.
+    expect(REVIEWER_SYSTEM).toContain("AN ELEMENT THE ASK NAMED IS MATERIAL BY DEFINITION");
+    // …and the bar's own list of what clears it says the same thing, in the same
+    // grain: not a deliverable alone, but a field, a name, an echo.
+    expect(REVIEWER_SYSTEM).toContain(
+      "anything the ask named by name that nothing here delivers — a deliverable, a field, a name, a word of theirs echoed back",
+    );
+    // …and the other direction, in the same sentence: what the bar turns away is
+    // the reviewer's own taste, and nothing the person named.
+    expect(REVIEWER_SYSTEM).toMatch(/a label's phrasing[\s\S]*?polish suggestion/u);
+    expect(REVIEWER_SYSTEM).toContain("YOUR idea rather than something the person asked for by name");
+  });
+});
+
 describe("host and pack judgment rules reach the reviewer (F2)", () => {
   const CITE_TOTALS = "Every total on screen has to say which report it came from.";
   const NO_UNATTENDED = "Scheduled work must never move money, message a person, or delete anything.";
@@ -92,6 +207,20 @@ describe("host and pack judgment rules reach the reviewer (F2)", () => {
     expect(system).toContain(NO_UNATTENDED);
     // Separate lines: a joined blob reads as one garbled rule.
     expect(system).toContain(`- ${CITE_TOTALS}\n- ${NO_UNATTENDED}`);
+  });
+
+  it("keeps the taste ban from swallowing them: an owner's rule is a rule, not taste", async () => {
+    // The rubric can carry a rule about a font, a colour or a date format — the
+    // three things the taste ban names. Without the exemption the reviewer reads
+    // its own last line and stays quiet about the rule it was just handed.
+    const calls: ScriptedModelCall[] = [];
+    const model = scriptedLanguageModel((call) => { calls.push(call); return reported([]); });
+
+    await factReviewerCheck(deps(model), samples, [CITE_TOTALS]).run(inputFor(invoicesApp));
+
+    const system = String(calls[0]?.prompt?.[0]?.content ?? "");
+    expect(system).toContain("never report matters of taste");
+    expect(system).toContain("A rule this product's owner set is never taste");
   });
 
   it("says nothing about extra rules when no pack contributed one", async () => {
@@ -150,6 +279,43 @@ describe("host and pack judgment rules reach the reviewer (F2)", () => {
   });
 });
 
+describe("a house rule is not a lesser finding", () => {
+  it("names a broken house rule in the severity the reviewer picks from", async () => {
+    // A TOOL DESCRIPTION IS PROMPT, and this one rode next to a rubric that told the
+    // reviewer to warn about a broken convention while the description offered two
+    // named sins and a leftovers bin. The bin now names it.
+    const calls: ScriptedModelCall[] = [];
+    const model = scriptedLanguageModel((call) => { calls.push(call); return reported([]); });
+
+    await factReviewerCheck(deps(model), samples).run(inputFor(invoicesApp));
+
+    const tool = calls[0]?.tools?.[0] as { inputSchema?: { properties: { findings: { items: {
+      properties: { severity: { description: string } };
+    } } } } };
+    const severity = tool.inputSchema?.properties.findings.items.properties.severity.description ?? "";
+    expect(severity).toContain("a broken house rule included");
+    // The split itself is untouched: a house rule buys a repair, never a refusal.
+    expect(severity).toMatch(/^block for dishonesty and invented data/u);
+    expect(REVIEWER_SYSTEM).toContain("every rule of this product's own that the screen breaks");
+  });
+
+  it("lets the host's own rules decide whether a screen owes a confirmation", () => {
+    // The carve-out ("a screen is never wrong for having no confirmation step of its
+    // own") was written against a screen asking twice, and it also blinded the
+    // reviewer to the hosts whose own rules DEMAND the step — which is the reading
+    // `skills/format-reference.ts` already gives the writer.
+    expect(REVIEWER_SYSTEM).not.toContain("never wrong for having no confirmation step");
+    expect(REVIEWER_SYSTEM).toContain("THIS PRODUCT'S OWN STATED RULES DECIDE");
+    // The default stands where no rule speaks…
+    expect(REVIEWER_SYSTEM).toContain("a screen that confirms nothing of its own is not wrong for that alone");
+    // …and the product's own approval is a confirmation, so a rule it satisfies is
+    // satisfied and no finding is filed about it.
+    expect(REVIEWER_SYSTEM).toContain("not the product's own approval either, which counts wherever it fires");
+    // What a rule requires is material even when it is not a value on screen.
+    expect(REVIEWER_SYSTEM).toContain("anything else one of those rules requires that this screen does not do");
+  });
+});
+
 describe("the seat the reviewer's one model call rides", () => {
   it("spends the REVIEW model when the floor carries one, and `model` when it does not", async () => {
     // Judging a finished screen against its own rows is a reading job, so the
@@ -178,7 +344,7 @@ describe("the AI reviewer", () => {
       {
         severity: "block",
         where: '<Text> labeled "Total: $12,480"',
-        message: "the total is hand-typed; the invoices query returns amountCents — sum that instead",
+        message: "the figure $12,480 is typed into the screen and appears in no tool response",
       },
       {
         severity: "warn",
@@ -193,7 +359,7 @@ describe("the AI reviewer", () => {
       {
         severity: "block",
         where: '<Text> labeled "Total: $12,480"',
-        message: "the total is hand-typed; the invoices query returns amountCents — sum that instead",
+        message: "the figure $12,480 is typed into the screen and appears in no tool response",
       },
       {
         severity: "warn",
@@ -221,7 +387,14 @@ describe("the AI reviewer", () => {
       additionalProperties: boolean;
       required: string[];
       properties: {
-        findings: { type: string; items: { additionalProperties: boolean; required: string[]; properties: { severity: { enum: string[] } } } };
+        findings: {
+          type: string;
+          items: {
+            additionalProperties: boolean;
+            required: string[];
+            properties: { severity: { enum: string[] }; message: { description: string } };
+          };
+        };
       };
     };
     expect(schema.additionalProperties).toBe(false);
@@ -230,6 +403,10 @@ describe("the AI reviewer", () => {
     expect(schema.properties.findings.items.additionalProperties).toBe(false);
     expect(schema.properties.findings.items.required).toEqual(["severity", "where", "message"]);
     expect(schema.properties.findings.items.properties.severity.enum).toEqual(["block", "warn"]);
+    // A TOOL DESCRIPTION IS PROMPT, and this one rides in the same call as the
+    // rubric — it asked for "what is wrong AND the real alternative" for a while
+    // after the rubric stopped, so the model was handed both charters at once.
+    expect(schema.properties.findings.items.properties.message.description).not.toMatch(ADVISORY);
 
     const text = call.prompt.map((message) => typeof message.content === "string"
       ? message.content
@@ -277,7 +454,7 @@ describe("the AI reviewer", () => {
     const model = scriptedLanguageModel(() => reported([{
       severity: "block",
       where: '<Button> labeled "Remind client"',
-      message: 'the button calls host_listInvoices, which only reads invoices — it sends no reminder; drop the button or say so honestly',
+      message: 'the button is labelled "Remind client" and calls host_listInvoices, whose description is "Open invoices"',
     }]));
     const layer = createCheckingLayer({ checks: [reviewerCheck(deps(model), samples)] });
 
@@ -291,7 +468,7 @@ describe("the AI reviewer", () => {
     expect(findings).toContainEqual({
       severity: "block",
       where: '<Button> labeled "Remind client"',
-      message: 'the button calls host_listInvoices, which only reads invoices — it sends no reminder; drop the button or say so honestly',
+      message: 'the button is labelled "Remind client" and calls host_listInvoices, whose description is "Open invoices"',
       check: "reviewer",
     });
     expect(findings.some(({ check, message }) =>

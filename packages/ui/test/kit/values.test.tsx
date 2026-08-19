@@ -1,67 +1,7 @@
 // @vitest-environment jsdom
 import { render, screen } from "@testing-library/react";
-import type { ReactNode } from "react";
 import { describe, expect, it } from "vitest";
-import { formatDateTime } from "../../src/kit/format.js";
-import { RowContext } from "../../src/kit/row.js";
-import { DateTime, EnumBadge, Money, Num, Percent, Text } from "../../src/kit/values.js";
-
-describe("Money", () => {
-  it("formats a dollar amount as currency", () => {
-    render(<Money amount={1234.56} />);
-    expect(screen.getByText("$1,234.56")).toBeTruthy();
-  });
-
-  it("renders a placeholder for NaN — never $NaN", () => {
-    const { container } = render(<Money amount={Number.NaN} />);
-    expect(container.textContent).toBe("—");
-    expect(container.textContent).not.toContain("NaN");
-  });
-});
-
-describe("DateTime", () => {
-  it("formats a date-only string without slipping a day", () => {
-    render(<DateTime value="2026-03-14" mode="date" />);
-    expect(screen.getByText("Mar 14, 2026")).toBeTruthy();
-  });
-
-  it("renders a placeholder for an unparseable value", () => {
-    const { container } = render(<DateTime value="nope" />);
-    expect(container.textContent).toBe("—");
-  });
-
-  it("compact drops the YEAR and keeps the clock", () => {
-    expect(formatDateTime("2026-08-12", { mode: "date" })).toBe("Aug 12, 2026");
-    expect(formatDateTime("2026-08-12", { mode: "date", compact: true })).toBe("Aug 12");
-    const stamp = formatDateTime(Date.UTC(2026, 7, 12, 15, 30), {
-      mode: "datetime",
-      compact: true,
-      timeZone: "UTC",
-    });
-    expect(stamp).toContain("Aug 12");
-    expect(stamp).toMatch(/3:30/);
-    expect(stamp).not.toContain("2026");
-    const { container } = render(<DateTime value="2026-08-12" mode="date" compact />);
-    expect(container.textContent).toBe("Aug 12");
-  });
-});
-
-describe("Percent + Num", () => {
-  it("formats a ratio as a percentage", () => {
-    render(<Percent value={0.42} />);
-    expect(screen.getByText("42%")).toBeTruthy();
-  });
-
-  it("groups a large number", () => {
-    render(<Num value={1234567} />);
-    expect(screen.getByText("1,234,567")).toBeTruthy();
-  });
-
-  it("carries its unit, so a latency is never a bare number", () => {
-    const { container } = render(<Num value={842} unit="ms" />);
-    expect(container.textContent).toBe("842 ms");
-  });
-});
+import { EnumBadge, Text } from "../../src/kit/values.js";
 
 describe("EnumBadge", () => {
   it("humanizes a snake_case enum value", () => {
@@ -95,44 +35,70 @@ describe("Text", () => {
     render(<Text text="Overview" variant="heading" />);
     expect(screen.getByRole("heading", { name: "Overview" })).toBeTruthy();
   });
-});
 
-describe("the cell slot — a value bound to the row it is standing in", () => {
-  const inRow = (row: Record<string, unknown>, node: ReactNode) =>
-    render(<RowContext.Provider value={row}>{node}</RowContext.Provider>);
-
-  it("takes its primary value from the row's field, not its own prop", () => {
-    expect(inRow({ amount: 12.5 }, <Money amount={0} field="amount" />).container.textContent).toBe("$12.50");
-    expect(inRow({ due: "2026-03-14" }, <DateTime value="" field="due" mode="date" />).container.textContent).toBe(
-      "Mar 14, 2026",
-    );
-    expect(inRow({ share: 0.42 }, <Percent value={0} field="share" />).container.textContent).toBe("42%");
-    expect(inRow({ n: 1234567 }, <Num value={0} field="n" />).container.textContent).toBe("1,234,567");
-    expect(inRow({ status: "past_due" }, <EnumBadge value={null} field="status" />).container.textContent).toBe(
-      "Past due",
-    );
-    expect(inRow({ client: { name: "Maple" } }, <Text text="" field="client.name" />).container.textContent).toBe(
-      "Maple",
-    );
+  // An identifier is compared character by character, not read as prose — and
+  // the face is the HOST's code font, never one the Kit picked.
+  it("renders the code variant in the host's mono face", () => {
+    render(<Text text="9f2c1ab" variant="code" />);
+    expect(screen.getByText("9f2c1ab").getAttribute("style")).toContain("--vendo-mono-family");
   });
 
-  it("falls back to the explicit prop outside a row — the same component reads the same either way", () => {
-    expect(render(<Money amount={7} field="amount" />).container.textContent).toBe("$7.00");
-    expect(render(<Text text="Maple" field="client.name" />).container.textContent).toBe("Maple");
-  });
-
-  // `active`, `isPaid`, `archived` — a boolean is one of the commonest fields
+  // `active`, `isPaid`, `archived` — a boolean is one of the commonest values
   // there is, and React renders one as literally nothing.
-  it("shows a boolean field instead of swallowing it", () => {
-    expect(inRow({ active: false }, <Text field="active" />).container.textContent).toBe("false");
-    expect(inRow({ active: true }, <Text field="active" />).container.textContent).toBe("true");
+  it("shows a boolean instead of swallowing it", () => {
+    expect(render(<Text text={false} />).container.textContent).toBe("false");
+    expect(render(<Text text={true} />).container.textContent).toBe("true");
   });
 
-  it("a field holding the wrong type lands on the placeholder, never a crash", () => {
-    // Money needs a number and Text needs a node; a column bound to the wrong
-    // field must not take the screen down with it.
-    expect(inRow({ amount: "lots" }, <Money amount={1} field="amount" />).container.textContent).toBe("—");
-    expect(inRow({ client: { name: "Maple" } }, <Text text="" field="client" />).container.textContent).toBe("—");
-    expect(inRow({ status: "  " }, <EnumBadge value="paid" field="status" />).container.textContent).toBe("");
+  // VALUES IN SENTENCES, and the only road left: a screen formats its own
+  // figures, so the sentence is where a formatted figure sits. With `text` the
+  // only way in, a phrase and its figures would have to be concatenated into one
+  // string before they got here, and nothing in it could be composed or painted
+  // on its own.
+  it("takes children, so a formatted figure can sit inside a sentence", () => {
+    const overdue = (2500).toLocaleString("en-US", { style: "currency", currency: "USD" });
+    const { container } = render(
+      <Text variant="caption">
+        Overdue: {overdue} on <Text variant="code">INV-4471</Text>
+      </Text>,
+    );
+    expect(container.textContent).toBe("Overdue: $2,500.00 on INV-4471");
+    // The reference is a component of its own, not flattened text — and the
+    // sentence around it still carries the variant it was given.
+    expect(container.querySelector('[data-variant="code"]')).toBeTruthy();
+    expect(container.querySelector('[data-kit="Text"]')!.getAttribute("data-variant")).toBe("caption");
+  });
+
+  // A toned sentence painted its words red and the FIGURE stayed default: the
+  // old value tier re-declared `t.text` on itself, so the overdue balance — the
+  // one word in the sentence carrying the meaning — was the only word that lost
+  // it. A formatted figure is a run of text in the sentence now, which is the
+  // one shape the tone always reaches.
+  it("paints the figure in its sentence, not only the words around it", () => {
+    const { container } = render(
+      <Text tone="danger">Balance: {(2500).toLocaleString("en-US", { style: "currency", currency: "USD" })}</Text>,
+    );
+    const sentence = container.querySelector<HTMLElement>('[data-kit="Text"]')!;
+    expect(sentence.style.color).toContain("var(--vendo-color-danger");
+    expect(sentence.textContent).toBe("Balance: $2,500.00");
+    // The figure wears no element of its own, so the color declared here IS the
+    // color it resolves to — jsdom reports the declaration, a browser paints it.
+    expect(sentence.children.length).toBe(0);
+  });
+
+  it("takes a plain string child", () => {
+    expect(render(<Text>Hi</Text>).container.textContent).toBe("Hi");
+  });
+
+  /** `text` wins where both are given: it is the prop every stored screen
+   *  carries, and the renderer hands children to every node it paints. */
+  it("keeps text winning over children", () => {
+    expect(render(<Text text="From the prop">ignored</Text>).container.textContent).toBe("From the prop");
+  });
+
+  it("lands an object on the placeholder rather than throwing or spelling it out", () => {
+    // `text={row.client}` where `client` is a record: as a React child that
+    // throws, and through a formatter it reads "[object Object]".
+    expect(render(<Text text={{ name: "Maple" } as never} />).container.textContent).toBe("—");
   });
 });

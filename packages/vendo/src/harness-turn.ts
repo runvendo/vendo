@@ -60,6 +60,7 @@ import {
 } from "@vendoai/store";
 import {
   createHarnessRuntime,
+  createTurnTimings,
   latestUserIntent,
   provideHarnessAdapters,
   THREAD_ID_HEADER,
@@ -73,6 +74,8 @@ import {
 } from "@vendoai/harnesses";
 import type { VendoToolSearchConfig } from "@vendoai/harnesses/vendo";
 import { createUIMessageStream, createUIMessageStreamResponse, type LanguageModel, type UIMessage } from "ai";
+import { discoveryRail } from "./prompt.js";
+import { isUserFilePath, userFilePath } from "./user-files.js";
 import type { Limiter } from "./limits.js";
 
 export interface HarnessTurnsConfig {
@@ -155,6 +158,55 @@ export interface HarnessTurnsConfig {
   limiter?: Limiter;
 }
 
+/** Where a file the user shared landed, and how big it was. The path is the
+ *  whole handle: the drawer is the workspace, so anything that can open the
+ *  workspace can reach the bytes again. */
+export interface UploadedFile {
+  path: string;
+  bytes: number;
+}
+
+/**
+ * What the MODEL is handed for a file the user shared.
+ *
+ * A drawer part carries a PATH, not bytes — that is what keeps the transcript
+ * light — and a provider handed a path where it expects file data reads it as
+ * base64 and thinks about garbage. So a saved file reaches the model as a line
+ * of text naming it and where it landed. Images are left exactly as they are:
+ * they ride inline, because that is how vision works.
+ *
+ * The STORED transcript is untouched. This maps the copy the runtime thinks
+ * with, and the runtime writes back only the messages its own turn changed, so
+ * the part the surface draws its pill from stays the part that was persisted.
+ */
+const withFileReferences = (messages: readonly UIMessage[]): UIMessage[] =>
+  messages.map((message) => ({
+    ...message,
+    parts: message.parts.map((part) => (
+      part.type === "file" && !part.mediaType.startsWith("image/") && isUserFilePath(part.url)
+        ? { type: "text" as const, text: `The user shared ${part.filename ?? "a file"}, saved at ${part.url}` }
+        : part
+    )),
+  })) as UIMessage[];
+
+/**
+ * Composition's word that this turn's opening WRITE needs nothing from its
+ * opening read — which is what lets the two go out together instead of one
+ * behind the other.
+ *
+ * It asserts two things at once, and both have to hold: the message was authored
+ * by THIS process rather than posted by a client (so `validateUpsert` has no
+ * history to protect), and `threadId` came off a row that only carries one
+ * because a turn already ran on it (so the thread exists and already holds the
+ * title the append would otherwise have to derive from the read).
+ *
+ * A SYMBOL, and not exported from the package, because those two claims can only
+ * be made by code that watched them become true. `JSON.parse` cannot produce a
+ * symbol key, so no request body can carry it however a door is later written,
+ * and no host can reach it. The one caller is `runChannelTurn`.
+ */
+export const SERVER_AUTHORED = Symbol("vendo.turn.serverAuthored");
+
 export interface HarnessTurns {
   /** One turn. Mirrors `VendoAgent.stream`'s signature so the wire route reads
    *  the same either way — including the `x-vendo-thread-id` response header. */
@@ -167,6 +219,7 @@ export interface HarnessTurns {
      *  frozen APPROVAL_WAIT_MS (a web tab's bound); a turn served over a
      *  channel where the person answers on a human clock passes its own. */
     approvalWaitMs?: number;
+    readonly [SERVER_AUTHORED]?: true;
   }): Promise<Response>;
   /** Prompt-cache warming (sub-1s shipment): ONE degenerate turn through the
    *  normal assembly — same registry projection, same system prompt, same
@@ -196,6 +249,24 @@ export interface HarnessTurns {
     list(ctx: RunContext): Promise<ThreadSummary[]>;
     delete(id: ThreadId, ctx: RunContext): Promise<void>;
   };
+  /** Put a file in one user's drawer — THE server-side write, shared by the
+   *  upload door (`POST /files`) and by `vendo.putUserFile`, so a file pushed
+   *  from host code is indistinguishable from one the user dropped in chat.
+   *
+   *  Same name as an existing file REPLACES it: `/user` is last-write-wins
+   *  (build contract §3.2), which is what makes "here is the newer export" work
+   *  without the user naming files v2, v3, v4.
+   *
+   *  The door's 5 MiB cap is the DOOR's, not this write's — a trusted caller is
+   *  bounded by whatever backs the `files:` adapter (unset: the store's blobs,
+   *  up to FILES_STORE_MAX_BYTES). `contentType` is advisory: the drawer stores
+   *  bytes, and what the file IS travels with its name's extension. */
+  putUserFile(input: {
+    principal: Principal;
+    name: string;
+    content: Uint8Array | string;
+    contentType?: string;
+  }): Promise<UploadedFile>;
   /** D6 — drop every thread a subject owns. */
   evictSubject(subject: string): Promise<void>;
 }
@@ -395,13 +466,46 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
       });
     },
 
+    async putUserFile(input) {
+      const path = userFilePath(input.name);
+      const bytes = typeof input.content === "string"
+        ? new TextEncoder().encode(input.content)
+        : input.content;
+      // The user's OWN mount and nothing else: no host projection to build and
+      // no org mounts to assert, because a drawer write addresses one subject.
+      const workspace = await sqlDoors().workspaces.open(input.principal);
+      await workspace.writeFile(path, bytes);
+      await workspace.commit();
+      return { path, bytes: bytes.byteLength };
+    },
+
     async stream(input) {
+      // The turn's clock, started at the top: `durationMs` used to begin after
+      // the opening reads, which is why a slow store was invisible in it.
+      const timings = createTurnTimings();
       validateMessage(input?.message);
       // The message choke (limits.ts owns the counting, the policy and the
       // recording): asked BEFORE the thread is resolved, so a refused message
       // costs no read, no write and no model call.
       const verdict = await config.limiter?.gate("message", input.ctx);
       if (verdict?.allow === false) return limitResponse(verdict);
+      // Assembled once, per turn, for WHOEVER thinks. The venue gate and the guard's
+      // directions live in here, which is why it is composition's job and not the
+      // harness's. Which discovery section it may promise is decided by what is
+      // actually on the listing: a curated surface has `find_tools`, an uncurated one
+      // has the connector pair (and only with connectors configured), or neither.
+      //
+      // STARTED HERE and awaited after the store phase. It needs only the
+      // request's ctx and the rail this harness carries — neither of which the
+      // store below can change — so assembling it after the reads meant the turn
+      // paid the store's wait and the guard's `directions` wait end to end.
+      // Started after the limiter gate, not before: a refused message must still
+      // cost nothing.
+      const rail = discoveryRail(config.harness, config.connectorDiscovery);
+      const systemRead = config.system(input.ctx, { discovery: rail });
+      // A rejection is delivered where the prompt is awaited below; this only
+      // keeps a store-phase throw from turning it into an unhandled one.
+      void systemRead.catch(() => {});
       // The turn's opening reads, in ONE call where the store serves it: the
       // thread row, the workspace index, and the harness slot. Each part is
       // exactly what its own op answers, so the doors below decide on the same
@@ -415,12 +519,30 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
       // without costing a read, which is what it always cost.
       const given = input.threadId as ThreadId | undefined;
       const { subject } = input.ctx.principal;
+      // The store phase: the handshake, the envelope read, the thread resolve,
+      // the opening write and the workspace open — everything before the prompt
+      // is assembled. One span, because it is one wait for the person.
+      const storeAt = Date.now();
       const batched = (given === undefined || isThreadId(given)) && await servesTurn();
       // Minted HERE only when the envelope will ask for it: a turn has to name
       // its thread before it can read it, and a first turn still has a
       // workspace to read. Unbatched, `resolve` mints exactly as it always did
       // — a fresh id must not cost a read for a row that cannot exist.
       const threadId = given ?? mintThreadId();
+      // The opening WRITE, in flight WITH the opening read rather than behind
+      // it. It is only ever sent here because SERVER_AUTHORED says the two
+      // things that make the read's answer irrelevant to it: no title to derive
+      // (the thread already has one) and no history to guard (nothing came from
+      // a client). The append itself still enforces ownership in its own
+      // statement, so a link pointing at another subject's thread is refused
+      // here exactly as it always was. Below the turn level there is no round
+      // trip worth saving, so the old order stands.
+      const opening = input[SERVER_AUTHORED] === true && given !== undefined && batched
+        ? sqlDoors().transcript.upsertMany?.(input.ctx.principal, given, [input.message], {})
+        : undefined;
+      // A rejection is delivered where it is awaited below; this only keeps a
+      // slow read from turning it into an unhandled one first.
+      void opening?.catch(() => {});
       const loaded = batched
         ? await config.store.ops!.turn!.load({
           thread: { id: threadId },
@@ -453,7 +575,11 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
       // found no row, and persist's first attempt can skip re-reading that
       // absence (its insert is guarded either way).
       const fresh = thread.messages.length === 0;
-      validateUpsert(thread.messages, input.message);
+      // Skipped only where it can protect nothing: an already-sent opening write
+      // carries a message this process authored, so there is no client copy to
+      // check it against — and a gate run after the write could only report a
+      // rewrite it had already let through.
+      if (opening === undefined) validateUpsert(thread.messages, input.message);
       upsertMessage(thread.messages, input.message);
 
       // Before the FIRST write, not after it. `threads.persist` goes through the
@@ -506,7 +632,9 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
         // existed, and unlike a bare `upsert` it still refreshes the listing
         // title and `updated_at`. So a turn on an older store is slower, not
         // broken.
-        fresh || batchAppend === undefined
+        // Already in flight since before the read, where it was allowed to be.
+        opening
+        ?? (fresh || batchAppend === undefined
           ? threads.persist(thread, [input.message], { fresh })
           // No position is passed: the store assigns one while it holds the
           // thread row, so two turns racing on this conversation cannot claim
@@ -517,7 +645,7 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
             thread.id,
             [input.message],
             { title: deriveTitle(thread.messages) },
-          ),
+          )),
         // §9.7 — the turn's façade mounts every org the wire asserted for this
         // request, so an agent turn can read and write the team's files at all.
         workspaces.open(input.ctx.principal, {
@@ -531,6 +659,7 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
           ...(index === undefined ? {} : { index }),
         }),
       ]);
+      timings.add("store", Date.now() - storeAt);
       // §1.6 — the render seam, built for THIS turn's ctx and handed to the
       // runtime's generic `wrapWorkspace` slot: the runtime owns WHERE the wrap
       // happens and what `emit` writes to; composition owns WHAT wraps.
@@ -539,26 +668,54 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
       // every tool call passes the bridge's `onCall`, and `liveTurn`'s disposer
       // is the runtime's turn end (it retracts the publication in the run's
       // `finally`). Names and counts only — no argument and no result.
-      const startedAt = Date.now();
       const toolNames = new Set<string>();
       let toolCalls = 0;
-      const emitRun = (outcome: "ok" | "error", errorCode: string | null): void => emitUsage({
-        name: "agent_run",
-        durationMs: Date.now() - startedAt,
-        // No rail carries the thinker's step count out of the harness runtime
-        // (the workbench's `step-start` is dev-only, gated on VENDO_WORKBENCH),
-        // so this stays 0 until the runtime publishes one.
-        steps: 0,
-        toolCalls,
-        tools: [...toolNames].sort(),
-        modelFamily: modelFamilyOf(config.models),
-        outcome,
-        errorCode,
-      });
+      const emitRun = (outcome: "ok" | "error", errorCode: string | null): void => {
+        const durationMs = timings.elapsed();
+        const { ttft = 0, store = 0, prompt = 0, tools: toolsMs = 0, guard = 0 } = timings.ms;
+        emitUsage({
+          name: "agent_run",
+          durationMs,
+          ttftMs: ttft,
+          storeMs: store,
+          promptMs: prompt,
+          // Whatever the other four leave over — the thinker's own wall time,
+          // which is what a slow turn is usually made of.
+          modelMs: Math.max(0, durationMs - store - prompt - toolsMs - guard),
+          toolsMs,
+          guardMs: guard,
+          steps: timings.steps,
+          toolCalls,
+          tools: [...toolNames].sort(),
+          modelFamily: modelFamilyOf(config.models),
+          outcome,
+          errorCode,
+        });
+      };
+      // ONE array, handed to the runtime as BOTH its history and its messages.
+      //
+      // Two things depend on that being one object rather than two equal ones.
+      // The runtime skips re-validating the transcript against itself only when
+      // the two are identical (`before === input.messages`, runtime.ts) — a
+      // copy, however equal, spends an O(n) double stringify proving a
+      // tautology. And a saved file must reach the model as a reference in BOTH
+      // of them: rewrite only one and the runtime's history-forgery guard sees
+      // two renderings of one message and reads it as the client rewriting a
+      // message nobody rewrote.
+      //
+      // Nothing here is written through: the runtime deep-copies both the
+      // canonical transcript and the pristine snapshot it diffs persistence
+      // against. And because it then writes back only what the turn CHANGED,
+      // the stored file part — the one the surface draws its pill from — is
+      // never replaced by the reference text the model read.
+      const modelMessages = withFileReferences(thread.messages);
       const bridge = config.bridge?.(input.ctx, thread.id) as ToolBridgeOptions | undefined;
       const runtime = createHarnessRuntime({
         tools: config.tools,
         guard: config.guard,
+        // The same collector the marks above went into: the runtime adds the
+        // ones only it can see (the first output, the model calls).
+        timings,
         // Read off THIS turn's mount, so a skill the host stopped shipping is
         // gone the moment they deploy — no stale copy to invalidate.
         skills: createTurnSkills(workspace),
@@ -570,9 +727,15 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
         // and every other verb, falls through to the live doors unchanged.
         transcript: {
           ...transcript,
+          // The ARRAY the turn is running, not a copy of it. The runtime takes
+          // its own deep copies of both the canonical transcript and the
+          // pristine one it diffs persistence against, so it never writes
+          // through this — and handing it the same array is what lets it SEE
+          // that its stored history and its incoming history are one thing, and
+          // skip re-validating the transcript against itself (runtime.ts).
           list: async (principal, threadId) =>
             threadId === thread.id && principal.subject === thread.subject
-              ? structuredClone(thread.messages)
+              ? modelMessages
               : transcript.list(principal, threadId),
         },
         harnessState: {
@@ -647,25 +810,25 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
         }),
       });
 
-      // Assembled once, per turn, for WHOEVER thinks. The venue gate and the guard's
-      // directions live in here, which is why it is composition's job and not the
-      // harness's. Which discovery section it may promise is decided by what is
-      // actually on the listing: a curated surface has `find_tools`, an uncurated one
-      // has the connector pair (and only with connectors configured), or neither.
-      const rail = config.harness.toolSurface?.curated !== false
-        ? "find-tools" as const
-        : config.connectorDiscovery === true ? "connectors" as const : false;
-      const system = await config.system(input.ctx, { discovery: rail });
+      // What the prompt still COSTS the turn, now that it was assembled beside
+      // the store phase: the wait left over once the reads are done. The phase
+      // split has to keep summing to the wall clock (`modelMs` is the
+      // remainder), so an overlapped span must be billed once, to whichever
+      // phase was still waiting — and a prompt that finished first is honestly
+      // worth ~0ms to this turn.
+      const promptAt = Date.now();
+      const system = await systemRead;
       // Spec 2026-08-05 §2, relocated (sub-1s shipment): the screen snapshot is
       // delivered BESIDE the stable prompt, not inside it — it changes every
       // message, and volatile bytes ahead of stable ones are what kept the
       // provider's prompt cache cold. Same block builder, same this-turn-only
       // life: the ctx and `Turn.situation`, never the store.
       const situation = situationPromptBlock(input.ctx.context);
+      timings.add("prompt", Date.now() - promptAt);
       const response = await runtime.run<never>({
         harness: config.harness,
         threadId: thread.id,
-        messages: thread.messages,
+        messages: modelMessages,
         ctx: input.ctx,
         workspace,
         models: config.models,
@@ -713,9 +876,7 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
         transcript: { upsert: async () => {}, list: async () => [] },
         harnessState: { get: async () => undefined, set: async () => {}, clear: async () => {} },
       });
-      const rail = config.harness.toolSurface?.curated !== false
-        ? "find-tools" as const
-        : config.connectorDiscovery === true ? "connectors" as const : false;
+      const rail = discoveryRail(config.harness, config.connectorDiscovery);
       const system = await config.system(input.ctx, { discovery: rail });
       const response = await runtime.run<{ maxSteps: number; maxOutputTokens: number }>({
         harness: config.harness,

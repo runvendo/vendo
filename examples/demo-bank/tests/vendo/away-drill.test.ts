@@ -282,6 +282,27 @@ async function enableAndApprove(stack: Stack, subject: string, record: Automatio
   }
 }
 
+/**
+ * The standing authority arming no longer mints, minted the one way left.
+ *
+ * `enable` captures nothing for `host_transferMoney`: it is destructive, THE LAW
+ * refuses a destructive away call whatever grant is held, and a card offering a
+ * standing power for one would offer what no firing honours. So the strongest
+ * authority that exists is bought at FIRE time — a firing meets a permission
+ * nobody granted, fails loud, and that ask, answered, mints the standing
+ * automation-bound automation-source grant. Which is the authority the law then
+ * has to beat.
+ */
+async function grantThroughTheRunsOwnAsk(stack: Stack, subject: string): Promise<void> {
+  const principal: Principal = { kind: "user", subject };
+  const [runId] = await stack.automations.emit("maple.payday", { requestedBy: "away-drill" }, principal);
+  expect((await stack.automations.runs.get(runId!, ownerCtx(subject)))?.error?.code).toBe("needs-permission");
+  const pending = (await stack.guard.approvals.pending(principal))
+    .filter((request) => request.call.tool === MONEY_TOOL);
+  expect(pending).toHaveLength(1);
+  await stack.guard.approvals.decide(pending.map((request) => request.id), { approve: true }, principal);
+}
+
 /** Read Maple's own API as `subject`, with a session minted the same way the
  *  away run's actAs mints one. This is the evidence channel, not the subject. */
 async function readAs(subject: string, tool: string, path: string): Promise<Response> {
@@ -463,10 +484,12 @@ describe("Maple away drill (ENG-260)", () => {
       const pay = await descriptorFor(stack, MONEY_TOOL);
       expect(pay.risk).toBe("destructive");
 
-      // Enable + approve while present: the ceremony sees the tool and mints the
-      // strongest authority that exists (automation-bound, automation-source).
-      // The law must beat it.
+      // Enable while present: the ceremony SEES the tool (no "unknown tool") and
+      // deliberately captures nothing for it, so the strongest authority that
+      // exists is minted through the run's own ask instead — see
+      // `grantThroughTheRunsOwnAsk`. The law must beat that.
       await enableAndApprove(stack, subject, paydayAutomation(automationId, subject));
+      await grantThroughTheRunsOwnAsk(stack, subject);
       const balanceBefore = await checkingBalance(subject);
 
       // 1. Not projected: an unattended run is never even offered the tool.

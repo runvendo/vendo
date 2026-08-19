@@ -5,7 +5,27 @@
  * catalog and the knowledge index. It rides the turn (`Turn.system`), so every
  * harness — the default one, a host's own — thinks on the same brief.
  */
-import { userPromptBlock, type Guard, type RunContext } from "@vendoai/core";
+import { userPromptBlock, type Guard, type Harness, type RunContext } from "@vendoai/core";
+
+/**
+ * Which discovery rail a turn's harness actually carries — ONE derivation, for
+ * every path that assembles a brief.
+ *
+ * It was written four times and three of them were a hardcoded `false`. The away
+ * automation run and the delegated run mount the composed `vendo()`, so they
+ * carry `find_tools` like any chat turn — and were told they carried nothing.
+ * Maple, 2026-08-19: an automation whose whole job was "check the balance and
+ * text me" read the balance and then said it had no way to send a text, because
+ * the belt had evicted `vendo_text_me` and the brief never mentioned the search
+ * that would have found it again. A rail nobody names is a rail nobody uses.
+ */
+export const discoveryRail = (
+  harness: Pick<Harness, "toolSurface">,
+  connectorDiscovery: boolean | undefined,
+): "find-tools" | "connectors" | false =>
+  harness.toolSurface?.curated !== false
+    ? "find-tools"
+    : connectorDiscovery === true ? "connectors" : false;
 
 const OPERATING_PROMPT = `You are Vendo's agent.
 Act through the host's available tools on behalf of the signed-in user.
@@ -91,6 +111,29 @@ const PRESENTATION_PROMPT = `Presentation
 - Do not narrate surface mechanics ("the chart is loading above", "see the table below").
 - Match the product's voice. No emoji unless the user or the host's directions use them.`;
 
+// The user's own files. Venue-gated with the theme and the presentation rules:
+// dropping a file is a CHAT gesture, and an app venue turn can be asked about
+// one — an away automation run and the MCP door get neither.
+//
+// The three things the model cannot work out from the tool descriptors alone:
+// that the drawer OUTLIVES the conversation (so a reference to "the file I sent
+// you" is a listing away, not a dead end); that an app gets a COPY rather than a
+// live link (nothing re-reads the drawer on the app's behalf, so an app built
+// from stale bytes stays stale until someone acts); and that closing that gap is
+// the AGENT's job, on the turn the newer file arrives. There is deliberately no
+// automatic sync anywhere in this design, which is exactly why the refresh has
+// to be taught as behavior.
+//
+// It teaches only what the agent can actually do. Copying a table into an app's
+// saved items is a tool it has; putting a PDF into an app is not, and a prompt
+// that implied otherwise would buy an invented answer on the first attempt.
+const USER_FILES_PROMPT = `Files the user shares
+- A file the user sends is saved for them and stays available in EVERY later conversation, not only the one it arrived in. When they mention something they gave you and you cannot see it here, list their files and read it rather than asking them to send it again.
+- Read a file before answering questions about it. Never describe, summarise, or total up a file you have not read.
+- A long file arrives a window at a time — keep reading from the offset it hands back until you have the part you need. A file that is not text comes back as its type and size alone: say what it is, and never guess at what is inside it.
+- Building something from a file COPIES what it needs: rows from a table become the app's own saved items. The app does not read their files afterwards, so the copy is a snapshot, not a live link.
+- When they send a newer version of a file you have already built something from, say so plainly, then update what you built from the new contents. Nothing refreshes on its own — if you do not do it, it does not happen.`;
+
 // The connect etiquette, shared verbatim by both discovery sections below: it is
 // load-bearing on every surface that can reach a connector, and one copy is what
 // keeps the two from drifting apart.
@@ -167,7 +210,7 @@ export async function assembleSystemPrompt(
   discovery: "find-tools" | "connectors" | false = false,
 ): Promise<string> {
   const sections = [OPERATING_PROMPT, HOW_YOU_WORK_PROMPT];
-  if (TREE_VENUES.has(ctx.venue)) sections.push(PRESENTATION_PROMPT);
+  if (TREE_VENUES.has(ctx.venue)) sections.push(PRESENTATION_PROMPT, USER_FILES_PROMPT);
   if (capabilityMiss) sections.push(CAPABILITY_MISS_PROMPT);
   if (discovery !== false) {
     sections.push(discovery === "connectors" ? CONNECTORS_PROMPT : DISCOVERY_BUDGET_PROMPT);
@@ -188,7 +231,19 @@ export async function assembleSystemPrompt(
   const user = userPromptBlock(ctx.user);
   if (user !== undefined) sections.push(user);
 
-  const directions = (await guard.directions(ctx))
+  // The assembler's two waits, started TOGETHER: the guard's directions and the
+  // knowledge index ask different questions of different backends and neither
+  // reads the other, so awaiting them in turn made a turn pay the sum. `Promise.all`
+  // rather than two loose promises because the first rejection must not leave the
+  // other one unhandled — `directions` fails closed, and a host's own resolver may
+  // reject too. The BYTES cannot move: the section order is the `push` order below,
+  // not the order these settle in.
+  const [directionsRead, knowledgeRead] = await Promise.all([
+    guard.directions(ctx),
+    typeof system?.knowledge === "function" ? system.knowledge() : system?.knowledge,
+  ]);
+
+  const directions = directionsRead
     .map((direction) => direction.trim())
     .filter(Boolean);
   if (directions.length > 0) {
@@ -204,7 +259,7 @@ export async function assembleSystemPrompt(
   // Knowledge k8 (ENG-368): the static index + usage guidance rides only the
   // venues whose turns go through this assembler with a knowledge-capable
   // surface (chat + app); automation and MCP rely on the tool descriptor.
-  const knowledge = (await (typeof system?.knowledge === "function" ? system.knowledge() : system?.knowledge))?.trim();
+  const knowledge = knowledgeRead?.trim();
   if (knowledge && TREE_VENUES.has(ctx.venue)) sections.push(knowledge);
 
   const instructions = system?.instructions?.trim();

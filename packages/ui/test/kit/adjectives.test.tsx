@@ -10,11 +10,11 @@ import type { ReactElement } from "react";
 import { describe, expect, it } from "vitest";
 import { Progress } from "../../src/kit/charts/progress.js";
 import { Badge } from "../../src/kit/data/badge.js";
+import { Stat } from "../../src/kit/data/stat.js";
 import { Callout } from "../../src/kit/feedback/callout.js";
 import { Card, Grid, Row, Stack, Surface } from "../../src/kit/layout.js";
-import { RowContext } from "../../src/kit/row.js";
 import { toneColor } from "../../src/kit/tokens.js";
-import { DateTime, EnumBadge, Money, Num, Percent, Text } from "../../src/kit/values.js";
+import { EnumBadge, Text } from "../../src/kit/values.js";
 
 /** Every Kit component tags its own root, so that is the handle these use. */
 function kit(container: HTMLElement, name: string): HTMLElement {
@@ -76,25 +76,25 @@ describe("tone is a theme token, never a literal color", () => {
     expect(screen.getByText("Beta").style.color).toContain("var(--vendo-color-success");
   });
 
-  // The catalog teaches "the figure that is bad news is `danger`", i.e. exactly
-  // `<Money field="amount" tone="danger"/>` — which painted nothing at all while
-  // only Text and the pills read the adjective.
-  it("every figure in the value tier paints from the palette", () => {
-    const figures: Array<[string, ReactElement]> = [
-      ["Money", <Money amount={2500} tone="danger" />],
-      ["DateTime", <DateTime value="2026-03-14" tone="danger" />],
-      ["Percent", <Percent value={0.42} tone="danger" />],
-      ["Num", <Num value={1234} tone="danger" />],
-    ];
-    for (const [name, node] of figures) {
-      expect(kit(render(node).container, name).style.color, name).toContain("var(--vendo-color-danger");
-    }
+  // The catalog teaches "the figure that is bad news is `danger`", and a figure
+  // is a Stat's value or a run of Text now that the screen formats its own — so
+  // the tile has to read the adjective on the FIGURE, not just on its frame.
+  it("a Stat paints its figure from the palette, rule and all", () => {
+    const tile = kit(render(<Stat label="Total overdue" value="$2,500.00" tone="danger" />).container, "Stat");
+    expect(tile.getAttribute("data-tone")).toBe("danger");
+    expect(tile.querySelector<HTMLElement>("strong")!.style.color).toContain("var(--vendo-color-danger");
+    expect(tile.style.borderLeft).toContain("var(--vendo-color-danger");
   });
 
-  it("an untoned figure is untouched, and neutral is not a color of its own", () => {
-    const plain = kit(render(<Money amount={2500} />).container, "Money").style.color;
-    expect(plain).toContain("var(--vendo-color-text");
-    expect(kit(render(<Money amount={2500} tone="neutral" />).container, "Money").style.color).toBe(plain);
+  it("an untoned figure stays quiet, and neutral is not a tone of its own", () => {
+    const tile = (tone?: string): HTMLElement =>
+      kit(render(<Stat label="Balance" value="$2,500.00" tone={tone as never} />).container, "Stat");
+    const plain = tile();
+    expect(plain.getAttribute("data-tone")).toBe("neutral");
+    // A resting tile declares no rule at all: a near-black 3px bar on every tile
+    // is the opposite of quiet.
+    expect(plain.style.borderLeft).toBe("");
+    expect(tile("neutral").getAttribute("style")).toBe(plain.getAttribute("style"));
   });
 
   // The pill palette's own docblock promises every entry is a token or a mix of
@@ -196,6 +196,39 @@ describe("density is declared once and inherited", () => {
   });
 });
 
+describe("grow — the child that claims what is left", () => {
+  /** THE FAILURE it closes: 17 raw `<div style={{flex:1}}>` escapes counted in
+   *  generated screens, every one of them a child that needed the remaining
+   *  space and had no word for it — so the screen dropped out of the Kit to say
+   *  a single CSS declaration. */
+  it("every container takes the adjective", () => {
+    const containers: Array<[string, ReactElement]> = [
+      ["Stack", <Stack grow />],
+      ["Row", <Row grow />],
+      ["Grid", <Grid grow />],
+      ["Surface", <Surface grow />],
+      ["Card", <Card grow />],
+    ];
+    for (const [name, node] of containers) {
+      const { container } = render(node);
+      expect(kit(container, name).style.flexGrow, name).toBe("1");
+      // The escapes wanted a child that SHRINKS as well as grows: without the
+      // floor, a grown pane holding a wide table pushes its sibling off the row.
+      expect(kit(container, name).style.minWidth, name).toBe("0");
+    }
+  });
+
+  it("takes a share as a number, and declares nothing when it is not asked for", () => {
+    expect(kit(render(<Row grow={2} />).container, "Row").style.flexGrow).toBe("2");
+    expect(kit(render(<Row />).container, "Row").style.flexGrow).toBe("");
+    expect(kit(render(<Row grow={false} />).container, "Row").style.minWidth).toBe("");
+  });
+
+  it("still lets a caller's own style win, like every other adjective", () => {
+    expect(kit(render(<Stack grow style={{ flexGrow: 3 }} />).container, "Stack").style.flexGrow).toBe("3");
+  });
+});
+
 describe("Grid minChildWidth", () => {
   it("auto-fits so cells wrap instead of clipping, and wins over columns", () => {
     const { container } = render(<Grid columns={4} minChildWidth={160} />);
@@ -208,18 +241,16 @@ describe("Grid minChildWidth", () => {
     const { container } = render(<Grid columns={3} />);
     expect(kit(container, "Grid").style.gridTemplateColumns).toBe("repeat(3, minmax(0, 1fr))");
   });
-});
 
-// Badge's own suite lives in another file; its two new adjectives are here.
-describe("Badge", () => {
-  it("reads the row's field in a cell slot, and its own label outside one", () => {
-    render(
-      <RowContext.Provider value={{ plan: "Pro" }}>
-        <Badge label="Beta" field="plan" />
-      </RowContext.Provider>,
-    );
-    expect(screen.getByText("Pro")).toBeTruthy();
-    render(<Badge label="Beta" field="plan" />);
-    expect(screen.getByText("Beta")).toBeTruthy();
+  /** THE FAILURE, and it was self-inflicted: a bare `<Grid>` was two FIXED
+   *  columns, so every grid of tiles clipped below ~480px — and screens learned
+   *  to write past the default rather than trust it (`minChildWidth` 21 times
+   *  against `columns` once). Bare, it now wraps at the floor screens themselves
+   *  write; a NAMED count is still fixed, exactly as before. */
+  it("wraps to fit when nothing is named, and stays fixed only for a named count", () => {
+    expect(kit(render(<Grid />).container, "Grid").style.gridTemplateColumns)
+      .toBe("repeat(auto-fit, minmax(min(160px, 100%), 1fr))");
+    expect(kit(render(<Grid columns={2} />).container, "Grid").style.gridTemplateColumns)
+      .toBe("repeat(2, minmax(0, 1fr))");
   });
 });

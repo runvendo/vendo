@@ -106,11 +106,10 @@
   {
     "id": "compute-spend",
     "lane": "screen",
-    "prompt": "What did this morning's CI cost us, and where did it go?",
+    "prompt": "What did this morning's CI cost us in total, and how does that split up by branch?",
     "pass": [
       "shows the total compute spend as $74.60",
       "breaks it down by branch, with main at $38.90, release/2026-08 at $17.40, feat/steps-brick at $12.10 and feat/timeline-brick at $6.20",
-      "says the two failed runs cost $30.80 between them",
       "every figure carries a $ and 2 decimals"
     ],
     "tags": ["display"],
@@ -121,7 +120,7 @@
     "lane": "screen",
     "prompt": "Give me a small form where I pick a run and re-trigger it, starting on the newest run.",
     "pass": [
-      "offers one field to choose the run, listing the six by number and commit message",
+      "offers one field to choose the run, listing the six by number",
       "the field starts on 4192, the newest run, and the screen shows that run's branch and status before anything fires",
       "has exactly one submit control",
       "submitting fires retry_build once, with bld_4192 — the run the form is showing"

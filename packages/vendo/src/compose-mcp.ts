@@ -14,6 +14,7 @@ import {
 } from "@vendoai/mcp";
 import type { VendoComposition } from "./compose-context.js";
 import { basePathOf, doorWellKnownPaths, MCP_MOUNT } from "./door-paths.js";
+import { VENDO_USER_FILES_LIST_TOOL, VENDO_USER_FILES_READ_TOOL } from "./user-files.js";
 import { environment } from "./wire/shared.js";
 
 /** The apps ride-along the door serves as a viewer + runner (10-mcp §4). */
@@ -129,6 +130,14 @@ const openDoor = (
       // layering keeps mcp off actions, so the file stays the umbrella's to
       // read and the wire stays the door's to shape.
       menuTools: () => actions.surfaceMenu("mcp"),
+      // The user's file drawer is the IN-PRODUCT agent's to read, and nobody
+      // else's. An outside agent connects as the user and would inherit every
+      // `vendo_*` tool — the menu deliberately cannot curate that namespace
+      // away, and `withholdTools` is checked BEFORE that bypass, so it is the
+      // only thing that can hold these two back. What someone uploaded to talk
+      // to THIS product about is not material an external agent gets to read
+      // just because it authenticated as them.
+      withholdTools: [VENDO_USER_FILES_LIST_TOOL, VENDO_USER_FILES_READ_TOOL],
       // Build contract §9.1 — the FOURTH door gets the same seam as the wire,
       // the harness and the automations engine. `can()` reads the caller's orgs
       // off the ctx and never queries them (§9.3), so without this an

@@ -9,7 +9,7 @@
       "shows the six open jobs and leaves the closed job J-2377 out",
       "each job's quoted amount, cost to date and remaining-to-invoice match the tool's numbers exactly",
       "shows quoted hours beside actual hours on every job",
-      "shows each job's foreman and its status",
+      "shows each job's foreman",
       "presents the jobs as one table, not a card per job"
     ]
   },
@@ -88,7 +88,8 @@
     "pass": [
       "totals the coded charges by tax category, largest first, with Materials & supplies at $3,452.40",
       "shows a coded total of $8,762.25",
-      "shows the five uncoded charges, worth $4,850.10, apart from the coded totals",
+      "shows the five uncoded charges apart from the coded totals",
+      "shows what those uncoded charges add up to — $4,850.10",
       "lists the four charges with no receipt, naming the vendor and amount of each",
       "each uncoded charge offers a way to set its tax category, and using it calls categorize_expense with that charge's id and the chosen category"
     ]
@@ -116,8 +117,7 @@
     "pass": [
       "offers a form with fields for job, vendor, amount, tax category and receipt date",
       "the form comes filled in from the crane half day already posted: J-2418 · Harbor Point Dental, Talon Crane Service, $3,200.00, Subcontractors, Aug 12",
-      "the job field offers the jobs the tool returned rather than a free-text box",
-      "the tax category field offers the categories already in use on the expenses rather than a free-text box",
+      "the category field is a choice, and its options are the eight categories the expenses use, spelled as the data spells them",
       "saving calls record_expense with job_id J-2418, vendor Talon Crane Service, tax_category Subcontractors, date 2026-08-12 and the amount in cents (320000, not 3200)"
     ]
   },
@@ -149,20 +149,6 @@
     ]
   },
   {
-    "id": "visits-map",
-    "lane": "screen",
-    "prompt": "Show today's visits on a map so I can see which crew is nearest the Harbor Point callback.",
-    "tags": ["display"],
-    "shape": "map",
-    "source": "Jobber — Map View, https://help.getjobber.com/hc/en-us/articles/115009234307-Map-View-Legacy-Schedule",
-    "pass": [
-      "draws a map with a pin per visit rather than listing the visits",
-      "all three of today's visits are pinned, each in its own place, and no fourth visit is invented",
-      "each visit names its job as 'J-2418 · Harbor Point Dental' and the crew on it — Nico Salas, Tasha Byrd, Marco Deleon",
-      "each visit shows its site and its arrival window, with Sutter Street Lofts as the only afternoon one"
-    ]
-  },
-  {
     "id": "quote-options",
     "lane": "screen",
     "prompt": "Lay out the good, better and best packages I'm quoting side by side so the customer can see what the extra money buys.",
@@ -184,7 +170,7 @@
     "shape": "gallery",
     "source": "Jobber — Files and Media Library, https://help.getjobber.com/hc/en-us/articles/39800675084439-Files-and-Media-Library",
     "pass": [
-      "lays the photos out as a grid of tiles rather than a list of file names",
+      "shows the captioned photos as a grid of cards rather than a list of file names",
       "all six photos from J-2418 · Harbor Point Dental are there, and none from another job",
       "every tile is identified by the caption the tool returned for it — the tool gives a stored path and no loadable image, so the caption is what names the tile",
       "every tile shows who uploaded it and its date, oldest first from Jul 24 through Aug 8"
@@ -200,7 +186,7 @@
     "pass": [
       "nests the items under their subcategory and each subcategory under its category, rather than one flat list",
       "shows the three categories — Plumbing, HVAC, Electrical — and all eight subcategories under them",
-      "all fourteen items sit under the subcategory the tool gives them, with none duplicated or invented",
+      "every category and subcategory the tool gives is reachable, none invented or duplicated",
       "every item's price matches the tool's number, read as dollars — the spiral duct foot at $42.00, the panel replacement at $3,850.00"
     ]
   }

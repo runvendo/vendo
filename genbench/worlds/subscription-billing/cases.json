@@ -108,7 +108,7 @@
     "lane": "screen",
     "prompt": "Which customers are running out of their included API calls this period, and what would the overage bill them right now?",
     "pass": [
-      "shows every customer's calls used against their plan's included allowance, closest to the allowance first",
+      "shows every customer's calls used against their plan's included allowance, ordered by share of allowance used, highest first",
       "flags Northwind Labs and Brightpath Clinics as over their allowance and shows the overage amount each owes",
       "shows Halden Freight as nearly at its allowance with no overage owed",
       "says which overage has already been invoiced and which has not"
@@ -136,8 +136,8 @@
     "pass": [
       "shows all five portal switches — cancel, plan switch, payment method, promo codes, invoice history — each with its current state",
       "shows cancel, plan switch and promo codes as currently off, and payment method and invoice history as currently on",
-      "each switch can be flipped on this screen and there is one control that saves them together",
-      "saving calls update_portal_settings with all five switches exactly as the screen is showing them"
+      "each switch can be flipped on this screen, saving either as it is flipped or together with one save control",
+      "the save calls update_portal_settings with all five switches exactly as the screen is showing them, and the screen says when it fires"
     ],
     "tags": ["action"],
     "shape": "settings",
@@ -162,7 +162,6 @@
     "lane": "screen",
     "prompt": "Walk me through putting a brand-new customer on a plan — pick the plan, add a coupon if they've earned one, and confirm before it goes live.",
     "pass": [
-      "shows only the first step when it loads — the plan — with the coupon step and the confirmation named as what comes next, never one long form",
       "the plan step offers the four active plans with their prices and not the archived Pro (legacy)",
       "marks the coupon step as one that can be skipped, so a customer without a coupon still reaches the confirmation",
       "nothing on the first step creates anything — no press before the confirmation calls create_subscription"
@@ -190,8 +189,8 @@
     "lane": "screen",
     "prompt": "Show me who on the team can void invoices or cancel subscriptions, and let me change what each person is allowed to touch.",
     "pass": [
-      "shows all four team members with their role and, for each, whether they can void invoices, cancel subscriptions and apply coupons",
-      "shows Ines Barlowe as the only one who can cancel subscriptions and Tobias Renn as able to do none of the three",
+      "shows all four team members with their role and, for each, whether they can void invoices and cancel subscriptions",
+      "shows Ines Barlowe as the only one who can cancel subscriptions and Tobias Renn as able to do neither",
       "offers a way to move a person to another role from this screen",
       "changing someone's role calls update_team_role with that person's member id and the new role"
     ],

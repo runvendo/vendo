@@ -23,12 +23,25 @@ export interface VendoVerbPorts {
   /** Check a stored app against our catalog and the host's schemas. Returns
    *  findings; it does not throw on a bad screen.
    *
+   *  `request` is the PERSON's ask, verbatim, from whichever gate is standing at
+   *  the end of a finished screen (`screen-agent.ts`'s `judgeScreen`). Half the
+   *  reviewer's rubric — a section nobody asked for, work quietly dropped — is
+   *  written against it and could not be applied without it. Absent is what every
+   *  caller that has no ask to hand over passes, and it reads exactly as it always
+   *  did: no ask, no carve-out.
+   *
+   *  `viewport` is the surface the screen renders into, in CSS pixels, from the
+   *  same gate — the fact the writer was given and the reviewer was not. With it
+   *  the reviewer is shown the screen's first paint framed by those pixels, so
+   *  content below the fold or behind a later step stops reading like content on
+   *  screen. Absent, the reviewer's prompt is unchanged.
+   *
    *  `ctx` is the CALLER's, handed down from `execute` — never assembled by the
    *  port and never taken from the model's input. Both of the app-touching verbs
    *  are owner-scoped behind it, so a model naming someone else's appId gets a
    *  not-found rather than a look at their app. */
   validate(
-    input: { appId?: string },
+    input: { appId?: string; request?: string; viewport?: { width: number; height: number } },
     ctx: RunContext,
   ): Promise<{ ok: boolean; findings: VendoVerbFinding[] }>;
   /** Arm or change an app's schedule. Owner-scoped through `ctx`. */
@@ -84,6 +97,14 @@ const DESCRIPTORS: ToolDescriptor[] = [
 
 const fail = (code: string, message: string) => ({ status: "error" as const, error: { code, message } });
 
+/** The surface, off a gate's own call. Both numbers or nothing: half a viewport
+ *  is a frame nobody measured. */
+const viewportIn = (value: unknown): { width: number; height: number } | undefined => {
+  if (typeof value !== "object" || value === null) return undefined;
+  const { width, height } = value as { width?: unknown; height?: unknown };
+  return typeof width === "number" && typeof height === "number" ? { width, height } : undefined;
+};
+
 /** Every verb is a read or a non-destructive write, so none is withheld from an
  *  unattended run — automations legitimately validate and schedule. The law
  *  filters destructive and external work, which this family has none of. */
@@ -106,7 +127,23 @@ export function vendoVerbsRegistry(ports: VendoVerbPorts): ToolRegistry {
             // A broken screen comes back as FINDINGS, never as a tool error: an
             // error reads to the model as "the tool is broken", findings read as
             // "your screen is wrong". Only the second one gets fixed.
-            const result = await ports.validate({ appId }, ctx);
+            // The ask travels, and it is deliberately NOT on the declared schema
+            // above: the reviewer judges the screen against what the PERSON asked
+            // for, and a model invited to write that field would be handing the
+            // reviewer its own paraphrase of the ask — which cannot report the
+            // part it dropped. So the only thing that fills it is a gate holding
+            // the person's own words.
+            const request = typeof args["request"] === "string" ? args["request"] : undefined;
+            // The surface rides the same undeclared channel and for the same
+            // reason: only a gate knows what the host measured, and a model
+            // invited to write a width would be handing the reviewer a frame it
+            // made up.
+            const viewport = viewportIn(args["viewport"]);
+            const result = await ports.validate({
+              appId,
+              ...(request === undefined ? {} : { request }),
+              ...(viewport === undefined ? {} : { viewport }),
+            }, ctx);
             return { status: "ok", output: { ok: result.ok, findings: result.findings } as unknown as Json };
           }
           case "schedule": {

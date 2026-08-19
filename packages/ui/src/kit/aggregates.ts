@@ -28,22 +28,38 @@ const isRow = (value: unknown): value is Record<string, Json> =>
 const rowsOf = (value: Json | undefined): Record<string, Json>[] | undefined =>
   Array.isArray(value) ? value.filter(isRow) : undefined;
 
-/** The column, as numbers. Rows carrying an explicit null are sparse data, not
- *  a mismatch, so they are skipped; a non-numeric value IS a mismatch, and the
- *  whole answer degrades to `undefined` rather than to a wrong number. An ABSENT
- *  field is a mismatch too: skipping it made `sum(rows, "nope")` answer 0, a
- *  wrong number that reads as real. */
+/**
+ * The column, as numbers — the rows that HAVE one.
+ *
+ * A row the field is missing from or holds something un-numeric in is SKIPPED,
+ * not fatal. It used to poison the reduction: one `"n/a"` string in a 500-row
+ * amount column erased the total the other 499 rows agreed on, and a host that
+ * writes `null` for some rows and omits the key in others is the ordinary case,
+ * not a broken one. An explicit null was already skipped for that reason.
+ *
+ * What the skip must not do is turn a MISLABELLED field into a number:
+ * `reduceNumeric("sum", [])` is 0, so skipping every row would make
+ * `sum(rows, "nope")` answer 0 — a wrong number that reads as real. Hence the
+ * second half: a column where rows were rejected and NOT ONE yielded a number
+ * is still `undefined`. An empty row list, and a column that is all nulls, keep
+ * answering 0, because there the emptiness is the data itself and a screen
+ * writing the same reduce by hand gets 0 too.
+ */
 const column = (rows: readonly Record<string, Json>[], field: string): number[] | undefined => {
   const numbers: number[] = [];
+  let rejected = false;
   for (const row of rows) {
     // The ONE resolver, the same one every `field` prop and every column key
     // reads a dotted path with — a nested numeric field reduces too.
     const value = readField(row, field);
     if (value === null) continue;
-    if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
+    if (typeof value !== "number" || !Number.isFinite(value)) {
+      rejected = true;
+      continue;
+    }
     numbers.push(value);
   }
-  return numbers;
+  return rejected && numbers.length === 0 ? undefined : numbers;
 };
 
 const reduce = (call: NumericReduction, value: Json | undefined, field: string): number | undefined => {

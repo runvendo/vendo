@@ -44,8 +44,16 @@ export function formatBytes(size: number): string {
 
 export type FilePart = Extract<UIMessage["parts"][number], { type: "file" }>;
 
+/** A part that names a file in the user's own files rather than carrying it.
+    The prefix is the workspace's frozen `/user/files` (build contract §3.1). */
+export const isSavedFile = (url: string): boolean => url.startsWith("/user/files/");
+
 /** A sent attachment in the transcript: images render as the designed
-    `.fl-msg-img` thumbnail, anything else as a `.fl-msg-file` download pill. */
+    `.fl-msg-img` thumbnail, anything else as a `.fl-msg-file` pill.
+
+    A SAVED file is a reference, not bytes in the transcript — it lives in the
+    user's own files — so its pill names it and has nothing to download. Only a
+    part still carrying its own data keeps the download link. */
 export function SentAttachment({ part }: { part: FilePart }) {
   const name = part.filename ?? "attachment";
   if (part.mediaType?.startsWith("image/") === true) {
@@ -55,10 +63,12 @@ export function SentAttachment({ part }: { part: FilePart }) {
       </span>
     );
   }
-  return (
-    <a className="fl-msg-file" href={part.url} download={name}>
+  const pill = (
+    <>
       <span className="fl-att-ext" aria-hidden="true">{fileExt(part.filename)}</span>
       <span className="fl-att-name">{name}</span>
-    </a>
+    </>
   );
+  if (isSavedFile(part.url)) return <span className="fl-msg-file">{pill}</span>;
+  return <a className="fl-msg-file" href={part.url} download={name}>{pill}</a>;
 }

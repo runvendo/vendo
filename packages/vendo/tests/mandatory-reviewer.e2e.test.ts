@@ -88,7 +88,7 @@ const hostTools: ToolDefinition[] = [
 
 const TABLE = `<DataTable
         rows={bills.data}
-        columns={[{ key: "name", label: "Bill" }, { key: "amount_cents", format: "money", align: "end" }]}
+        columns={[{ key: "name", label: "Bill" }, { key: "amount_cents", align: "end" }]}
         emptyState="Nothing due"
       />`;
 
@@ -107,7 +107,7 @@ export default function UpcomingBills() {
   const total = [...bills.data, ...subs.data].reduce((sum, row) => sum + row.amount_cents, 0);
   return (
     <Stack gap={12}>
-      <Stat label="Due this month" value={total / 100} format="money" />
+      <Stat label="Due this month" value={total / 100} />
       ${TABLE}
     </Stack>
   );
@@ -122,7 +122,7 @@ export default function UpcomingBills() {
   const total = bills.data.reduce((sum, row) => sum + row.amount_cents, 0);
   return (
     <Stack gap={12}>
-      <Stat label="Due this month" value={total / 100} format="money" />
+      <Stat label="Due this month" value={total / 100} />
       ${TABLE}
     </Stack>
   );
@@ -367,10 +367,12 @@ describe("the mandatory reviewer pass on a finished screen", () => {
     expect(reviewed).toContain("AN AGGREGATE THAT DISAGREES WITH ITS OWN ROWS");
 
     // ONE repair round, in the loop's own words: the third writer prompt is the
-    // reviewer's finding, handed over verbatim by the shipped gate.
+    // reviewer's finding, handed over verbatim — and the patch hand under it, with
+    // none of the builder gate's "write the file again" above it.
     const repair = walked.writerPrompts[2] ?? "";
-    expect(repair).toContain("`validate` does not pass");
     expect(repair).toContain("bill_netflix, bill_adobe and bill_aws are in BOTH");
+    expect(repair).toContain("Never save the whole document");
+    expect(repair).not.toContain("write the file again");
     // With the document in front of it, so the repair is a fix rather than a
     // rewrite from nothing.
     expect(repair).toContain("This is the document you saved");
@@ -392,7 +394,7 @@ describe("the mandatory reviewer pass on a finished screen", () => {
     expect(walked.reviewerSeats).toEqual(["default"]);
     // …and had nothing to say, so the loop was never asked for a repair round.
     expect(walked.writerPrompts).toHaveLength(2);
-    expect(walked.writerPrompts.join("\n")).not.toContain("does not pass");
+    expect(walked.writerPrompts.join("\n")).not.toContain("Never save the whole document");
     expect(walked.chunks.filter((chunk) => chunk["type"] === "data-vendo-view").length).toBeGreaterThan(0);
   }, 120_000);
 

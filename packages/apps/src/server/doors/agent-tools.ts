@@ -43,7 +43,7 @@ const descriptors = [
     // live host data itself. The retry one: a rejected change is worth one
     // narrower attempt on the same app, and was worth saying because the
     // alternative the model reached for was rebuilding it from scratch.
-    description: "Make the user something to look at — a screen, or a full app — from a plain-language request. Say what they want in your own words; Vendo decides whether to assemble a screen or build an app, and it arrives on the user's own page. Pass `app` only to change one specific existing app — its id, or its name exactly as the user said it, which is resolved against their own apps (if two share that name you are told both, so ask which one); leave it out and Vendo decides whether to continue the last one or start something new. When the SAME request also asks for something to happen on a schedule (\"build me the board and refresh it every Monday\"), say both halves here and the schedule is armed alongside the app; a schedule with nothing to build belongs in vendo_automate instead. One app can hold SEVERAL automations, so to add another one to an app it already has, name that app in `app` and describe the new schedule — never refuse a second schedule. Never bake data values you computed or fetched (counts, totals, amounts) into the request — it binds live host data itself and hardcoded figures fail its checks. Never specify fonts, colors, or branding — it inherits the host theme. You get back a one-line receipt to say out loud, never the screen itself; if the receipt says \"failed\", try once more on the same `app` with a narrower request rather than rebuilding it, and if it says \"partial\" the screen is on their page but the server-side part of it is not — say the line and offer to try that part again, never rebuild it. Pass `slot` only when the request names a particular place on the user's page for it to land — the host publishes those slot ids, so pass one you were told rather than one you invented, and whatever held that place is replaced. `slot` is for something NEW: to move an app that already exists, use the pin tool instead.",
+    description: "Make the user something to look at — a screen, or a full app — from a plain-language request. Say what they want in your own words; Vendo decides whether to assemble a screen or build an app, and it arrives on the user's own page. Pass `app` only to change one specific existing app — its id, or its name exactly as the user said it, which is resolved against their own apps (if two share that name you are told both, so ask which one); leave it out and Vendo decides whether to continue the last one or start something new. When the SAME request also asks for something to happen on a schedule (\"build me the board and refresh it every Monday\"), say both halves here and the schedule is armed alongside the app; a schedule with nothing to build belongs in vendo_automate instead. One app can hold SEVERAL automations, so to add another one to an app it already has, name that app in `app` and describe the new schedule — never refuse a second schedule. Never bake data values you computed or fetched (counts, totals, amounts) into the request — it binds live host data itself and hardcoded figures fail its checks. Never specify fonts, colors, or branding — it inherits the host theme. You get back a one-line receipt to say out loud, never the screen itself; if the receipt says \"failed\", try once more on the same `app` with a narrower request rather than rebuilding it, and if it says \"partial\" the screen is on their page but the server-side part of it is not — say the line and offer to try that part again, never rebuild it. Pass `slot` only when the request names a particular place on the user's page for it to land — the host publishes those slot ids, so pass one you were told rather than one you invented, and whatever held that place is replaced. `slot` is for something NEW: to move an app that already exists, use the pin tool instead. Pass `component` when the user is asking to change one of the HOST'S OWN pieces of the page they are looking at — the conversation's context says which one (\"The view being remixed is the \\\"NetWorthCard\\\" component on the host's page\"), so pass that name exactly as it is written there and never one you invented. It makes the user their own copy of that piece, carrying their request, and puts it on the page where the original was. Say the receipt's line as usual.",
     inputSchema: {
       $schema: DRAFT_2020_12,
       type: "object",
@@ -52,6 +52,7 @@ const descriptors = [
         app: { type: "string", minLength: 1 },
         context: { type: "string", minLength: 1 },
         slot: { type: "string", minLength: 1 },
+        component: { type: "string", minLength: 1 },
       },
       required: ["request"],
       additionalProperties: false,
@@ -73,7 +74,10 @@ const descriptors = [
       type: "object",
       properties: {
         when: {
-          description: "A 5-field cron string, or one of {every}, {at}, {event}, {webhook}.",
+          // The first sentence is the human LABEL consent surfaces show for this
+          // argument (they cut at the first period) — the format teaching stays
+          // in the second sentence and in the tool description above.
+          description: "When it runs. A 5-field cron string, or one of {every}, {at}, {event}, {webhook}.",
           oneOf: [
             { type: "string", minLength: 1 },
             {
@@ -110,7 +114,7 @@ const descriptors = [
   },
   {
     name: "vendo_apps_reseed",
-    description: "Update a Vendo app that was created from a host component so it uses the host's current version of that component. WARNING, tell the user first: this REPLACES the component with the fresh copy, so any changes they made to it are lost. Use only when the app reports seed drift and the user has said they want the update.",
+    description: "Update a Vendo app that was created from a host component so it uses the host's current version of that component. It rebuilds on the fresh copy and replays every change the user has ever asked of this app, oldest first, so nothing they asked for is dropped — but a change the new version cannot take does not survive it. If the reply carries `say`, tell them that line verbatim: it names exactly those. Use only when the app reports seed drift and the user has said they want the update.",
     inputSchema: {
       $schema: DRAFT_2020_12,
       type: "object",
@@ -345,7 +349,21 @@ export const createAgentTools = (
       if (call.tool === "vendo_apps_reseed") {
         const args = input(call.args, ["appId"]);
         const result = await runtime.seed.reseed({ appId: args.appId as string }, ctx);
-        return { status: "ok", output: result as unknown as Json };
+        const unapplied = result.seed?.unapplied ?? [];
+        return {
+          status: "ok",
+          output: unapplied.length === 0 ? result as unknown as Json : {
+            ...(result as unknown as Record<string, Json>),
+            // A wish the host's new version could not take is a change the person
+            // made and no longer has. It stays on the seed, and this is the
+            // sentence that gets it SAID rather than quietly dropped. When NONE
+            // of them fit, the remix did not move either — so it must not say it did.
+            say: (unapplied.length === result.seed?.wishes.length
+              ? `${result.name} is still on the version you made it from — none of your changes fit the host's new one: `
+              : `${result.name} is on the host's current version, but these changes of yours did not fit it: `)
+              + `${unapplied.map((wish) => `"${wish}"`).join(", ")}. They are still on record — ask for any of them again.`,
+          },
+        };
       }
       if (call.tool === "vendo_apps_open") {
         const args = input(call.args, ["appId"]);

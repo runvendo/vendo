@@ -2,7 +2,6 @@
 import { Progress as Base } from "@base-ui/react/progress";
 import type { ComponentProps, ReactNode } from "react";
 import { isRenderableNumber } from "../format.js";
-import { useFieldValue } from "../row.js";
 import { font, microLabel, numeric, resolveTone, t, toneColor, transitionFor, type KitStyled, type KitTone, type KitEngine, type KitRendered, given } from "../tokens.js";
 
 interface ProgressOwnProps extends KitStyled {
@@ -15,8 +14,6 @@ interface ProgressOwnProps extends KitStyled {
   /** Show the percentage text. */
   showValue?: boolean;
   tone?: KitTone;
-  /** Inside a cell slot: the row field this value comes from. */
-  field?: string;
 }
 
 /** Plus any Base UI `<Progress.Root>` prop, handed straight to the bar. It
@@ -24,18 +21,22 @@ interface ProgressOwnProps extends KitStyled {
  *  owns — it is the clamped ratio the caller's own `value`/`max` resolved to. */
 export type ProgressProps = ProgressOwnProps & KitEngine<ComponentProps<typeof Base.Root>, ProgressOwnProps>;
 
-export function Progress({ value, max, label, showValue = false, tone, field, style, children, pending, ...engine }: ProgressProps & KitRendered) {
-  const own = useFieldValue(field, value);
-  if (!isRenderableNumber(own) || (max !== undefined && !isRenderableNumber(max))) {
+export function Progress({ value, max, label, showValue = false, tone, style, children, pending, ...engine }: ProgressProps & KitRendered) {
+  if (!isRenderableNumber(value) || (max !== undefined && !isRenderableNumber(max))) {
     return (
       <div data-kit="Progress" style={{ ...font, color: t.muted, ...style }}>
         —
       </div>
     );
   }
-  const ratio = max !== undefined && max !== 0 ? own / max : own;
+  const ratio = max !== undefined && max !== 0 ? value / max : value;
   const clamped = Math.max(0, Math.min(1, ratio));
-  const pct = `${Math.round(clamped * 100)}%`;
+  // The bar stops at 100%, so past the cap the printed figure is the only
+  // honest reading of how far past it went: a label saying "100%" at 1.2 is a
+  // wrong number, not a style. The COLOR says nothing about it — whether over
+  // is bad news is the caller's to state with `tone`.
+  const over = ratio > 1;
+  const pct = `${Math.round((over ? ratio : clamped) * 100)}%`;
   return (
     <div data-kit="Progress" style={{ ...font, display: "flex", flexDirection: "column", gap: 4, ...style }}>
       {(label || showValue) && (

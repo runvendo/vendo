@@ -52,7 +52,11 @@ const REPORT_FINDINGS_SCHEMA: Record<string, unknown> = {
           severity: {
             type: "string",
             enum: ["block", "warn"],
-            description: "block for dishonesty and invented data; warn for everything else.",
+            // "everything else" read as a leftovers bin next to two named
+            // headline sins, and a broken house rule fell out of it. It is named
+            // here because a tool description is prompt, arriving in the same call.
+            description:
+              "block for dishonesty and invented data; warn for everything else, a broken house rule included.",
           },
           where: {
             type: "string",
@@ -60,7 +64,7 @@ const REPORT_FINDINGS_SCHEMA: Record<string, unknown> = {
           },
           message: {
             type: "string",
-            description: "One sentence: what is wrong AND the real alternative.",
+            description: "One sentence: what the screen does, and the evidence for it.",
           },
         },
       },

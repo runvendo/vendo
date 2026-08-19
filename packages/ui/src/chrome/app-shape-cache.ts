@@ -14,7 +14,7 @@
 import { sha256Hex, type TreeNode, type UIPayload } from "@vendoai/core";
 import { deriveFormShape, type FormShape } from "../tree/forming-skeleton.js";
 
-/** One bone. `line` is a kit VALUE (Text, Money, a date) — one typographic line
+/** One bone. `line` is a kit VALUE (Text, a Link, an Icon) — one typographic line
  *  whatever the datum behind it; every other kind is deriveFormShape's own
  *  vocabulary, unchanged. */
 export interface ShapeBox {
@@ -39,7 +39,7 @@ const MAX_BOXES = 12;
 /** Kit layout: no silhouette of its own — its children are the shape. */
 const CONTAINERS = new Set(["Stack", "Row", "Grid", "Card", "Surface"]);
 /** Kit values: whatever the datum, the bone is a line of text. */
-const LINES = new Set(["Text", "Money", "Num", "Percent", "DateTime", "Link", "Icon", "Divider"]);
+const LINES = new Set(["Text", "Link", "Icon", "Divider"]);
 
 function storage(): Storage | null {
   try {

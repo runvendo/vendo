@@ -90,6 +90,11 @@ export default function Spending() {
 }
 `;
 
+/** The same refused document under a DIFFERENT export name — so the title a
+ *  refused save records is visibly not the title of the screen on the person's
+ *  page. */
+const RENAMED_LIE = LYING.replace("function Spending(", "function Overspending(");
+
 const ZERO_USAGE = {
   inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },
   outputTokens: { total: 0, text: 0, reasoning: 0 },
@@ -111,21 +116,60 @@ const speak = (text: string): Chunk[] => [
 
 /** A model that replays scripted turns, and records how many times it was asked
  *  — and with which tools, which is the only place a composed loadout is
- *  readable from outside the loop. */
-function scripted(turns: Chunk[][]): LanguageModel & { calls: number; toolNamesPerCall: string[][] } {
+ *  readable from outside the loop, and with what, which is where a repair round's
+ *  instruction shows up. */
+function scripted(
+  turns: Chunk[][],
+): LanguageModel & { calls: number; toolNamesPerCall: string[][]; promptsPerCall: string[] } {
   const remaining = turns.map((turn) => [...turn]);
   const toolNamesPerCall: string[][] = [];
+  const promptsPerCall: string[] = [];
   const model = new MockLanguageModelV3({
     doStream: async (request) => {
       (model as { calls: number }).calls += 1;
       toolNamesPerCall.push((request.tools ?? []).map((tool) => tool.name));
+      promptsPerCall.push(JSON.stringify(request.prompt));
       const chunks = remaining.shift();
       if (chunks === undefined) throw new Error("scripted model exhausted");
       return { stream: simulateReadableStream({ chunks: chunks as never }) };
     },
-  }) as unknown as LanguageModel & { calls: number; toolNamesPerCall: string[][] };
+  }) as unknown as LanguageModel & { calls: number; toolNamesPerCall: string[][]; promptsPerCall: string[] };
   model.calls = 0;
   model.toolNamesPerCall = toolNamesPerCall;
+  model.promptsPerCall = promptsPerCall;
+  return model;
+}
+
+/**
+ * The REVIEW seat, scripted: one `report_findings` call, and the rubric it was
+ * sent.
+ *
+ * Its own seat rather than the writer's model, because the reviewer's is a
+ * `generateText` call and the loop's is a stream — one mock cannot answer both
+ * shapes. `rubrics` is where a host's own design rule is readable after it leaves
+ * the briefing pack, which is the whole claim below.
+ */
+function reviewSeat(
+  findings: ReadonlyArray<{ severity: string; where: string; message: string }>,
+): LanguageModel & { rubrics: string[] } {
+  const rubrics: string[] = [];
+  const model = new MockLanguageModelV3({
+    doGenerate: async (request) => {
+      rubrics.push(JSON.stringify(request.prompt));
+      return {
+        content: [{
+          type: "tool-call",
+          toolCallId: "rev_1",
+          toolName: "report_findings",
+          input: JSON.stringify({ findings }),
+        }],
+        finishReason: { unified: "tool-calls", raw: undefined },
+        usage: ZERO_USAGE,
+        warnings: [],
+      } as never;
+    },
+  }) as unknown as LanguageModel & { rubrics: string[] };
+  model.rubrics = rubrics;
   return model;
 }
 
@@ -145,7 +189,7 @@ interface Walked {
   /** Everything that crossed the wire to the surface. */
   chunks: Array<Record<string, unknown>>;
   vendo: ReturnType<typeof createVendo>;
-  model: LanguageModel & { calls: number; toolNamesPerCall: string[][] };
+  model: LanguageModel & { calls: number; toolNamesPerCall: string[][]; promptsPerCall: string[] };
 }
 
 /**
@@ -158,6 +202,12 @@ async function walk(options: {
   /** Skip `vendo_make` entirely and write the documents with the harness's own
    *  hands — the OTHER route into the same seam. */
   writes?: string[];
+  /** The REVIEW seat. Absent, the reviewer's call lands on the writer's mock,
+   *  which cannot answer a `generateText` — so it reports nothing, which is what
+   *  every case above relies on. */
+  review?: LanguageModel;
+  /** This host's own design rules, exactly as a deployment sets them. */
+  designRules?: string;
 }): Promise<Walked> {
   const store = await tempStore();
   const model = scripted(options.turns);
@@ -180,10 +230,11 @@ async function walk(options: {
     },
   });
   const vendo = createVendo({
-    models: { default: model },
+    models: { default: model, ...(options.review === undefined ? {} : { review: options.review }) },
     principal: async () => principal,
     store,
     harness: harness as never,
+    ...(options.designRules === undefined ? {} : { apps: { designRules: options.designRules } }),
   } as Parameters<typeof createVendo>[0]);
   const response = await vendo.handler(new Request("https://host.test/api/vendo/threads", {
     method: "POST",
@@ -318,8 +369,13 @@ describe("vendo_make routed through the screen agent (blueprint §1 point 2)", (
     // The loadout is resolved where the listings are, so the real composed
     // registry — not the unit fixture's — is what has to produce these names.
     const walked = await walk({ turns: [call("save_app", { content: SPENDING }, "c1"), speak("done")] });
-    expect(walked.model.toolNamesPerCall[0] ?? []).toContain("vendo_apps_open");
     expect(walked.model.toolNamesPerCall[0] ?? []).toContain("save_app");
+    // …and what it must NOT produce, on the real registry that serves them: this
+    // is a `vendo_make` with a freshly minted id, so there is no app to open and
+    // no records to list. The verbs are graded `read`, so only the composed
+    // registry can prove the withholding is not the fixture's doing.
+    expect(walked.model.toolNamesPerCall[0] ?? []).not.toContain("vendo_apps_open");
+    expect(walked.model.toolNamesPerCall[0] ?? []).not.toContain("vendo_slots_list");
   }, 60_000);
 
   it("fails honestly when assembly produces nothing that renders — no second engine behind it", async () => {
@@ -348,5 +404,96 @@ describe("vendo_make routed through the screen agent (blueprint §1 point 2)", (
     // turns — the whole point of cutting the fall-through.
     expect(walked.chunks.filter((chunk) => chunk["type"] === "data-vendo-view")).toHaveLength(0);
     expect(walked.model.calls).toBe(2);
+  }, 60_000);
+});
+
+/**
+ * THE ASK AND THE HOUSE RULES, from the deployment's config to a repair round —
+ * the whole chain, with nothing stubbed but the two models.
+ *
+ * Both halves were live text over an empty slot. The verb had no field for the
+ * person's ask, so the reviewer's "sections that don't answer the ask" and "work
+ * quietly dropped" judged a screen against `USER_REQUEST:` and nothing after it.
+ * The host's design rules reached the WRITER's brief and stopped there, so
+ * "ALSO REJECT anything that breaks one of these rules" rendered over an empty
+ * list on every deployment. And both land as `warn` — which the gate skipped, so
+ * even a rule that DID fire changed nothing.
+ */
+describe("the ask and the host's rules reach the reviewer, and a warn is repaired", () => {
+  const RULE = "Dates are shown as `Aug 7`, never ISO.";
+  const BREACH = "the header renders 2026-08-07; this host's rule says dates are shown as `Aug 7`, never ISO";
+
+  it("carries both to the reviewer and spends exactly one repair round on the warn", async () => {
+    const review = reviewSeat([{ severity: "warn", where: "<Text> heading", message: BREACH }]);
+    const walked = await walk({
+      // No RECURRENCE WORD in the ask, deliberately. `make-tool.ts`'s
+      // `ASKS_TO_RECUR` reads one as the second half of a compound ask and hands
+      // it to the automation planner, which is a whole model call of its own —
+      // this case counts the calls the assembly loop spends, so the ask must not
+      // also be asking for a schedule. It said "with a monthly total" and the
+      // bare adjective tripped the detector.
+      request: "show me what I spent this month, with a total for the month",
+      designRules: RULE,
+      review,
+      turns: [
+        call("save_app", { content: SPENDING }, "c1"),
+        speak("Your spending is on screen."),
+        // The repair round…
+        speak("fixed the date format."),
+        // …and one turn it must never reach: a second round would show up here.
+        speak("nobody should read this"),
+      ],
+    });
+
+    const receipt = makeReceiptSchema.parse((walked.result as { output: unknown }).output);
+    expect(receipt.status).toBe("ready");
+
+    // ── the ask travelled: the reviewer judged against the person's own words ──
+    expect(walked.model.calls).toBe(3);
+    expect(review.rubrics).toHaveLength(1);
+    expect(review.rubrics[0] ?? "").toContain("USER_REQUEST: show me what I spent this month, with a total for the month");
+
+    // ── the host's own rule travelled, as a rule the reviewer may reject on ────
+    expect(review.rubrics[0] ?? "").toContain("ALSO REJECT");
+    expect(review.rubrics[0] ?? "").toContain(RULE);
+
+    // ── and the warn it reported bought a repair round, which a `block`-only
+    //    gate would have thrown away ────────────────────────────────────────────
+    expect(walked.model.promptsPerCall[2] ?? "").toContain("never ISO");
+  }, 60_000);
+
+  it("says nothing about a repair the floor refused — those words describe no screen", async () => {
+    // The repair round is the ONE place a save happens after the run has already
+    // decided it has a screen. A patch the floor refuses lands its bytes and paints
+    // nothing, so the person is still looking at the step-1 screen — and the round's
+    // own closing words ("fixed it") and its component's NAME belong to a document
+    // that never reached them.
+    const review = reviewSeat([{ severity: "warn", where: "<Text> heading", message: BREACH }]);
+    const walked = await walk({
+      designRules: RULE,
+      review,
+      turns: [
+        // 1. A screen that paints, and the words that describe it.
+        call("save_app", { content: SPENDING }, "c1"),
+        speak("Your spending is on your screen."),
+        // 2. The repair the reviewer bought: renamed, and refused by the floor for
+        //    naming a tool this host has not got. No paint, no repaired screen.
+        call("save_app", { content: RENAMED_LIE }, "c2"),
+        speak("Fixed the date format."),
+      ],
+    });
+
+    const receipt = makeReceiptSchema.parse((walked.result as { output: unknown }).output);
+    // The painted screen STANDS: a patch that failed is not a reason to take away
+    // the screen the person can already see.
+    expect(receipt.status).toBe("ready");
+    // THE DEFECT: the receipt used to carry the repair round's last words and the
+    // refused document's name, so the person was told a fix landed on a screen that
+    // never changed, under a title they had never seen.
+    expect(receipt.say).toBe("Your spending is on your screen.");
+    expect(receipt.title).toBe("Spending");
+    // …and the refused bytes really did land, which is what makes this the hard
+    // case rather than a save that never happened.
+    expect(walked.model.promptsPerCall[3] ?? "").toContain("nope_notATool");
   }, 60_000);
 });

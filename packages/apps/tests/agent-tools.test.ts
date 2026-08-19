@@ -626,7 +626,7 @@ describe("vendo_make — the slot a new app lands in", () => {
     screen: { async assemble() { return { kind: "escalate", why: "this needs real code" }; } },
   });
 
-  it("takes request, app, context and slot — request required, nothing else allowed", async () => {
+  it("takes request, app, context, slot and component — request required, nothing else allowed", async () => {
     const descriptors = await assembling().agentTools().descriptors();
     const schema = descriptors.find(({ name }) => name === "vendo_make")!.inputSchema as {
       properties: Record<string, unknown>;
@@ -634,7 +634,7 @@ describe("vendo_make — the slot a new app lands in", () => {
       additionalProperties: boolean;
     };
 
-    expect(Object.keys(schema.properties).sort()).toEqual(["app", "context", "request", "slot"]);
+    expect(Object.keys(schema.properties).sort()).toEqual(["app", "component", "context", "request", "slot"]);
     expect(schema.required).toEqual(["request"]);
     expect(schema.additionalProperties).toBe(false);
   });

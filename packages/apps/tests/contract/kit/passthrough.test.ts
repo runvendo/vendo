@@ -32,8 +32,19 @@ describe("passthrough styling in the specs", () => {
     }
   });
 
+  /** A DOM element is an engine too. Textarea, Select and Checkbox render a plain
+   *  `<textarea>` / `<select>` / `<input>`, whose own vocabulary is as real as
+   *  recharts' — and `maxLength` on a Textarea was a blocking error while the
+   *  identical prop went through on Input, whose engine was named. */
+  it("names the DOM element on the three controls that render one", () => {
+    expect(kitSpec("Textarea")?.engine).toBe("<textarea>");
+    expect(kitSpec("Select")?.engine).toBe("<select>");
+    expect(kitSpec("Checkbox")?.engine).toBe("<input>");
+    expect(kitPrompt({ only: ["Select"] })).toContain("plus any `<select>` prop");
+  });
+
   it("leaves a component that wraps nothing without an engine, so a typo stays an error", () => {
-    for (const name of ["Stack", "Text", "DataTable", "Button", "Select"]) {
+    for (const name of ["Stack", "Text", "DataTable", "Button", "CardList"]) {
       expect(kitSpec(name)?.engine, name).toBeUndefined();
     }
   });
@@ -52,10 +63,14 @@ describe("passthrough styling in the specs", () => {
 describe("what the model is told", () => {
   const prompt = kitPrompt();
 
-  it("teaches the theme as the default and the two escape hatches, with the upgrade posture", () => {
-    expect(prompt).toContain("`style`");
-    expect(prompt).toContain('<Sparkline stroke="#FF3B30"/>');
-    expect(prompt).toContain("no compatibility promise");
+  /** The escape hatch is no longer SOLD. Everything above still ADMITS it —
+   *  `style` on all 53, an engine's own props where the spec names one — so a
+   *  screen that reaches for one still paints. What went is the paragraph selling
+   *  an unchecked, upgrade-fragile vocabulary on every generation, to a reader
+   *  whose React instinct reaches for `style` unprompted. */
+  it("never sells the engine passthrough as a look-and-feel move", () => {
+    expect(prompt).not.toContain('<Sparkline stroke="#FF3B30"/>');
+    expect(prompt).not.toContain("no compatibility promise");
   });
 
   it("names the engine on the components that have one, and only there", () => {
@@ -64,7 +79,7 @@ describe("what the model is told", () => {
     expect(kitPrompt({ only: ["DataTable"] })).not.toContain("passed straight through");
   });
 
-  it("teaches style once in the preamble rather than on all fifty components", () => {
+  it("never spends a prop line on `style`, on any of the fifty-three", () => {
     expect(kitPrompt({ only: ["DataTable"], omitPreamble: true })).not.toContain("`style`");
   });
 });

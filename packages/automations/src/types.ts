@@ -43,6 +43,13 @@ export const approvalRowSchema = z.object({
   decidedAt: z.string().optional(),
   consumedAt: z.string().optional(),
   voidedAt: z.string().optional(),
+  /** WHO said no. The guard stamps it on every deny (`#decideApprovals`), and the
+   *  distinction is load-bearing here rather than cosmetic: `"system"` is an
+   *  expiry sweep or an abandoned ask, never a person's answer. Read by the
+   *  decision subscriber, which must not disarm an automation nobody said no to.
+   *  Optional because the decision callback carries only (id, approved) — the
+   *  provenance lives on the row and nowhere else. */
+  deniedBy: z.enum(["human", "system"]).optional(),
 }).passthrough();
 
 export const captureSchema = z.object({

@@ -210,9 +210,16 @@ export function createTurnTools(options: TurnToolsOptions): RuntimeTurnTools {
     options.mirror(options.ctx.turnId === undefined ? event : { ...event, turnId: options.ctx.turnId });
   };
 
+  /** The descriptor a CALL resolves against — read with the run's ctx, exactly
+   *  like `list()` below and for the same reason. A registry can answer a
+   *  different set per caller: THE LAW withholds tools from an unattended run,
+   *  and a per-tenant overlay adds tools only this caller has. Asking without
+   *  the ctx therefore resolved against a set that belongs to nobody — which is
+   *  how a tenant tool could be listed to the model, chosen by it, and then come
+   *  back "Unknown tool" from the very same registry that had just offered it. */
   const descriptorFor = async (name: string): Promise<ToolDescriptor | undefined> => {
     try {
-      return (await options.registry.descriptors()).find((descriptor) => descriptor.name === name);
+      return (await options.registry.descriptors(options.ctx)).find((descriptor) => descriptor.name === name);
     } catch {
       return undefined;
     }
@@ -333,9 +340,10 @@ export function createTurnTools(options: TurnToolsOptions): RuntimeTurnTools {
         }
 
         // §1.4: PREVIEW first, exactly as the ai-SDK path's needsApproval hook
-        // does. A preview never spends the write-budget/call-rate breakers and
-        // never runs the judge a second time, so an approved call is executed
-        // ONCE below rather than executed-then-re-executed.
+        // does. The preview IS this call's guard evaluation — the dispatch below
+        // runs on the verdict it computed and commits the spends it left
+        // (guard.ts, `#decideForExecution`) — so rules, grants and the judge see
+        // this call once, and it is executed once.
         let approvalId: ApprovalId | undefined;
         const ask = await previewApproval(descriptor, bridge, args, { toolCallId }, (id) => {
           approvalId = id;

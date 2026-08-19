@@ -9,6 +9,7 @@
  * `dangerouslySetInnerHTML` cannot arrive — not because a list refuses them, but
  * because nothing carries them through.
  */
+import { SAFE_STYLE_PROPERTIES } from "@vendoai/apps/contract";
 import type { CSSProperties, ReactNode } from "react";
 
 export interface DisplayBrickProps {
@@ -26,82 +27,56 @@ export interface DisplayBrickProps {
   children?: ReactNode;
 }
 
-/**
- * What a screen may paint with is a DEFAULT-DENY property allowlist and NOTHING
- * ELSE: `safeStyle` keeps a declaration iff its property is named here, whatever
- * its value. No value is ever inspected — so there is no CSS spelling for a model
- * to bypass. The list holds only properties that cannot fetch: a `color` takes a
- * URL nowhere, but `background`, `backgroundImage`, `filter`, `backdropFilter`
- * and `cursor` all can (`url()`, `image-set()`), so they are simply absent and
- * drop by default alongside `maskImage`, `borderImage` and `content`. Themed fills
- * use `backgroundColor`; gradients/blur are not available to a raw brick (a
- * host-controlled kit token could reintroduce them later, out of scope here).
- * `position` is allowed: `SURFACE_CONTAINMENT` clips even `fixed`/`sticky` to the
- * box, so no value check is needed to hold a screen inside its surface.
- */
-const ALLOWED_STYLE: ReadonlySet<string> = new Set([
-  // layout
-  "display", "flexDirection", "flexWrap", "flex", "flexGrow", "flexShrink", "flexBasis",
-  "alignItems", "alignSelf", "justifyContent", "justifyItems", "justifySelf",
-  "gap", "rowGap", "columnGap", "gridTemplateColumns", "gridTemplateRows",
-  "gridColumn", "gridRow", "gridAutoFlow", "position", "inset", "top", "right", "bottom", "left",
-  "width", "height", "minWidth", "minHeight", "maxWidth", "maxHeight",
-  "overflow", "overflowX", "overflowY", "boxSizing",
-  // spacing
-  "margin", "marginTop", "marginRight", "marginBottom", "marginLeft",
-  "padding", "paddingTop", "paddingRight", "paddingBottom", "paddingLeft",
-  // color
-  "color", "backgroundColor", "borderColor", "outlineColor",
-  // typography
-  "fontSize", "fontWeight", "fontStyle", "fontFamily", "lineHeight", "letterSpacing",
-  "textAlign", "textTransform", "textDecoration", "textOverflow", "whiteSpace",
-  "wordBreak", "textWrap", "fontVariantNumeric",
-  // border + shape (borderImage* is deliberately absent — it fetches)
-  "border", "borderWidth", "borderStyle", "borderRadius",
-  "borderTop", "borderRight", "borderBottom", "borderLeft",
-  "borderTopWidth", "borderRightWidth", "borderBottomWidth", "borderLeftWidth",
-  "borderTopStyle", "borderRightStyle", "borderBottomStyle", "borderLeftStyle",
-  "borderTopColor", "borderRightColor", "borderBottomColor", "borderLeftColor",
-  "borderTopLeftRadius", "borderTopRightRadius", "borderBottomLeftRadius", "borderBottomRightRadius",
-  "outline", "outlineWidth", "outlineStyle", "outlineOffset",
-  // effects
-  "opacity", "boxShadow", "transform", "transformOrigin",
-  "transition", "transitionProperty", "transitionDuration", "transitionTimingFunction",
-]);
+/** The paint allowlist itself lives in the contract, beside the display tags,
+ *  because the component screen's typings print the same list as the `style`
+ *  type — one boundary, read from one place (`contract/kit/display.ts`). */
+const ALLOWED_STYLE: ReadonlySet<string> = new Set(SAFE_STYLE_PROPERTIES);
 
-/** The style a brick actually paints with: the model's, minus every declaration
+/** The style a node actually paints with: the model's, minus every declaration
  *  whose property is not on the allowlist. A pure key filter — no value is read,
  *  so there is no CSS parser and nothing to bypass. */
-export function safeStyle(style: CSSProperties | undefined): CSSProperties | undefined {
-  if (style === undefined) return undefined;
+export function safeStyle(style: CSSProperties | null | undefined): CSSProperties | undefined {
+  if (style === undefined || style === null) return undefined;
   return Object.fromEntries(
     Object.entries(style).filter(([property]) => ALLOWED_STYLE.has(property)),
   );
 }
 
+/**
+ * THE DOOR — a node's bound props as it may paint with them. The renderer calls
+ * this wherever model-written props become a component's props, so ONE list
+ * covers every node: a brick, a Kit component and a host component alike. It has
+ * to be here rather than inside each implementation, because a Kit root MERGES
+ * `style` onto its own (`<article style={{ ...theme, ...style }}>`) — filtered
+ * only in the bricks, `Card` painted the `backgroundImage` a `<div>` may not.
+ */
+export function safeProps(props: Record<string, unknown>): Record<string, unknown> {
+  return "style" in props ? { ...props, style: safeStyle(props.style as CSSProperties) } : props;
+}
+
 export const DISPLAY_BRICKS: Record<string, (props: DisplayBrickProps) => ReactNode> = {
-  div: ({ style, hostClass, children }) => <div style={safeStyle(style)} className={hostClass}>{children}</div>,
-  span: ({ style, hostClass, children }) => <span style={safeStyle(style)} className={hostClass}>{children}</span>,
-  section: ({ style, hostClass, children }) => <section style={safeStyle(style)} className={hostClass}>{children}</section>,
-  article: ({ style, hostClass, children }) => <article style={safeStyle(style)} className={hostClass}>{children}</article>,
-  header: ({ style, hostClass, children }) => <header style={safeStyle(style)} className={hostClass}>{children}</header>,
-  footer: ({ style, hostClass, children }) => <footer style={safeStyle(style)} className={hostClass}>{children}</footer>,
-  aside: ({ style, hostClass, children }) => <aside style={safeStyle(style)} className={hostClass}>{children}</aside>,
-  h1: ({ style, hostClass, children }) => <h1 style={safeStyle(style)} className={hostClass}>{children}</h1>,
-  h2: ({ style, hostClass, children }) => <h2 style={safeStyle(style)} className={hostClass}>{children}</h2>,
-  h3: ({ style, hostClass, children }) => <h3 style={safeStyle(style)} className={hostClass}>{children}</h3>,
-  h4: ({ style, hostClass, children }) => <h4 style={safeStyle(style)} className={hostClass}>{children}</h4>,
-  h5: ({ style, hostClass, children }) => <h5 style={safeStyle(style)} className={hostClass}>{children}</h5>,
-  h6: ({ style, hostClass, children }) => <h6 style={safeStyle(style)} className={hostClass}>{children}</h6>,
-  p: ({ style, hostClass, children }) => <p style={safeStyle(style)} className={hostClass}>{children}</p>,
-  strong: ({ style, hostClass, children }) => <strong style={safeStyle(style)} className={hostClass}>{children}</strong>,
-  em: ({ style, hostClass, children }) => <em style={safeStyle(style)} className={hostClass}>{children}</em>,
-  small: ({ style, hostClass, children }) => <small style={safeStyle(style)} className={hostClass}>{children}</small>,
-  code: ({ style, hostClass, children }) => <code style={safeStyle(style)} className={hostClass}>{children}</code>,
-  blockquote: ({ style, hostClass, children }) => <blockquote style={safeStyle(style)} className={hostClass}>{children}</blockquote>,
-  ul: ({ style, hostClass, children }) => <ul style={safeStyle(style)} className={hostClass}>{children}</ul>,
-  ol: ({ style, hostClass, children }) => <ol style={safeStyle(style)} className={hostClass}>{children}</ol>,
-  li: ({ style, hostClass, children }) => <li style={safeStyle(style)} className={hostClass}>{children}</li>,
+  div: ({ style, hostClass, children }) => <div style={style} className={hostClass}>{children}</div>,
+  span: ({ style, hostClass, children }) => <span style={style} className={hostClass}>{children}</span>,
+  section: ({ style, hostClass, children }) => <section style={style} className={hostClass}>{children}</section>,
+  article: ({ style, hostClass, children }) => <article style={style} className={hostClass}>{children}</article>,
+  header: ({ style, hostClass, children }) => <header style={style} className={hostClass}>{children}</header>,
+  footer: ({ style, hostClass, children }) => <footer style={style} className={hostClass}>{children}</footer>,
+  aside: ({ style, hostClass, children }) => <aside style={style} className={hostClass}>{children}</aside>,
+  h1: ({ style, hostClass, children }) => <h1 style={style} className={hostClass}>{children}</h1>,
+  h2: ({ style, hostClass, children }) => <h2 style={style} className={hostClass}>{children}</h2>,
+  h3: ({ style, hostClass, children }) => <h3 style={style} className={hostClass}>{children}</h3>,
+  h4: ({ style, hostClass, children }) => <h4 style={style} className={hostClass}>{children}</h4>,
+  h5: ({ style, hostClass, children }) => <h5 style={style} className={hostClass}>{children}</h5>,
+  h6: ({ style, hostClass, children }) => <h6 style={style} className={hostClass}>{children}</h6>,
+  p: ({ style, hostClass, children }) => <p style={style} className={hostClass}>{children}</p>,
+  strong: ({ style, hostClass, children }) => <strong style={style} className={hostClass}>{children}</strong>,
+  em: ({ style, hostClass, children }) => <em style={style} className={hostClass}>{children}</em>,
+  small: ({ style, hostClass, children }) => <small style={style} className={hostClass}>{children}</small>,
+  code: ({ style, hostClass, children }) => <code style={style} className={hostClass}>{children}</code>,
+  blockquote: ({ style, hostClass, children }) => <blockquote style={style} className={hostClass}>{children}</blockquote>,
+  ul: ({ style, hostClass, children }) => <ul style={style} className={hostClass}>{children}</ul>,
+  ol: ({ style, hostClass, children }) => <ol style={style} className={hostClass}>{children}</ol>,
+  li: ({ style, hostClass, children }) => <li style={style} className={hostClass}>{children}</li>,
 };
 
 /**

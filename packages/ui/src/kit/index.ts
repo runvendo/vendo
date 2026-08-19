@@ -18,12 +18,10 @@
 export {
   applyFormat,
   currencyMinorUnits,
-  fmt,
   formatDateTime,
   formatDuration,
   formatMoney,
   formatNum,
-  formatPercent,
   getKitIntl,
   isRenderableNumber,
   setKitIntl,
@@ -32,10 +30,9 @@ export {
   type KitIntl,
   type MoneyOptions,
   type NumOptions,
-  type PercentOptions,
   type ValueFormat,
 } from "./format.js";
-export { RowContext, readField, useFieldValue, type KitRow } from "./row.js";
+export { readField, type KitRow } from "./row.js";
 export { useKeyedState, type KeyedState } from "./state.js";
 export {
   chartSeries,
@@ -97,19 +94,11 @@ export {
   type SurfaceProps,
 } from "./layout.js";
 export {
-  DateTime,
   EnumBadge,
-  Money,
-  Num,
-  Percent,
   Text,
   humanizeEnum,
-  type DateTimeProps,
   type EnumBadgeProps,
   type EnumTone,
-  type MoneyProps,
-  type NumProps,
-  type PercentProps,
   type TextProps,
 } from "./values.js";
 export { Icon, type IconProps } from "./icon.js";

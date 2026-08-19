@@ -22,7 +22,7 @@
     "status reads as a small pill with a word in it — a colored dot on its own is never the only signal",
     "estimates read in points, like '5 pts' — never hours, days or money",
     "dates read as 'Aug 12', never ISO",
-    "an action that cannot be undone asks to confirm before it fires"
+    "cutting a release — the one action here that cannot be undone — asks to confirm before it fires, and the host's own approval step counts as the confirmation"
   ],
   "tools": {
     "list_issues": {

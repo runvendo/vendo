@@ -166,7 +166,7 @@ export default function Page() {
     expect(remixed.seed).toEqual({
       component: slot,
       baseline: oldHash,
-      instruction: "Call out that it is remixed",
+      wishes: ["Call out that it is remixed"],
     });
     // The remix IS its screen, and none of the capture came with it.
     expect(remixed.source?.["app.tsx"]?.text).toContain("— remixed");
@@ -225,7 +225,7 @@ export default function Page() {
     expect(reseeded.seed).toEqual({
       component: slot,
       baseline: newBaseline.hash,
-      instruction: "Call out that it is remixed",
+      wishes: ["Call out that it is remixed"],
     });
     // A NEW screen: the instruction really ran again.
     expect(reseeded.source?.["app.tsx"]?.text).toContain("Total net worth");

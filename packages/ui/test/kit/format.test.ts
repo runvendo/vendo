@@ -5,7 +5,6 @@ import {
   formatDuration,
   formatMoney,
   formatNum,
-  formatPercent,
   isRenderableNumber,
 } from "../../src/kit/format.js";
 
@@ -52,21 +51,6 @@ describe("formatMoney (takes major units)", () => {
   });
 });
 
-describe("formatPercent (takes a ratio 0..1 by default)", () => {
-  it("renders a ratio as a percentage", () => {
-    expect(formatPercent(0.42)).toBe("42%");
-    expect(formatPercent(0.1234, { fractionDigits: 1 })).toBe("12.3%");
-  });
-
-  it("can take an already-whole percentage", () => {
-    expect(formatPercent(42, { whole: true })).toBe("42%");
-  });
-
-  it("returns null for non-finite input", () => {
-    expect(formatPercent(Number.NaN)).toBeNull();
-  });
-});
-
 describe("formatNum", () => {
   it("groups thousands", () => {
     expect(formatNum(1234567)).toBe("1,234,567");
@@ -88,12 +72,14 @@ describe("formatNum", () => {
   });
 });
 
-describe("formatDuration (takes seconds)", () => {
+describe("formatDuration (takes seconds, and only seconds)", () => {
   it("reads a count of seconds as a duration", () => {
     expect(formatDuration(268)).toBe("4m 28s");
     expect(formatDuration(412)).toBe("6m 52s");
-    // A minutes field is `* 60` where it is read, the way cents are `/ 100`.
     expect(formatDuration(158 * 60)).toBe("2h 38m");
+    // No unit to declare any more: a series stored in minutes multiplies where
+    // its data is prepared, because a chart's `format` is a bare word.
+    expect(formatDuration(200)).toBe("3m 20s");
   });
 
   it("keeps to the two largest units — a duration is one figure, not three", () => {
@@ -103,9 +89,20 @@ describe("formatDuration (takes seconds)", () => {
   });
 
   it("drops a unit that would read as zero", () => {
-    expect(formatDuration(46)).toBe("46s");
     expect(formatDuration(300)).toBe("5m");
     expect(formatDuration(3600)).toBe("1h");
+  });
+
+  // A build stage's 38 seconds printed "38s", which is the host's own field read
+  // aloud, not a duration — the judge caught the whole sub-minute column while
+  // the 157-second stage beside it read "2m 37s". The minute is the floor.
+  it("floors a sub-minute count at the minute, so the pair still reads as one", () => {
+    expect(formatDuration(38)).toBe("0m 38s");
+    expect(formatDuration(46)).toBe("0m 46s");
+    expect(formatDuration(59.6)).toBe("1m");
+    // Nothing above the floor moves, and zero has no pair to carry.
+    expect(formatDuration(157)).toBe("2m 37s");
+    expect(formatDuration(0)).toBe("0s");
   });
 
   it("says 0s rather than nothing at all, and keeps a sign", () => {
@@ -121,7 +118,10 @@ describe("formatDuration (takes seconds)", () => {
     expect(formatDuration("268" as unknown as number)).toBeNull();
   });
 
-  it("is reachable through the format token every column and Stat takes", () => {
+  // The `duration` token survives for the ONE place the Kit still formats a
+  // figure itself: a chart axis, whose ticks come off a numeric scale the host
+  // reduces, so the chart has to be told what its numbers mean.
+  it("is reachable through the format token a chart axis takes", () => {
     expect(applyFormat(268, "duration")).toBe("4m 28s");
     expect(applyFormat("268", "duration")).toBeNull();
   });
@@ -137,6 +137,19 @@ describe("formatDateTime", () => {
     expect(formatDateTime(d, { mode: "date", timeZone: "UTC" })).toBe("Jan 2, 2026");
   });
 
+  it("compact drops the YEAR and keeps the clock", () => {
+    expect(formatDateTime("2026-08-12", { mode: "date" })).toBe("Aug 12, 2026");
+    expect(formatDateTime("2026-08-12", { mode: "date", compact: true })).toBe("Aug 12");
+    const stamp = formatDateTime(Date.UTC(2026, 7, 12, 15, 30), {
+      mode: "datetime",
+      compact: true,
+      timeZone: "UTC",
+    });
+    expect(stamp).toContain("Aug 12");
+    expect(stamp).toMatch(/3:30/);
+    expect(stamp).not.toContain("2026");
+  });
+
   it("shows no clock for a date-only value asked for as a datetime", () => {
     // A `due_date` used to render "Aug 1, 2026, 12:00 AM" — a time nobody stored.
     expect(formatDateTime("2026-08-01", { mode: "datetime" })).toBe("Aug 1, 2026");
@@ -148,6 +161,18 @@ describe("formatDateTime", () => {
     expect(formatDateTime("not-a-date")).toBeNull();
     expect(formatDateTime(Number.NaN)).toBeNull();
     expect(formatDateTime(undefined as unknown as string)).toBeNull();
+  });
+
+  it("refuses a string that names less than a full day, rather than guessing the rest", () => {
+    // V8's fallback parser answers a yearless stamp with 2001 — "Aug 15, 7:42 AM"
+    // became August 15th 2001, and "Week 1" became New Year's Day. Text already
+    // written for a reader is not data to re-read; the caller shows it as it is.
+    for (const written of ["Aug 15, 7:42 AM", "Aug 15", "Week 1", "15 Aug", "2026-08"]) {
+      expect(formatDateTime(written, { mode: "datetime" }), written).toBeNull();
+    }
+    // A full ISO day, with or without a clock, is still parsed.
+    expect(formatDateTime("2026-08-15", { mode: "date" })).toBe("Aug 15, 2026");
+    expect(formatDateTime("2026-08-15 07:42:00Z", { mode: "datetime", timeZone: "UTC" })).toMatch(/7:42/);
   });
 });
 

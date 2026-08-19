@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { declaredMoneyUnit, describeShapeWithSemantics, type ToolSemantics } from "../src/semantics.js";
+import {
+  declaredMoneyUnit,
+  describeFieldSemantic,
+  describeShapeWithSemantics,
+  fieldSemanticSchema,
+  SEMANTIC_TOKENS,
+  type FieldSemantic,
+  type ToolSemantics,
+} from "../src/semantics.js";
 import { type ShapeType } from "../src/shape.js";
 
 /** The declared shape of the invoice response, written literally — the same
@@ -63,6 +71,61 @@ describe("describeShapeWithSemantics", () => {
       .toBe('{ status: "paid" | "void" }');
     expect(describeShapeWithSemantics(shape, { status: { kind: "enum", labels: { paid: "Paid", void: "Void" } } }))
       .toBe("{ status: string:enum(paid|void) }");
+  });
+});
+
+/**
+ * `code` — the kind no shape can reach. A sha is 7 hex characters and a reader
+ * could guess it, but `feat/timeline-brick` is a plain string by every
+ * structural test there is, and only the host knows it is a ref.
+ */
+describe("the code semantic", () => {
+  it("annotates a card, so a writer is SHOWN which fields are refs", () => {
+    const shape: ShapeType = {
+      kind: "object",
+      fields: { branch: { kind: "string" }, message: { kind: "string" } },
+    };
+    expect(describeShapeWithSemantics(shape, { branch: { kind: "code" } }))
+      .toBe("{ branch: string:code, message: string }");
+  });
+
+  it("parses, so a host may declare one in its own semantics file", () => {
+    expect(fieldSemanticSchema.parse({ kind: "code" })).toEqual({ kind: "code" });
+  });
+});
+
+/**
+ * The card PRINTS these tokens and a Kit field ACCEPTS them (`@vendoai/ui`
+ * kit/row.ts), which only works while the two lists are the same list. A kind
+ * whose annotation is not a token is a thing a writer is shown and then refused
+ * for copying.
+ */
+describe("SEMANTIC_TOKENS", () => {
+  const fixed: FieldSemantic[] = [
+    { kind: "money", unit: "cents" },
+    { kind: "money", unit: "dollars" },
+    { kind: "date", format: "iso" },
+    { kind: "date", format: "epoch" },
+    { kind: "percent", scale: "ratio" },
+    { kind: "percent", scale: "0-100" },
+    { kind: "code" },
+    { kind: "id" },
+  ];
+
+  it("is exactly what the card prints for every kind that names one", () => {
+    expect(fixed.map(describeFieldSemantic).sort()).toEqual([...SEMANTIC_TOKENS].sort());
+  });
+
+  // The two that carry a payload rather than naming a kind, and the one that
+  // claims nothing — none of them is a token, and none of them is copyable.
+  it("leaves out the kinds whose annotation is not a fixed word", () => {
+    const open = [
+      describeFieldSemantic({ kind: "enum", labels: { paid: "Paid" } }),
+      describeFieldSemantic({ kind: "id", entity: "client" }),
+      describeFieldSemantic({ kind: "money", unit: "cents", currency: "USD" }),
+      describeFieldSemantic({ kind: "plain" }),
+    ];
+    for (const annotation of open) expect(SEMANTIC_TOKENS).not.toContain(annotation);
   });
 });
 

@@ -2,10 +2,9 @@
 /**
  * DataTable, with the rows painted by the model.
  *
- * A `field` binding has nowhere to put the ÷100, so a cents column rendered as
- * dollars — a 100x lie, and the dominant data-honesty failure across every
- * model in the 2026-08-16 benchmark. A row written as CHILDREN can do the math
- * where it reads the field, so these tests are about the two things that has to
+ * A whole row written by hand, where a `cell` function per column would be three
+ * functions saying the same thing. The math AND the formatting run where the
+ * record is in scope, so these tests are about the two things that has to
  * survive: the cells must land under the headers they belong to, and everything
  * the table already does — sorting, search, the fold — must keep running on
  * `rows` and still address the right painted row.
@@ -14,7 +13,7 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { DataTable } from "../../src/kit/data/data-table.js";
 import { TableRow } from "../../src/kit/data/table-row.js";
-import { Money, Text } from "../../src/kit/values.js";
+import { Text } from "../../src/kit/values.js";
 import { Button } from "../../src/kit/forms/button.js";
 
 /** Cents, as a host's API really hands them over. */
@@ -23,6 +22,11 @@ const accounts = [
   { id: "a2", name: "Savings", balance_cents: 900_125 },
   { id: "a3", name: "Travel", balance_cents: 4_200 },
 ];
+
+/** The one-line helper a screen defines at the top of its own file: the ÷100 and
+ *  the currency both live here, where the row is written. */
+const money = (cents: number): string =>
+  (cents / 100).toLocaleString("en-US", { style: "currency", currency: "USD" });
 
 const COLUMNS = [
   { key: "name", label: "Account" },
@@ -35,7 +39,7 @@ const painted = (props: Partial<React.ComponentProps<typeof DataTable>> = {}, on
     {accounts.map((a) => (
       <TableRow key={a.id}>
         <Text text={a.name} />
-        <Money amount={a.balance_cents / 100} />
+        <Text text={money(a.balance_cents)} />
         <Button label="Cancel" onClick={() => onCancel(a.id)} />
       </TableRow>
     ))}
@@ -149,11 +153,12 @@ describe("DataTable with model-painted rows", () => {
 
   // The fold is written against five judge failures, and DataTable cannot reach
   // into a model-built row to do it — so the row folds its own, off the same
-  // count and the same column labels.
+  // set and the same column labels. It is opt-in now, because folding is what
+  // made rows three lines tall.
   it("folds the columns that do not fit into the row's first cell", () => {
     const restore = stubLayout(200, 420);
     try {
-      render(painted());
+      render(painted({ fold: true }));
       expect(screen.getAllByRole("columnheader")).toHaveLength(2);
       const first = screen.getAllByRole("row")[1]!;
       const cells = within(first).getAllByRole("cell");
@@ -162,6 +167,48 @@ describe("DataTable with model-painted rows", () => {
       // alone — "Checking: Cancel" would read as the row's own value.
       expect(cells[0]!.textContent).toBe("CheckingCancel");
       expect(cells[1]!.textContent).toBe("$1,284.50");
+    } finally {
+      restore();
+    }
+  });
+
+  // Unasked, nothing gives way at all — the frame scrolls — so a painted row
+  // still paints every cell it was written with, on the narrowest surface there
+  // is. A row that loses its own control is a row that lost the reason it was
+  // painted by hand.
+  it("paints every cell on a frame too narrow for them, unasked", () => {
+    const restore = stubLayout(200, 420);
+    try {
+      render(painted());
+      const cells = within(screen.getAllByRole("row")[1]!).getAllByRole("cell");
+      expect(cells).toHaveLength(3);
+      expect(cells.map((cell) => cell.textContent)).toEqual(["Checking", "$1,284.50", "Cancel"]);
+      expect(screen.getAllByRole("button", { name: "Cancel" })).toHaveLength(3);
+    } finally {
+      restore();
+    }
+  });
+
+  /**
+   * THE INDEX CLAIM, on the columns this time. The column that gives way is the
+   * least important one WHEREVER it sits, so the ones left are not a prefix: a row
+   * that placed its cells by counting them would put the balance under the action
+   * column's header, which is the misalignment this whole component exists to
+   * prevent.
+   */
+  it("keeps every cell under its own column when a middle column gives way", () => {
+    const restore = stubLayout(200, 420);
+    try {
+      render(painted({ columns: [COLUMNS[0]!, { ...COLUMNS[1]!, priority: 0 }, COLUMNS[2]!] }));
+      const headers = screen.getAllByRole("columnheader").map((h) => h.textContent);
+      expect(headers).toEqual(["Account", ""]);
+      // Two cells: the account, and the control the third column was written for.
+      expect(grid()).toEqual([
+        ["Checking", "Cancel"],
+        ["Savings", "Cancel"],
+        ["Travel", "Cancel"],
+      ]);
+      expect(screen.queryByText("$1,284.50")).toBeNull();
     } finally {
       restore();
     }
@@ -182,21 +229,24 @@ describe("DataTable with model-painted rows", () => {
   it("appends the actions cell to a painted row, against that row", () => {
     const pressed: string[] = [];
     render(painted({
-      rowActions: (
+      sortBy: "balance_cents desc",
+      // One element per record, in `rows` order — the shape a `(row) => elements`
+      // slot arrives in. Sorted, the list's order is nobody's screen order, so
+      // the trailing cell has to find its row by identity like every other cell.
+      rowActions: accounts.map((a) => (
         <>
-          <Text field="name" />
-          <Button label="Pay" onClick={() => pressed.push("pay")} />
+          <Text text={a.name} />
+          <Button label="Pay" onClick={() => pressed.push(a.id)} />
         </>
-      ),
+      )),
     }));
     const headers = screen.getAllByRole("columnheader");
     expect(headers).toHaveLength(4);
     for (const row of grid()) expect(row).toHaveLength(headers.length);
-    // Published on RowContext, so the control names THIS row's field.
-    expect(grid().map((row) => row[3])).toEqual(["CheckingPay", "SavingsPay", "TravelPay"]);
+    expect(grid().map((row) => row[3])).toEqual(["SavingsPay", "CheckingPay", "TravelPay"]);
 
     fireEvent.click(within(screen.getAllByRole("row")[1]!).getByRole("button", { name: "Pay" }));
-    expect(pressed).toEqual(["pay"]);
+    expect(pressed).toEqual(["a2"]);
   });
 
   it("still renders the field-binding table when it is handed no children", () => {

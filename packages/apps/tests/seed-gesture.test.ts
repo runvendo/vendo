@@ -96,7 +96,7 @@ describe("06-apps §8 — the ✦ gesture is a fork and a first edit in one (see
     expect(app.seed).toEqual({
       component: SLOT,
       baseline: "sha256:maple-base",
-      instruction: "make the number blue",
+      wishes: ["make the number blue"],
     });
     // The remix IS its screen — no captured seat, nothing copied.
     expect(screenOf(app)).toContain('color: "blue"');
@@ -122,7 +122,7 @@ describe("06-apps §8 — the ✦ gesture is a fork and a first edit in one (see
     // The provenance is stored and the app does not open, so the wrapper keeps
     // the host component it was going to replace. That is the claim, and it is
     // the terminal marker that carries it now — not an absent screen.
-    expect(app.seed?.instruction).toBe("make the number blue");
+    expect(app.seed?.wishes).toEqual(["make the number blue"]);
     expect(await runtime.open(app.id, ctx)).toMatchObject({ kind: "failed" });
     // OPEN QUESTION, deliberately not asserted either way: the app DOES now hold
     // a screen — the splitter's port, seeded and gauntlet-passed before the
@@ -163,7 +163,7 @@ describe("06-apps §8 — the ✦ gesture is a fork and a first edit in one (see
 
     const app = await runtime.seed.from({ component: SLOT, instruction: "make the number blue" }, ctx);
 
-    expect(app.seed?.instruction).toBe("make the number blue");
+    expect(app.seed?.wishes).toEqual(["make the number blue"]);
     expect(await runtime.get(app.id, ctx)).toMatchObject({ id: app.id });
   });
 
@@ -212,7 +212,7 @@ describe("06-apps §8 — gesture idempotency (one remix per component, per pers
     // The tap that created the app already carried its instruction, and this app
     // is that tap's answer — replaying a second one here would edit it twice.
     expect(asked).toHaveLength(0);
-    expect(again.seed?.instruction).toBe("make the number blue");
+    expect(again.seed?.wishes).toEqual(["make the number blue"]);
     expect(screenOf(again)).toContain('color: "blue"');
   });
 

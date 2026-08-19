@@ -40,6 +40,10 @@ const DEFAULT_TOOL_NAMES = [
   "vendo_automate",
   "vendo_make",
   "vendo_slots_list",
+  // The user's own file drawer. Unconditional, like the apps pack: every
+  // deployment has a workspace, so every deployment has a drawer to read.
+  "vendo_user_files_list",
+  "vendo_user_files_read",
 ] as const;
 
 /** Every skill a default `createVendo()` mounts at /host/skills. */

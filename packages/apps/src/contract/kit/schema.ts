@@ -52,12 +52,13 @@ export function data(schema: ZodTypeAny, doc: string, options?: PropOptions): Pr
 export interface KitSlotSpec {
   /** 1-line "what goes here". */
   doc: string;
-  /** Component names the slot may hold; absent means the read-only value tier
-   *  (`KIT_SLOT_CONTENT_NAMES`). */
-  content?: readonly string[];
-  /** Painted once per row/entry rather than once for the component — so what
-   *  is written in it has no row of its own to act on. */
+  /** Painted once per row/entry rather than once for the component — so the
+   *  function form of this slot takes the ROW, and the screen VM calls it once per
+   *  row instead of once (`KIT_SLOT_PROPS`). */
   perRow?: boolean;
+  /** The prop holding the rows a `perRow` slot is painted once for. Required on
+   *  one — it is what the VM maps the slot's function over. */
+  rows?: string;
   /** The PROP whose description objects carry this slot as a field, so the slot
    *  lives at `<at>[].<name>` (`columns[].cell`). Absent means the slot is a
    *  prop of its own (`marker`).
@@ -67,6 +68,21 @@ export interface KitSlotSpec {
    *  that only renders `columns[].cell`) is a value nothing paints. The nesting
    *  check matches on this path and refuses the rest. */
   at?: string;
+}
+
+/**
+ * Two props the component cannot honour TOGETHER: it paints one and drops the
+ * other, and no schema can say so — each is individually valid, and the pair is
+ * what is wrong. `Timeline` is the case: given a `cell` AND a `titleField` the
+ * cell wins in silence, so the model asked for a title and got a body it never
+ * wrote, with every stage passing.
+ */
+export interface KitExclusiveProps {
+  /** The props that may not be written together. */
+  props: readonly string[];
+  /** The repair, NAMED: which one to keep and what it costs to drop the other. A
+   *  refusal that only reports the collision leaves the model to guess. */
+  fix: string;
 }
 
 export interface KitComponentSpec {
@@ -83,6 +99,15 @@ export interface KitComponentSpec {
   /** Does this component RENDER what is nested inside it? Absent means no — most
    *  of the Kit is a leaf, and the renderer hands children to leaves too. */
   takesChildren?: boolean;
+  /** What to write INSTEAD of children, for a childless component whose own
+   *  props are not the obvious answer. The nesting check's generic sentence ends
+   *  with "give it what it showed through its own props", which is true and
+   *  useless for a `<Menu>`: the entries are DATA plus one handler, and nothing
+   *  in the refusal said so. */
+  childrenFix?: string;
+  /** The prop pairs this component cannot honour together, refused by the
+   *  nesting check rather than resolved in silence. */
+  exclusive?: readonly KitExclusiveProps[];
   /** Slot name → spec. Absent means the component takes no elements in its
    *  props at all, and one written there is refused rather than dropped. */
   slots?: Record<string, KitSlotSpec>;

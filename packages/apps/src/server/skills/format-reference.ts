@@ -14,6 +14,14 @@
  * workers read (`componentsPromptSection`), so it cannot drift from the code — and
  * it now teaches the same idiom this chapter does, so nothing here has to correct
  * it (`contract/kit/kit-prompt.ts`).
+ *
+ * The WORKED SCREENS are the other half of the teaching, and each one is there for
+ * a shape a model does not reach for from prose: a total reduced off the rows and
+ * repeated where it is acted on, a fixed column count for a compare-these ask, a
+ * detail pane opened on the first row with the row action on every row. One stacked
+ * card list was the only example for a while, and a stacked card list is what came
+ * back. They are pinned in `tests/skills/format-reference.test.ts`, which runs each
+ * of them through the real save-time gauntlet.
  */
 import { DISPLAY_TAG_NAMES } from "../../contract/kit/index.js";
 import { SCREEN_FILE } from "../../contract/genui/component/index.js";
@@ -29,9 +37,10 @@ const APP_FILE: (typeof HOT_PATH_FILES)[number] = SCREEN_FILE;
 
 const CHAPTER = `# The screen file
 
-An app is ONE file — \`${APP_FILE}\`, in the app's own directory
-\`user/apps/app_<name>/\` — holding a React component, default-exported. Saving it
-repaints the person's screen.
+- An app is ONE file: \`${APP_FILE}\`, in the app's own directory
+  \`user/apps/app_<name>/\`.
+- It holds a React component, default-exported.
+- Saving it repaints the person's screen.
 
 \`\`\`tsx
 import { useState } from "react";
@@ -42,56 +51,64 @@ export default function Overview() { … }
 
 Those two imports are everything there is. Nothing else can be loaded.
 
-## Data — \`useQuery("tool_name")\`
+## Data — \`useQuery(tool_name, input)\`
 
-- Synchronous, and it hands back the tool's result EXACTLY as the tool returns
-  it — read the field names off the tool's own schema.
-- Money in tool data is usually CENTS: \`amount_cents: 2850\` means $28.50. Every
-  money component takes DOLLARS and never converts — divide by 100 where you
-  read it (\`amount_cents / 100\`), or the screen shows $2,850.00.
+- Synchronous, and it hands back the tool's result with the tool's own field
+  names on it — read them off the tool's schema.
+- A read whose input you COMPUTE has no answer on the first paint: its \`data\` is
+  undefined until the host supplies it, and then every \`useQuery\` re-runs with
+  the real thing. So write the screen so an unanswered read draws its empty shell
+  — \`rows.data ?? []\`, an empty state, a panel with nothing in it yet.
+- The input is any value you have: a piece of state, something you computed, a
+  field off another query.
+- Read the same tool twice with different inputs where the screen needs two
+  answers.
 
 ## Actions — \`tools.<tool_name>(args)\`
 
 - Inside an event handler only, never during render. \`await\` it when you need
   the result; the host runs the tool and answers.
 - When an awaited call succeeds, every \`useQuery\` on the screen re-runs and the
-  screen re-renders with fresh data on its own — never patch state to mirror
-  what the refresh will bring back.
+  screen re-renders with fresh data, keeping the state it had — never patch state
+  to mirror what the refresh will bring back.
 - Destructive and money-moving calls are confirmed by the product OUTSIDE your
   screen — the guard asks the person before the call runs — so never build a
   confirm step of your own: no "are you sure" panel, no second button, no
   \`confirming\` state.
 - The exception: a confirmation the person ASKED for, or one press that fires a
-  whole batch of calls. That one is part of their app — a \`<Modal>\` saying how
-  many, with the button that runs the loop LAST in its \`footer\` (that footer is
-  a right-aligned row, so the last button is the one a person reaches for). A
-  guarded host still asks once per call on top of it, and that is the trade:
-  only your Modal can say how many, and being asked twice beats a batch that
-  goes out silently.
+  whole batch of calls. That one is part of their app, and the second worked
+  screen below is its shape.
+  - A guarded host still asks once per call on top of it, and that is the trade:
+    only your Modal can say how many, and being asked twice beats a batch that
+    goes out silently.
+- Another exception: a confirmation THIS product's own rules require. When the
+  host design rules in the brief name an action as confirm-first, that step is
+  part of the app — build it. The guard's own ask counts where it fires; where
+  it does not, yours is the one the rules asked for.
 
 ## Components and plain HTML
 
-- Prefer the catalog: a component already carries this product's theme and
-  formatting, and its props are checked — a \`<Money>\` is never mis-grouped, a
-  \`<DateTime>\` never prints "Invalid Date".
+- Prefer the catalog: its components carry this product's theme, and their props
+  are checked.
 - Beside it you have plain display HTML — \`${DISPLAY_TAG_NAMES.join("`, `")}\` — used the way you'd use
   it anywhere: headings, prose, lists, and any structure the catalog doesn't
   offer.
 - Display tags take children and an inline \`style\`, nothing else — no handlers,
   so anything that ACTS is a component.
-- Whatever you build yourself, style it off the host's own CSS variables
+- Whatever you build yourself, style off the host's own CSS variables
   (\`var(--vendo-color-accent)\`, \`var(--vendo-density-content-gap)\`), never
-  hard-coded values — a hard-coded color is your color, not the product's; every
-  variable there is, and what each one means, is listed at the end of this file.
-- Figures in prose still go through the value components: an amount in a
-  sentence is an inline \`<Money>\`, never a \`$\` and a \`toFixed\` you typed —
-  those lose the grouping and the host's currency.
+  hard-coded values: a hard-coded color is your color, not the product's.
+- Every variable there is, and what each one means, is listed at the end of this
+  file.
+- You format every figure yourself, with \`Intl\` — \`toLocaleString\`,
+  \`toLocaleDateString\` — in the units the host stores and the currency the brief
+  names. Components display and theme what you hand them; none of them formats.
 
 ## The sandbox
 
 - No network, no storage, no timers, no clock: no \`fetch\`, no \`localStorage\`,
-  no \`setTimeout\`, no \`new Date()\`. A style that fetches (\`url(…)\`) is dropped.
-- Dates go to the date component as the ISO string you were given.
+  no \`setTimeout\`, no \`new Date()\`.
+- A style that fetches (\`url(…)\`) is dropped.
 - \`key={…}\` on every row you \`.map\`.
 
 ## State — \`useState\`
@@ -101,16 +118,17 @@ Those two imports are everything there is. Nothing else can be loaded.
   \`{ target: { checked } }\`.
 - There is no \`preventDefault\` to call: \`<Form>\` submits itself.
 
-Save errors tell you exactly what to fix. Fix and save again.
-
 ---
 
-## One worked screen, end to end
+## Worked screens
 
 The ask: "let me cancel a transfer before it goes out."
 
 \`\`\`tsx
-import { Button, Card, DateTime, Money, Row, Stack, Text, tools, useQuery } from "@vendo/screen";
+import { Button, Card, Row, Stack, Text, tools, useQuery } from "@vendo/screen";
+
+const money = (cents) => (cents / 100).toLocaleString("en-US", { style: "currency", currency: "USD" });
+const day = (iso) => new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 
 export default function PendingTransfers() {
   const pending = useQuery("list_pending_transfers");
@@ -126,10 +144,10 @@ export default function PendingTransfers() {
           <Card key={transfer.id} title={transfer.recipient}>
             <Row justify="between" align="center">
               <Stack gap={4}>
-                <Money amount={transfer.amount_cents / 100} />
-                <DateTime value={transfer.scheduled_for} mode="date" />
+                <Text text={money(transfer.amount_cents)} />
+                <Text text={day(transfer.scheduled_for)} variant="caption" />
               </Stack>
-              <Button label="Cancel" variant="danger" onClick={() => tools.cancel_transfer({ id: transfer.id })} />
+              <Button label="Cancel" tone="danger" onClick={() => tools.cancel_transfer({ id: transfer.id })} />
             </Row>
           </Card>
         ))
@@ -139,22 +157,107 @@ export default function PendingTransfers() {
 }
 \`\`\`
 
-Nothing on that screen is typed in: every value is read off the query, every
-number and date is formatted by the component showing it, the empty list says so
-in one honest line, and the one thing that changes the product files its call
-straight from the press — the product does the asking.
+The ask: "what do I owe this month, and let me pay it all at once." A total the ask
+names is COMPUTED off the rows the screen drew, and said again in the dialog that
+acts on it.
+
+\`\`\`tsx
+import { useState } from "react";
+import { Button, DataTable, Modal, Row, Stack, Stat, Text, tools, useQuery } from "@vendo/screen";
+
+const money = (cents) => (cents / 100).toLocaleString("en-US", { style: "currency", currency: "USD" });
+const day = (iso) => new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+
+export default function BillsDue() {
+  const bills = useQuery("list_open_bills");
+  const [confirming, setConfirming] = useState(false);
+  const totalCents = bills.data.reduce((sum, bill) => sum + bill.amount_cents, 0);
+
+  return (
+    <Stack gap={12}>
+      <Row justify="between" align="center">
+        <Stat label="Due this month" value={money(totalCents)} />
+        <Button label="Pay all" onClick={() => setConfirming(true)} />
+      </Row>
+      <DataTable rows={bills.data} columns={["payee", { key: "due_on", label: "Due", cell: (bill) => <Text text={day(bill.due_on)} /> }, { key: "amount_cents", label: "Amount", align: "end", cell: (bill) => <Text text={money(bill.amount_cents)} /> }]} />
+      <Modal open={confirming} onClose={() => setConfirming(false)} title="Pay every open bill?"
+        footer={<Button label="Pay all" onClick={async () => { for (const bill of bills.data) await tools.pay_bill({ id: bill.id }); }} />}>
+        <Text>This pays {bills.data.length} bills, {money(totalCents)} in total.</Text>
+      </Modal>
+    </Stack>
+  );
+}
+\`\`\`
+
+The ask: "compare the plans side by side." An ask that names the things to compare
+gets a fixed \`columns\` — \`minChildWidth\` is for tiles whose count the data decides.
+
+\`\`\`tsx
+import { Button, Card, Grid, KeyValue, Stack, Text, tools, useQuery } from "@vendo/screen";
+
+const money = (cents) => (cents / 100).toLocaleString("en-US", { style: "currency", currency: "USD" });
+
+export default function ComparePlans() {
+  const plans = useQuery("list_plans");
+
+  return (
+    <Stack gap={12}>
+      <Text text="Every plan, side by side" variant="heading" />
+      <Grid columns={3} gap={8}>
+        {plans.data.map((plan) => (
+          <Card key={plan.id} title={plan.name}>
+            <Stack gap={6}>
+              <Text text={money(plan.price_cents)} variant="heading" />
+              <KeyValue record={plan} items={[{ key: "seats", label: "Seats" }, { key: "support", label: "Support" }]} />
+              <Button label="Switch" onClick={() => tools.switch_plan({ id: plan.id })} />
+            </Stack>
+          </Card>
+        ))}
+      </Grid>
+    </Stack>
+  );
+}
+\`\`\`
+
+The ask: "let me work through the open tickets one at a time." Three habits: the
+selection starts on the FIRST row, never on nothing; the row action is on EVERY row,
+disabled with its reason where it does not apply; and the filter's choices are read
+off the data rather than typed out, so they cannot disagree with it.
+
+\`\`\`tsx
+import { useState } from "react";
+import { Button, DataTable, KeyValue, Row, Select, SplitPane, Stack, Tooltip, tools, useQuery } from "@vendo/screen";
+
+export default function Tickets() {
+  const tickets = useQuery("list_tickets");
+  const rows = tickets.data;
+  const [openId, setOpenId] = useState(rows[0]?.id);
+  const [category, setCategory] = useState("");
+  const shown = category === "" ? rows : rows.filter((row) => row.category === category);
+
+  return (
+    <SplitPane size="45%">
+      <Stack gap={8}>
+        <Select label="Category" placeholder="All categories" value={category}
+          options={[...new Set(rows.map((row) => row.category))]}
+          onChange={(e) => setCategory(e.target.value)} />
+        <DataTable rows={shown} columns={["subject", "status"]} rowActions={(row) => (
+          <Row gap={6}>
+            <Button label="Open" disabled={row.id === openId} onClick={() => setOpenId(row.id)} />
+            <Tooltip label={row.status === "closed" ? "Already closed" : "Close this ticket"}>
+              {/* openId is sibling state to this press — read it with prev, never the render's copy. */}
+              <Button label="Close" tone="danger" disabled={row.status === "closed"} onClick={() => { tools.close_ticket({ id: row.id }); setOpenId((prev) => (prev === row.id ? rows.find((other) => other.id !== row.id)?.id : prev)); }} />
+            </Tooltip>
+          </Row>
+        )} />
+      </Stack>
+      <KeyValue record={rows.find((row) => row.id === openId)} items={["subject", "category", "assignee", "status"]} />
+    </SplitPane>
+  );
+}
+\`\`\`
 
 ---
-
-## Components
-
-Host components come first when one fits: they are this product's own, already
-branded. Every one of them is named in this product's own brief; open
-\`host/components/<Name>.md\`, relative to the directory you are working in, for
-its full props schema and examples.
-
-Everything below ships with the format and is available in every screen. The prop
-names and types are exact — an unknown prop fails the checks.
 
 `;
 
@@ -230,11 +333,12 @@ const variablesPromptSection = (): string => `---
 
 # The host's CSS variables
 
-Every one of these is already set on your screen, at this product's own values,
-unless its own line says otherwise. Use the NAME — the values are in the brief,
-and a copied value stops being the product's the moment its theme changes. A name
-outside this list resolves to nothing and the declaration it was in silently
-falls back.
+- Every one of these is already set on your screen, at this product's own values,
+  unless its own line says otherwise.
+- Use the NAME, never a copied value: the values are in the brief, and a copy
+  stops being the product's the moment its theme changes.
+- A name outside this list resolves to nothing, and the declaration it was in
+  silently falls back.
 
 ${VENDO_THEME_VARIABLE_NAMES.map((name) => `\`${name}\` — ${VARIABLE_MEANINGS[name]}`).join("\n")}
 `;

@@ -1,14 +1,12 @@
 /**
- * catalogPrompt() — the WHOLE catalog as one line per component, plus that
- * component's one worked example under it.
+ * catalogPrompt() — the WHOLE catalog as one short ENTRY per component: its name
+ * as a heading, its summary sentence, its props a line per class, its slots a
+ * line each, and one worked example.
  *
  * `kitPrompt` spends a section on every brick (props with docs, slots with docs,
  * a worked example) and costs ~680 characters each. That is affordable at 39
  * bricks and not at 55, and it teaches the Kit and the host's own components in
- * two different places and two different shapes. This renders both as ONE list:
- * what the component is, its props by class WITH THEIR TYPES, its slots, one
- * example — and the icon vocabulary once at the end, which no prompt has ever
- * carried, so the model stops inventing glyph names.
+ * two different places and two different shapes. This renders both as ONE list.
  *
  * The compression is the per-prop docs and the second example. What a prop takes
  * is not compressible: a name alone says nothing about whether `mode` wants a
@@ -17,12 +15,19 @@
  * walked off its own zod schema ({@link typeText}), and the one example shows
  * the shape filled in. Both are derived, so neither can drift from the specs.
  *
- * The preamble is `kitPrompt`'s, unchanged — the two laws do not depend on the
- * layout.
+ * The compression used to be a LAYOUT too — everything a component had on one
+ * run-on line, separated by mid-dots, with the example jammed underneath — and
+ * that is what came back as unreadable (2026-08-18, judged on the rendered
+ * catalog): a screenful of "summary · config: … · copy: … · slot …" with nothing
+ * for an eye to land on. Same facts, all of them, now with a line per KIND of
+ * fact; the price is a heading and a few line breaks per brick, which is the
+ * cheapest part of it.
+ *
+ * The preamble is `kitPrompt`'s, unchanged — the data law does not depend on
+ * the layout.
  */
 import type { ZodTypeAny } from "zod";
 import { zodShape } from "./zod-shape.js";
-import { KIT_ICON_NAMES } from "./icon-names.gen.js";
 import { PREAMBLE, promptExamples } from "./kit-prompt.js";
 import {
   ACTION_PROP_DESCRIPTION,
@@ -38,18 +43,22 @@ export interface CatalogPromptOptions {
   only?: string[];
   /** This host's own components, from the briefing pack's one-line reduction. */
   host?: readonly CatalogSummaryEntry[];
-  /** Omit the header preamble (the two laws) — default false. */
+  /** Omit the header preamble (the data law) — default false. */
   omitPreamble?: boolean;
 }
 
-/** How to read a line. The classes themselves are taught in `PREAMBLE`. */
+/** How to read an entry. The classes themselves are taught in `PREAMBLE`. */
 const LEGEND = [
   "",
-  "One line per component: `<Name>` what it is, then its props grouped by class,",
-  "then its slots, then ONE worked example indented under it. A prop reads",
-  "`name: type` and `!` marks a required one; `fn` is a function you write and",
-  "`element` is Kit elements. A line marked `[host]` is one of THIS host's own",
-  "components — write it like any other, props as it describes.",
+  "",
+  "## How to read an entry",
+  "",
+  "- One entry per component: `### <Name>`, what it is, its props a line per",
+  "  class, its slots a line each, then ONE worked example.",
+  "- A prop reads `name: type`, and `!` marks a required one.",
+  "- `fn` is a function you write; `element` is Kit elements.",
+  "- An entry marked `[host]` is one of THIS host's own components — write it like",
+  "  any other, props as it describes.",
 ].join("\n");
 
 /** data first: law 1 is the one a line must not bury. */
@@ -101,44 +110,45 @@ const typeText = (schema: ZodTypeAny | undefined): string => {
   }
 };
 
-function catalogLine(spec: KitComponentSpec): string {
-  const parts = [`<${spec.name}> ${spec.summary}`];
+function catalogEntry(spec: KitComponentSpec): string {
+  const lines = [`### <${spec.name}>`, spec.summary];
   for (const cls of CLASS_ORDER) {
     // The shared adjectives ride every component that reads one and `style` rides
     // all of them; the preamble teaches both, and 39 restatements would undo the
     // compression.
     const props = Object.entries(spec.props)
       .filter(([name, prop]) => prop.cls === cls && !KIT_PREAMBLE_PROP_NAMES.includes(name))
-      .map(([name, prop]) => `${name}${prop.required === true ? "!" : ""}: ${typeText(prop.schema)}`);
-    if (props.length > 0) parts.push(`${cls}: ${props.join(", ")}`);
+      .map(([name, prop]) => `\`${name}${prop.required === true ? "!" : ""}: ${typeText(prop.schema)}\``);
+    if (props.length > 0) lines.push(`- ${cls}: ${props.join(", ")}`);
   }
   // The engine's NAME, which the preamble cannot supply: it can say that some
   // components pass props through, not whose vocabulary each one speaks.
-  if (spec.engine !== undefined) parts.push(`plus any ${spec.engine} prop`);
+  if (spec.engine !== undefined) lines.push(`- plus any \`${spec.engine}\` prop`);
+  // A slot's doc is a SENTENCE, so it gets its own line — a run of them on the
+  // summary line is what made an entry unreadable.
   for (const [name, slot] of Object.entries(spec.slots ?? {})) {
-    parts.push(`slot ${name}${slot.perRow === true ? " (per row)" : ""}: ${slot.doc}`);
+    lines.push(`- slot \`${name}\`${slot.perRow === true ? " (per row)" : ""}: ${slot.doc}`);
   }
-  // ONE example, indented under the line. A prop list says what MAY be written
-  // and never what a filled-in component looks like; the second example a spec
-  // carries mostly repeats the first's lesson, and this text rides every
-  // generation, so the catalog buys one apiece and no more.
+  // ONE example, last. A prop list says what MAY be written and never what a
+  // filled-in component looks like; the second example a spec carries mostly
+  // repeats the first's lesson, and this text rides every generation, so the
+  // catalog buys one apiece and no more.
   const example = promptExamples(spec)[0];
-  const line = parts.join(" · ");
-  return example === undefined ? line : `${line}\n  ${example}`;
+  if (example !== undefined) lines.push(`- example: \`${example}\``);
+  return lines.join("\n");
 }
 
-const hostLine = (entry: CatalogSummaryEntry): string => `<${entry.name}> [host] ${entry.description}`;
-
-const ICONS = `Icon names — \`<Icon name>\` and every \`icon\` prop take one of these and nothing else:\n${KIT_ICON_NAMES.join(" ")}`;
+const hostEntry = (entry: CatalogSummaryEntry): string =>
+  `### <${entry.name}> [host]\n${entry.description}`;
 
 /** Render the whole catalog — Kit then host — from the schemas. */
 export function catalogPrompt(options: CatalogPromptOptions = {}): string {
   const wanted = (name: string): boolean => options.only === undefined || options.only.includes(name);
-  const lines = [
-    ...KIT_SPECS.filter((spec) => wanted(spec.name)).map(catalogLine),
-    ...(options.host ?? []).filter((entry) => wanted(entry.name)).map(hostLine),
+  const entries = [
+    ...KIT_SPECS.filter((spec) => wanted(spec.name)).map(catalogEntry),
+    ...(options.host ?? []).filter((entry) => wanted(entry.name)).map(hostEntry),
   ];
   const sections = options.omitPreamble === true ? [] : [PREAMBLE + LEGEND];
-  sections.push(lines.join("\n"), ICONS);
+  sections.push(entries.join("\n\n"));
   return sections.join("\n\n");
 }

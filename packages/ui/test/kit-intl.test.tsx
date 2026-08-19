@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 // Currency threading. `tools.json` semantics have carried `currency` since the
 // enrich pass, but every Kit formatter hardcoded USD — so a Pakistani payments
-// host rendered "$107.68" in a generated DataTable no matter what its host
-// tools declared. This suite pins that a host's declared currency reaches BOTH
-// the pure formatters (which is what `format:"money"` columns, Stat, CardList
-// and every chart call) and the Kit components, and that a per-value currency
-// still overrides it.
+// host rendered "$107.68" no matter what its host tools declared. This suite pins
+// that a host's declared currency reaches the pure formatters, and through them
+// the one place the Kit still formats a figure ITSELF — a chart, whose ticks and
+// labels are computed host-side off a numeric scale — and that a per-value
+// currency still overrides it.
 import { render } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import {
@@ -14,11 +14,26 @@ import {
   formatMoney,
   getKitIntl,
   setKitIntl,
-  DataTable,
-  Money,
-  Stat,
+  BarChart,
 } from "../src/kit/index.js";
 import { VendoProvider, createVendoClient } from "../src/index.js";
+
+/** jsdom lays nothing out, so recharts' ResponsiveContainer measures zero and
+ *  draws no SVG at all (charts.test.tsx documents the same stub). */
+function stubChartSize(width: number, height: number): () => void {
+  const real = globalThis.ResizeObserver;
+  globalThis.ResizeObserver = class {
+    constructor(private readonly cb: ResizeObserverCallback) {}
+    observe(target: Element) {
+      this.cb([{ target, contentRect: { width, height } } as unknown as ResizeObserverEntry], this as never);
+    }
+    unobserve() {}
+    disconnect() {}
+  } as never;
+  return () => {
+    globalThis.ResizeObserver = real;
+  };
+}
 
 // The ambient default is process-wide; leaving it set would leak into every
 // other suite in this file's worker.
@@ -47,7 +62,7 @@ describe("ambient Kit intl", () => {
     expect(formatMoney(107.68)).not.toContain("$");
   });
 
-  it("reaches applyFormat — the path DataTable/Stat/charts actually call", () => {
+  it("reaches applyFormat — the path a chart's axis and the chrome actually call", () => {
     setKitIntl({ currency: "PKR" });
     expect(applyFormat(107.68, "money")).not.toContain("$");
   });
@@ -105,29 +120,44 @@ describe("ambient Kit intl", () => {
 
 describe("VendoProvider intl", () => {
   it("installs the host currency before children render", () => {
-    const text = renderInProvider({ currency: "PKR" }, <Money amount={107.68} />);
-    expect(text).toContain("107.68");
-    expect(text).not.toContain("$");
+    // Read during the CHILD's own render, which is the ordering that matters: a
+    // figure formatted on the first pass has to already see the host's currency.
+    let seen: string | undefined;
+    function Probe() {
+      seen = getKitIntl().currency;
+      return null;
+    }
+    renderInProvider({ currency: "PKR" }, <Probe />);
+    expect(seen).toBe("PKR");
   });
 
-  it("drives a generated format:\"money\" DataTable column", () => {
-    const text = renderInProvider(
-      { currency: "PKR" },
-      <DataTable
-        rows={[{ amount: 107.68 }]}
-        columns={[{ key: "amount", label: "Amount", format: "money" }]}
-      />,
-    );
-    expect(text).toContain("107.68");
-    expect(text).not.toContain("$");
-  });
-
-  it("drives a format=\"money\" Stat", () => {
-    const text = renderInProvider({ currency: "PKR" }, <Stat label="Total" value={297.92} format="money" />);
-    expect(text).not.toContain("$");
+  // A chart is the one component whose figures the Kit still formats itself, so
+  // it is the one place a host's declared currency has to reach a RENDERED figure
+  // rather than a formatter somebody called by hand.
+  it('drives a chart\'s own format="money" — the last format token there is', () => {
+    const restore = stubChartSize(360, 220);
+    try {
+      const text = renderInProvider(
+        { currency: "PKR" },
+        <BarChart data={[{ month: "Jan", amount: 107.68 }]} xKey="month" series={["amount"]} format="money" />,
+      );
+      expect(text).toContain("107.68");
+      expect(text).not.toContain("$");
+    } finally {
+      restore();
+    }
   });
 
   it("falls back to USD when the host declares nothing", () => {
-    expect(renderInProvider(undefined, <Money amount={1234.56} />)).toContain("$1,234.56");
+    const restore = stubChartSize(360, 220);
+    try {
+      const text = renderInProvider(
+        undefined,
+        <BarChart data={[{ month: "Jan", amount: 1234.56 }]} xKey="month" series={["amount"]} format="money" />,
+      );
+      expect(text).toContain("$1,234.56");
+    } finally {
+      restore();
+    }
   });
 });

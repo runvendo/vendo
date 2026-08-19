@@ -35,7 +35,7 @@ describe("@vendoai/ui/kit's export surface", () => {
   });
 
   it("ships the Kit itself, so code-land renders the same components", () => {
-    for (const name of ["Stat", "DataTable", "LineChart", "Button", "fmt", "KIT_COMPONENTS", "useKeyedState"]) {
+    for (const name of ["Stat", "DataTable", "LineChart", "Button", "KIT_COMPONENTS", "useKeyedState"]) {
       expect(typeof kit[name as keyof typeof kit], name).not.toBe("undefined");
     }
   });

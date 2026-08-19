@@ -176,7 +176,7 @@ export function VendoThread({
     // A message typed mid-turn is offered to that turn before it queues.
     ...(thread.steer === undefined ? {} : { steer: thread.steer }),
   });
-  const { setDraft, setQueued, textareaRef, send } = composerApi;
+  const { draft, setDraft, setQueued, textareaRef, send } = composerApi;
   const risks = useMemo(() => riskByCall(thread.messages), [thread.messages]);
   const guardApprovals = useMemo(() => approvalByCall(thread.messages), [thread.messages]);
   // Grant SETS (demo-live-readiness): a parked call claimed by a
@@ -469,7 +469,13 @@ export function VendoThread({
                 {intro ? <p className="fl-intro">{intro}</p> : null}
               </>
             )}
-            {!tutorialActive && suggestions.length > 0 ? (
+            {!tutorialActive && draft.trim().length === 0 && suggestions.length > 0 ? (
+              // Starters are for a landing with nothing on it. Once an intent is
+              // in the composer — typed, or handed over by a ✦ that opened this
+              // panel ABOUT something — five cards proposing other things argue
+              // against the thing the person just asked for, which is how a
+              // remix click read as a generic assistant (cold walk, 2026-08-18).
+              //
               // Object suggestions render as two-line starter
               // cards (title + concrete outcome, optional host icon); plain
               // strings keep the pill chip. A MIXED array renders both

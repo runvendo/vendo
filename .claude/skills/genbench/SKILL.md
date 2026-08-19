@@ -14,8 +14,9 @@ One command, from the repo root (`ANTHROPIC_API_KEY` in the environment):
     pnpm genbench run --world maple                 # choose world (default: maple)
     pnpm genbench run --world all                   # every world into ONE run folder
 
-The corpus is **14 worlds, 200 cases** — 15 per world, except `buildlog` and
-`fieldops` at 10. Case ids in `maple`: `spend-overview`, `spend-chart`,
+The corpus is **14 worlds, 196 cases** — 15 per world, except `buildlog` and
+`fieldops` at 10 and `logistics`, `observability`, `product-analytics` and
+`trades-accounting` at 14. Case ids in `maple`: `spend-overview`, `spend-chart`,
 `pending-transfers`, `account-balances`, `no-pending-transfers`,
 `transfer-receipt`, `cancel-both-pending`, `transfer-activity-feed`,
 `room-for-dana`, `rent-check`, `bills-calendar`, `money-dashboard`,
@@ -54,7 +55,7 @@ The corpus is **14 worlds, 200 cases** — 15 per world, except `buildlog` and
 - Budgets are per contender: five minutes for `vendo` and `diy`, twelve for
   `claude-code`, which runs its own ten-minute wall clock inside the driver.
 - Rough cost: one case ≈ 1-4 min ≈ $0.30-$0.50 + judge; one world is 10-15x
-  that and `--world all` is 200x; `--models` multiplies by the model count. Prices in
+  that and `--world all` is 196x; `--models` multiplies by the model count. Prices in
   `src/meter.ts` are as of 2026-08-08 (Sonnet 5 is on intro pricing through
   2026-08-31) — token counts are the durable number, dollars are not.
 - `--prompt` runs open `preview.html` on macOS; full runs just print the path.

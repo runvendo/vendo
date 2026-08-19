@@ -20,7 +20,7 @@
     "uses the theme exactly: brick accent on warm paper, Onest, 3px corners on controls — no invented colors or fonts",
     "money always shows 2 decimals with a $ symbol, and anything a tenant still owes is in the danger color",
     "a unit is always named 'Building · Unit' — 'Wexler Row · 3B' — never a raw id like unit_wex_3b",
-    "dates read as 'Aug 14', a rent period reads as 'August 2026', times read as '4:00 PM' — never ISO",
+    "dates read as 'Aug 14', or 'Sep 5, 2025' where the year matters, a rent period reads as 'August 2026', times read as '4:00 PM' — never ISO",
     "every status is a small pill (Paid, Partial, Unpaid, Open, Scheduled), never plain sentence text",
     "dense operator layout: tight rows a manager can scan, no hero banners or oversized cards"
   ],
@@ -114,15 +114,15 @@
       }
     },
     "list_showings": {
-      "does": "Showings booked for the current week, Aug 12-16 2026, oldest first. The rows are the `data` array. `startTime` is 24-hour local time. `agent` is whoever is covering it. `status` is confirmed or requested (the prospect asked for the slot and nobody has confirmed it yet).",
+      "does": "Showings booked for the current week, Aug 12-16 2026, oldest first. The rows are the `data` array. `startTime` is when the showing starts, as a full local stamp — 2026-08-12T17:00. `agent` is whoever is covering it. `status` is confirmed or requested (the prospect asked for the slot and nobody has confirmed it yet).",
       "data": {
         "data": [
-          { "id": "shw_1", "unitId": "unit_wex_2b", "prospect": "Naomi Castellan", "date": "2026-08-12", "startTime": "17:00", "agent": "Rosa Lindqvist", "status": "confirmed" },
-          { "id": "shw_2", "unitId": "unit_wex_2b", "prospect": "Dev Patel", "date": "2026-08-13", "startTime": "11:00", "agent": "Rosa Lindqvist", "status": "confirmed" },
-          { "id": "shw_3", "unitId": "unit_ald_2b", "prospect": "Harriet Nolan", "date": "2026-08-13", "startTime": "16:00", "agent": "Devon Pike", "status": "confirmed" },
-          { "id": "shw_4", "unitId": "unit_ald_2a", "prospect": "Owen Brandt", "date": "2026-08-14", "startTime": "13:00", "agent": "Devon Pike", "status": "requested" },
-          { "id": "shw_5", "unitId": "unit_wex_2b", "prospect": "Camille Ordonez", "date": "2026-08-14", "startTime": "18:00", "agent": "Rosa Lindqvist", "status": "confirmed" },
-          { "id": "shw_6", "unitId": "unit_ald_2b", "prospect": "Felix Marchetti", "date": "2026-08-15", "startTime": "10:00", "agent": "Devon Pike", "status": "requested" }
+          { "id": "shw_1", "unitId": "unit_wex_2b", "prospect": "Naomi Castellan", "startTime": "2026-08-12T17:00", "agent": "Rosa Lindqvist", "status": "confirmed" },
+          { "id": "shw_2", "unitId": "unit_wex_2b", "prospect": "Dev Patel", "startTime": "2026-08-13T11:00", "agent": "Rosa Lindqvist", "status": "confirmed" },
+          { "id": "shw_3", "unitId": "unit_ald_2b", "prospect": "Harriet Nolan", "startTime": "2026-08-13T16:00", "agent": "Devon Pike", "status": "confirmed" },
+          { "id": "shw_4", "unitId": "unit_ald_2a", "prospect": "Owen Brandt", "startTime": "2026-08-14T13:00", "agent": "Devon Pike", "status": "requested" },
+          { "id": "shw_5", "unitId": "unit_wex_2b", "prospect": "Camille Ordonez", "startTime": "2026-08-14T18:00", "agent": "Rosa Lindqvist", "status": "confirmed" },
+          { "id": "shw_6", "unitId": "unit_ald_2b", "prospect": "Felix Marchetti", "startTime": "2026-08-15T10:00", "agent": "Devon Pike", "status": "requested" }
         ]
       }
     },

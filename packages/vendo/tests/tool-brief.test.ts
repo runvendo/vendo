@@ -30,9 +30,31 @@ describe("the screen agent's tool brief", () => {
     ]);
 
     expect(brief).toContain('input: {"type":"object","properties":{}}');
-    expect(brief).toContain('returns: {"type":"object"');
     expect(brief).toContain(UNKNOWN_INPUT_SCHEMA_NOTE);
-    expect(brief).toContain(UNKNOWN_OUTPUT_SHAPE_NOTE);
+  });
+
+  it("says nothing about what a tool RETURNS — the briefing's shape card already did", () => {
+    // The pack's `TOOL RESPONSE SHAPES` card covers every tool, this one included,
+    // in the host's own annotated units — and it rides the same prompt. A raw
+    // `returns:` JSON beside it was the same shape twice, the second time worse.
+    const brief = toolBrief([
+      {
+        name: "host_goal_create",
+        title: "Create goal",
+        description: "Goals",
+        risk: "write",
+        inputSchema: { type: "object", properties: { name: { type: "string" } } },
+        outputSchema: { type: "object", properties: { return_probe: { type: "array" } } },
+      },
+      // A tool that declares NO shape prints no unknown-output sentence either:
+      // the card is where a shape is missed, and it says so there.
+      { name: "host_voice_create", title: "Voice", description: "Voice", risk: "destructive" },
+    ]);
+
+    expect(brief).toContain('input: {"type":"object","properties":{"name":{"type":"string"}}}');
+    expect(brief).not.toContain("returns:");
+    expect(brief).not.toContain("return_probe");
+    expect(brief).not.toContain(UNKNOWN_OUTPUT_SHAPE_NOTE);
   });
 
   it("says a product with nothing to wire has nothing to wire, in the SCREEN's terms", () => {

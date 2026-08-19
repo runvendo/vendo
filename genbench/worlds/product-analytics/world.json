@@ -18,7 +18,7 @@
   },
   "style": [
     "uses the theme exactly: the near-black #0B0F14 canvas, mint #00D3A7 accent and Inter — no invented colors or fonts",
-    "the number is the loudest thing in any panel: metrics set large in tabular figures, their label small and muted #8B9AAA beside them",
+    "the number is the loudest thing in any panel: a metric's figure reads larger than its label, and the label is muted",
     "panels are divided by 1px #232D38 hairlines and corners stay nearly square (3-6px) — no drop shadows, no pill-shaped cards",
     "figures are formatted for scanning: counts with thousands separators (12,480), percentages to one decimal with a % sign, money with a $ and two decimals",
     "every metric names the window it covers — 'last 7 days', 'last 30 days', 'Aug 11' — right beside the number",
@@ -119,7 +119,7 @@
       }
     },
     "get_daily_activity": {
-      "does": "Activity per day, oldest day first: `active_users` is the people active that day, `new_users` the accounts created, `sessions` the sessions opened. The rows are the `data` array — this response is the 14 days ending 2026-08-11.",
+      "does": "Activity per day, oldest day first: `active_users` is the people active that day, `new_users` the accounts created, `sessions` the sessions opened. The rows are the `data` array — always the 14 days ending 2026-08-11, whatever `days` asks for.",
       "takes": { "days": "number" },
       "data": {
         "data": [

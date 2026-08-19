@@ -67,7 +67,7 @@ describe("POST /apps/seed — the ✦ gesture over the wire", () => {
     expect(app.seed).toEqual({
       component,
       baseline: "sha256:seed-wire-baseline",
-      instruction: "rank them by amount",
+      wishes: ["rank them by amount"],
       slot: "dashboard",
     });
     // The PORT is the app's own source — that is the fork now: the model edits

@@ -63,6 +63,28 @@ describe("the vendo verbs are projected as ordinary tools (design §4)", () => {
     expect(outcome.status).toBe("ok");
   });
 
+  it("carries the ask to the port, and never invites the model to write one", async () => {
+    // Half the reviewer's rubric — a section nobody asked for, work quietly
+    // dropped — is judged against the person's own words, so the gate standing at
+    // the end of a finished screen hands them over. It is deliberately off the
+    // DECLARED schema: a model filling that field would be handing the reviewer its
+    // own paraphrase of the ask, which cannot report the part it dropped.
+    const seen: Array<{ appId?: string; request?: string }> = [];
+    const registry = vendoVerbsRegistry(ports({
+      validate: async (input: { appId?: string; request?: string }) => {
+        seen.push(input);
+        return { ok: true as const, findings: [] };
+      },
+    }));
+
+    await registry.execute(call("validate", { appId: "app_1", request: "show me unpaid invoices" }), ctx());
+    await registry.execute(call("validate", { appId: "app_1" }), ctx());
+
+    expect(seen).toEqual([{ appId: "app_1", request: "show me unpaid invoices" }, { appId: "app_1" }]);
+    const validateTool = (await registry.descriptors()).find(({ name }) => name === "validate");
+    expect(Object.keys((validateTool?.inputSchema as { properties: object }).properties)).toEqual(["appId"]);
+  });
+
   it("schedule passes the cron through and reports what was armed", async () => {
     const outcome = await vendoVerbsRegistry(ports()).execute(
       call("schedule", { appId: "app_1", cron: "0 8 * * *" }),

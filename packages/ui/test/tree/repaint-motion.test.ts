@@ -56,33 +56,38 @@ describe("diffPaints", () => {
     expect(diff.marks.has("root")).toBe(false);
   });
 
-  it("gives a Kit numeric leaf a tick that renders its own in-between figures", () => {
-    const before = paint(
-      { id: "root", component: "Stack", children: ["root.Money:total"] },
-      { id: "root.Money:total", component: "Money", props: { amount: 100, currency: "USD", locale: "en-US" } },
-    );
-    const after = paint(
-      { id: "root", component: "Stack", children: ["root.Money:total"] },
-      { id: "root.Money:total", component: "Money", props: { amount: 250, currency: "USD", locale: "en-US" } },
-    );
-    const mark = diffPaints(before, after).marks.get("root.Money:total");
+  /** A Stat holding a NUMBER, which is the one leaf left with an in-between to
+   *  roll through. */
+  const stat = (value: number | string): TreeNode[] => [
+    { id: "root", component: "Stack", children: ["root.Stat:total"] },
+    { id: "root.Stat:total", component: "Stat", props: { label: "Total", value } },
+  ];
+
+  it("gives a numeric Stat a tick that renders its own in-between figures", () => {
+    const mark = diffPaints(paint(...stat(100)), paint(...stat(250))).marks.get("root.Stat:total");
     expect(mark?.kind).toBe("pulse");
     const tick = mark?.kind === "pulse" ? mark.tick : null;
     expect(tick).toMatchObject({ from: 100, to: 250 });
-    expect(tick?.render(100)).toBe("$100.00");
-    expect(tick?.render(250)).toBe("$250.00");
+    expect(tick?.render(100)).toBe("100");
+    expect(tick?.render(175)).toBe("175");
+    expect(tick?.render(250)).toBe("250");
+  });
+
+  /** THE ACCEPTED TRADE of the value tier's death: a screen formats its own
+   *  figures, so the common Stat now holds already-formatted TEXT — and text has
+   *  no in-between. It cuts to its new value under the pulse rather than rolling. */
+  it("pulses a string-valued Stat without a tick — it cuts instead of rolling", () => {
+    const mark = diffPaints(paint(...stat("$100.00")), paint(...stat("$250.00"))).marks.get("root.Stat:total");
+    expect(mark).toEqual({ kind: "pulse", tick: null });
   });
 
   it("pulses a non-numeric leaf without a tick", () => {
-    const before = paint(
-      { id: "root", component: "Stack", children: ["root.DateTime:due"] },
-      { id: "root.DateTime:due", component: "DateTime", props: { value: "2026-03-14" } },
-    );
-    const after = paint(
-      { id: "root", component: "Stack", children: ["root.DateTime:due"] },
-      { id: "root.DateTime:due", component: "DateTime", props: { value: "2026-04-01" } },
-    );
-    expect(diffPaints(before, after).marks.get("root.DateTime:due")).toEqual({ kind: "pulse", tick: null });
+    const badge = (value: string): TreeNode[] => [
+      { id: "root", component: "Stack", children: ["root.EnumBadge:status"] },
+      { id: "root.EnumBadge:status", component: "EnumBadge", props: { value } },
+    ];
+    expect(diffPaints(paint(...badge("pending")), paint(...badge("paid"))).marks.get("root.EnumBadge:status"))
+      .toEqual({ kind: "pulse", tick: null });
   });
 
   it("trusts an unkeyed list when the arrival is at the end — nothing below shifted", () => {

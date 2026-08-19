@@ -29,6 +29,7 @@ import {
   type ComponentScreenCheck,
 } from "../../src/server/checking/component-screen.js";
 import { screenCatalog } from "../../src/server/checking/screen-typings.js";
+import { nodeToolchain } from "../../src/server/checking/toolchain.js";
 import type { HostToolInfo } from "../../src/server/checking/deps.js";
 
 const pendingSchema: JsonSchema = {
@@ -113,7 +114,7 @@ const tools: readonly HostToolInfo[] = [
 ];
 
 /** The names this host's surface renders — the Kit slice a screen here needs. */
-const catalog = ["Stack", "Row", "Card", "Text", "Money", "DateTime", "Button", "Callout"];
+const catalog = ["Stack", "Row", "Card", "Text", "Button", "Callout"];
 
 const ROWS = {
   data: [
@@ -147,7 +148,7 @@ const refusal = async (
 };
 
 const GOOD = `import { useState } from "react";
-import { Button, Callout, Card, DateTime, Money, Row, Stack, Text, tools, useQuery } from "@vendo/screen";
+import { Button, Callout, Card, Row, Stack, Text, tools, useQuery } from "@vendo/screen";
 
 export default function PendingTransfers() {
   const pending = useQuery("list_pending_transfers");
@@ -166,8 +167,8 @@ export default function PendingTransfers() {
         <Card key={transfer.id} title={transfer.recipient}>
           <Row justify="between" align="center">
             <Stack gap={4}>
-              <Money amount={transfer.amount_cents / 100} />
-              <DateTime value={transfer.scheduled_for} mode="date" />
+              <Text text={(transfer.amount_cents / 100).toLocaleString("en-US", { style: "currency", currency: "USD" })} />
+              <Text text={new Date(transfer.scheduled_for).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })} variant="caption" />
             </Stack>
             <Button label="Cancel" variant="secondary" onClick={() => setConfirming(transfer.id)} />
           </Row>
@@ -242,35 +243,6 @@ describe("a screen that passes", () => {
     } finally {
       screen.dispose();
     }
-  });
-
-  // The three props a screen had no way to spell: the year a narrow column drops,
-  // a count of seconds read as a duration, and the unit that keeps a latency from
-  // being a bare number. Undeclared in the specs, each one is a blocking error
-  // here — which is what a model writing them off the catalog would have hit.
-  it("passes a screen that drops the year, reads seconds as a duration, and names a unit", async () => {
-    const result = await checkComponentScreen({
-      source: `import { DataTable, DateTime, Num, Row, Stack, Stat, useQuery } from "@vendo/screen";
-export default function S() {
-  const pending = useQuery("list_pending_transfers");
-  return (
-    <Stack gap={12}>
-      <Stat label="Longest wait" value={pending.data[0].amount_cents} format="duration" />
-      <Row gap={8} align="center">
-        <DateTime value={pending.data[0].scheduled_for} mode="date" compact />
-        <Num value={pending.data[0].amount_cents} unit="ms" />
-      </Row>
-      <DataTable rows={pending.data} columns={[{ key: "amount_cents", label: "Took", format: "duration" }]} />
-    </Stack>
-  );
-}
-`,
-      hostTools: tools,
-      catalog: [...catalog, "DataTable", "Num", "Stat"],
-      runQuery: async () => ROWS,
-    });
-
-    expect(result).toMatchObject({ ok: true, issues: [] });
   });
 
   it("passes a screen with no queries at all, and runs nothing", async () => {
@@ -432,51 +404,81 @@ export default function S() { return <Text text={String(useQuery("cancel_transfe
     expect(text).toContain("Call it from a handler as tools.cancel_transfer({ … })");
   });
 
-  it("refuses a computed query input, and says where the derivation belongs", async () => {
-    const { codes, text } = await refusal(`import { useState } from "react";
+  it("ADMITS a computed query input, and answers it from the paint that asked", async () => {
+    // Nothing can resolve this before the component runs — the input is whatever
+    // that render worked out. So the plan cannot hold it: the screen paints
+    // `{ data: undefined }` there, NAMES the read it wanted, and the gate runs it
+    // and paints again.
+    const ran: Ran[] = [];
+    const result = await check(`import { useState } from "react";
 import { Text, useQuery } from "@vendo/screen";
 export default function S() {
   const [status] = useState("pending");
   const rows = useQuery("list_pending_transfers", { status });
-  return <Text text={String(rows.data.length)} />;
+  return <Text text={rows.data === undefined ? "loading" : String(rows.data.length)} />;
 }
-`);
+`, async (tool, input) => {
+      ran.push(input === undefined ? { tool } : { tool, input });
+      return ROWS;
+    });
 
-    expect(codes).toEqual(["query-input"]);
-    expect(text).toContain("passes a computed input to useQuery");
-    expect(text).toContain("must be LITERAL JSON the tool can execute directly");
-    expect(text).toContain("derive what you needed from the result where you DISPLAY it");
+    expect(result.issues).toEqual([]);
+    expect(result.ok).toBe(true);
+    expect(ran).toEqual([{ tool: "list_pending_transfers", input: { status: "pending" } }]);
+    // The read the paint asked for is in the plan the surface re-reads, keyed the
+    // way the engine keys its data.
+    expect(result.queryPlan).toEqual([{ tool: "list_pending_transfers", input: { status: "pending" } }]);
+    expect(Object.keys(result.queries ?? {})).toEqual(['list_pending_transfers {"status":"pending"}']);
   });
 
-  it("refuses an input that only LOOKS literal", async () => {
-    // A spread and a computed key are both computed: the queries run before the
-    // component renders, so whatever they would read does not exist yet.
+  it("admits an input that only LOOKS literal, the same way", async () => {
+    // A spread and a computed key are both computed, and none of the three is a
+    // shape the scan can pre-run — so each is asked for by the paint instead.
     for (const input of ['{ ...defaults }', '{ [field]: "pending" }', '{ tags: ["a", , "b"] }']) {
-      const { codes, text } = await refusal(`import { Stack, Text, useQuery } from "@vendo/screen";
+      const result = await check(`import { Stack, Text, useQuery } from "@vendo/screen";
 const defaults = { status: "pending" };
 const field = "status";
 export default function S() {
   const found = useQuery("search_transfers", ${input});
-  return <Stack><Text text={String(found.data.length)} /></Stack>;
+  return <Stack><Text text={String(found.data === undefined ? 0 : found.data.length)} /></Stack>;
 }
 `);
-      expect(codes).toEqual(["query-input"]);
-      expect(text).toContain("passes a computed input to useQuery");
+      expect(result.issues).toEqual([]);
+      expect(result.queryPlan?.map(({ tool }) => tool)).toEqual(["search_transfers"]);
     }
   });
 
-  it("refuses the same tool read with two DIFFERENT inputs", async () => {
-    const { codes, text } = await refusal(`import { Stack, Text, useQuery } from "@vendo/screen";
+  it("ADMITS the same tool read with two DIFFERENT inputs — one result per ASK, not per tool", async () => {
+    const result = await check(`import { Stack, Text, useQuery } from "@vendo/screen";
 export default function S() {
   const pending = useQuery("list_pending_transfers", { status: "pending" });
   const sent = useQuery("list_pending_transfers", { status: "sent" });
   return <Stack><Text text={String(pending.data.length)} /><Text text={String(sent.data.length)} /></Stack>;
 }
-`);
+`, async (_tool, input) => ({ data: [{ id: (input as { status: string }).status }] }));
 
-    expect(codes).toEqual(["query-input"]);
-    expect(text).toContain('reads "list_pending_transfers" twice with DIFFERENT inputs');
-    expect(text).toContain("a screen resolves one result per tool");
+    expect(result.issues).toEqual([]);
+    expect(result.queries).toEqual({
+      'list_pending_transfers {"status":"pending"}': { data: [{ id: "pending" }] },
+      'list_pending_transfers {"status":"sent"}': { data: [{ id: "sent" }] },
+    });
+  });
+
+  it("reads one ask ONCE, however many times the screen writes it", async () => {
+    const ran: Ran[] = [];
+    const result = await check(`import { Stack, Text, useQuery } from "@vendo/screen";
+export default function S() {
+  const a = useQuery("list_pending_transfers", { status: "pending" });
+  const b = useQuery("list_pending_transfers", { status: "pending" });
+  return <Stack><Text text={String(a.data.length + b.data.length)} /></Stack>;
+}
+`, async (tool, input) => {
+      ran.push({ tool, input });
+      return ROWS;
+    });
+
+    expect(result.issues).toEqual([]);
+    expect(ran).toHaveLength(1);
   });
 
   it("refuses more arguments than useQuery takes", async () => {
@@ -487,7 +489,7 @@ export default function S() {
 }
 `);
 
-    expect(text).toContain("with 3 arguments — it takes the tool name and, at most, one literal input object");
+    expect(text).toContain("with 3 arguments — it takes the tool name and, at most, one input object");
   });
 
   it("refuses a tool call that names no tool", async () => {
@@ -606,7 +608,7 @@ export default function S() { return <img><Text text="x" /></img>; }
     expect(codes).toEqual(["types"]);
     expect(text).toContain("line 2: writes the HTML element <img>");
     expect(text).toContain("The HTML a screen has is display-only: div, span, section");
-    expect(text).toContain("Anything with behavior comes from \"@vendo/screen\": Stack, Row, Card, Text, Money, DateTime, Button, Callout.");
+    expect(text).toContain("Anything with behavior comes from \"@vendo/screen\": Stack, Row, Card, Text, Button, Callout.");
     // The closing tag is the same break; a repair list that says everything
     // twice reads as two problems.
     expect(text.match(/writes the HTML element/gu)).toHaveLength(1);
@@ -708,6 +710,22 @@ export default function S() { return <div id="card"><Text text="x" /></div>; }
     expect(ported.ok).toBe(false);
   });
 
+  it("refuses a style property the paint allowlist does not name, on a brick and on a Kit component alike", async () => {
+    // The renderer drops these at paint (`safeStyle`, one door for every node).
+    // Legal here, a screen compiled clean and then quietly did not paint what
+    // it wrote — the "valid component, nothing happens" class this floor refuses.
+    for (const element of [
+      `<div style={{ backgroundImage: "url(https://evil/x)" }}><Text text="x" /></div>`,
+      `<Card style={{ filter: "blur(4px)" }}><Text text="x" /></Card>`,
+    ]) {
+      const { codes } = await refusal(`import { Card, Text } from "@vendo/screen";
+export default function S() { return ${element}; }
+`);
+
+      expect(codes).toEqual(["types"]);
+    }
+  });
+
   it("refuses a name that does not exist inside a screen", async () => {
     const { text } = await refusal(`import { Text } from "@vendo/screen";
 export default function S() {
@@ -726,7 +744,7 @@ export default function S() { return <Sidebar><Text text="x" /></Sidebar>; }
 `);
 
     expect(text).toContain("renders <Sidebar>, which this screen never imported");
-    expect(text).toContain("The components available are: Stack, Row, Card, Text, Money, DateTime, Button, Callout.");
+    expect(text).toContain("The components available are: Stack, Row, Card, Text, Button, Callout.");
   });
 
   it("refuses a member the screen module does not export", async () => {
@@ -761,9 +779,90 @@ export default function S() { return <Text text="x" variant="enormous" />; }
     expect(text).not.toContain('prop "variant" prop "variant"');
   });
 
+  /**
+   * AN INVENTED GLYPH. `<Icon>` paints an empty span for a name outside lucide's
+   * set (`ui` kit/icon.tsx) rather than crashing, and the catalog no longer spends
+   * ~575 tokens teaching the 200-odd names — so nothing warned a model off one and
+   * nothing refused it: a blank where the screen said there was an icon, with every
+   * gate green. The generated typings print the closed set, which makes the
+   * compiler the refusal, with its own did-you-mean where the name is a near miss.
+   */
+  it("refuses an icon name lucide has not got, and takes a real one", async () => {
+    const withIcon = (source: string) => checkComponentScreen({
+      source,
+      hostTools: tools,
+      catalog: [...catalog, "Icon"],
+      runQuery: async () => ROWS,
+    });
+
+    const invented = await withIcon(`import { Icon, Row } from "@vendo/screen";
+export default function S() { return <Row><Icon name="invented-glyph" /></Row>; }
+`);
+    expect(invented.ok).toBe(false);
+    expect(invented.issues.map(({ code }) => code)).toEqual(["types"]);
+    // The PROP is named, so the repair knows what to rewrite.
+    expect(invented.issues[0]?.message).toContain('prop "name" on <Icon>');
+
+    // A near miss gets the compiler's own spelling suggestion — the whole reason
+    // the set is a union of literals rather than a bespoke check.
+    const near = await withIcon(`import { Icon, Row } from "@vendo/screen";
+export default function S() { return <Row><Icon name="trash-3" /></Row>; }
+`);
+    expect(near.ok).toBe(false);
+    expect(near.issues[0]?.message).toContain(`Did you mean '"trash"'?`);
+
+    // …and a real name passes the whole gauntlet, so this narrows the vocabulary
+    // and nothing else.
+    const real = await withIcon(`import { Icon, Row } from "@vendo/screen";
+export default function S() { return <Row><Icon name="credit-card" /></Row>; }
+`);
+    expect(real.issues).toEqual([]);
+    expect(real.ok).toBe(true);
+  });
+
+  /**
+   * A MISSPELLED TONE, by the same mechanism and for the same reason.
+   *
+   * `resolveTone` falls back to `neutral` for a word it does not know (`ui`
+   * kit/tokens.ts) — deliberately, because a stored screen carrying an old spelling
+   * must still render rather than crash. So `tone="sucess"` paints grey, which is a
+   * valid-looking pill nothing downstream can question. The Kit's tone schema is a
+   * zod enum, so the typings print it closed and the compiler is the refusal, with
+   * its own did-you-mean; the runtime fallback stays where it is, for the documents
+   * that need it.
+   */
+  it("refuses a tone the Kit's vocabulary has not got, and takes a real one", async () => {
+    const withBadge = (source: string) => checkComponentScreen({
+      source,
+      hostTools: tools,
+      catalog: [...catalog, "Badge"],
+      runQuery: async () => ROWS,
+    });
+
+    const typo = await withBadge(`import { Badge, Row } from "@vendo/screen";
+export default function S() { return <Row><Badge label="Paid" tone="sucess" /></Row>; }
+`);
+    expect(typo.ok).toBe(false);
+    expect(typo.issues.map(({ code }) => code)).toEqual(["types"]);
+    // The whole vocabulary is in the refusal, so the repair does not have to guess
+    // it — and the near miss gets the compiler's own spelling suggestion, which is
+    // the reason the set is a union of literals rather than a bespoke check.
+    expect(typo.issues[0]?.message).toContain('"neutral" | "accent" | "info" | "success" | "warning" | "danger"');
+    expect(typo.issues[0]?.message).toContain(`Did you mean '"success"'?`);
+
+    // …and every word the vocabulary really has passes, including `info`, which is
+    // a tone of its own now rather than an older spelling of neutral.
+    for (const tone of ["neutral", "accent", "info", "success", "warning", "danger"]) {
+      const real = await withBadge(`import { Badge, Row } from "@vendo/screen";
+export default function S() { return <Row><Badge label="Paid" tone="${tone}" /></Row>; }
+`);
+      expect(real.issues, tone).toEqual([]);
+    }
+  }, 30_000);
+
   it("never reads `key` as a prop — a mapped row writes one, and the real fault is the one named", async () => {
     const mapped = (row: string) => checkComponentScreen({
-      source: `import { DataTable, Money, TableRow, Text, useQuery } from "@vendo/screen";
+      source: `import { DataTable, TableRow, Text, useQuery } from "@vendo/screen";
 export default function S() {
   const pending = useQuery("list_pending_transfers");
   return (
@@ -784,7 +883,8 @@ export default function S() {
     });
 
     // The pattern the Kit prompt teaches, `key` and all.
-    expect(await mapped("<Money amount={transfer.amount_cents / 100} />")).toMatchObject({ ok: true, issues: [] });
+    expect(await mapped('<Text text={(transfer.amount_cents / 100).toLocaleString("en-US", { style: "currency", currency: "USD" })} />'))
+      .toMatchObject({ ok: true, issues: [] });
 
     // …and where the KEYED element is broken, `key` must not be what the repair
     // is told about: it rides along in every element-level props error, and the
@@ -793,10 +893,10 @@ export default function S() {
     const sentences = async (cell: string): Promise<string> =>
       (await mapped(cell)).issues.map(({ message }) => message).join("\n");
     for (const [broken, fault] of [
-      ['<Money amount={1} sparkle={true} />', 'sets unknown prop "sparkle"'],
-      ["<Money amount={transfer.recipient} />", 'prop "amount" on <Money> takes number'],
+      ['<Text text="1" sparkle={true} />', 'sets unknown prop "sparkle"'],
+      ["<Text text={transfer} />", 'prop "text" on <Text> takes string | number'],
     ] as const) {
-      const keyed = await sentences(broken.replace("<Money ", "<Money key={transfer.id} "));
+      const keyed = await sentences(broken.replace("<Text ", "<Text key={transfer.id} "));
       expect(keyed).toContain(fault);
       expect(keyed).toBe(await sentences(broken));
     }
@@ -963,6 +1063,137 @@ export default function S() {
     expect(text).toContain("guard an undefined or empty result before .map/.reduce and render an empty state instead");
   });
 
+  /**
+   * The bench's `buildlog/failure-log`, replayed.
+   *
+   * A screen read one query with a LITERAL input and a second with an input it
+   * computed off the first, then wrote `stages.data` raw. The computed read has no
+   * answer on the first paint — that is what the supply loop is for — and reading
+   * a field off it threw `cannot read property 'data' of undefined` before the
+   * host ever got to answer, so the screen was thrown away for a paint it was
+   * never given the data for.
+   *
+   * Two laws close it. A miss is an OBJECT now
+   * (`genui/component/vm-program.ts` `MISS`), so `.data` on a pending read yields
+   * `undefined` instead of throwing; and a paint that throws while it is STILL
+   * waiting on a read is a loading paint, so the loop answers what it named and
+   * paints again rather than recording the throw. Together they cover every shape
+   * — `.length`, `.map`, `.find` — because none of them is reached on the paint
+   * that matters.
+   *
+   * What is still a refusal: a throw with nothing outstanding, and a throw on the
+   * last bounded round, where there is no next paint to be judged on.
+   */
+  const withTable = async (source: string): Promise<ComponentScreenCheck> => checkComponentScreen({
+    source,
+    hostTools: tools,
+    catalog: [...catalog, "DataTable"],
+    runQuery: async () => ROWS,
+  });
+
+  const PENDING_READ = (shown: string): string => `import { useState } from "react";
+import { DataTable, Stack, Text, useQuery } from "@vendo/screen";
+
+export default function BuildDetail() {
+  const all = useQuery("search_transfers", { status: "pending" });
+  const rows = all.data;
+  const [chosen, setChosen] = useState(rows[0]?.id);
+  const detail = useQuery("search_transfers", { status: chosen });
+  return (
+    <Stack gap={8}>
+      <DataTable rows={rows} columns={["recipient"]} rowActions={(row) => <Text text={String(setChosen)} />} />
+      ${shown}
+    </Stack>
+  );
+}
+`;
+
+  it("paints a read whose answer has not arrived yet, and hands its data to the Kit", async () => {
+    const result = await withTable(PENDING_READ(`<DataTable rows={detail.data} columns={["recipient"]} />`));
+
+    expect(result.issues).toEqual([]);
+    expect(result.ok).toBe(true);
+    // The loop answered the computed read and painted again, so the plan grew.
+    expect(result.queryPlan).toEqual([
+      { tool: "search_transfers", input: { status: "pending" } },
+      { tool: "search_transfers", input: { status: "tr_1" } },
+    ]);
+  });
+
+  it("paints the whole failure-log case — the raw `.data` AND the `.length` on it", async () => {
+    // The artifact's own second half, verbatim in shape: `.length` on a read that
+    // has not landed. The first paint throws on it; the loop answers the read it
+    // named and the second paint has real rows, so the screen the person sees is
+    // the one that works.
+    const result = await withTable(PENDING_READ(`<Text text={detail.data.length + " shown"} />`));
+
+    expect(result.issues).toEqual([]);
+    expect(result.ok).toBe(true);
+    expect(result.queryPlan).toEqual([
+      { tool: "search_transfers", input: { status: "pending" } },
+      { tool: "search_transfers", input: { status: "tr_1" } },
+    ]);
+    // And it painted the REAL count, not an empty shell: the loading paint was
+    // thrown away, not shown.
+    const texts = Object.values(result.initialTree?.nodes ?? {}).map((node) => node.props?.text);
+    expect(texts).toContain("2 shown");
+  });
+
+  it("keeps a throw with nothing outstanding a refusal, on the FIRST round", async () => {
+    // Every read this screen makes is in the plan, so the first paint had
+    // everything it asked for — the tool simply answered an envelope with no
+    // `data` in it. Nothing is outstanding, so there is nothing to wait for: the
+    // throw is the screen's own and the loop does not go round again.
+    let asked = 0;
+    const result = await check(GOOD, async () => {
+      asked += 1;
+      return {};
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.issues.map(({ code }) => code)).toEqual(["run"]);
+    expect(result.issues[0]?.message).toContain("guard an undefined or empty result before .map/.reduce");
+    expect(asked).toBe(1);
+  });
+
+  it("stops at the bound — a paint that keeps asking and keeps throwing is refused", async () => {
+    // A loading paint may not be forever: a screen that names a NEW read every
+    // time it throws would loop, so the last round's throw is the verdict. The
+    // paint is faked because no real screen diverges here — a gate round is a
+    // fresh boot, so a real one converges on the second — and what needs pinning
+    // is the loop, not a pathological screen.
+    let asked = 0;
+    let painted = 0;
+    const result = await checkComponentScreen({
+      source: GOOD,
+      hostTools: tools,
+      catalog,
+      runQuery: async () => {
+        asked += 1;
+        return ROWS;
+      },
+      toolchain: {
+        ...nodeToolchain(),
+        paint: async () => {
+          painted += 1;
+          return {
+            ok: false,
+            kind: "render",
+            message: `still waiting, round ${painted}`,
+            misses: [{ tool: "search_transfers", input: { status: String(painted) } }],
+          };
+        },
+      },
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.issues.map(({ code }) => code)).toEqual(["run"]);
+    // The LAST round's message, and three rounds, never a fourth.
+    expect(result.issues[0]?.message).toContain("still waiting, round 3");
+    expect(painted).toBe(3);
+    expect(asked).toBe(3);
+  });
+
   it("relays a screen that would not paint, and one that would not stop", async () => {
     const nothing = await refusal(`import { Text } from "@vendo/screen";
 export default function S() { return null; }
@@ -1080,7 +1311,10 @@ export default function Label() {
     expect(result.issues[0]?.message).toContain("nests 1 node inside <Badge>");
   });
 
-  it("refuses a control in a cell slot, and names what a cell may hold", async () => {
+  /** A control in a cell was refused by a per-slot vocabulary for as long as the
+   *  slots existed. It renders, so the gauntlet takes it: where a control belongs
+   *  is design, graded by the judge, not bookkeeping enforced by a list. */
+  it("admits a control in a cell slot", async () => {
     const result = await painted(`import { Button, DataTable, tools } from "@vendo/screen";
 
 export default function Ledger() {
@@ -1093,48 +1327,43 @@ export default function Ledger() {
 }
 `);
 
-    expect(result.ok).toBe(false);
-    expect(result.issues.map(({ code }) => code)).toEqual(["nesting"]);
-    const message = result.issues[0]?.message ?? "";
-    // The locus is the column the control sits in, not just the table.
-    expect(message).toContain('prop "columns[0].cell" holds <Button> in a cell slot');
-    expect(message).toContain("a cell is read, never operated");
-    expect(message).toContain("A cell may hold: Text, Money, DateTime, Percent, Num, EnumBadge, Badge, Sparkline, Progress, Stack, Row");
+    expect(result.issues).toEqual([]);
+    expect(result.ok).toBe(true);
   });
 
   /**
-   * The BLANK CELL class, and the whole reason a slot is typed rather than left
-   * `any`: a function in a cell serializes as a `$handler` door (vm-program.ts
-   * `emitValue`), so the table is handed a callback it cannot paint and the
-   * column renders empty. A generated screen shipped exactly this past compile,
-   * types, paint and tree with every gate green.
+   * A PER-ROW slot written as a function of the row — the natural React form, and
+   * for a year the one thing that could not work: a function prop serialized as a
+   * single `$handler` door, so the table was handed a callback where an element
+   * belongs and the column painted blank. The VM calls it now, once per row
+   * (vm-program.ts `emitSlot`), so the compiler admits it and the paint proves
+   * it: two rows, two amounts, each computed from its own row.
    */
-  it("refuses a function in a cell slot, and names the column it sits in", async () => {
-    const result = await painted(`import { DataTable, Money } from "@vendo/screen";
+  it("admits a per-row cell written as a function of the row", async () => {
+    const result = await painted(`import { DataTable, Text } from "@vendo/screen";
 
 export default function Ledger() {
   return (
     <DataTable
-      rows={[{ id: "tr_1", amount: 4200 }]}
-      columns={[{ key: "amount", label: "Amount", cell: (row) => <Money amount={row.amount / 100} /> }]}
+      rows={[{ id: "tr_1", amount: 4200 }, { id: "tr_2", amount: 900 }]}
+      columns={[{ key: "amount", label: "Amount", cell: (row) => <Text text={(row.amount / 100).toLocaleString("en-US", { style: "currency", currency: "USD" })} /> }]}
     />
   );
 }
 `);
 
-    expect(result.issues.map(({ code }) => code)).toEqual(["types"]);
-    const message = result.issues[0]?.message ?? "";
-    expect(message).toContain('in the "cell" slot of "amount"');
-    expect(message).toContain("a slot holds ELEMENTS");
-    // …and the repair is the element, with the column's own key in it.
-    expect(message).toContain('cell={<Text field="amount"/>}');
+    expect(result.issues).toEqual([]);
+    const table = Object.values(result.initialTree?.nodes ?? {}).find(({ component }) => component === "DataTable");
+    const cells = (table?.props.columns as Array<{ cell: Array<{ props: { text: string } }> }>)[0]!.cell;
+    expect(cells.map(({ props }) => props.text)).toEqual(["$42.00", "$9.00"]);
   });
 
-  /** Every slot, not just a cell: `Tabs.tabs[].content`, `Accordion.items[].content`
-   *  and `Tooltip.content` hold elements the same way, and each wrote its own
-   *  `z.unknown()` instead of the shared one — so each was a hole of exactly the
-   *  same shape. One screen, all three, one refusal apiece. */
-  it("refuses a function in the OTHER element slots too", async () => {
+  /** EVERY slot, not just a per-row one: `Tabs.tabs[].content`,
+   *  `Accordion.items[].content` and `Tooltip.content` are painted ONCE, so their
+   *  function takes no arguments — and for as long as only the per-row slots could
+   *  be functions, the same reflex one component over crossed as a `$handler` and
+   *  painted nothing. One screen, all three, one element apiece. */
+  it("admits a function in the slots painted ONCE, and paints what it returns", async () => {
     const result = await painted(`import { Accordion, Tabs, Text, Tooltip } from "@vendo/screen";
 
 export default function Panels() {
@@ -1147,11 +1376,271 @@ export default function Panels() {
 }
 `);
 
-    expect(result.issues.map(({ code }) => code)).toEqual(["types", "types", "types"]);
-    for (const { message } of result.issues) {
-      expect(message).toContain('in the "content" slot');
-      expect(message).toContain("a slot holds ELEMENTS");
+    expect(result.issues).toEqual([]);
+    const nodes = Object.values(result.initialTree?.nodes ?? {});
+    const slotText = (component: string, read: (props: Record<string, unknown>) => unknown): unknown =>
+      (read(nodes.find((node) => node.component === component)!.props) as { props: { text: string } }).props.text;
+    expect(slotText("Tabs", (props) => (props.tabs as Array<{ content: unknown }>)[0]!.content)).toBe("none");
+    expect(slotText("Accordion", (props) => (props.items as Array<{ content: unknown }>)[0]!.content)).toBe("terms");
+    expect(slotText("Tooltip", (props) => props.content)).toBe("hint");
+  });
+
+  /** The arity is the line the compiler still draws: a slot painted once is called
+   *  with NOTHING, so a function of the row written in one would read a field off
+   *  `undefined`. It is the only refusal left in this class, and it says which
+   *  arity the slot wanted. */
+  it("refuses a function OF THE ROW in a slot painted once", async () => {
+    const result = await painted(`import { Text, Tooltip } from "@vendo/screen";
+
+export default function Panels() {
+  return <Tooltip content={(row) => <Text text={row.label} />}><Text text="?" /></Tooltip>;
+}
+`);
+
+    expect(result.issues.map(({ code }) => code)).toEqual(["types"]);
+    const message = result.issues[0]?.message ?? "";
+    expect(message).toContain('in the "content" slot');
+    expect(message).toContain("this slot is painted once, so it holds ELEMENTS, or a function of NO arguments");
+  });
+
+  /**
+   * A KEY the item has not got is not a value in a slot.
+   *
+   * A Kit item type prints inline (`{ key: string; …; cell?: VendoSlot }`), so
+   * the compiler's excess-property sentence NAMES the slot alias while having
+   * nothing to do with a slot. Read as a slot error, a screen that wrote
+   * `{ label, field }` into a KeyValue was told four times to "write the element
+   * itself" — which it already had — while the real repair, that the item takes
+   * `key` and `cell`, was in no sentence it received. It shipped a document that
+   * does not render.
+   */
+  it("names the keys an item accepts when a screen writes one it has not got", async () => {
+    const result = await checkComponentScreen({
+      source: `import { KeyValue, Text, useQuery } from "@vendo/screen";
+
+export default function Receipt() {
+  const pending = useQuery("list_pending_transfers");
+  const transfer = pending.data[0];
+  return (
+    <KeyValue
+      record={transfer}
+      items={[
+        { label: "Recipient", field: <Text text={transfer.recipient} /> },
+        { label: "Amount", field: <Text text={String(transfer.amount_cents / 100)} /> },
+      ]}
+    />
+  );
+}
+`,
+      hostTools: tools,
+      catalog: [...kitCatalog, "KeyValue"],
+      runQuery: async () => ROWS,
+    });
+
+    expect(result.issues.map(({ code }) => code)).toEqual(["types", "types"]);
+    const message = result.issues[0]?.message ?? "";
+    // The key it wrote, where it wrote it, and the keys that would have worked —
+    // the same shape a misspelled tool payload key gets.
+    expect(message).toContain('writes the key "field", which items on <KeyValue> does not accept');
+    expect(message).toContain("Its keys are: key, label, cell (required: key)");
+    // …and NOT the slot sentence, which named no key at all.
+    expect(message).not.toContain("this slot is painted once");
+  });
+
+  /** The same misreading one step further out: a list written as a single
+   *  object names the slot alias too, because the item type prints inline INSIDE
+   *  the array type. Read as a slot error it produced an exact-fix line for
+   *  `key:` — a repair the gate would have applied to the one field the item
+   *  requires, over a screen whose real mistake was the shape of `items`. */
+  it("does not read a mis-shaped list as a value in a slot", async () => {
+    const result = await checkComponentScreen({
+      source: `import { KeyValue, useQuery } from "@vendo/screen";
+
+export default function Receipt() {
+  const pending = useQuery("list_pending_transfers");
+  return <KeyValue record={pending.data[0]} items={{ key: "recipient", label: "Recipient" }} />;
+}
+`,
+      hostTools: tools,
+      catalog: [...kitCatalog, "KeyValue"],
+      runQuery: async () => ROWS,
+    });
+
+    const [{ code, message }] = result.issues as [{ code: string; message: string }];
+    expect(code).toBe("types");
+    expect(message).not.toContain("this slot is painted once");
+  });
+
+  /**
+   * The CHANGE HANDLER class: the one refusal that computes the exact attribute a
+   * screen was owed. Pinned as a shape rather than as prose because a repair a
+   * reader can paste is the whole difference between one round and five.
+   */
+  const CHANGE_HANDLER = /^line (\d+): .*: (\w+)=\{(\(e\) => \w+\(e\.target\.(?:value|checked)\))\}\.$/u;
+
+  const controls = [...kitCatalog, "Select", "Checkbox", "DateRange"];
+  const control = async (source: string): Promise<ComponentScreenCheck> =>
+    checkComponentScreen({ source, hostTools: tools, catalog: controls, runQuery: async () => ROWS });
+
+  /**
+   * `onChange={setClient}` is the React reflex, and the one shape a Kit control
+   * cannot honor: it is called with the EVENT, so the setter stores
+   * `{ target: { value } }` and the control renders that object. Nothing at
+   * runtime tells a one-argument setter from a one-argument handler, so the
+   * component cannot forgive this — the checker computes the repair instead.
+   */
+  it("computes the handler a change prop was owed, and prints it as the whole attribute", async () => {
+    const result = await control(`import { useState } from "react";
+import { Select, Stack, Text } from "@vendo/screen";
+
+export default function Picker() {
+  const [client, setClient] = useState("");
+  return (
+    <Stack gap={8}>
+      <Select label="Client" options={["Ada", "Bob"]} onChange={setClient} />
+      <Text text={client} />
+    </Stack>
+  );
+}
+`);
+
+    const [{ code, message }] = result.issues as [{ code: string; message: string }];
+    expect(code).toBe("types");
+    expect(message).toContain("writes the state setter setClient where a handler goes");
+    expect(message).toContain("is called with the change EVENT");
+    // The repair is the checker's own bytes, in the shape the gate applies.
+    const found = CHANGE_HANDLER.exec(message);
+    expect(found?.[2]).toBe("onChange");
+    expect(found?.[3]).toBe("(e) => setClient(e.target.value)");
+  });
+
+  /** Which FIELD of the event is read is the setter's own answer: a boolean
+   *  comes off `checked`. Printing `value` there would trade one refusal for
+   *  another on the fixed bytes. */
+  it("reads a boolean setter off checked, not off value", async () => {
+    const result = await control(`import { useState } from "react";
+import { Checkbox, Stack } from "@vendo/screen";
+
+export default function Filter() {
+  const [paid, setPaid] = useState(false);
+  return (
+    <Stack gap={8}>
+      <Checkbox label="Include paid" checked={paid} onChange={setPaid} />
+    </Stack>
+  );
+}
+`);
+
+    expect(CHANGE_HANDLER.exec(result.issues[0]?.message ?? "")?.[3]).toBe("(e) => setPaid(e.target.checked)");
+  });
+
+  /** The same mistake one step in: an arrow that only passes its parameter on.
+   *  The repair keeps the screen's own parameter and reads the field off it —
+   *  and it is NOT the shape the gate applies, because only the screen knows
+   *  what else its body was for. */
+  it("prints the arrow a screen wrote, reading the value off its own parameter", async () => {
+    const result = await control(`import { useState } from "react";
+import { Select, Stack, Text } from "@vendo/screen";
+
+export default function Picker() {
+  const [client, setClient] = useState("");
+  return (
+    <Stack gap={8}>
+      <Select label="Client" options={["Ada", "Bob"]} onChange={(val) => setClient(val)} />
+      <Text text={client} />
+    </Stack>
+  );
+}
+`);
+
+    const message = result.issues[0]?.message ?? "";
+    expect(message).toContain("passes val on as a value");
+    expect(message).toContain("Read the value off the event: (val) => setClient(val.target.value).");
+    expect(CHANGE_HANDLER.test(message)).toBe(false);
+  });
+
+  /**
+   * The boundary. `onClick` has the SAME declared handler type and no value at
+   * all, and a range picker reports `{start, end}` rather than a field of the
+   * event — so a repair reading `e.target.value` into either would be invented,
+   * not computed. Both keep the plain type sentence.
+   */
+  it("invents no repair where the event carries no value the receiver could take", async () => {
+    const clicked = await control(`import { Button, Stack, tools } from "@vendo/screen";
+
+export default function Ledger() {
+  const cancel = async (id: string) => { await tools.cancel_transfer({ id }); };
+  return <Stack gap={8}><Button label="Cancel" onClick={cancel} /></Stack>;
+}
+`);
+    const ranged = await control(`import { useState } from "react";
+import { DateRange, Stack } from "@vendo/screen";
+
+export default function Window() {
+  const [range, setRange] = useState({ start: "", end: "" });
+  return <Stack gap={8}><DateRange label="When" onChange={setRange} /></Stack>;
+}
+`);
+
+    for (const { message } of [...clicked.issues, ...ranged.issues]) {
+      expect(message).toContain("bind a value whose type matches the prop");
+      expect(message).not.toContain("Read the value off the event");
+      expect(CHANGE_HANDLER.test(message)).toBe(false);
     }
+    expect(clicked.issues).toHaveLength(1);
+    expect(ranged.issues).toHaveLength(1);
+  });
+
+  /** A field description written as the bare KEY — the shorthand `Select.options`
+   *  already takes. `items` given `string[]` was a whole class of looped repairs;
+   *  the type is the union now, so there is nothing left to refuse. */
+  it("passes a column, a card field and a KeyValue item written as bare keys", async () => {
+    const result = await checkComponentScreen({
+      source: `import { CardList, DataTable, KeyValue, Stack, useQuery } from "@vendo/screen";
+
+export default function Ledger() {
+  const pending = useQuery("list_pending_transfers");
+  return (
+    <Stack gap={12}>
+      <DataTable rows={pending.data} columns={["recipient", { key: "amount_cents", label: "Amount" }]} />
+      <CardList items={pending.data} fields={["recipient"]} />
+      <KeyValue record={pending.data[0]} items={["recipient", "scheduled_for"]} />
+    </Stack>
+  );
+}
+`,
+      hostTools: tools,
+      catalog: [...kitCatalog, "CardList", "KeyValue"],
+      runQuery: async () => ROWS,
+    });
+
+    expect(result.issues).toEqual([]);
+    expect(result.ok).toBe(true);
+  });
+
+  /** The new arrangement, through the whole gauntlet: a screen may put two panes
+   *  side by side, and the panes are ordinary children. */
+  it("passes two panes side by side", async () => {
+    const result = await checkComponentScreen({
+      source: `import { DataTable, KeyValue, SplitPane, useQuery } from "@vendo/screen";
+
+export default function Ledger() {
+  const pending = useQuery("list_pending_transfers");
+  return (
+    <SplitPane size={280}>
+      <DataTable rows={pending.data} columns={["recipient"]} />
+      <KeyValue record={pending.data[0]} items={["recipient"]} />
+    </SplitPane>
+  );
+}
+`,
+      hostTools: tools,
+      catalog: [...kitCatalog, "KeyValue", "SplitPane"],
+      runQuery: async () => ROWS,
+    });
+
+    expect(result.issues).toEqual([]);
+    expect(Object.values(result.initialTree?.nodes ?? {}).map((node) => node.component)).toContain("SplitPane");
   });
 
   /** Tooltip's `content` is documented as "code-only: Kit elements rendered as
@@ -1171,36 +1660,38 @@ export default function Hint() {
     expect(result.ok).toBe(true);
   });
 
-  it("follows a control nested INSIDE a legal slot component", async () => {
-    const result = await painted(`import { Button, DataTable, Stack, Text, tools } from "@vendo/screen";
+  /** The walk goes all the way DOWN a slot: what a cell holds has children of its
+   *  own, and a component that renders none of them drops them just as silently
+   *  there as at the top of the tree. */
+  it("follows a childless component nested INSIDE a slot", async () => {
+    const result = await painted(`import { DataTable, LineChart, Stack, Text } from "@vendo/screen";
 
 export default function Ledger() {
   return (
     <DataTable
       rows={[{ id: "tr_1", status: "paid" }]}
-      columns={[{ key: "status", cell: <Stack><Text field="status" /><Button label="Cancel" onClick={() => tools.cancel_transfer({ id: "tr_1" })} /></Stack> }]}
+      columns={[{ key: "status", cell: (row) => <Stack><LineChart data={[{ m: "Jan", v: 1 }]} xKey="m" series={["v"]}><Text text={row.status} /></LineChart></Stack> }]}
     />
   );
 }
 `);
 
     expect(result.issues.map(({ code }) => code)).toEqual(["nesting"]);
-    expect(result.issues[0]?.message).toContain('prop "columns[0].cell.children[1]" holds <Button> in a cell slot');
+    expect(result.issues[0]?.message).toContain('prop "columns[0].cell[0].children[0]" nests 1 node inside <LineChart>');
   });
 
-  /** A slot's vocabulary gates BEHAVIOR — what may sort, submit or call a tool
-   *  where there is no row to act on. A display brick has none to gate: it is
-   *  `style` and children and nothing else, so it passes the same per-row cell
-   *  that refuses a Button, and the renderer builds it back
-   *  (`packages/ui` renderer.tsx `reifyElement`). Whole gauntlet, real compiler. */
-  it("passes a display brick in a per-row cell — arrangement is not behavior", async () => {
+  /** A display brick is not a Kit component, and the renderer resolves a slot's
+   *  element from both registries (`packages/ui` renderer.tsx `reifyElement`), so
+   *  a brick in a cell renders and the floor takes it. Whole gauntlet, real
+   *  compiler. */
+  it("passes a display brick in a per-row cell", async () => {
     const result = await painted(`import { DataTable, Text } from "@vendo/screen";
 
 export default function Invoices() {
   return (
     <DataTable
       rows={[{ id: "r1", status: "past_due" }]}
-      columns={[{ key: "status", cell: <div style={{ display: "flex" }}><Text field="status" /></div> }]}
+      columns={[{ key: "status", cell: (row) => <div style={{ display: "flex" }}><Text text={row.status} /></div> }]}
     />
   );
 }
@@ -1291,7 +1782,7 @@ export default function Ledger() {
       </Stat>
       <DataTable
         rows={[{ id: "tr_1", status: "paid" }]}
-        columns={[{ key: "status", cell: <EnumBadge field="status" /> }]}
+        columns={[{ key: "status", cell: (row) => <EnumBadge value={row.status} /> }]}
       />
     </Stack>
   );
@@ -1300,6 +1791,179 @@ export default function Ledger() {
 
     expect(result.issues).toEqual([]);
     expect(result.ok).toBe(true);
+  });
+});
+
+describe("stage 6 — it presses what the screen painted", () => {
+  const pressable = [...catalog, "Form", "Input", "Modal"];
+
+  const pressed = async (
+    source: string,
+    runQuery: (tool: string, input?: unknown) => Promise<unknown> = async () => ROWS,
+  ): Promise<ComponentScreenCheck> =>
+    checkComponentScreen({ source, hostTools: tools, catalog: pressable, runQuery });
+
+  const refused = async (source: string): Promise<{ codes: string[]; text: string }> => {
+    const result = await pressed(source);
+    if (result.ok) throw new Error("expected the gauntlet to refuse this screen");
+    return { codes: result.issues.map(({ code }) => code), text: result.issues.map(({ message }) => message).join("\n") };
+  };
+
+  it("refuses a button whose handler does nothing, and calls it by the words on it", async () => {
+    const { codes, text } = await refused(`import { Button, Stack, Text } from "@vendo/screen";
+
+export default function BookVisit() {
+  return (
+    <Stack gap={12}>
+      <Text text="Book a visit" variant="heading" />
+      <Button label="Book appointment" onClick={() => {}} />
+    </Stack>
+  );
+}
+`);
+
+    expect(codes).toEqual(["dead-control"]);
+    expect(text).toContain(`pressing "Book appointment" calls nothing and changes nothing — wire it or remove it.`);
+    expect(text).toContain("this one (Button onClick) asked for no tool and painted nothing new");
+    expect(text).toContain("await tools.tool_name({ … })");
+  });
+
+  it("refuses a submit that falls out of a guard before it reaches anything", async () => {
+    // The shape the run of record actually shipped: a "Book appointment" that
+    // compiles, type-checks, paints, and returns before its own tool call.
+    const { codes, text } = await refused(`import { useState } from "react";
+import { Form, Input, Stack, tools } from "@vendo/screen";
+
+export default function BookVisit() {
+  const [id, setId] = useState("");
+
+  const submit = async () => {
+    if (!id) return;
+    await tools.cancel_transfer({ id });
+  };
+
+  return (
+    <Stack gap={12}>
+      <Form onSubmit={submit} submitLabel="Book appointment">
+        <Input label="Transfer" value={id} onChange={(e) => setId(e.target.value)} />
+      </Form>
+    </Stack>
+  );
+}
+`);
+
+    expect(codes).toEqual(["dead-control"]);
+    expect(text).toContain(`pressing "Book appointment" calls nothing and changes nothing`);
+    expect(text).toContain("this one (Form onSubmit) asked for no tool and painted nothing new");
+    // The Input's onChange carries the value a person typed; a press has none,
+    // so firing one would accuse a handler the press itself under-fed.
+    expect(text).not.toContain("onChange");
+  });
+
+  it("passes a control that asks for a tool, even when the screen paints nothing new", async () => {
+    const result = await pressed(`import { Button, Stack, tools } from "@vendo/screen";
+
+export default function Cancel() {
+  return (
+    <Stack gap={12}>
+      <Button label="Cancel it" variant="danger" onClick={() => { void tools.cancel_transfer({ id: "tr_1" }); }} />
+    </Stack>
+  );
+}
+`);
+
+    expect(result.issues).toEqual([]);
+    expect(result.ok).toBe(true);
+  });
+
+  it("passes a control that only opens a dialog, and presses nothing inside it", async () => {
+    // Opening the dialog is the whole of what that button owes. Which control
+    // inside it confirms is a judgement, not a lookup — so the dead "Yes" under
+    // a shut Modal is not on the screen this check pressed.
+    const result = await pressed(`import { useState } from "react";
+import { Button, Modal, Stack } from "@vendo/screen";
+
+export default function Confirm() {
+  const [asking, setAsking] = useState(false);
+
+  return (
+    <Stack gap={12}>
+      <Button label="Cancel transfer" onClick={() => setAsking(true)} />
+      <Modal open={asking} onClose={() => setAsking(false)} title="Cancel this transfer?">
+        <Button label="Yes, cancel it" variant="danger" onClick={() => {}} />
+      </Modal>
+    </Stack>
+  );
+}
+`);
+
+    expect(result.issues).toEqual([]);
+    expect(result.ok).toBe(true);
+  });
+
+  it("OBSERVES the write a press asks for and never performs it", async () => {
+    // `runQuery` is the only executor this check holds, and it is handed the
+    // query plan and nothing else: a pressed `tools.cancel_transfer` records an
+    // intent against a promise nobody settles, so the host's destructive tool is
+    // never reached — by any venue, against any host.
+    const ran: Ran[] = [];
+    const result = await pressed(`import { Button, Stack, Text, tools, useQuery } from "@vendo/screen";
+
+export default function Pending() {
+  const pending = useQuery("list_pending_transfers");
+
+  return (
+    <Stack gap={12}>
+      <Text text={"waiting: " + pending.data.length} />
+      <Button label="Cancel the first" variant="danger" onClick={() => { void tools.cancel_transfer({ id: "tr_1" }); }} />
+    </Stack>
+  );
+}
+`, async (tool, input) => {
+      ran.push({ tool, input });
+      return ROWS;
+    });
+
+    expect(result.ok).toBe(true);
+    expect(ran).toEqual([{ tool: "list_pending_transfers", input: undefined }]);
+  });
+
+  it("does not press a disabled control — being careful is not being dead", async () => {
+    const result = await pressed(`import { Button, Stack, Text } from "@vendo/screen";
+
+export default function Settings() {
+  return (
+    <Stack gap={12}>
+      <Text text="Nothing has changed yet." variant="caption" />
+      <Button label="Save changes" variant="primary" disabled onClick={() => {}} />
+    </Stack>
+  );
+}
+`);
+
+    expect(result.issues).toEqual([]);
+    expect(result.ok).toBe(true);
+  });
+
+  it("names the first few and counts the rest, so one repair does not fill the prompt", async () => {
+    const { codes, text } = await refused(`import { Button, Stack } from "@vendo/screen";
+
+const ACTIONS = ["one", "two", "three", "four", "five", "six", "seven", "eight"];
+
+export default function Actions() {
+  return (
+    <Stack gap={12}>
+      {ACTIONS.map((name) => <Button key={name} label={"Do " + name} onClick={() => {}} />)}
+    </Stack>
+  );
+}
+`);
+
+    expect(codes).toEqual(Array.from({ length: 6 }, () => "dead-control"));
+    expect(text).toContain(`pressing "Do one" calls nothing and changes nothing`);
+    expect(text).toContain(`pressing "Do five" calls nothing and changes nothing`);
+    expect(text).not.toContain(`pressing "Do six"`);
+    expect(text).toContain("and 3 more control(s) on this screen do nothing when pressed");
   });
 });
 
@@ -1364,5 +2028,143 @@ describe("reviewComponentScreenInput", () => {
     expect(reviewComponentScreenInput({ source: GOOD, queryResults: {} })).toBe(
       `SCREEN (the .tsx file this app renders):\n${GOOD}`,
     );
+  });
+});
+
+/**
+ * FETCHED, AND NEVER SHOWN.
+ *
+ * The gap, from the 2026-08-17 runs: a tool returns rows carrying eight fields,
+ * the screen paints three, and nothing in this pipeline ever computed the other
+ * five — so a build list ships with no commit message and no author, a route
+ * screen with no stop counts, and every check says the screen is fine. Both
+ * sides were in the gauntlet's hands the whole time (the queries it executed, the
+ * tree it painted) and nobody subtracted one from the other.
+ */
+describe("LEFTOVERS — what the queries returned and the screen never showed", () => {
+  const tableCatalog = [...catalog, "DataTable"];
+
+  const BUILDS_SCREEN = `import { DataTable, useQuery } from "@vendo/screen";
+
+export default function Builds() {
+  const builds = useQuery("list_accounts");
+  return <DataTable rows={builds.data} columns={["build_number", "status", "branch"]} />;
+}
+`;
+
+  /** Eight fields a build carries; the table above draws three of them. */
+  const BUILDS = {
+    data: [
+      {
+        id: "bld_412",
+        build_number: 412,
+        status: "passed",
+        branch: "main",
+        commit_message: "widen the reviewer's evidence",
+        author: "ada",
+        duration_ms: 91_000,
+        queued_at: "2026-08-17T15:02:57Z",
+      },
+      {
+        id: "bld_411",
+        build_number: 411,
+        status: "failed",
+        branch: "main",
+        commit_message: "press every control",
+        author: "bob",
+        duration_ms: 74_000,
+        queued_at: "2026-08-17T14:41:02Z",
+      },
+    ],
+  };
+
+  /** A screen the gauntlet REALLY ran: the tree is the paint stage 4 took, never
+   *  one a test wrote to make its own point. */
+  const gauntlet = async (source: string, answer: unknown): Promise<ComponentScreenCheck> => {
+    const result = await checkComponentScreen({
+      source,
+      hostTools: tools,
+      catalog: tableCatalog,
+      runQuery: async () => answer,
+    });
+    if (!result.ok) throw new Error(`the screen never painted: ${result.issues.map(({ message }) => message).join("\n")}`);
+    return result;
+  };
+
+  const evidenceOf = (source: string, result: ComponentScreenCheck): string =>
+    reviewComponentScreenInput({
+      source,
+      queryResults: result.queries ?? {},
+      ...(result.initialTree === undefined ? {} : { painted: { tree: result.initialTree } }),
+    });
+
+  let builds: ComponentScreenCheck;
+  let leftovers = "";
+
+  beforeAll(async () => {
+    builds = await gauntlet(BUILDS_SCREEN, BUILDS);
+    const input = evidenceOf(BUILDS_SCREEN, builds);
+    leftovers = input.slice(input.indexOf("LEFTOVERS ("));
+  }, 60_000);
+
+  it("names the fields a table fetched and never drew, with a sample of each", () => {
+    expect(leftovers).toContain("LEFTOVERS (fields these queries returned that the screen never shows");
+    // The two a person reading a build list came for, each with one real value
+    // beside it — and the sample is what makes the field legible: "author" alone
+    // could be an id.
+    expect(leftovers).toContain(`data.commit_message ("widen the reviewer's evidence")`);
+    expect(leftovers).toContain(`data.author ("ada")`);
+    expect(leftovers).toContain("data.duration_ms (91000)");
+    // THE POINT: those values were in the tree the whole time — a table is HANDED
+    // its rows — and being handed is not being shown.
+    expect(JSON.stringify(builds.initialTree)).toContain("widen the reviewer's evidence");
+  });
+
+  it("counts a column key as showing the field, because that is how a Kit table says so", () => {
+    // The three the table draws are not leftovers, and their values never appear
+    // as text anywhere in the paint — only their KEYS do.
+    expect(leftovers).not.toContain("data.build_number");
+    expect(leftovers).not.toContain("data.status");
+    expect(leftovers).not.toContain("data.branch");
+  });
+
+  it("lists an id like every other leftover — which of them matter is the reviewer's call", () => {
+    // The mechanism reports what was not shown and stops there. Nothing here
+    // makes an id a finding and nothing here excuses it: the rubric hands that
+    // judgment to the reviewer, which is the only reader that knows the ask.
+    expect(leftovers).toContain(`data.id ("bld_412")`);
+  });
+
+  it("says nothing when the screen shows everything it fetched", async () => {
+    const source = `import { Stack, Text, useQuery } from "@vendo/screen";
+
+export default function Build() {
+  const build = useQuery("list_accounts");
+  return (
+    <Stack gap={8}>
+      <Text text={"Build " + build.build_number} variant="heading" />
+      <Text text={build.author + " shipped it"} />
+    </Stack>
+  );
+}
+`;
+    // The second one arrives inside a sentence rather than as the whole prop,
+    // which is how a screen usually writes a name — and it still counts as shown.
+    const input = evidenceOf(source, await gauntlet(source, { build_number: 412, author: "ada" }));
+
+    expect(input).not.toContain("LEFTOVERS");
+  }, 60_000);
+
+  it("is absent — not empty — with no paint to subtract from and with nothing fetched", () => {
+    const bare = `SCREEN (the .tsx file this app renders):\n${BUILDS_SCREEN}`;
+    // No paint: nothing to compute leftovers against, and the prompt is byte for
+    // byte the one it always was.
+    expect(reviewComponentScreenInput({ source: BUILDS_SCREEN, queryResults: {} })).toBe(bare);
+    // A paint and no queries: the same bytes again.
+    expect(reviewComponentScreenInput({
+      source: BUILDS_SCREEN,
+      queryResults: {},
+      ...(builds.initialTree === undefined ? {} : { painted: { tree: builds.initialTree } }),
+    })).toBe(bare);
   });
 });

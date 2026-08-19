@@ -62,10 +62,10 @@ const FORMAT_KINDS = ["number", "money", "percent", "date"] as const;
 type FormatKind = (typeof FORMAT_KINDS)[number];
 
 /** `format` has no row form: stringifying a column left DataTable sorting
- *  strings, so a table's money goes through the column's own token and the data
+ *  strings, so a table's money is printed by the screen's own code and the data
  *  stays numeric. One message, both venues (validation and runtime). */
 const FORMAT_SCALAR_ONLY =
-  'reshape op "format" formats a single value; to format a table column, use the column\'s format token: columns={[{key:"amount", format:"money"}]} — data stays numeric so sortBy works';
+  'reshape op "format" formats a single value; to format a table column, format it in the screen\'s own code — where the rows are prepared, or in the column\'s cell: (row) => row.amount.toLocaleString("en-US", { style: "currency", currency: "USD" }) — so the data stays numeric and sortBy works';
 
 const OP_SET: ReadonlySet<string> = new Set(RESHAPE_OPS);
 const FORMAT_KIND_SET: ReadonlySet<string> = new Set(FORMAT_KINDS);

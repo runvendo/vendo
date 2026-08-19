@@ -1,29 +1,26 @@
 /**
- * The row a value component is standing in (2026-08-13, the cell slots).
+ * Reading a record, and picking ONE row's element out of a per-row slot.
  *
- * A DataTable cell and a CardList row are rendered once PER RECORD, so a Kit
- * component nested in one cannot be handed its value as a prop: the prop would
- * have to hold a different value in every row, and neither transport this Kit
- * renders through can express that. The wire tree is JSON, and the screen VM
- * serializes a prop function as a `$handler` callback, not as something the
- * table may call while it paints.
+ * A DataTable cell and a CardList card are painted once PER RECORD, and the slot
+ * that fills one is written as a function of the row — `cell: (row) =>
+ * <Text>{(row.amount_cents / 100).toLocaleString("en-US", { style: "currency",
+ * currency: "USD" })}</Text>` — so a per-row slot binds by CLOSURE: the
+ * formatting, the composition and that row's own handler all live where the row
+ * is in scope. The screen VM calls the function once per row and hands the
+ * component a LIST of elements, one per row, in the order of the rows prop
+ * (apps `contract/kit/specs.ts` KIT_SLOT_PROPS).
  *
- * So the slot binds by NAME instead: the container publishes the record it is
- * rendering, and a value component inside it names the field it wants —
- * `<Money field="amount"/>` — which is the same "a config prop holds a field
- * key" the Kit already speaks in `titleField`, `valueField`, `xKey` and a
- * column's own `key`. Both transports carry a string.
+ * What is left here is what every container that reads records shares: the ONE
+ * dot-path resolver, the bare-KEY shorthand each list prop takes, and the pick
+ * that turns that list back into this row's element.
  */
-import { createContext, useContext } from "react";
+import type { ReactNode } from "react";
 
 export type KitRow = Record<string, unknown>;
 
-/** The record the nearest DataTable cell / CardList card is rendering. */
-export const RowContext = createContext<KitRow | undefined>(undefined);
-
 /** Resolve a dot-path against a record ("client.name"). The ONE resolver: the
- *  table, the card list, the aggregates and every `field` prop read a path the
- *  same way. */
+ *  table, the card list, the calendar and the aggregates read a path the same
+ *  way. */
 export function readField(row: KitRow | undefined, path: string): unknown {
   if (row === undefined) return undefined;
   return path.split(".").reduce<unknown>(
@@ -33,13 +30,31 @@ export function readField(row: KitRow | undefined, path: string): unknown {
 }
 
 /**
- * A value component's own value: the row's field when `field` names one and a
- * row is in scope, and the prop it was passed otherwise. Outside a slot `field`
- * resolves to nothing and the explicit prop still wins, so the same component
- * reads the same either way.
+ * The field descriptions a container was given, with a bare KEY read as the
+ * description it stands for.
+ *
+ * `items={["client.name", "amount"]}` is the shape a screen reaches for when it
+ * only wants the fields named, and it is the shape `Select.options` has always
+ * taken (`forms/options.ts` — a raw string is a choice). A string can only mean
+ * the key: `label` already defaults from it and the value prints as it stands,
+ * so the shorthand has no second reading to get wrong. Normalizing HERE is what
+ * keeps one component from teaching it and its two siblings refusing it.
+ *
+ * Also the fail-SOFT gate every list prop needs (W3): a failed query resolves to
+ * undefined, and a table asked to map over it would crash instead of painting
+ * its empty state.
  */
-export function useFieldValue<T>(field: string | undefined, fallback: T): T | unknown {
-  const row = useContext(RowContext);
-  if (field === undefined || row === undefined) return fallback;
-  return readField(row, field);
-}
+export const fieldItems = <T extends { key?: string }>(items: ReadonlyArray<T | string> | undefined): T[] =>
+  (Array.isArray(items) ? items : []).map((item) => (typeof item === "string" ? { key: item } : item) as T);
+
+/**
+ * ONE row's element out of a per-row slot: the list's own entry where the slot
+ * was written as a function of the row, and the same element for every row where
+ * a stored screen or a hand-written tree holds a single one.
+ *
+ * `index` is the row's place in the ROWS PROP, because that is the order the VM
+ * emitted in — never the place the row is painted in, which a sort can move. An
+ * index nothing matches picks nothing.
+ */
+export const rowSlot = (slot: ReactNode | readonly ReactNode[], index: number): ReactNode =>
+  Array.isArray(slot) ? (slot as readonly ReactNode[])[index] : slot;

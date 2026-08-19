@@ -18,6 +18,7 @@ import {
   type LimitUser,
   type RunContext,
   type StoreOps,
+  type UsageEvent,
   type VendoLogEvent,
   type VendoViewStreamingToolCall,
   type VendoViewStreamUpdate,
@@ -81,6 +82,18 @@ describe("the limiter's verdict", () => {
 
     await expect(limiter.gate("message", ctxFor())).resolves.toEqual({ allow: false });
     expect(await usage.count({ action: "message", subject: "mia", since: ALL_TIME })).toBe(0);
+  });
+
+  it("answers a verdict when the memberships seam answers NULL, or a malformed entry", async () => {
+    const limiter = createLimiter({ callback: () => true, ops: meter() });
+
+    // The pool derivation reads `ctx.memberships` OUTSIDE the policy's try, so a
+    // throw there is not a deny — it is the whole turn rejecting. A JS host's seam
+    // can answer any of these, and every other consumer of it tolerates them.
+    for (const memberships of [null, [null], [{ org: 7 }], [{}]]) {
+      await expect(limiter.gate("message", ctxFor({ memberships: memberships as never })))
+        .resolves.toEqual({ allow: true });
+    }
   });
 
   it("carries the host's own sentence out of a denial", async () => {
@@ -167,6 +180,18 @@ describe("the limiter fails CLOSED", () => {
       .resolves.toEqual({ allow: false });
     expect(events.filter((event) => event.code === "limits.callback_error")).toHaveLength(1);
   });
+
+  it("denies on an org the host never asserted — a membership is the only thing that mints one", async () => {
+    const events = logged();
+    const limiter = createLimiter({
+      callback: async ({ count }) => (await count("message", { pool: "org:acme" })) < 5,
+      ops: meter(),
+    });
+
+    await expect(limiter.gate("message", ctxFor({ memberships: [{ org: "maple" }] })))
+      .resolves.toEqual({ allow: false });
+    expect(events.filter((event) => event.code === "limits.callback_error")).toHaveLength(1);
+  });
 });
 
 describe("the meter reader the policy is handed", () => {
@@ -219,6 +244,45 @@ describe("the meter reader the policy is handed", () => {
     expect(pooled).toBe(2);
   });
 
+  it("counts an org the host merely ASSERTED — every membership is already a pool", async () => {
+    const usage = meter();
+    await usage.record({ subject: "raj", action: "message", at: hoursAgo(1), poolKeys: ["org:maple"] });
+
+    let pooled = 0;
+    const limiter = createLimiter({
+      callback: async ({ count }) => { pooled = await count("message", { pool: "org:maple" }); return true; },
+      ops: usage,
+    });
+
+    await limiter.gate("message", ctxFor({ memberships: [{ org: "maple", teams: ["support"] }] }));
+    expect(pooled).toBe(1);
+    // The allow accrued to the derived key too, so the next read sees both…
+    expect(await usage.count({ action: "message", poolKey: "org:maple", since: ALL_TIME })).toBe(2);
+    // …and nothing accrued to the team, which is not a pool.
+    expect(await usage.count({ action: "message", poolKey: "team:maple/support", since: ALL_TIME })).toBe(0);
+  });
+
+  it("lets a host-asserted pool of the same NAME win over the derived one", async () => {
+    const usage = meter();
+    await usage.record({ subject: "raj", action: "message", at: hoursAgo(1), poolKeys: ["org:maple"] });
+    await usage.record({ subject: "raj", action: "message", at: hoursAgo(1), poolKeys: ["ent_maple"] });
+    await usage.record({ subject: "ana", action: "message", at: hoursAgo(1), poolKeys: ["ent_maple"] });
+
+    let pooled = 0;
+    const limiter = createLimiter({
+      callback: async ({ count }) => { pooled = await count("message", { pool: "org:maple" }); return true; },
+      ops: usage,
+    });
+
+    await limiter.gate("message", ctxFor({
+      memberships: [{ org: "maple" }],
+      pools: { "org:maple": "ent_maple" },
+    }));
+    // The host's own key answered, not the derived `org:maple`.
+    expect(pooled).toBe(2);
+    expect(await usage.count({ action: "message", poolKey: "org:maple", since: ALL_TIME })).toBe(1);
+  });
+
   it("stamps every resolved pool key on what an allow records", async () => {
     const usage = meter();
     const limiter = createLimiter({ callback: () => true, ops: usage });
@@ -227,6 +291,19 @@ describe("the meter reader the policy is handed", () => {
 
     expect(await usage.count({ action: "generation", poolKey: "ws_maple", since: ALL_TIME })).toBe(1);
     expect(await usage.count({ action: "generation", poolKey: "org_maple", since: ALL_TIME })).toBe(1);
+  });
+
+  it("stamps a key ONCE when a host pool names a derived org's own key", async () => {
+    const usage = meter();
+    const recorded: UsageEvent[] = [];
+    const limiter = createLimiter({
+      callback: () => true,
+      ops: { ...usage, record: async (event) => { recorded.push(event); await usage.record(event); } },
+    });
+
+    await limiter.gate("message", ctxFor({ memberships: [{ org: "maple" }], pools: { seat: "org:maple" } }));
+
+    expect(recorded[0]?.poolKeys).toEqual(["org:maple"]);
   });
 });
 
@@ -248,6 +325,45 @@ describe("the user the policy decides about", () => {
       facts: { email: "mia@maple.test", plan: "free" },
       pools: ["workspace"],
     });
+  });
+
+  it("lists the orgs the host asserted, so a policy can NAME the pool it counts", async () => {
+    let seen: LimitUser | undefined;
+    const limiter = createLimiter({ callback: ({ user }) => { seen = user; return true; }, ops: meter() });
+
+    // Memberships and nothing else: a `pools` here can only have been derived.
+    await limiter.gate("message", ctxFor({
+      memberships: [{ org: "maple", teams: ["support"] }, { org: "acme" }],
+    }));
+
+    expect(seen?.pools).toEqual(["org:maple", "org:acme"]);
+  });
+
+  it("says `[]` when the host wired pools and this user is in none — in-none is not un-wired", async () => {
+    let seen: LimitUser | undefined;
+    const limiter = createLimiter({ callback: ({ user }) => { seen = user; return true; }, ops: meter() });
+
+    await limiter.gate("message", ctxFor({ pools: {} }));
+
+    expect(seen?.pools).toEqual([]);
+  });
+
+  it("skips an org id the §9.2 grammar cannot parse back — a derived name a grant could never address", async () => {
+    let seen: LimitUser | undefined;
+    const limiter = createLimiter({ callback: ({ user }) => { seen = user; return true; }, ops: meter() });
+
+    await limiter.gate("message", ctxFor({ memberships: [{ org: "maple" }, { org: "maple/eu" }, { org: "" }] }));
+
+    expect(seen?.pools).toEqual(["org:maple"]);
+  });
+
+  it("carries NO pools key when the host asserted neither pools nor memberships", async () => {
+    let seen: LimitUser | undefined;
+    const limiter = createLimiter({ callback: ({ user }) => { seen = user; return true; }, ops: meter() });
+
+    await limiter.gate("message", ctxFor());
+
+    expect(seen).toEqual({ kind: "user", subject: "mia" });
   });
 });
 

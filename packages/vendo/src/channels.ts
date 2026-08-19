@@ -1,4 +1,5 @@
-import { consoleSender, defaultFetch, raiseCloudError, VendoError, type Principal } from "@vendoai/core";
+import { consoleSender, raiseCloudError, VendoError, type Principal } from "@vendoai/core";
+import { keepAliveFetch } from "./keep-alive-fetch.js";
 import { hex } from "./wire/shared.js";
 
 /** The TEXT CHANNEL seam: a deployment's users reach the agent over
@@ -123,6 +124,20 @@ export interface CloudTextChannelOptions {
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 
+/** A dropped console call on this wire is a person staring at a phone that
+ *  never answered, and the turn behind it has already run its tool calls — so
+ *  there is nothing to replay and a blip has to be ridden out here. Three
+ *  retries at 150/300/600ms: long enough to outlast a redeploy blip, short
+ *  enough that somebody holding their phone does not notice.
+ *
+ *  A refused call (the console answered non-2xx) delivered nothing, so retrying
+ *  it cannot duplicate a text. A call that failed at the socket MIGHT have
+ *  landed, so a retry can put the same message on the conversation twice — a
+ *  deliberate trade: a repeated text is a wart, a silently lost reply is a
+ *  broken product. */
+const SEND_RETRIES = 3;
+const RETRY_BACKOFF_MS = 150;
+
 /** The shared console error table (cloud-console.ts), exactly as
  *  cloudConnections uses it. */
 const raiseChannelsError = (response: Response): Promise<never> =>
@@ -141,16 +156,29 @@ export function cloudTextChannel(options: CloudTextChannelOptions): ChannelsServ
     mountPath: "",
     apiKey: options.apiKey,
     timeoutMs: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-    fetchImpl: options.fetch ?? defaultFetch,
+    // Same pool every other Cloud adapter uses. Node drops an idle keep-alive
+    // socket after ~4s, so a conversation's second text paid a fresh TCP+TLS
+    // handshake on the way out — the one round trip a texting human feels.
+    fetchImpl: options.fetch ?? keepAliveFetch,
     raise: raiseChannelsError,
   });
 
   async function post(path: string, body: unknown): Promise<unknown> {
-    const response = await send(path, {
+    const init: RequestInit = {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
-    });
+    };
+    let response: Response;
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        response = await send(path, init);
+        break;
+      } catch (error) {
+        if (attempt === SEND_RETRIES) throw error;
+        await new Promise((resolve) => setTimeout(resolve, RETRY_BACKOFF_MS * 2 ** attempt));
+      }
+    }
     try {
       return await response.json();
     } catch {

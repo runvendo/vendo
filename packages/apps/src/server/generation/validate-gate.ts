@@ -80,7 +80,12 @@ async function askValidate(
     console.error(`[vendo] validate answered in a shape the gate cannot read, so ${appId} was not gated`);
     return undefined;
   }
-  if (output["ok"]) return [];
+  // A WARN IS A REPAIR TOO — read exactly like `judgeScreen` (screen-agent.ts)
+  // reads the same tool's answer. `ok` is only "no blocker"; a screen the
+  // reviewer graded `warn` (a host's own design rule, an ask rule) still has
+  // findings, and a caller of this gate — a host's own harness, `validateApps`
+  // in `HarnessAdapters` — must see everything the built-in loop already acts
+  // on, or it is fixing less than the loop is.
   return Array.isArray(output["findings"]) ? output["findings"].filter(isFinding) : [];
 }
 

@@ -40,6 +40,7 @@ import type {
   SlotEntry,
   Thread,
   ThreadSummary,
+  UploadedFile,
   VendoStatus,
   VersionEntry,
 } from "./wire-types.js";
@@ -64,6 +65,15 @@ export interface VendoClient {
      *  real message reads a warm prefix. Best-effort; fire when the chat
      *  surface opens and ignore failures. */
     warm(): Promise<void>;
+  };
+
+  /** The signed-in user's own files. A file put here outlives the conversation
+   *  it was shared in, so the message that follows carries only the reference. */
+  files: {
+    /** POST /files — the file's raw bytes under its own media type, never
+     *  multipart. Fetch-only, and deliberately without a progress callback: the
+     *  door caps an upload at 5 MiB, which is not long enough to be news. */
+    upload(file: File): Promise<UploadedFile>;
   };
 
   approvals: {
@@ -116,8 +126,9 @@ export interface VendoClient {
     /** GET /apps/:id/ship-diff — the reviewable diff vs the captured host baselines (06 §8–§9). */
     shipDiff(id: AppId): Promise<ShipDiff>;
     /** POST /apps/:id/reseed — rebuild the remix against the host's current
-     *  version of the component (06 §8) by replaying the instruction it was made
-     *  with. Whatever the person changed since is gone; the surface says so. */
+     *  version of the component (06 §8) by replaying EVERY wish the seed
+     *  recorded, oldest first. A wish the new version cannot take is kept and
+     *  reported (`seed.unapplied`), never dropped. */
     reseed(id: AppId): Promise<AppDocument>;
     /**
      * POST /apps/seed — the ✦ gesture (06 §8). There are no bare forks: the

@@ -302,7 +302,7 @@ const appsTailSeams = (composition: VendoComposition, seams: AppsSeams): Partial
           }
           return create(input, createCtx);
         },
-        enable: async (id, ctx) => composition.automations.enable(id, ctx),
+        enable: async (id, ctx, options) => composition.automations.enable(id, ctx, options),
         disable: async (id, ctx) => composition.automations.disable(id, ctx),
         // A list of NAMES, not foreign keys: an id nothing answers for is dropped
         // rather than raised, so deleting an automation is one fewer entry the
@@ -440,7 +440,13 @@ export const composeApps = (composition: VendoComposition): Pick<VendoCompositio
     // assembled here and never read off the model's input. Both app-touching
     // verbs are owner-scoped behind it.
     validate: (input, ctx) => apps.validate(
-      input.appId === undefined ? {} : { appId: input.appId as AppId },
+      input.appId === undefined
+        ? {}
+        : {
+            appId: input.appId as AppId,
+            ...(input.request === undefined ? {} : { request: input.request }),
+            ...(input.viewport === undefined ? {} : { viewport: input.viewport }),
+          },
       ctx,
     ),
     schedule: async ({ appId, cron }, ctx) =>

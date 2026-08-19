@@ -17,8 +17,11 @@ import { DonutChart } from "../../src/kit/charts/donut.js";
 import { LineChart } from "../../src/kit/charts/line.js";
 import { Sparkline } from "../../src/kit/charts/sparkline.js";
 import { Stack } from "../../src/kit/layout.js";
+import { Checkbox } from "../../src/kit/forms/checkbox.js";
 import { Input } from "../../src/kit/forms/input.js";
+import { Select } from "../../src/kit/forms/select.js";
 import { Switch } from "../../src/kit/forms/switch.js";
+import { Textarea } from "../../src/kit/forms/textarea.js";
 
 afterEach(cleanup);
 
@@ -49,11 +52,7 @@ const series = { data: points, xKey: "m", series: ["v"] };
  *  here renders on its defaults alone. */
 const PROPS: Readonly<Record<string, Record<string, unknown>>> = {
   Icon: { name: "check" },
-  // The value tier paints a placeholder, or nothing at all, with no value to show.
-  Money: { amount: 42 },
-  DateTime: { value: "2026-01-01" },
-  Percent: { value: 0.42 },
-  Num: { value: 7 },
+  // The text tier paints a placeholder, or nothing at all, with no value to show.
   Text: { text: "Overdue" },
   EnumBadge: { value: "overdue" },
   Badge: { label: "Overdue" },
@@ -224,6 +223,35 @@ describe("a Base UI component's engine props reach the Base UI part", () => {
     const input = container.querySelector('input[data-kit="Input"]')!;
     expect(input.getAttribute("type")).toBe("email");
     expect(input.getAttribute("inputmode")).toBe("decimal");
+  });
+
+  it("puts one on each of the three controls that are still NATIVE", () => {
+    // Input's passthrough is Base UI's; Textarea, Select and Checkbox render a
+    // plain DOM element, so what goes through is that element's own attribute set.
+    const { container } = render(
+      <>
+        <Textarea label="Note" maxLength={140} />
+        <Select label="Client" options={["Hartwell"]} name="client" />
+        <Checkbox label="Paid" name="paid" />
+      </>,
+    );
+    expect(container.querySelector('textarea[data-kit="Textarea"]')?.getAttribute("maxlength")).toBe("140");
+    expect(container.querySelector('select[data-kit="Select"]')?.getAttribute("name")).toBe("client");
+    expect(container.querySelector('input[data-kit="Checkbox"]')?.getAttribute("name")).toBe("paid");
+  });
+
+  it("leaves the Kit's own wiring alone — a passthrough cannot rename a native control either", () => {
+    // The compiler already omits `type` and never asked for `id`, but the WIRE
+    // lets an engine's props through by NAME, so the guard has to hold at render
+    // too: `type` is what makes the control a checkbox, and the id is one half of
+    // the wiring the label is the other half of.
+    const Loose = Checkbox as ComponentType<Record<string, unknown>>;
+    const { container } = render(<Loose label="Paid" type="radio" id="mine" />);
+    const box = container.querySelector('input[data-kit="Checkbox"]') as HTMLInputElement;
+
+    expect(box.type).toBe("checkbox");
+    expect(box.id).not.toBe("mine");
+    expect(container.querySelector(`label[for="${box.id}"]`)?.textContent).toBe("Paid");
   });
 
   it("hands one to Base UI and lets Base UI place it", () => {

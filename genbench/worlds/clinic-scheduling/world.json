@@ -19,7 +19,7 @@
   "style": [
     "uses the theme exactly: Alder teal accent, Poppins, softly rounded cards on a cool grey page — no invented colors or fonts",
     "every appointment status is a labelled pill — 'Checked in', 'In room', 'No-show' — never color on its own",
-    "times read as '9:15 AM' and dates as 'Aug 12' — never ISO, never 24-hour",
+    "times read as '9:15 AM' and dates as 'Aug 12', or 'Sep 5, 2025' where the year matters — never ISO, never 24-hour",
     "money always shows 2 decimals with a currency symbol",
     "an appointment's time never appears without the patient it belongs to — an open slot has no patient and needs none",
     "anything that cancels a visit or marks a no-show asks for confirmation first"
