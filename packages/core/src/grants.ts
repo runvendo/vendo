@@ -185,6 +185,13 @@ export interface ApprovalRequest {
      *  because a park outside a turn (a door-side check, a row written before
      *  this field existed) has no turn to name. */
     turnId?: TurnId;
+    /** The AGENT that parked it (`RunContext.agent`) — the axis a turn is
+     *  answered on. Two agents over one store share this collection and mount
+     *  descriptors that hash identically, so without it a yes to one agent's
+     *  ask dispatched the other's same-named tool. Optional because a park
+     *  outside an agent (a door-side check, a row written before this field
+     *  existed) has none; scoped consumers fail closed on its absence. */
+    agent?: string;
     appId?: AppId;
     trigger?: TriggerRef;
   };
@@ -208,6 +215,7 @@ export const approvalRequestSchema = z.object({
     presence: z.enum(["present", "away"]),
     sessionId: z.string().optional(),
     turnId: turnIdSchema.optional(),
+    agent: z.string().optional(),
     appId: appIdSchema.optional(),
     trigger: triggerRefSchema.optional(),
   }).passthrough(),

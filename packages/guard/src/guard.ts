@@ -2212,6 +2212,11 @@ class GuardImplementation implements VendoGuard {
         // after a restart. Inert for matching — `sameParkedCall` pins the call
         // and the venue, never this — and absent on a check with no turn.
         ...(ctx.turnId === undefined ? {} : { turnId: ctx.turnId }),
+        // The AGENT that asked, on the same terms: one store holds every
+        // agent's asks, and a resume that could not tell them apart spent one
+        // agent's yes on another's same-named tool. Inert for matching too —
+        // it decides who may ANSWER, never what the yes authorizes.
+        ...(ctx.agent === undefined ? {} : { agent: ctx.agent }),
         ...(ctx.appId === undefined ? {} : { appId: ctx.appId }),
         ...(ctx.trigger === undefined ? {} : { trigger: cloneJson(ctx.trigger) }),
       },

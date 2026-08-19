@@ -32,7 +32,7 @@ import {
   type TurnId,
 } from "@vendoai/core";
 import { toHeaderRecord } from "./session.js";
-import { DEFAULT_MAX_TOOL_CALLS, startTurn, type AgentDeps, type TurnResult } from "./turn.js";
+import { DEFAULT_MAX_TOOL_CALLS, expired, startTurn, type AgentDeps, type TurnResult } from "./turn.js";
 
 /**
  * How long a parked turn waits for its person: seven days.
@@ -84,7 +84,7 @@ export interface Turns {
 }
 
 /**
- * A parked ask THIS lane may answer.
+ * A parked ask THIS agent, on THIS lane, may answer.
  *
  * Every other lane that parks a call owns its own resume — an in-app action
  * resumes on the surface that asked (`packages/apps`), an automation's arming
@@ -93,20 +93,22 @@ export interface Turns {
  * the wrong place. What is left is exactly a turn this package ran: it names
  * the turn that asked and the thread to carry on, and it belongs to no app and
  * no firing.
+ *
+ * And to exactly ONE agent. Every agent over a store shares its approvals
+ * collection, so `agent` is checked first and checked strictly: an ask this
+ * agent did not park — another agent's, or a row from before the field existed
+ * — is skipped, not claimed. Anything looser answered `ops`' ask inside
+ * `support`, which mounts a byte-identical `refund` descriptor and therefore a
+ * matching `descriptorHash`, and spent the person's one yes on the wrong
+ * implementation.
  */
-const parkedByTurn = (request: ApprovalRequest): boolean =>
-  request.ctx.turnId !== undefined
+const parkedByTurn = (request: ApprovalRequest, agent: string | undefined): boolean =>
+  agent !== undefined
+  && request.ctx.agent === agent
+  && request.ctx.turnId !== undefined
   && request.ctx.sessionId !== undefined
   && request.ctx.appId === undefined
   && request.ctx.trigger === undefined;
-
-/** Past its TTL, the ask is dead whether or not a sweep has been by. Nothing in
- *  this package sweeps (the umbrella's `compose-sweep.ts` is the only caller of
- *  `sweepExpiredApprovals`), so expiry is decided where it is read: a turn a
- *  host composed without a sweeper still keeps the seven-day promise, and it
- *  keeps it with a sentence instead of a silence. */
-const expired = (request: ApprovalRequest, ttlMs: number, at: number): boolean =>
-  ttlMs > 0 && Date.parse(request.createdAt) + ttlMs <= at;
 
 const asInterruption = (request: ApprovalRequest): Interruption => ({
   id: request.id,
@@ -154,7 +156,7 @@ export function createTurns(deps: AgentDeps, subject: string): Turns {
   const principal: Principal = { kind: "user", subject };
   const mine = async (turnId?: string): Promise<ApprovalRequest[]> =>
     (await deps.guard.approvals.pending(principal)).filter((request) =>
-      parkedByTurn(request) && (turnId === undefined || request.ctx.turnId === turnId));
+      parkedByTurn(request, deps.agent) && (turnId === undefined || request.ctx.turnId === turnId));
 
   return {
     // The guard's own pending feed, grouped — never a cache of it. So an ask
@@ -185,17 +187,6 @@ export function createTurns(deps: AgentDeps, subject: string): Turns {
       const parked = await mine(turnId);
       const first = parked[0];
       if (first === undefined) throw await nothingWaiting(deps, principal, turnId, decisions);
-
-      const ttlMs = deps.guard.approvals.parkedCallTtlMs;
-      const stale = parked.find((request) => expired(request, ttlMs, Date.now()));
-      if (stale !== undefined) {
-        throw new VendoError(
-          "conflict",
-          `Turn ${turnId} parked on ${stale.createdAt} and what it was waiting on expired on `
-          + `${new Date(Date.parse(stale.createdAt) + ttlMs).toISOString()}. Nothing it asked for ran, and an `
-          + "expired ask cannot be answered — send the request again and the agent will ask again.",
-        );
-      }
 
       // ALL of them or none. A half-answered turn would run the approved calls
       // and then carry on as if the rest had been considered, which is the one

@@ -146,6 +146,22 @@ export interface TurnDeps {
 export interface AgentDeps extends TurnDeps {
   /** Attribution when the caller names no subject of their own. */
   name: string;
+  /**
+   * WHICH agent this is — `agent({ name })`, carried by the composition rather
+   * than read off {@link AgentDeps.name}, which is a label whoever assembles
+   * these deps fills in.
+   *
+   * It rides every turn's ctx onto the rows that turn parks, and it is the axis
+   * `turns.list`/`turns.resume` filter on (interruptions.ts). Two agents over
+   * one store share one approvals collection — `serve({ agents: [a, b] })` is
+   * exactly that — and a park named only the subject, the thread and the turn,
+   * so a person's yes to `ops` dispatched `support`'s same-named tool and
+   * `support.turns.list()` returned `ops`' turn verbatim.
+   *
+   * Optional because a composition assembled by hand names no agent; absent,
+   * its parked turns belong to nobody and neither face offers them.
+   */
+  agent?: string;
   /** The agent's guard-bound registry — the turn's whole tool surface. */
   tools: ToolRegistry;
   guard: VendoGuard;
@@ -384,6 +400,53 @@ function spokenText(messages: readonly UIMessage[]): string {
     .map((part) => part.text)
     .join("")
     .trim();
+}
+
+/** Past its TTL, the ask is dead whether or not a sweep has been by. Nothing in
+ *  this package sweeps (the umbrella's `compose-sweep.ts` is the only caller of
+ *  `sweepExpiredApprovals`), so expiry is decided where it is read: a turn a
+ *  host composed without a sweeper still keeps the seven-day promise, and it
+ *  keeps it with a sentence instead of a silence. */
+export const expired = (request: ApprovalRequest, ttlMs: number, at: number): boolean =>
+  ttlMs > 0 && Date.parse(request.createdAt) + ttlMs <= at;
+
+/**
+ * What a resume is refused for — on BOTH faces.
+ *
+ * `turns.resume` reads the store and can say no before a turn opens; the
+ * `resume()` a caller is still holding used to say nothing at all, so the same
+ * guard and the same deadline gave opposite answers to the same ask. Checked
+ * HERE, at the one door every resume goes through, so neither face can grow a
+ * rule of its own — and BEFORE {@link settleInterruptions}, because both of
+ * these refusals must leave a one-shot ask still answerable.
+ */
+function assertAnswerable(deps: AgentDeps, turnId: TurnId, resume: TurnInput["resume"]): void {
+  if (resume === undefined) return;
+  for (const request of resume.parked) {
+    const decision = resume.decisions[request.id];
+    // A verdict, or nothing at all. `{ answers }` type-checks against an
+    // approval arm and is not a verdict, and `settleInterruptions` calls
+    // everything that is not "approve" a no — so a shape nobody meant (and a
+    // "Approve" nobody misread) landed as a DENIAL nobody made, on an ask that
+    // is answered exactly once.
+    if (decision !== undefined && decision !== "approve" && decision !== "deny") {
+      throw new VendoError(
+        "validation",
+        `Approval ${request.id} was answered with ${JSON.stringify(decision)}, which is not a verdict. `
+        + "An approval takes \"approve\" or \"deny\" — nothing was decided, so it is still there to answer.",
+      );
+    }
+  }
+  const ttlMs = deps.guard.approvals.parkedCallTtlMs;
+  const stale = resume.parked.find((request) => expired(request, ttlMs, Date.now()));
+  if (stale !== undefined) {
+    throw new VendoError(
+      "conflict",
+      `Turn ${turnId} parked on ${stale.createdAt} and what it was waiting on expired on `
+      + `${new Date(Date.parse(stale.createdAt) + ttlMs).toISOString()}. Nothing it asked for ran, and an `
+      + "expired ask cannot be answered — send the request again and the agent will ask again.",
+    );
+  }
 }
 
 /**
@@ -738,7 +801,17 @@ const resumedContext = (ctx: RunContext, options: ResumeOptions | undefined): Ru
 export function startTurn<T = void>(deps: AgentDeps, input: Omit<TurnInput, "tools" | "emit">): Turn<T> {
   const queue = eventQueue<RunEvent>();
   const settled = Promise.all([deps.assertModel?.(), deps.doorReady])
-    .then(() => runTurn(deps, { ...input, tools: deps.tools, emit: queue.push }))
+    .then(() => {
+      assertAnswerable(deps, input.turnId, input.resume);
+      return runTurn(deps, {
+        ...input,
+        // WHOSE turn this is, onto every row it parks — the axis `turns` filters
+        // a parked turn by (see {@link AgentDeps.agent}).
+        ctx: deps.agent === undefined ? input.ctx : { ...input.ctx, agent: deps.agent },
+        tools: deps.tools,
+        emit: queue.push,
+      });
+    })
     .finally(() => {
       queue.close();
     })

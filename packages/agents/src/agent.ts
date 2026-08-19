@@ -160,6 +160,10 @@ export interface VendoAgent {
  * object stays exactly `{ name, session }`.
  */
 export interface AgentComposition {
+  /** WHICH agent this composed — `agent({ name })`. Declared here because a
+   *  consumer that scopes rows to one agent (`createTurns`) reads it off the
+   *  composition, never off a name a caller passes in beside it. */
+  agent: string;
   harness: Harness<unknown>;
   store: VendoStore;
   files: FilesAdapter;
@@ -379,6 +383,7 @@ export function agent(config: AgentConfig): VendoAgent {
 
   const deps = {
     name: config.name,
+    agent: config.name,
     harness,
     store,
     files,
