@@ -411,6 +411,10 @@ export interface SeedFromInput {
   component: string;
   slot?: string;
   instruction: string;
+  /** The live props the host's page passed the component instance the gesture
+   *  was made on — the fork's only route to a value like `accountId`, which
+   *  exists nowhere in the captured source. Recorded as `AppSeed.props`. */
+  props?: Record<string, Json>;
 }
 
 /**

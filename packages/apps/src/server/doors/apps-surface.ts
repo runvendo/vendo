@@ -6,6 +6,7 @@
  * Lifted out of `createApps` unchanged.
  */
 import {
+  type Json,
   VendoError,
 } from "@vendoai/core";
 import {
@@ -114,9 +115,19 @@ const createAppReadDoors = (
       // are two separate acts and each has to earn its own approval.
       const descriptor = (await config.tools.descriptors(ctx).catch(() => []))
         .find((candidate) => candidate.name === ref);
-      return descriptor?.risk === "read"
-        ? caller.callQuery(app, ref, args, ctx)
-        : caller.call(app, ref, args, ctx);
+      if (descriptor?.risk !== "read") return caller.call(app, ref, args, ctx);
+      // THE ✦ FORK'S LIVE HOST PROPS, ON THE REFETCH ARM TOO. A mutation makes the
+      // client replay the compiled screen's LITERAL query plan (use-screen.ts), and
+      // no prop is in a source that plan could have read — so without this merge the
+      // first paint reads `acct_7` and every read after it reads nobody. Same
+      // boundary as the seeding read (`screenQueryRunner`): the tool's own declared
+      // input names, and a literal the screen wrote wins over all of them.
+      const declared = (descriptor.inputSchema["properties"] ?? {}) as Record<string, unknown>;
+      const merged = {
+        ...Object.fromEntries(Object.entries(app.seed?.props ?? {}).filter(([name]) => name in declared)),
+        ...(args ?? {}) as Record<string, Json>,
+      } as Json;
+      return caller.callQuery(app, ref, merged, ctx);
     },
   };
 };

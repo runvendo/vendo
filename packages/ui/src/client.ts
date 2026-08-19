@@ -150,8 +150,17 @@ export interface VendoClient {
      * gesture collects the `instruction` first, and the fork plus that first edit
      * are ONE operation whose answer is an ordinary screen app carrying the
      * remix's provenance.
+     *
+     * `props` is the wrapped instance's live serializable props — the values the
+     * host's page passed the component being forked. They exist nowhere in the
+     * captured source, so this call is the only way they reach the server.
      */
-    seedFrom(input: { component: string; slot?: string; instruction: string }): Promise<AppDocument>;
+    seedFrom(input: {
+      component: string;
+      slot?: string;
+      instruction: string;
+      props?: Record<string, Json>;
+    }): Promise<AppDocument>;
     /**
      * POST /apps/:id/machine/ping — the embed surface's keepalive:
      * user activity on an embedded served app rides one host-proxied HEAD
