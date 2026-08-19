@@ -1,6 +1,7 @@
 import { readOptionalVendoJson } from "#actions/host-files";
 import {
   type ActAs,
+  CONNECTOR_DISCOVERY_TOOLS,
   descriptorHash,
   type PermissionGrant,
   type Principal,
@@ -166,6 +167,11 @@ interface LoadedRegistry {
    *  default menu is defined in terms of it. Absent name = ungraded. */
   audience: Map<string, ExtractedTool["audience"]>;
 }
+
+/** Vendo's own plumbing is exempt from an authored menu: `surfaces.*` curates a
+ *  product's API, not the runtime's. Same two exemptions the MCP door and the
+ *  agent projection apply — the discovery four carry no `vendo_` prefix. */
+const PLUMBING_TOOLS: ReadonlySet<string> = new Set(CONNECTOR_DISCOVERY_TOOLS);
 
 const STRIPPED_HEADERS = new Set([
   "host",
@@ -873,9 +879,17 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
         // permanently unreachable the moment they DO arrive. Unmatched names
         // simply never match anything, which is what a filter should do.
         const unmatched = authored.tools.filter((name) => !dispatch.has(name));
-        if (unmatched.length > 0 && !surfaceMenuWarned.has(surface)) {
+        // The mirror of `unmatched`. Omitting an EXTRACTED tool is what a menu
+        // is for, but a tool contributed in code (`defineTool`, through
+        // `add()`) is not in the `.vendo/tools.json` its author wrote this menu
+        // against, so its absence reads as an oversight rather than curation —
+        // and unwarned it just vanishes from the surface.
+        const omitted = [...dispatch].filter(([name, entry]) =>
+          entry.kind === "registry" && !authored.tools.includes(name)
+          && !name.startsWith("vendo_") && !PLUMBING_TOOLS.has(name)).map(([name]) => name);
+        if ((unmatched.length > 0 || omitted.length > 0) && !surfaceMenuWarned.has(surface)) {
           surfaceMenuWarned.add(surface);
-          console.warn(
+          if (unmatched.length > 0) console.warn(
             unmatched.length === authored.tools.length
               ? `[vendo] surfaces.${surface}.tools in .vendo/overrides.json matches no registered tool at all `
                 + `(${unmatched.join(", ")}). If these are not tools a later \`add()\` registers, this surface `
@@ -883,6 +897,11 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
               : `[vendo] surfaces.${surface}.tools in .vendo/overrides.json names tools that are not registered right `
                 + `now: ${unmatched.join(", ")}. They stay on the menu (a later \`add()\` can still supply them); `
                 + "if that is not what they are, check for a typo, a disabled tool, or re-run `vendo sync`.",
+          );
+          if (omitted.length > 0) console.warn(
+            `[vendo] surfaces.${surface}.tools in .vendo/overrides.json leaves out tools you registered in code: `
+            + `${omitted.join(", ")}. A menu is a filter, so this surface will not offer them at all — add their `
+            + `names to surfaces.${surface}.tools if it should offer them.`,
           );
         }
         return [...authored.tools];

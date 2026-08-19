@@ -1352,6 +1352,12 @@ describe("format v3 host files (cse lane 1)", () => {
       routeTool("host_legacy", { disabled: true } as Partial<ExtractedTool>),
     ];
 
+    /** The `defineTool` channel: contributed in code, never in `.vendo/tools.json`. */
+    const addedTools = (...names: string[]): ToolRegistry => ({
+      descriptors: async () => names.map((name) => ({ name, description: name, inputSchema: {}, risk: "read" as const })),
+      execute: async () => ({ status: "ok", output: null }),
+    });
+
     it("without a surfaces block the agent is unrestricted and the door defaults to end-user/unset tools", async () => {
       const root = await tempVendo(
         { format: VENDO_TOOLS_FORMAT, tools: menuTools() },
@@ -1416,6 +1422,54 @@ describe("format v3 host files (cse lane 1)", () => {
       try {
         await expect(createActions({ dir: root }).surfaceMenu("mcp")).resolves.toEqual(["nope_one", "nope_two"]);
         expect(warned.some((line) => line.includes("surfaces.mcp") && /matches no/i.test(line))).toBe(true);
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it("warns once when an authored menu leaves out a tool registered in code, exempting Vendo's own plumbing", async () => {
+      const root = await tempVendo(
+        { format: VENDO_TOOLS_FORMAT, tools: menuTools() },
+        { format: VENDO_OVERRIDES_FORMAT, tools: {}, surfaces: { mcp: { tools: ["host_getProfile"] } } },
+      );
+      const warned: string[] = [];
+      const spy = vi.spyOn(console, "warn").mockImplementation((line: string) => { warned.push(line); });
+      try {
+        const actions = createActions({ dir: root });
+        actions.add(addedTools("host_refund", "vendo_make", "request_connection"));
+        await expect(actions.surfaceMenu("mcp")).resolves.toEqual(["host_getProfile"]);
+        await actions.surfaceMenu("mcp");
+        const menuWarnings = warned.filter((line) => line.includes("surfaces.mcp"));
+        expect(menuWarnings).toHaveLength(1);
+        expect(menuWarnings[0]).toContain("host_refund");
+        // Curating an EXTRACTED tool away is what a menu is for, and Vendo's own
+        // plumbing rides every surface — neither absence is worth a word.
+        expect(menuWarnings[0]).not.toContain("host_listAccounts");
+        expect(menuWarnings[0]).not.toContain("vendo_make");
+        expect(menuWarnings[0]).not.toContain("request_connection");
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it("stays quiet when the menu names every registered tool, and when no menu is authored", async () => {
+      const complete = await tempVendo(
+        { format: VENDO_TOOLS_FORMAT, tools: [routeTool("host_getProfile")] },
+        { format: VENDO_OVERRIDES_FORMAT, tools: {}, surfaces: { mcp: { tools: ["host_getProfile", "host_refund"] } } },
+      );
+      const unauthored = await tempVendo(
+        { format: VENDO_TOOLS_FORMAT, tools: [routeTool("host_getProfile")] },
+        { format: VENDO_OVERRIDES_FORMAT, tools: {} },
+      );
+      const warned: string[] = [];
+      const spy = vi.spyOn(console, "warn").mockImplementation((line: string) => { warned.push(line); });
+      try {
+        for (const root of [complete, unauthored]) {
+          const actions = createActions({ dir: root });
+          actions.add(addedTools("host_refund"));
+          await actions.surfaceMenu("mcp");
+        }
+        expect(warned.filter((line) => line.includes("surfaces.mcp"))).toEqual([]);
       } finally {
         spy.mockRestore();
       }
