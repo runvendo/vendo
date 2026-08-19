@@ -140,7 +140,11 @@ async function answerUnservableApp(wire: WireContext, appId: string, ctx: RunCon
   }
 }
 
-async function openWithPendingWindow(wire: WireContext, appId: string, ctx: RunContext): Promise<Response> {
+/** Both open routes, which differ only in whether the embed's build window is
+ *  open: `pending: false` is what the runtime already did for an absent option
+ *  (`createAppOpener`), and an unflagged open can never answer `pending`, so the
+ *  arrival line below reads the same on either. */
+async function openApp(wire: WireContext, appId: string, ctx: RunContext, pending: boolean): Promise<Response> {
   const { deps } = wire;
   // The ONLY thing this arm guards is the open. The flag rides through to the
   // runtime, which answers a build still in flight with `{kind:"pending"}` plus —
@@ -148,17 +152,32 @@ async function openWithPendingWindow(wire: WireContext, appId: string, ctx: RunC
   // something to show.
   let surface: Awaited<ReturnType<typeof deps.apps.open>>;
   try {
-    surface = await deps.apps.open(appId, ctx, { pending: true });
+    surface = await deps.apps.open(appId, ctx, { pending });
   } catch (reason) {
+    // A broken ARTIFACT, never a bad request: the only input this door takes is
+    // the app id, and a bad one is not-found — so a `validation` refusal is
+    // always about what is STORED (a served row with no machine, a screen that
+    // no longer renders: persistence/open.ts). That is terminal for every caller
+    // and unchanged by every retry, so it is answered in the wire's own terminal
+    // vocabulary (#492) carrying the refusal's own words. As a bare 400 it read
+    // as "try again", and an agent retried one identical response for 7.7
+    // minutes, until its turn budget died, with the reason never reaching it.
+    if (isVendoError(reason) && reason.code === "validation") {
+      return json({ kind: "failed", reason: reason.message, retryable: false });
+    }
     // Cross-realm safe (`isVendoError`): a second @vendoai/core copy's not-found
     // read as an unknown fault here, which 501'd the poll instead of answering it.
-    if (!(isVendoError(reason) && reason.code === "not-found")) throw reason;
+    // Only the flagged route rescues it; unflagged keeps its contracted 404.
+    if (!(pending && isVendoError(reason) && reason.code === "not-found")) throw reason;
     return await answerUnservableApp(wire, appId, ctx);
   }
-  // Arrival, outside that catch on purpose — a mark's own not-found must never be
-  // read as the open's. A `pending` answer put nothing on screen (the whole point
-  // of the flag), so it is not a render; the opener's build-window decision is the
-  // gate, and nothing re-reads `building` to guess at it.
+  // Arrival — THIS is what "rendering marks it seen" means: a person's browser
+  // asked for a surface to put on screen. The runtime door is not the place for it
+  // (an agent's `vendo_apps_open` and an automation both pass through there).
+  // Outside that catch on purpose — a mark's own not-found must never be read as
+  // the open's. A `pending` answer put nothing on screen (the whole point of the
+  // flag), so it is not a render; the opener's build-window decision is the gate,
+  // and nothing re-reads `building` to guess at it.
   if (surface.kind !== "pending") await markArrival(deps, appId, ctx);
   return json(surface);
 }
@@ -279,16 +298,7 @@ export const appRoutes: RouteEntry[] = [
       }
     }
     if (op(wire, "GET", "open")) {
-      if (wire.url.searchParams.get("pending") === "1") return openWithPendingWindow(wire, appId, ctx);
-      const surface = await deps.apps.open(appId, ctx);
-      // Arrival — THIS is what "rendering marks it seen" means: a person's
-      // browser asked for a surface to put on screen. The runtime door is not
-      // the place for it (an agent's `vendo_apps_open` and an automation both
-      // pass through there); a build still in flight never reaches this line,
-      // because open() answers not-found until it can serve. Non-fatal: the
-      // surface is already served, and bookkeeping does not get to unserve it.
-      await markArrival(deps, appId, ctx);
-      return json(surface);
+      return openApp(wire, appId, ctx, wire.url.searchParams.get("pending") === "1");
     }
     if (op(wire, "POST", "call")) {
       const body = await requestJson(request);
