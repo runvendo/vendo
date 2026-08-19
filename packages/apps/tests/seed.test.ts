@@ -462,6 +462,27 @@ describe("the ✦ one door — a wish naming the host component becomes a remix"
     expect(asked).toHaveLength(2);
   });
 
+  it("keeps BOTH wishes when two gestures race past the seed door's pre-mint check", async () => {
+    const store = memoryStore();
+    const { runtime } = buildingRuntime(store);
+    const tools = runtime.agentTools();
+
+    // Both find no remix, both mint, and the seed door resolves it afterwards:
+    // the loser is handed the WINNER's app, with its own app — and the wish
+    // riding it — deleted. So the loser's wish exists nowhere unless this door
+    // lands it, and neither caller ever saw an app to recognise as pre-existing.
+    const [first, second] = await Promise.all([
+      tools.execute(remixCall("call_blue", "make it blue"), owner),
+      tools.execute(remixCall("call_green", "make it green"), owner),
+    ]);
+
+    expect(first).toMatchObject({ status: "ok" });
+    expect(second).toMatchObject({ status: "ok" });
+    const seeded = (await runtime.list(owner)).filter(({ seed }) => seed?.component === SLOT);
+    expect(seeded, "a race must not mint two remixes").toHaveLength(1);
+    expect(seeded[0]?.seed?.wishes).toEqual(["make it blue", "make it green"]);
+  });
+
   it("refuses a component the host never captured rather than minting an orphan", async () => {
     const { runtime } = buildingRuntime(memoryStore());
 

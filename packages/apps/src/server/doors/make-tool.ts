@@ -338,7 +338,17 @@ const remixComponent = async (
   // riding wish when it does. The fence stays in the thread, so a follow-up wish
   // arrives named this way too — that is an edit of the remix, and this being
   // the one door, it has to land as one rather than vanish.
-  if (before.some(({ id }) => id === seeded.id)) return await changeExistingApp(make, seeded.id);
+  //
+  // The question is "did the seed door apply MY wish?", and it takes both halves
+  // to answer. The app existing beforehand catches the ordinary dedupe, INCLUDING
+  // a wish repeated verbatim, which leaves a remix in exactly the state a fresh
+  // mint would be in. The wish list catches the racing pair the seed door
+  // resolves after the fact: two gestures both find nothing, both mint, and the
+  // loser is handed the WINNER's app with the loser's own wish deleted alongside
+  // its app — an app that never existed for either caller to have seen.
+  const applied = !before.some(({ id }) => id === seeded.id)
+    && seeded.seed?.wishes.at(-1) === request;
+  if (!applied) return await changeExistingApp(make, seeded.id);
   return receipt({
     id: seeded.id,
     title: seeded.name,
