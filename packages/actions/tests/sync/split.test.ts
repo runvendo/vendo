@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { checkComponentScreen } from "@vendoai/apps";
+import { checkComponentScreen, PORTED_SCREEN_DIALECT } from "@vendoai/apps";
 import { afterEach, describe, expect, it } from "vitest";
 import { seedBaselineSchema } from "../../src/formats.js";
 import { capturePins } from "../../src/sync/seeds.js";
@@ -281,11 +281,11 @@ describe("the splitter", () => {
         source: ported!.source,
         hostTools: wired.tools.map((tool) => ({ ...tool, description: `${tool.name} description` })),
         catalog: wired.holes,
-        // The same dialect the runtime floor derives off the row's `seed`
-        // (`PORTED_SCREEN_DIALECT`) — `ported` is what puts `className` in the
-        // dialect, and `remix-port-dialect.test.ts` is the seam that catches the
-        // two graders disagreeing.
-        ported: true,
+        // The ONE spelled dialect both graders spread — the same one the
+        // runtime floor derives off the row's `seed`. `ported` is what puts
+        // `className` in the dialect, and `remix-port-dialect.test.ts` is the
+        // seam that catches the two graders disagreeing.
+        ...PORTED_SCREEN_DIALECT,
         runQuery: async () => null,
       });
       expect([slot, check.ok, check.issues.map((issue) => issue.message)], slot).toEqual([slot, true, []]);
