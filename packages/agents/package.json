@@ -36,6 +36,10 @@
     "./claude-code": {
       "types": "./dist/claude-code.d.ts",
       "default": "./dist/claude-code.js"
+    },
+    "./http": {
+      "types": "./dist/http/router.d.ts",
+      "default": "./dist/http/router.js"
     }
   },
   "files": [
