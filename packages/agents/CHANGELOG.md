@@ -1,5 +1,17 @@
 # @vendoai/agents
 
+## 0.29.1
+
+### Patch Changes
+
+- @vendoai/core@0.29.1
+- @vendoai/store@0.29.1
+- @vendoai/actions@0.29.1
+- @vendoai/guard@0.29.1
+- @vendoai/apps@0.29.1
+- @vendoai/harnesses@0.29.1
+- @vendoai/mcp@0.29.1
+
 ## 0.29.0
 
 ### Patch Changes
