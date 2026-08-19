@@ -772,6 +772,9 @@ importers:
 
   genbench:
     dependencies:
+      '@jitl/quickjs-singlefile-browser-release-sync':
+        specifier: ^0.32.0
+        version: 0.32.0
       '@vendoai/apps':
         specifier: workspace:*
         version: link:../packages/apps

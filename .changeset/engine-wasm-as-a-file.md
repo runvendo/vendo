@@ -14,3 +14,11 @@ build's ten-kilobyte loader, handed the module through `wasmBinary` — read off
 disk on Node, fetched as a bundler-emitted asset everywhere else. `@vendoai/apps`
 ships `quickjs.wasm` beside its `dist`, and the QuickJS it installs drops from
 3.1MB to 1.2MB.
+
+And the variant a host hands `warmScreenEngine` now WINS. It used to be
+last-warm-wins, which meant `@vendoai/ui`'s own no-variant re-warm on the first
+screen mount silently took the engine back — so the documented hatch existed and
+never held, and a venue with no network and no asset URL (an offline
+single-bundle page, workerd) could not run screens at all. An explicitly passed
+variant is now kept: every later default warm is a no-op, and a default already
+in flight lands nowhere.
