@@ -15,10 +15,14 @@ import { compositionModuleSource } from "../src/cli/init-scaffolds.js";
  *     rot one at a time;
  *  2. the `serverExternalPackages` list. Three pages restate it, and the entry
  *     that matters (`@vendoai/apps`) is invisible when it is missing: the app
- *     still boots and every generated screen fails its checks;
- *  3. what init's composition module actually exports. The existing-agent track
- *     imports from that one file, and a name the page assumed init writes is a
- *     TS2305 on the reader's first build — the `resolvePrincipal` class.
+ *     still boots and every generated screen fails its checks. The AI SDK
+ *     walkthrough was a fourth copy and a step of its own until init started
+ *     writing the property itself, so that page is pinned the other way round:
+ *     no list, and the sentence that says who writes it;
+ *  3. what init's composition module actually exports. Both existing-agent
+ *     walkthroughs import from that one file, and a name a page assumed init
+ *     writes is a TS2305 on the reader's first build — the `resolvePrincipal`
+ *     class.
  *
  * It reads sources, so it is a plain test against the repo, not a build check.
  */
@@ -28,10 +32,11 @@ const read = (path: string): Promise<string> => readFile(new URL(path, REPO_ROOT
 
 const CARD = "docs-site/snippets/agent-prompt-card.mdx";
 const README = "README.md";
-/** The one page that defines `lib/vendo.ts`; the other two import from it. */
-const QUICKSTART = "docs-site/existing-agent/quickstart.mdx";
+/** The two walkthroughs. Each one now defines `lib/vendo.ts` for itself and
+ *  imports from it; the chooser they hang off carries no code at all. */
 const AI_SDK = "docs-site/existing-agent/ai-sdk.mdx";
 const MASTRA = "docs-site/existing-agent/mastra.mdx";
+const WALKTHROUGHS = [AI_SDK, MASTRA];
 /** Every page that restates the Next externals list rather than linking to it —
  *  including the troubleshooting page a reader lands on when the list is wrong,
  *  which is the worst place of all for it to be wrong. */
@@ -39,7 +44,6 @@ const EXTERNALS_PAGES = [
   "docs-site/index.mdx",
   "docs-site/agents/index.mdx",
   "docs-site/production/troubleshooting/e-cfg-004.mdx",
-  AI_SDK,
 ];
 
 /** Line breaks are the one difference a published copy may carry: the README
@@ -81,6 +85,23 @@ describe("the Next externals list the docs print is the one init writes", () => 
     expect(listed.length, `${page} must still print the list`).toBeGreaterThan(0);
     for (const names of listed) expect(names).toEqual([...NEXT_SERVER_EXTERNALS]);
   });
+
+  /** The AI SDK walkthrough had a step of its own for this list until init's
+   *  `framework === "next"` branch started writing the property. Both halves are
+   *  pinned: the step is GONE — a page that prints the list again is a manual
+   *  step the reader no longer has and a copy that rots — and the sentence that
+   *  replaced it is true of init's source. */
+  it("the AI SDK walkthrough hands the list to init instead of printing it", async () => {
+    const page = await read(AI_SDK);
+    expect(SERVER_EXTERNALS_ARRAY.test(page), `${AI_SDK} must not restate the list`).toBe(false);
+    expect(page, `${AI_SDK} must still say who writes it`).toContain(
+      "adds Vendo's `serverExternalPackages` entries to your Next config",
+    );
+    expect(
+      await read("packages/vendo/src/cli/init.ts"),
+      "init must still write the externals itself",
+    ).toContain("missingServerExternals(before)");
+  });
 });
 
 /** Every name init's composition module exports, across both shapes it writes
@@ -111,23 +132,32 @@ const composedImports = (page: string): string[] =>
   );
 
 describe("the existing-agent track imports only what lib/vendo.ts really holds", () => {
-  it("every imported name is one init writes or one the quickstart shows being added", async () => {
+  it("every imported name is one init writes or one a walkthrough shows being added", async () => {
     const written = scaffoldExports();
-    const shown = shownExports(await read(QUICKSTART));
     // Both halves of the union have to be readable, or a slice that silently
     // matched nothing would pass this test forever — and the split itself is
     // the fact under test: init writes the instance, the reader writes the
     // resolver, and a page that forgets which is which publishes a TS2305.
     expect([...written], "the scaffold's own exports must be readable").toContain("vendo");
-    expect(
-      [...shown].filter((name) => !written.has(name)),
-      "the quickstart must still show what init does not write",
-    ).not.toEqual([]);
+
+    const pages = new Map<string, string>();
+    for (const file of WALKTHROUGHS) pages.set(file, await read(file));
+
+    // Each page stands alone now, so each one has to show the resolver itself.
+    const shown = new Set<string>();
+    for (const [file, text] of pages) {
+      const own = shownExports(text);
+      expect(
+        [...own].filter((name) => !written.has(name)),
+        `${file} must still show what init does not write`,
+      ).not.toEqual([]);
+      for (const name of own) shown.add(name);
+    }
 
     const available = new Set([...written, ...shown]);
     const missing: string[] = [];
-    for (const file of [QUICKSTART, AI_SDK, MASTRA]) {
-      const imported = composedImports(await read(file));
+    for (const [file, text] of pages) {
+      const imported = composedImports(text);
       expect(imported, `${file} must still import from the composition module`).toContain("vendo");
       missing.push(...imported.filter((name) => !available.has(name)).map((name) => `${file}: ${name}`));
     }

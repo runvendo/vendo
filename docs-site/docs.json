@@ -100,6 +100,7 @@
           {
             "group": "Generated UI & apps",
             "pages": [
+              "generated/quickstart",
               "generated/apps",
               "generated/in-client-venue",
               "generated/host-components",

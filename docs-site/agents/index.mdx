@@ -423,10 +423,9 @@ export const resolvePrincipal = (req: Request) => auth.principal(req);
 
 Both sides have to resolve the SAME subject. Your human's loop and the wire
 route the embeds call are two different requests, and an app or approval
-created under one subject is invisible to a surface asking as another.
-[`https://docs.vendo.run/existing-agent/quickstart.md`](/existing-agent/quickstart)
-has that file in both shapes — with an auth preset and without — and it is
-the one exception to the one-page rule, not an invitation to browse.
+created under one subject is invisible to a surface asking as another. The
+walkthrough you fetched has that file in both shapes — with an auth preset and
+without — so there is still exactly one page to read.
 
 **This is the path `VENDO_BASE_URL` is load-bearing on**: the tool runs in
 THEIR chat route, which is not a request the wire route ever sees.
@@ -655,7 +654,8 @@ backend, answering from their own API.
 | --- | --- |
 | `https://vendo.run/agents.md` | This playbook as raw Markdown (append `.md` to any docs page) |
 | `https://docs.vendo.run/product/quickstart.md` | The in-product path: the provider, the overlay, and slots |
-| `https://docs.vendo.run/existing-agent/quickstart.md` | The tool-pack path for hosts that already have an agent |
+| `https://docs.vendo.run/existing-agent/ai-sdk.md` | The tool-pack path for a host that already runs an AI SDK loop |
+| `https://docs.vendo.run/existing-agent/mastra.md` | The tool-pack path for a host that already runs a Mastra agent |
 | `https://docs.vendo.run/backend/quickstart.md` | The backend path: one package, `agent()`, `chat()`, `handler()`, `run()` — no CLI and no Vendo UI to mount |
 | `https://vendo.run/auth.md` | The raw claim-ceremony protocol behind `vendo login` |
 | `https://docs.vendo.run/llms.txt` | Index of every docs page for LLM ingestion (also at `/.well-known/llms.txt`) |
