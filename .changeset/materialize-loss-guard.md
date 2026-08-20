@@ -39,6 +39,14 @@ holds. That report is also how a box whose supervisor RESTARTED — same machine
 same token, empty disk — stops passing as the box that holds the conversation:
 the host reads its own generation back before it treats an empty disk as news.
 
+**The box image must be rebaked for the generation to take effect** — half of it
+lives in the machine image, beside the supervisor. A host on this version against
+an older image is safe but unprotected: the box ignores the generation it is sent
+and reports none, and an absent report is tolerated on purpose, so the seam
+behaves exactly as it did before rather than refusing every sync-back until the
+rebake lands. Such a turn now logs `harnesses.claude-code-box-no-generation`, so
+the unprotected window is visible while it is open.
+
 And the retry itself now knows what a retry is for. It replayed everything,
 including answers — a meter refusal, a rejected key, a machine the provider had
 destroyed — and threw the first error away to say the second one twice. Only a

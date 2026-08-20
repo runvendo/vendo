@@ -242,7 +242,16 @@ export async function boxMachine(options: BoxMachineOptions): Promise<SessionMac
     }).catch(() => ({ status: 0, json: undefined }));
     if (status !== 200) return undefined;
     const epoch = (json as { epoch?: unknown } | undefined)?.epoch;
-    return typeof epoch === "number" ? { epoch } : {};
+    if (typeof epoch === "number") return { epoch };
+    // Tolerated, and therefore said out loud: for the length of the rollout every
+    // guard below reads "no generation" as "nothing to disagree with" and passes,
+    // so an unprotected turn is otherwise indistinguishable from a protected one.
+    log({
+      code: "harnesses.claude-code-box-no-generation",
+      level: "warn",
+      message: "[vendo] claude-code: the box reports no workspace generation — its image predates the guard, so nothing this turn reads back is checked against what it wrote. Rebake the box image.",
+    });
+    return {};
   };
 
   const bootBox = async (): Promise<BoxEntry> => {
