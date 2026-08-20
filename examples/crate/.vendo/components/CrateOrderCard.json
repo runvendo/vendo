@@ -1,10 +1,10 @@
 {
   "name": "CrateOrderCard",
-  "hash": "sha256:8be999ee1b122ac17574fbb8118b72976bcfcac63852c6ba5a9e4a292501e7e7",
-  "capturedAt": "2026-08-17T04:34:24.386Z",
+  "hash": "sha256:4af08c93b5fa8c9be4e55a862398c9d80f32d9d62f73bb02e354a0af2f20208d",
+  "capturedAt": "2026-08-20T01:14:54.723Z",
   "module": "src/vendo/registry.tsx",
   "export": "CrateOrderCard",
-  "entry": "83ab861d2facd7d49add97885f94ed506cf026d23aa5403021ec47868cb7e311",
+  "entry": "2173eee5b9f6c15934abe7618a57f61e93611c9b379bd1fc6f7a9eef3de68328",
   "modules": {
     "src/components/ui.tsx": "f9877148c3fa15fd5fb6d9cd843266930b2e946e8e262d842b29c4ce719f3e38",
     "src/lib/format.ts": "0fbb97afbec05238b9759edbe5a93d13a0c84290ec3234033005b1a1c6968b8f"
@@ -15,7 +15,7 @@
       "ref": "b93c91e7456eece6ad27d5230e2d5187851d9cba9265d7ce79f78f8e3cb45372"
     }
   ],
-  "bytes": 10719,
+  "bytes": 10899,
   "requires": [
     "clsx",
     "zod"
