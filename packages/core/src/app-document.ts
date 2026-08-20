@@ -190,12 +190,15 @@ export const appMemorySchema = z.object({
  * never the location of record — that is a placement ROW), and `review` carries
  * the captured baseline's review kind.
  *
- * `wishes` is EVERY change the person has asked of this remix, VERBATIM and in
- * order, the ✦ gesture's own first. There are no bare forks — the gesture
- * collects the first wish before it fires — and a re-seed replays the WHOLE list
- * against the host's new baseline, so a wish missing here is an edit the person
- * silently loses. Unlike {@link AppMemory.asks}, a capped working set, this list
- * is never trimmed: it IS the remix.
+ * `wishes` is every change that LANDED on this remix, VERBATIM and in order, the
+ * ✦ gesture's own first. There are no bare forks — the gesture collects the
+ * first wish before it fires — and a re-seed replays the WHOLE list against the
+ * host's new baseline, so a wish missing here is an edit the person silently
+ * loses, and a wish here that never reached their screen is one the Update
+ * silently invents. That is why the list is what the person GOT and
+ * {@link AppMemory.asks} beside it is everything they asked: one ask refused
+ * three times is three asks and no wishes. Unlike `asks`, a capped working set,
+ * this list is never trimmed: it IS the remix.
  */
 export interface AppSeed {
   component: string;

@@ -110,8 +110,10 @@ interface MakeCall {
   ask: string;
   /** The client parts this execution may publish, when the caller opened a stream. */
   stream: ((update: VendoViewStreamUpdate) => void) | undefined;
-  /** The ask, onto the app's memory. Best-effort, always. */
-  remember(appId: string): Promise<void>;
+  /** The ask, onto the app's memory. Best-effort, always. `landed` says the
+   *  change reached the screen, which is what makes it a remix WISH as well as
+   *  an ask — the create arms leave it off because a new app has no wish list. */
+  remember(appId: string, landed?: boolean): Promise<void>;
 }
 
 const makeNewApp = async (
@@ -281,10 +283,13 @@ const changeExistingApp = async (
 ): Promise<ToolOutcome> => {
   const appId = await resolveAppRef(runtime, app, ctx);
   const result = await runtime.edit(appId, ask, ctx);
-  // Recorded whether or not the change landed: the person DID ask this of
-  // this app, and the next editor reading "asked for X, then asked for X
-  // again, narrower" is reading the truth.
-  await remember(appId);
+  // The ASK is recorded whether or not the change landed: the person DID ask
+  // this of this app, and the next editor reading "asked for X, then asked for
+  // X again, narrower" is reading the truth. Whether it landed travels with it,
+  // because a remix's wish list is the other thing this writes and that one
+  // replays on every Update — an attempt the person never got back is not a
+  // change to replay.
+  await remember(appId, result.failure === undefined);
   // An automation this edit authored raises its own card. Published HERE, by the
   // side that knows, rather than duck-typed out of this tool's return value at
   // the bridge: the receipt carries words only.
@@ -452,8 +457,9 @@ export const runMakeTool = async (
    * Best-effort, always. There is no arrangement of a lost memory write
    * that is worse than failing a make the person can already see.
    */
-  const remember = async (appId: string): Promise<void> => {
-    await runtime.remember({ appId, ask: request }, ctx).catch((error: unknown) => {
+  const remember = async (appId: string, landed?: boolean): Promise<void> => {
+    const recorded = { appId, ask: request, ...(landed === undefined ? {} : { landed }) };
+    await runtime.remember(recorded, ctx).catch((error: unknown) => {
       log({
         code: "apps.ask-not-recorded",
         level: "warn",

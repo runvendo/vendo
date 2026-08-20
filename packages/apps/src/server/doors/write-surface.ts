@@ -503,10 +503,14 @@ export const createWriteSurface = (
         memory: rememberedMemory(doc.memory, input),
         // A REMIX keeps every wish beside the memory, because the two answer
         // different questions. `memory.asks` is a capped working set for the
-        // next editor; `seed.wishes` is what a re-seed replays onto the host's
-        // new version, so a wish that fell off a cap would be an edit the person
-        // loses the next time the host ships.
-        ...(doc.seed === undefined || input.ask === undefined
+        // next editor and holds every ask, landed or not; `seed.wishes` is what
+        // a re-seed REPLAYS onto the host's new version, so it holds only the
+        // asks that reached the screen — a refused attempt is not a change the
+        // person has, and one ask refused three times used to leave four entries
+        // that every Update then replayed (live 2026-08-18). A wish that fell off
+        // a cap would be an edit the person loses the next time the host ships,
+        // which is why the list is never trimmed.
+        ...(doc.seed === undefined || input.ask === undefined || input.landed !== true
           ? {}
           : { seed: { ...doc.seed, wishes: [...doc.seed.wishes, input.ask] } }),
       }));
