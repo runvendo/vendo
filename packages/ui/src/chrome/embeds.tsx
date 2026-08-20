@@ -39,10 +39,11 @@ import { buildFailureNotice } from "./thread/message-data.js";
 
 /**
  * The three embeds a BYO chat surface renders from
- * `vendo_*` tool outputs (frozen prop contracts in ../embeds.ts). All three
- * live inside the host's `VendoProvider` pointed at the wire: auth rides the
- * host session cookie, theme rides the `--vendo-*` tokens, and they take no
- * client/config props of their own. Failure states speak the existing
+ * `vendo_*` tool outputs (frozen prop contracts in ../embeds.ts). Drop one on a
+ * page and it works: the wire is `/api/vendo`, auth rides the host session
+ * cookie, theme rides the `--vendo-*` tokens, and they take no client/config
+ * props of their own. A surrounding `VendoProvider` overrides those defaults
+ * for everything inside it (context.tsx). Failure states speak the existing
  * failed/expired vocabulary — never a silent blank.
  */
 

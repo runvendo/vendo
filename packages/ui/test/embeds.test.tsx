@@ -9,6 +9,8 @@ import {
   VendoProvider,
   VendoToolResult,
   createVendoClient,
+  defaultVendoTheme,
+  useVendoProvider,
   type OpenSurface,
   type PendingSurface,
   type VendoClient,
@@ -443,5 +445,105 @@ describe("existing-agents embeds", () => {
         vi.useRealTimers();
       }
     });
+  });
+});
+
+// The provider is settings, not a switch: every one of its props has a
+// universal default, so an embed dropped on a page with no provider anywhere
+// self-boots from them. A provider above still wins, for everything.
+describe("embeds with no provider", () => {
+  let wire: Awaited<ReturnType<typeof createWireServer>>;
+  let override: Awaited<ReturnType<typeof createWireServer>> | undefined;
+  let hostFetch: ReturnType<typeof vi.fn>;
+
+  beforeEach(async () => {
+    wire = await createWireServer();
+    override = undefined;
+    // A browser resolves the default "/api/vendo" against the page it is on;
+    // jsdom has no origin Node's fetch can resolve a relative URL against, so
+    // this stands in for that one step — the same rewrite the e2e harness's
+    // vite proxy performs. Neither end is stubbed: the DEFAULT client builds
+    // every request and the real wire answers it.
+    const upstream = globalThis.fetch;
+    hostFetch = vi.fn((input: string | URL | Request, init?: RequestInit) => {
+      const target = String(input instanceof Request ? input.url : input);
+      return upstream(
+        target.startsWith("/api/vendo") ? `${wire.url}${target.slice("/api/vendo".length)}` : input,
+        init,
+      );
+    });
+    vi.stubGlobal("fetch", hostFetch);
+  });
+
+  afterEach(async () => {
+    cleanup();
+    vi.unstubAllGlobals();
+    await wire.close();
+    await override?.close();
+  });
+
+  const askedFor = (path: string) => hostFetch.mock.calls.some(([input]) => String(input).startsWith(`/api/vendo${path}`));
+
+  it("dispatches, polls the default wire, and resolves an approval in place", async () => {
+    render(<VendoToolResult output={approvalRef} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Approve" }));
+    await waitFor(() => expect(screen.getByText("Approved — ran")).toBeDefined());
+    // The wire it reached is the default mount, with nobody having named it.
+    expect(askedFor("/approvals/apr_1")).toBe(true);
+    expect(wire.requests).toContainEqual(
+      expect.objectContaining({ method: "POST", path: "/approvals/decide" }),
+    );
+  });
+
+  it("polls a building app to its live surface", async () => {
+    render(<VendoToolResult output={appRef} />);
+    await waitFor(() => expect(screen.getByText("Invoices app surface")).toBeDefined());
+    expect(askedFor("/apps/app_1/open")).toBe(true);
+  });
+
+  it("paints the chrome on the default brand tokens", () => {
+    render(<VendoApprovalEmbed refValue={approvalRef} />);
+    const root = document.querySelector<HTMLElement>(".vendo-root")!;
+    expect(root.style.getPropertyValue("--vendo-color-accent")).toBe(defaultVendoTheme.colors.accent);
+  });
+
+  /** ONE client for the whole page, stable across renders: a fresh one per
+   *  embed would be a fresh wire per embed, and every poll keys its effect on
+   *  client identity — so the loops would restart on every render. */
+  it("shares one client across every bare surface, and keeps it across renders", () => {
+    const seen: VendoClient[] = [];
+    function Probe() {
+      seen.push(useVendoProvider().client);
+      return null;
+    }
+    const view = render(<><Probe /><Probe /></>);
+    view.rerender(<><Probe /><Probe /></>);
+    expect(new Set(seen).size).toBe(1);
+    expect(seen[0]!.baseUrl).toBe("/api/vendo");
+  });
+
+  it("a surrounding provider wins: its client is used and the default wire is never touched", async () => {
+    override = await createWireServer();
+    render(
+      <VendoProvider client={createVendoClient({ baseUrl: override.url })}>
+        <VendoApprovalEmbed refValue={approvalRef} />
+      </VendoProvider>,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Approve" }));
+    await waitFor(() => expect(screen.getByText("Approved — ran")).toBeDefined());
+    expect(override.requests).toContainEqual(
+      expect.objectContaining({ method: "POST", path: "/approvals/decide" }),
+    );
+    expect(wire.requests).toEqual([]);
+  });
+
+  it("a surrounding provider's theme wins over the default tokens", () => {
+    render(
+      <VendoProvider client={createVendoClient({ baseUrl: wire.url })} theme={{ colors: { ...defaultVendoTheme.colors, accent: "#ff00aa" } }}>
+        <VendoApprovalEmbed refValue={approvalRef} />
+      </VendoProvider>,
+    );
+    const root = document.querySelector<HTMLElement>(".vendo-root")!;
+    expect(root.style.getPropertyValue("--vendo-color-accent")).toBe("#ff00aa");
   });
 });

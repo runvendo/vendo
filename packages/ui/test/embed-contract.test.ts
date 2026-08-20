@@ -30,6 +30,17 @@ describe("embed prop contracts", () => {
     expect(states).toHaveLength(4);
   });
 
+  /** The provider went optional by DEFAULTING, not by growing a knob: these
+   *  exhaustive (and excess-checked) key maps fail to compile the day a
+   *  client/baseUrl/theme prop appears on any of the three. */
+  it("takes no client or config prop of its own, bare or not", () => {
+    const appKeys: Record<keyof VendoAppEmbedProps, true> = { refValue: true };
+    const approvalKeys: Record<keyof VendoApprovalEmbedProps, true> = { refValue: true };
+    const resultKeys: Record<keyof VendoToolResultProps, true> = { output: true };
+    expect([Object.keys(appKeys), Object.keys(approvalKeys), Object.keys(resultKeys)])
+      .toEqual([["refValue"], ["refValue"], ["output"]]);
+  });
+
   it("VendoToolResult takes any vendo_* tool output and dispatches on the envelope parse", () => {
     const props: VendoToolResultProps = { output: { delivered: true } };
     expect(parseVendoToolEnvelope(props.output)).toBeNull();
