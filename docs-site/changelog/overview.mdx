@@ -4,6 +4,49 @@ sidebarTitle: "Changelog"
 description: "Weekly release notes for the Vendo SDK and runtime: new features, updates, and fixes, newest first."
 ---
 
+<Update label="August 19, 2026" description="Week of August 17 – August 23">
+
+## Breaking changes
+
+**Generated screens are plain React, and the value tier is gone.** A screen is now one default-exported component that imports from `@vendo/screen`. Reads take real inputs (`useQuery("list_transfers", { status: "pending" })`), writes fire from event handlers (`tools.cancel_transfer({ id })`), and container slots take React children rather than markup fragments.
+
+The Kit's Value components — `Money`, `DateTime`, `Percent`, `Num` — are removed along with the `field=`, `semantic:`, and percent-string prop forms. A screen formats every figure itself with `Intl`, in the units the host stores:
+
+```tsx
+const money = (cents) => (cents / 100).toLocaleString("en-US", { style: "currency", currency: "USD" });
+const day = (iso) => new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+
+<Text text={money(row.amount_cents)} />
+<Text text={day(row.created_at)} />
+```
+
+Existing screens saved against the old dialect no longer render. Regenerate them, or hand-migrate to the shapes above. See [Generated apps](/generated/apps) and [Host components](/generated/host-components).
+
+**Chart format tokens are gone.** `format`, `xFormat`, and per-series `format` no longer accept string tokens (`"money"`, `"percent"`, `"date"`). Every figure a chart prints — legend line, bar label, hovered point, x tick — comes from a per-row function the screen writes:
+
+```tsx
+<DonutChart data={rows} slices={rows} format={(row) => money(row.amount_cents)} />
+
+<BarChart
+  data={rows}
+  xKey="month"
+  xFormat={(row) => day(row.month)}
+  series={[{ key: "amount", label: "Spend", format: (row) => money(row.amount) }]}
+/>
+```
+
+The value axis is the one figure a screen can't format — recharts writes it off the scale, so plot the units you want read (divide cents to dollars where you prepare the rows).
+
+`Timeline` renders its `time` field verbatim, so format the string before you hand it over (or use `cell`). `formatDuration` is removed from `@vendoai/ui`.
+
+## New features
+
+**`info` is a real theme color.** `themeDefaults.colors.info` derives from the host's accent via `infoColorFor("var(--vendo-color-accent)")`, so a status that is neither good news nor bad reads brand-native on any host. Override it like any other token in your `VendoTheme`.
+
+**`SegmentedControl` speaks radio semantics.** The rendered nodes stamp `role="radiogroup"` and `role="radio"` with `aria-checked`, replacing `aria-pressed`. Screen readers now announce a single-choice bar as a group of options rather than a row of toggles.
+
+</Update>
+
 <Update label="July 17, 2026" description="Week of July 14 – July 20">
 
 ## New features

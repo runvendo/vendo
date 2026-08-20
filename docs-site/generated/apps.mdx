@@ -22,7 +22,9 @@ The plan's skeleton paints in seconds. The finished screen replaces it in place.
 An app is one file, holding one default-exported React component. Saving it repaints the person's screen.
 
 ```tsx app.tsx focus={4,15}
-import { useQuery, tools, Stack, Row, Text, Money, Button } from "@vendo/screen";
+import { useQuery, tools, Stack, Row, Text, Button } from "@vendo/screen";
+
+const money = (cents) => (cents / 100).toLocaleString("en-US", { style: "currency", currency: "USD" });
 
 export default function Spend() {
   const spend = useQuery("host_spend_by_category", { month: "aug" });
@@ -33,7 +35,7 @@ export default function Spend() {
       {spend.rows.map((row) => (
         <Row key={row.category} justify="between">
           <Text text={row.category} />
-          <Money amount={row.amount_cents / 100} />
+          <Text text={money(row.amount_cents)} />
         </Row>
       ))}
       <Button label="Set budget" onClick={() => tools.host_budget_set({ budget: 1800 })} />
