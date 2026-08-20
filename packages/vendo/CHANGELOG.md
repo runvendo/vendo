@@ -1,5 +1,91 @@
 # @vendoai/vendo
 
+## 0.35.0
+
+### Minor Changes
+
+- ea60d95: An app can be shared again. `AppsRuntime.access` regains `list`, `grant` and
+  `revoke` (viewer-scoped read, owner-scoped writes, each write answering with the
+  resulting list), the wire mounts `GET /apps/:id/grants` and
+  `PUT|DELETE /apps/:id/grants/:principal`, and the client regains
+  `apps.grants/.share/.unshare`. The person picker and `promote` are deliberately
+  not back.
+
+### Patch Changes
+
+- 83f3026: A keyless clerk() host is a state, not an outage. The preset used to THROW
+  when a request carried a session token and neither `CLERK_SECRET_KEY` nor
+  `CLERK_JWT_KEY` was set — 501-ing the entire wire in exactly the state
+  `vendo init --auth clerk` leaves you in, on hosts where Clerk's `__session`
+  cookie rides every request — while a forged token nine lines below resolved
+  to anonymous. A missing key now resolves to anonymous too, named once and
+  loudly in the server log (the v4-cookie-hint pattern). And because nothing
+  fails loud enough to send anyone looking, the gap is named early twice over:
+  init's detection attaches a clerk env advisory (the supabase mechanism,
+  generalized), and doctor grades the same fact statically as **E-AUTH-010**
+  (a warning) from the same shared helpers, so init and doctor can never
+  disagree.
+- 968ab91: Three things measured on real texted turns, two of them time a person spent
+  waiting for nothing.
+
+  **The queue tail.** A texted turn holds its conversation's queue until it
+  returns, and after the reply had already gone out it still had two hosted round
+  trips to make: the link write, and the approval-feed read the grant-set offer
+  needs. Run one after the other they charged the NEXT text 8.3s of bookkeeping
+  before its own turn could start. They have nothing to say to each other — one is
+  this conversation's row, the other is the subject's approval feed — so they now
+  go together. The feed is still read after the turn and never before it: the
+  arming call that mints the rows it looks for runs inside the turn.
+
+  **The delivery-log sweep.** `ChannelEventLog.claim` awaited its own prune, so
+  once an hour, per conversation, whichever person's text happened to come due
+  waited out a page read plus one delete per expired row — 4.95s of serial hosted
+  calls in front of a turn that had not started. It is detached now. Safe on all
+  three counts: it only ever deletes rows older than any retry, so nothing a live
+  delivery reads depends on it; the cadence mark is set before it starts, so the
+  next claim this hour does not begin a second one; and a sweep that fails is
+  simply made again when the interval comes round.
+
+  **Splitting that actually engages.** The divider teaching landed on ONE turn in
+  four, so three times out of four a six-account listing arrived as a wall of
+  text. The teaching stays and stays first — a split the model chooses knows what
+  it is saying and a rule does not — but a reply it split nowhere is now cut for
+  it, once, at the end of the stream where the whole reply is in hand and it is
+  certain the model cut nothing. The boundaries are a blank line, then a line end,
+  then a sentence end, grouped to about one text each and capped at three; there is
+  deliberately no rung below a sentence, so a long unbroken clause comes back
+  whole rather than broken mid-thought. Only the true last piece carries `final`.
+
+  Cutting never reformats: each boundary captures the whitespace it matched, so a
+  bubble that holds two parts together holds the bytes that stood between them, and
+  a listing the model indented itself arrives indented. And the sentence rung knows
+  a period is not a sentence end half the time a bank reply uses one — it fires
+  only where the next sentence visibly starts, and never straight after a title, so
+  "your acc. 1234" and "Dr. Smith" stay whole.
+
+- d187d8c: The catalog report names the file that cures blind tools. A blind tool is a
+  method and a path with no parameters — the agent cannot use what it cannot
+  see — and the single highest-leverage fix, an `openapi.json` at the app root,
+  was named nowhere (field-measured: one file took a host from 0/18 to 18/18
+  declared schemas). When the schema-coverage line reports blind tools, init
+  and sync now follow it with the cure; the API-tools docs page gains the
+  matching "Declare your schemas" section.
+- Updated dependencies [ea60d95]
+- Updated dependencies [8d97a32]
+- Updated dependencies [ea60d95]
+- Updated dependencies [d533ab8]
+  - @vendoai/apps@0.35.0
+  - @vendoai/ui@0.35.0
+  - @vendoai/store@0.35.0
+  - @vendoai/actions@0.35.0
+  - @vendoai/agents@0.35.0
+  - @vendoai/harnesses@0.35.0
+  - @vendoai/mcp@0.35.0
+  - @vendoai/core@0.35.0
+  - @vendoai/guard@0.35.0
+  - @vendoai/automations@0.35.0
+  - @vendoai/knowledge@0.35.0
+
 ## 0.34.0
 
 ### Minor Changes
