@@ -25,7 +25,7 @@ test("the ✦ blooms on a ported component and does not exist on one that could 
   // The ported one carries the resting seed, and the cursor blooms it into the
   // pill. Opacity, not presence: the pill is in the DOM either way.
   const seed = ported.locator(".fl-remix-seed");
-  const pill = ported.getByRole("button", { name: "Remix SpendCard with Vendo" });
+  const pill = ported.getByRole("button", { name: "Remix this view with Vendo" });
   await expect(seed).toHaveCount(1);
   await expect(pill).toHaveCSS("opacity", "0");
   // The bloom is a HANDOFF: the seed goes as the pill arrives, in one corner.
@@ -42,6 +42,6 @@ test("the ✦ blooms on a ported component and does not exist on one that could 
   await expect(pill).toHaveCSS("opacity", "0");
   await expect(unported.locator(".fl-remixable-chrome")).toHaveCount(0);
   await expect(unported.locator(".fl-remix-seed")).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Remix LegacyCard with Vendo" })).toHaveCount(0);
+  await expect(unported.getByRole("button", { name: "Remix this view with Vendo" })).toHaveCount(0);
   await page.screenshot({ path: `${SHOTS}/unported-bare.png`, fullPage: true, animations: "disabled" });
 });

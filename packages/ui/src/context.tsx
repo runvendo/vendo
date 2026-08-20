@@ -144,16 +144,20 @@ export function VendoProvider(props: {
       carries its own base. */
   baseUrl?: string;
   components?: HostComponentsInput;
-  /** The same generated const `createVendo({ remixWiring })` takes. Its holes
-      join the components map as its WEAKEST leg — mirroring the server, where a
-      hole is the weakest leg of the catalog (`vendo` compose-surfaces.ts) — so a
-      `components` entry for the same name still wins. Both ends need it: the
-      client screen VM's vocabulary is built from this map too (tree/renderer.tsx),
-      so a hole missing here is a name the port cannot even paint. */
-  /** The same generated const `createVendo({ remixWiring })` takes. It names
-      the slots sync could split, and `<Remixable>` offers the ✦ on those and
-      only those — sync already refused the rest, loudly, in its report. Unset
-      is the honest zero: no slot has ported, so no component offers a remix. */
+  /** The same generated const `createVendo({ remixWiring })` takes. It is read
+      two ways, and both ends need it.
+
+      Its HOLES join the components map as its WEAKEST leg — mirroring the
+      server, where a hole is the weakest leg of the catalog (`vendo`
+      compose-surfaces.ts) — so a `components` entry for the same name still
+      wins. The client screen VM's vocabulary is built from this map too
+      (tree/renderer.tsx), so a hole missing here is a name the port cannot even
+      paint.
+
+      Its KEYS name the slots sync could split, and `<Remixable>` offers the ✦
+      on those and only those — sync already refused the rest, loudly, in its
+      report. Unset is the honest zero: no slot has ported, so no component
+      offers a remix, and none paints a hole. */
   remixWiring?: RemixWiringInput;
   theme?: Partial<VendoTheme>;
   /** The host's `.vendo/fonts.css` text — see VendoContextValue.fonts. */

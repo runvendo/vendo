@@ -130,14 +130,14 @@ describe("Remixable — one door into the chat, one ✦ menu on the remix", () =
     expect(screen.getByText("Unported host markup")).toBeTruthy();
     expect(chromeIn("Unsplittable")).toBeNull();
     expect(document.querySelector(".fl-remix-seed")).toBeNull();
-    expect(screen.queryByRole("button", { name: "Remix Unsplittable with Vendo" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Remix this view with Vendo" })).toBeNull();
   });
 
   it("shows NO ✦ when the host wired no remix wiring at all — nothing has ported", () => {
     mount(undefined, null);
     expect(screen.getByText("Blue Bottle")).toBeTruthy();
     expect(chromeIn(SLOT)).toBeNull();
-    expect(screen.queryByRole("button", { name: `Remix ${SLOT} with Vendo` })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Remix this view with Vendo" })).toBeNull();
   });
 
   // The gate is on the OFFER, never on a remix that already exists: a re-sync
