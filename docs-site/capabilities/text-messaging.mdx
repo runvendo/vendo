@@ -91,6 +91,24 @@ A texted turn is a chat turn. Same agent, same tools, same guard.
 The stored thread is normal history — it shows up in the host app's thread list
 alongside web chats.
 
+## How replies are delivered
+
+A reply arrives in pieces, the way a person texts.
+
+- **The model decides where one text ends and the next begins.** A line
+  containing only `---` is the cut point. Each segment is sent the moment its
+  divider passes rather than waiting for the whole turn to finish, and the
+  divider itself is stripped — never delivered as part of a message. A reply
+  with no divider is simply one text.
+- **A dropped reply is retried and its loss is said out loud.** The channel
+  adapter retries three times on a delivery failure. A reply that still cannot
+  land logs `vendo.channel-reply-lost` at error level. The delivery claim is
+  not released — replaying the turn would re-run its tool calls.
+- **Two rapid texts stay on one thread.** Turns are serialized per conversation
+  in-process, so a burst of messages cannot race and orphan a thread. A YES or
+  NO answering a card skips the queue: the turn it releases is the one holding
+  the card.
+
 ## Consent over SMS
 
 The guard's asks travel the same way messages do, and the wording matches.
@@ -124,14 +142,36 @@ Reply YES to approve, or NO to cancel.
 "OK" or "reply to approve": the ask would otherwise teach the one reply that
 would not decide it.
 
-### Standing permissions for an automation
+### Arming an automation
 
-Arming an automation over text also captures its standing-permission set. Those
-asks are approval rows, not stream parts, so they used to only show up in the
-host app's web approvals feed — invisible to a texts-only user.
+Arming is one page and one yes. The authoring approval — the ask that decides
+whether the automation gets created at all — names everything the automation
+will hold, and that single YES mints all of it. The powers ride on the approval
+record itself, so every surface renders the same list verbatim.
 
-Now, after a texted turn finishes, one automation's outstanding permissions go
-out as one more text:
+```text
+Set this to run on its own — needs your approval:
+- When it runs: every 15 minutes (*/15 * * * *)
+- Task: check my checking balance and text me
+- Powers it will hold: Text me, Read-only access to your data
+Reply YES to approve, or NO to cancel.
+```
+
+Powers are grouped the way a person reads them: the tools that _do_ something
+are named one by one by their human title, and every read is folded into a
+single trailing "Read-only access to your data". Naming reads individually is
+what used to turn one yes into a wall of tool names.
+
+Three kinds are excluded from standing powers and still asked separately,
+because a grant could never satisfy them and the arming card would be promising
+what the run will not honour: `destructive` calls, `ungraded` calls, and any
+tool declared `confirmEach`.
+
+### Standing permissions asked after the fact
+
+When those excluded categories exist — or when the authoring call ran unasked
+under host policy, so no arming approval was seen — the outstanding permissions
+go out as one more text after the turn finishes:
 
 ```text
 check my checking balance and text me — needs your permission to run on its own:
@@ -143,6 +183,10 @@ Reply YES to allow all of these, or NO to cancel it.
 `YES` decides the whole set in one batch call on the same guard door the web
 feed uses — all-or-none, never a half-granted set. `NO` mints nothing and turns
 the automation off; the reply says which of the two happened.
+
+Only a **human** NO turns an automation off. An arming ask that expires
+untouched is not a decision, so the sweep's "system" deny is treated as
+undecided and the automation stays as it was.
 
 One question at a time: nothing new goes out while the conversation is holding a
 card or a set ask it has not answered.

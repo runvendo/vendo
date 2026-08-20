@@ -157,14 +157,29 @@ no brain at all and runs in-process.
 Nobody is there to approve anything at 2am, so the asking happens when the
 automation is turned on.
 
+Arming is **one page and one yes**. The authoring approval — the card the owner
+sees when the automation is being created — names everything the automation
+will hold, and that single YES mints all of it. Powers are grouped the way a
+person reads them: the tools that _do_ something are named one by one by their
+human title, and every read is folded into a single trailing "Read-only access
+to your data".
+
 ```ts
 const { enabled, missing, grantSetId } = await vendo.automations.enable(id, ctx);
 ```
 
-`missing` is what the owner still has to allow; they belong to one grant set, so
-one decision settles them all. After that the automation runs as the person who
-armed it, every time — until they revoke something, and then the next run fails
-loudly with the permission it needed named on it, and one tap runs it again.
+`missing` is what the owner still has to allow past that one yes: `destructive`
+calls, `ungraded` calls, and any tool declared `confirmEach` are excluded from
+standing powers because a grant could never satisfy them. They belong to one
+grant set, so one decision settles them all — over the [text channel](/capabilities/text-messaging)
+this goes out as a single follow-up text after the turn finishes.
+
+After that the automation runs as the person who armed it, every time — until
+they revoke something, and then the next run fails loudly with the permission
+it needed named on it, and one tap runs it again.
+
+Only a **human** NO disarms an automation. An arming ask that expires
+untouched is not a decision, so the automation stays as it was.
 
 ## Observe and control
 
