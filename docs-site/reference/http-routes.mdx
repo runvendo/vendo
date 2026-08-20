@@ -54,7 +54,7 @@ Mounted unless `apps: false`.
 | `/apps/import` | POST | bytes → `AppDocument`, fresh id minted. Requires `Content-Type: application/octet-stream` or `application/vnd.vendo.app` |
 | `/apps/review-queue` | GET | review-kind versions awaiting a reviewer. Outside a development composition it answers `[]`, never an error |
 | `/apps/:id` | GET · DELETE | app · delete |
-| `/apps/:id/open` | GET | `OpenSurface`. With `?pending=1` a not-yet-servable app answers `{ kind: "pending" }` at `200`, and a terminally failed build answers `{ kind: "failed", reason, retryable? }` at `200`, so the poll resolves instead of spinning |
+| `/apps/:id/open` | GET | `OpenSurface`. A stored app that can never be served — a terminally failed build, or a document whose screen no longer renders — answers `{ kind: "failed", reason, retryable? }` at `200` on either route, so a caller reads the reason instead of retrying a bare `400`. With `?pending=1` a not-yet-servable app additionally answers `{ kind: "pending" }` at `200`, so the poll resolves instead of spinning; unflagged, an unknown id keeps its `404` |
 | `/apps/:id/call` | POST | `{ ref: "fn:<name>" \| "<tool>", args }` → `ToolOutcome` |
 | `/apps/:id/edit` | POST | `{ instruction }` → `EditResult` |
 | `/apps/:id/reseed` | POST | re-seed this app from the current baseline |
