@@ -26,7 +26,7 @@ import { rungFor } from "../persistence/edit-journal.js";
 import { findingLine } from "./build-messages.js";
 import { generationDependencies } from "../runtime/generation-context.js";
 import type { AppData } from "../../contract/index.js";
-import { APPS_COLLECTION, appRecordInput, rowFromRecord } from "../persistence/persistence.js";
+import { APPS_COLLECTION, appRecordInput, onAppRow, rowFromRecord } from "../persistence/persistence.js";
 import type { AppsRuntimeContext } from "../runtime/runtime-context.js";
 import type { AppsRuntime, EditResult, VersionEntry } from "../runtime/types.js";
 
@@ -267,7 +267,11 @@ const createAuthoredScreenDoor = (
   },
 ): AppsRuntime["authoredScreen"] => {
   const { engine, holds, buildingNow, saveAuthoredDocument } = deps;
-  return async (input, ctx) => {
+  // The BASELINE READ is inside the turn, not before it: the document below is
+  // computed over `row`, and `saveAuthoredDocument` refuses if the stored row
+  // stopped matching it. Taking the turn after the read would leave exactly the
+  // window that refusal exists to catch (`onAppRow`).
+  return async (input, ctx) => onAppRow(input.appId, async () => {
     const record = await engine.get(APPS_COLLECTION, input.appId);
     const row = record === null ? null : rowFromRecord(record);
     if (row !== null && !await holds(input.appId, ctx, "editor", record)) return;
@@ -283,7 +287,7 @@ const createAuthoredScreenDoor = (
       previous: row?.doc,
       row,
     }, ctx);
-  };
+  });
 };
 
 /**

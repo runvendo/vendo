@@ -36,7 +36,7 @@ import {
   type SeedDrift,
   type SeedPort,
 } from "../../contract/index.js";
-import { APPS_COLLECTION, appRecordInput } from "../persistence/persistence.js";
+import { APPS_COLLECTION, appRecordInput, onAppRow } from "../persistence/persistence.js";
 import type { AppsRuntimeContext } from "../runtime/runtime-context.js";
 import type { AppsRuntime, SeedFromInput, VersionEntry } from "../runtime/types.js";
 
@@ -348,12 +348,18 @@ const reseed = async (
  * HERE, before it is stored, rather than being filtered at each of the places
  * that later read the seed. A baseline that captured no props declares none and
  * so admits none: never invented, exactly like the paint it feeds.
+ *
+ * READ AND WRITE TAKE A TURN ON THE ROW (`onAppRow`). Being provenance rather
+ * than an edit is exactly what makes this dangerous: it writes whenever the host
+ * re-renders, including all the way through a ✦ mint's build, and a save cannot
+ * tell this write from an edit that would revert it — so landing inside one's
+ * window refused it as `app changed under this save`, one mint in three.
  */
 const courierProps = async (
   deps: SeedSurfaceDeps,
   input: { appId: AppId; props: Record<string, Json> },
   ctx: RunContext,
-): Promise<AppDocument> => {
+): Promise<AppDocument> => onAppRow(input.appId, async () => {
   const app = await deps.requireOwned(input.appId, ctx);
   const seed = app.seed;
   if (seed === undefined) {
@@ -370,7 +376,7 @@ const courierProps = async (
   const next: AppDocument = { ...app, seed: { ...seed, props } };
   await deps.engine.put(APPS_COLLECTION, appRecordInput(next, ctx.principal.subject, false, "seed"));
   return next;
-};
+});
 
 export const createSeedSurface = (deps: SeedSurfaceDeps): AppsRuntime["seed"] => ({
   async drift(appId, ctx): Promise<SeedDrift | null> {
