@@ -153,6 +153,20 @@ export interface VendoClient {
      */
     seedFrom(input: { component: string; slot?: string; instruction: string }): Promise<AppDocument>;
     /**
+     * POST /apps/:id/props — the COURIER. The live serializable props the host's
+     * page is passing the component this remix stands in for, shipped on mount
+     * and again whenever they change.
+     *
+     * A ported screen renders FROM its props, and they exist in no source it
+     * could read, so this call is the only way the page's own state reaches the
+     * remix; without it the server paints the remix on the values `vendo sync`
+     * captured and it shows that number forever. Provenance, not a content edit:
+     * it mints no version, so calling it on every real change is the intent.
+     *
+     * The server keeps only the props the captured baseline declares.
+     */
+    courierProps(id: AppId, props: Record<string, Json>): Promise<AppDocument>;
+    /**
      * POST /apps/:id/machine/ping — the embed surface's keepalive:
      * user activity on an embedded served app rides one host-proxied HEAD
      * through the machine, keeping it from idling out under the user. "woke"

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { VENDO_APP_FORMAT } from "./formats.js";
 import type { AutomationId } from "./automation.js";
-import { appIdSchema, isoDateTimeSchema, type AppId, type IsoDateTime } from "./ids.js";
+import { appIdSchema, isoDateTimeSchema, type AppId, type IsoDateTime, type Json } from "./ids.js";
 import { sha256Hex } from "./sha256.js";
 
 /**
@@ -210,6 +210,23 @@ export interface AppSeed {
   /** Wishes the last re-seed could not land on the new baseline. Still in
    *  `wishes` — kept and reported, never dropped. */
   unapplied?: string[];
+  /**
+   * The LIVE props of the host instance this remix stands in for — couriered by
+   * the `<Remixable>` wrapper on mount and on every change, and the values a
+   * ported screen is painted on.
+   *
+   * The alternative is the baseline's captured `sampleProps`, which is what the
+   * floor falls back to and which is frozen the day `vendo sync` ran: a remix of
+   * a balance card painted the sync-time number forever while the host's own
+   * component, two inches away, painted today's. A port renders from its props
+   * and no prop is in any source it could read, so this is the only route the
+   * page's own state has into it.
+   *
+   * Filtered at the door to the captured baseline's own declared prop names, so
+   * a prop the host component never declared is dropped before it is stored.
+   * JSON only, by the same law as every value that crosses into the VM.
+   */
+  props?: Record<string, Json>;
   slot?: string;
   review?: boolean;
 }
@@ -227,6 +244,7 @@ export const appSeedSchema = z.object({
   instruction: z.string().optional(),
   port: z.string().optional(),
   unapplied: z.array(z.string()).optional(),
+  props: z.record(z.unknown()).optional(),
   slot: z.string().optional(),
   review: z.boolean().optional(),
 }).passthrough().transform(({ instruction, wishes, ...seed }) => ({

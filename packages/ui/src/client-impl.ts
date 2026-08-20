@@ -255,6 +255,7 @@ export function createVendoClient(config: VendoClientConfig): VendoClient {
       shipDiff: id => readJson(`/apps/${idPath(id)}/ship-diff`),
       reseed: id => json(`/apps/${idPath(id)}/reseed`, "POST"),
       seedFrom: body => json("/apps/seed", "POST", body),
+      courierProps: (id, props) => json(`/apps/${idPath(id)}/props`, "POST", { props }),
       pingMachine: id => json(`/apps/${idPath(id)}/machine/ping`, "POST"),
       place: (id, slot) => json(`/apps/${idPath(id)}/place`, "POST", { slot }),
       unplace: async (id, slot) => {

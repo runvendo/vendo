@@ -860,6 +860,20 @@ export interface AppsRuntime {
     drift(appId: AppId, ctx: RunContext): Promise<SeedDrift | null>;
     reseed(input: { appId: AppId }, ctx: RunContext): Promise<AppDocument>;
     from(input: SeedFromInput, ctx: RunContext): Promise<AppDocument>;
+    /**
+     * The COURIER: the live props of the host instance this remix stands in for,
+     * shipped by the `<Remixable>` wrapper on mount and on every change.
+     *
+     * A ported screen renders from its props, and no prop is in any source it
+     * could read — so without this the floor paints it on the baseline's frozen
+     * `sampleProps` and the remix shows the sync-time number forever. It writes
+     * `AppSeed.props` and NOTHING else: this is provenance about the call site,
+     * never a content edit, so it mints no version and replays no wish.
+     *
+     * Filtered here to the captured baseline's own declared prop names — a prop
+     * the host component never declared is dropped before it is stored.
+     */
+    props(input: { appId: AppId; props: Record<string, Json> }, ctx: RunContext): Promise<AppDocument>;
   };
   /**
    * execution-v2 — additive machine lifecycle surface (same additive precedent

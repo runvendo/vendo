@@ -35,7 +35,7 @@ import type { ConnectionsService } from "../connections.js";
     stays is what only the umbrella has. The per-request RunContext resolution
     lives in wire/context.ts; server.ts assembles the table from the per-area
     modules under src/wire/. */
-export { errorResponse, hex, internalError, json, requestJson, routeSegments, string } from "@vendoai/agents/http";
+export { errorResponse, hex, internalError, json, object, requestJson, routeSegments, string } from "@vendoai/agents/http";
 
 /** Re-exported, not redeclared: the one version literal lives in
     @vendoai/core, beside the deployment-identity headers that stamp it. */

@@ -24,6 +24,7 @@ import {
   VendoError,
   safeErrorMessage,
   type AppId,
+  type Json,
   type RunContext,
 } from "@vendoai/core";
 import {
@@ -324,10 +325,56 @@ const reseed = async (
   return landed;
 };
 
+/**
+ * The COURIER: record the live props of the host instance this remix stands in
+ * for.
+ *
+ * A ported screen renders FROM ITS PROPS, and a query resolves before the render,
+ * so nothing in the screen's own source can carry them. With none recorded the
+ * checks floor paints the port on the baseline's captured `sampleProps` — the
+ * values frozen the day `vendo sync` ran — and the remix shows that number
+ * forever while the host's own component beside it shows today's.
+ *
+ * This is PROVENANCE, not content. It writes `seed.props` and touches nothing
+ * else: no version is minted, no wish is recorded and no edit door is entered,
+ * because the person did not change their remix — their page did. That is also
+ * why it is safe to call on every render the props really change on.
+ *
+ * THE BOUNDARY is the captured baseline's own declared prop names. The wrapper
+ * ships whatever the host's call site passed, so a value the component never
+ * declared — anything the page happened to hang on that element — is dropped
+ * HERE, before it is stored, rather than being filtered at each of the places
+ * that later read the seed. A baseline that captured no props declares none and
+ * so admits none: never invented, exactly like the paint it feeds.
+ */
+const courierProps = async (
+  deps: SeedSurfaceDeps,
+  input: { appId: AppId; props: Record<string, Json> },
+  ctx: RunContext,
+): Promise<AppDocument> => {
+  const app = await deps.requireOwned(input.appId, ctx);
+  const seed = app.seed;
+  if (seed === undefined) {
+    throw new VendoError("conflict", `app ${input.appId} was not created from a host component`);
+  }
+  const declared = baselineFor(deps, seed.component).sampleProps ?? {};
+  const props = Object.fromEntries(
+    Object.entries(input.props).filter(([name]) => name in declared),
+  );
+  // An unchanged call site re-couriers the same values on any re-render its host
+  // takes for its own reasons. Writing anyway would put a row through the store
+  // on every one of them, so the no-op is answered from what is already stored.
+  if (JSON.stringify(seed.props ?? {}) === JSON.stringify(props)) return app;
+  const next: AppDocument = { ...app, seed: { ...seed, props } };
+  await deps.engine.put(APPS_COLLECTION, appRecordInput(next, ctx.principal.subject, false, "seed"));
+  return next;
+};
+
 export const createSeedSurface = (deps: SeedSurfaceDeps): AppsRuntime["seed"] => ({
   async drift(appId, ctx): Promise<SeedDrift | null> {
     return seedDrift(await deps.requireOwned(appId, ctx), deps.config.seedBaselines ?? []);
   },
   reseed: (input, ctx) => reseed(deps, input, ctx),
   from: (input, ctx) => seedFrom(deps, input, ctx),
+  props: (input, ctx) => courierProps(deps, input, ctx),
 });

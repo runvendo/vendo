@@ -1,5 +1,5 @@
 import { isVendoError, VendoError, type AccessLevel, type Json, type RunContext, type StoreOps } from "@vendoai/core";
-import { json, requestJson, route, string, type RouteEntry, type WireContext } from "./shared.js";
+import { json, object, requestJson, route, string, type RouteEntry, type WireContext } from "./shared.js";
 
 /** What the ?pending=1 disambiguation learned about a record open() refused
     to serve this caller. */
@@ -347,6 +347,23 @@ export const appRoutes: RouteEntry[] = [
     // acts on its own, because acting means replacing what the person made.
     if (op(wire, "POST", "reseed")) {
       return json(await deps.apps.seed.reseed({ appId }, ctx));
+    }
+    // THE COURIER — the live props of the host instance this remix stands in
+    // for, shipped by the `<Remixable>` wrapper on mount and on every change.
+    // A ported screen renders FROM its props and no prop is in any source it
+    // could read, so without this door the floor paints it on the baseline's
+    // frozen `sampleProps` and the remix shows the sync-time number forever.
+    //
+    // It writes `seed.props` and nothing else — provenance about the call site,
+    // never a content edit — so it mints no version and is safe to call on
+    // every render the props really change on. The runtime owns the level, as
+    // ever, and filters the payload to the captured baseline's declared props.
+    if (op(wire, "POST", "props")) {
+      const body = await requestJson(request);
+      return json(await deps.apps.seed.props({
+        appId,
+        props: object(body["props"], "props") as Record<string, Json>,
+      }, ctx));
     }
     // Placement (2026-08-05) — one app per slot. The level lives in the
     // runtime (viewer: putting an app you can see into your own slot), and

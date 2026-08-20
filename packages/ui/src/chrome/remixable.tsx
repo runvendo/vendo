@@ -1,5 +1,5 @@
-import { isValidElement, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { log, seedComponentName, type AppDocument, type AppId, type Json, type TreeNode } from "@vendoai/core";
+import { isValidElement, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { log, type AppDocument, type AppId, type Json } from "@vendoai/core";
 import { useVendoProvider } from "../context.js";
 import { useApp } from "../hooks/use-app.js";
 import { useAppSharing } from "../hooks/use-app-sharing.js";
@@ -148,20 +148,48 @@ function RemixedFork({ appId, slot, review, liveProps, original, onReverted }: {
     }
   }, [error, isLoading, slot]);
 
-  // Live serializable props from the call site flow into the mounted fork on
-  // every render (final-shape data route 1: nothing captured, nothing stale) —
-  // they override the fork-time seed on the pinned node; props an edit set
-  // that the call site does not pass survive underneath. Keyed on content so
-  // an unchanged call site never re-stages the payload.
+  // THE COURIER. The live serializable props from the call site go to the
+  // SERVER, on mount and again whenever they change, and the server repaints the
+  // remix on them (`AppSeed.props`; the checks floor's props resolver in
+  // apps/doors/build-surface.ts). Then re-open, because the paint is what
+  // changed and the surface is what holds it.
+  //
+  // This used to be a client-side splice: clone the payload, find the node named
+  // `seedComponentName(slot)` with `source: "generated"`, and merge the props
+  // onto it. That node does not exist. A remix is a ported SCREEN, whose tree is
+  // whatever rendering it produced — display bricks marked `source: "ported"` —
+  // and `seedComponentName` names a seat in `document.components`, never a node
+  // (apps/doors/write-surface.ts). So the find never matched, the merge never
+  // ran, and the remix painted the values `vendo sync` captured while the host's
+  // own component beside it painted today's. Deleted rather than repaired: the
+  // props have to reach the server anyway, because the screen is painted there.
+  //
+  // Keyed on content, so a host re-rendering for its own reasons couriers
+  // nothing and an unchanged call site costs one comparison.
   const livePropsKey = JSON.stringify(liveProps);
-  const staged = useMemo(() => {
-    if (surface?.kind !== "tree") return surface;
-    const payload = structuredClone(surface.payload);
-    const nodes = payload.nodes as TreeNode[] | undefined;
-    const pinned = nodes?.find(node => node.component === seedComponentName(slot) && node.source === "generated");
-    if (pinned) pinned.props = { ...pinned.props, ...(JSON.parse(livePropsKey) as Record<string, Json>) };
-    return { ...surface, payload };
-  }, [surface, slot, livePropsKey]);
+  // What the server actually KEPT last time. Re-opening is what makes the new
+  // paint visible, and it re-runs the whole checks floor — so it is spent only
+  // when the stored props really moved. The wrapper ships every serializable
+  // prop the call site passes, and the door keeps only the ones the captured
+  // baseline declares; without this, a host prop the component never declared
+  // (a timestamp, a callback's changing identity) would buy a full server
+  // repaint on every tick and change nothing on screen.
+  const stored = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    let live = true;
+    void client.apps.courierProps(appId as AppId, JSON.parse(livePropsKey) as Record<string, Json>)
+      .then((next) => {
+        const kept = JSON.stringify(next.seed?.props ?? {});
+        if (!live || kept === stored.current) return undefined;
+        stored.current = kept;
+        return refresh();
+      })
+      // A courier that does not land leaves the remix on the props it already
+      // had — the last good paint, never a blank one — and the page is not the
+      // place to report it.
+      .catch(() => undefined);
+    return () => { live = false; };
+  }, [client, appId, livePropsKey, refresh]);
 
   // The founder's binding rule (2026-08-02): until a reviewer approves, the
   // ORIGINAL host component stays rendered, untouched. A pending or rejected
@@ -226,11 +254,11 @@ function RemixedFork({ appId, slot, review, liveProps, original, onReverted }: {
         onRefresh={update}
         onRevert={() => client.apps.delete(appId).then(onReverted)}
       >
-        {staged?.kind === "tree" && !underReview ? (
+        {surface?.kind === "tree" && !underReview ? (
           <FluidReveal stateKey={`fork:${appId}`} initialExit={original}>
             <PinMount slot={slot} fallback={Original}>
               <AppFrame
-                surface={staged}
+                surface={surface}
                 components={components}
                 onParked={approval.onParked}
                 onAction={({ action, payload }) => client.apps.call(appId, action, payload ?? {})}

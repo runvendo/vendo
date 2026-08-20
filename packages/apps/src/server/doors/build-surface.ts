@@ -631,15 +631,28 @@ export const createBuildSurface = (
         // remixes ever renders, least of all on the read half (`saves: false`).
         ported: async (appId) => (config.seedBaselines ?? []).length > 0
           && (await deps.runtime().get(appId, ctx))?.seed !== undefined,
-        // The props a port paints with, off the SAME row: the seed names the
-        // component, and the component's baseline carries the host's own
-        // captured sampleProps. Consulted by the floor only after `ported`
-        // answered yes, so an authored screen costs no extra read.
+        // The props a port paints with, off the SAME row. Consulted by the floor
+        // only after `ported` answered yes, so an authored screen costs no extra
+        // read.
+        //
+        // THE COURIER WINS. `seed.props` is what the `<Remixable>` wrapper last
+        // shipped from the live host instance this remix stands in for; the
+        // baseline's `sampleProps` is what `vendo sync` captured, frozen the day
+        // it ran. Preferring the capture is how a remixed balance card painted
+        // its sync-time number forever while the host's own component, two
+        // inches away, painted today's — the port renders FROM its props and no
+        // prop is in any source it could read, so the courier is the page's only
+        // route in.
+        //
+        // The capture remains the fallback, and a real one: a remix whose wrapper
+        // has not couriered yet — the seconds between the row landing and the
+        // first render, or a host that mounts it somewhere no wrapper wraps —
+        // paints on the captured values rather than on nothing.
         props: async (appId) => {
-          const component = (await deps.runtime().get(appId, ctx))?.seed?.component;
-          return component === undefined
-            ? undefined
-            : (config.seedBaselines ?? []).find((candidate) => candidate.slot === component)?.sampleProps;
+          const seed = (await deps.runtime().get(appId, ctx))?.seed;
+          if (seed === undefined) return undefined;
+          if (seed.props !== undefined) return seed.props;
+          return (config.seedBaselines ?? []).find((candidate) => candidate.slot === seed.component)?.sampleProps;
         },
         ...rowHalf,
       });
