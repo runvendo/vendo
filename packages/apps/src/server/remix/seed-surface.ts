@@ -200,13 +200,20 @@ const seedFrom = async (
     // act and nothing asked for a new name, so the mint's name goes back before
     // the instruction runs. Skipped when they already agree, for the reason
     // `authoredScreen` skips an unchanged save: a write that changes nothing.
-    const painted = await deps.requireOwned(minted.id, ctx);
-    if (painted.name !== minted.name) {
-      await deps.engine.put(
-        APPS_COLLECTION,
-        appRecordInput({ ...painted, name: minted.name }, ctx.principal.subject, false, "seed"),
-      );
-    }
+    //
+    // READ AND WRITE TAKE A TURN ON THE ROW (`onAppRow`), because this put
+    // carries the WHOLE document it read: a courier landing in the window
+    // between them was carried straight back off, and the remix silently stopped
+    // following the host page — nothing refused, nothing logged.
+    await onAppRow(minted.id, async () => {
+      const painted = await deps.requireOwned(minted.id, ctx);
+      if (painted.name !== minted.name) {
+        await deps.engine.put(
+          APPS_COLLECTION,
+          appRecordInput({ ...painted, name: minted.name }, ctx.principal.subject, false, "seed"),
+        );
+      }
+    });
     // A concurrent write to this row — the ✦ door landing a RACING gesture's
     // wish is the common one, and seeding the port first widened that window —
     // is not a failed build: the row moved, so run the instruction once more
@@ -241,12 +248,16 @@ const seedFrom = async (
   // Over the row as it stands NOW, never over the pre-seed copy above: the port
   // painted through the floor and the floor STORED it, so marking the failure on
   // the older document would quietly revert the app's screen back out of it.
-  const failed: AppDocument = {
-    ...await deps.requireOwned(minted.id, ctx),
-    buildFailed: { reason, retryable: true, at: new Date().toISOString(), prompt: input.instruction },
-  };
-  await deps.engine.put(APPS_COLLECTION, appRecordInput(failed, ctx.principal.subject, false, "seed"));
-  return failed;
+  // Reading it inside a turn (`onAppRow`) is the same "NOW" one step finer — a
+  // courier landing between this read and its put would be reverted by it.
+  return onAppRow(minted.id, async () => {
+    const failed: AppDocument = {
+      ...await deps.requireOwned(minted.id, ctx),
+      buildFailed: { reason, retryable: true, at: new Date().toISOString(), prompt: input.instruction },
+    };
+    await deps.engine.put(APPS_COLLECTION, appRecordInput(failed, ctx.principal.subject, false, "seed"));
+    return failed;
+  });
 };
 
 /**
