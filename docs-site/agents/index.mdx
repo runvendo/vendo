@@ -467,6 +467,13 @@ provisions its own, so pairing `--service-key` with `--posture broker` exits `1`
 rather than discarding the key. Answer as flags on the next run; 3 is always
 yours.
 
+**The broker needs an https origin.** Cloud registers `VENDO_BASE_URL` as the
+tenant's forwarding address and refuses one that is not https, so
+`--posture broker` with the dev `http://localhost:…` above THROWS rather than
+writing a door that would die on its first request. While your human is local,
+that means the local posture — zero config, and it works on http. The broker is
+the answer once they have an https origin to point it at.
+
 1. **`mcp: true` plus the OAuth adapter.** The door mints its own principals
    through a `HostOAuthAdapter`, and `createVendo` THROWS at composition
    without one. Every named preset carries it, so `--auth
