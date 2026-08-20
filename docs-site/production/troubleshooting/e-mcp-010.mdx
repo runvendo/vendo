@@ -1,0 +1,75 @@
+---
+title: "E-MCP-010"
+sidebarTitle: "E-MCP-010"
+description: "A dev sign-in key is set alongside a Cloud key on an https deployment."
+---
+
+# E-MCP-010
+
+<Warning>
+**what doctor prints** (warning)
+
+dev sign-in key found alongside a Cloud key on an https deployment — delete
+VENDO_SERVICE_KEY to use the Cloud broker.
+</Warning>
+
+Nothing is broken. The door works, your users sign in, tool calls land. It is
+just not the door you think you are running.
+
+`check mcp/sign-in-keys` · `error_code E-MCP-010` · `doctor still exits 0`
+
+## What you're seeing
+
+This check fires when all four of these are true at once:
+
+- a composition passes `mcp` to `createVendo`
+- `VENDO_SERVICE_KEY` is set
+- `VENDO_API_KEY` is set
+- `VENDO_BASE_URL` starts with `https://`
+
+An `http` origin is somebody's development machine, where a local door is
+exactly the point, so this stays silent there.
+
+## Why
+
+`vendo init` writes `VENDO_SERVICE_KEY` into `.env.local`. That file is
+dev-only and gitignored, and the composition reads the variable at boot, so
+the key holds sign-in on your own machine and never reaches production through
+git.
+
+It can still reach production by hand: a copied `.env`, a platform variable
+pasted out of a dev shell, a Docker build that bakes the file in. When it does,
+the composition's `serviceAuth` becomes an explicit local authorization-server
+choice, and an explicit choice outranks the Cloud default. The deployment
+serves its own OAuth instead of the broker your Cloud key already provisions —
+so there is no stable `yourcompany.mcp.vendo.run` address, and the OAuth
+surface sits on your domain after all.
+
+## The fix
+
+Remove `VENDO_SERVICE_KEY` from the deployment's environment. The door falls
+back to the Cloud broker on the next boot, and every discovery URL your users
+already configured keeps working — they derive from `VENDO_BASE_URL`, never
+from the broker.
+
+```bash
+# on your hosting platform, delete this variable — keep it only in .env.local
+VENDO_SERVICE_KEY=…
+```
+
+Keeping your own door is a legitimate choice, which is why this is a warning
+and not a failure. If that is what you want, nothing needs doing: the key you
+set is doing exactly what it says.
+
+If what you actually needed was a backend calling these tools
+machine-to-machine on a Cloud-fronted door, the tenant's service key is
+provisioned with the tenant and lives in the console —
+[Service keys & broker](/outside-agents/service-keys-and-broker) has the whole
+story.
+
+## Related errors
+
+<CardGroup cols={2}>
+  <Card title="E-MCP-009" href="/production/troubleshooting/e-mcp-009">the door's public base URL</Card>
+  <Card title="E-CLOUD-001" href="/production/troubleshooting/e-cloud-001">VENDO_API_KEY is not usable</Card>
+</CardGroup>

@@ -104,6 +104,33 @@ export async function checkMcpBaseUrl(run: DoctorRun): Promise<void> {
   }
 }
 
+/**
+ * E-MCP-010 — the dev sign-in key, found on a deployment.
+ *
+ * `vendo init` writes VENDO_SERVICE_KEY into `.env.local`, which is dev-only
+ * and gitignored, so the pin that keeps sign-in on the developer's own machine
+ * cannot ride to production through git. It can still get there by hand: a
+ * copied env file, a platform variable pasted out of a dev shell. An explicit
+ * `serviceAuth` is itself a local authorization-server choice, so it outranks
+ * the Cloud key sitting beside it (compose-mcp.ts's `declaredBrokerage`) and
+ * the deployment quietly serves its own OAuth instead of the broker its key
+ * already pays for — nothing is broken, so nothing says so.
+ *
+ * A WARNING, never a failure: running your own door on a Cloud-keyed
+ * deployment is a legitimate choice, and doctor does not know which one this
+ * is. Both keys and an https origin, or it stays silent: an http origin is
+ * somebody's dev machine, where the local door is the point.
+ */
+export async function checkMcpSignInKeys(run: DoctorRun): Promise<void> {
+  const { env } = run;
+  const set = (name: string): boolean => (env[name] ?? "").trim() !== "";
+  if (!set("VENDO_SERVICE_KEY") || !set("VENDO_API_KEY")) return;
+  if (!(env.VENDO_BASE_URL ?? "").trim().startsWith("https://")) return;
+  if (!(await mcpCompositions(run.root)).some((composition) => composition.wired)) return;
+  run.warn("mcp/sign-in-keys", "E-MCP-010",
+    "dev sign-in key found alongside a Cloud key on an https deployment — delete VENDO_SERVICE_KEY to use the Cloud broker.");
+}
+
 /** 10-mcp §5 — the official registry artifacts a published host keeps on disk.
  *  Absent files say nothing: `server.json` arrives only once a host publishes,
  *  and the HTTP challenge file only when the registry verifies by URL rather

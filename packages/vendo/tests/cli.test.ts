@@ -114,7 +114,9 @@ describe("vendo CLI commands", () => {
       questions: Array<{ id: string }>;
     };
     expect(asked.detected.framework).toBe("next");
-    expect(asked.questions.map((question) => question.id)).toEqual(["models"]);
+    // The MCP arm's spelling of the models question — one Cloud key answers
+    // both, so it takes that slot instead of standing beside it.
+    expect(asked.questions.map((question) => question.id)).toEqual(["mcp-sign-in"]);
 
     // --byo and --cloud-key parse too, and neither writes while a question is
     // still open.

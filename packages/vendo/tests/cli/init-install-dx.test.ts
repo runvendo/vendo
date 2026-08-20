@@ -123,6 +123,30 @@ describe("a run that cannot ask stops instead of answering for you", () => {
     await expect(readFile(join(root, "lib", "vendo.ts"), "utf8")).resolves.toContain("createVendo");
   });
 
+  /** The MCP arm's default is bring-your-own, and `--yes` must SAY so: a
+      keyless run gets a door whose deployment fronts its own sign-in, and the
+      one thing it must never do is open a browser nobody asked for. */
+  it("names the MCP arm's keyless default and opens no browser for it", async () => {
+    const root = await fixture({ dependencies: { next: "16.0.0", "@clerk/nextjs": "7.0.0" } });
+    const sink = consoleSink();
+    expect(await runInit({
+      targetDir: root,
+      useCase: "mcp",
+      auth: "clerk",
+      yes: true,
+      env: {},
+      cloud: { ...NO_CLOUD, deviceLogin: async () => { throw new Error("opened a browser"); } },
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+      extract: { harnesses: [] },
+    })).toBe(0);
+    const said = sink.logs.join("\n");
+    expect(said).toContain("Taking the defaults (--yes):");
+    expect(said).toContain("sign-in and model: your own keys");
+    // The question it replaced left no trace in what --yes settles.
+    expect(said).not.toMatch(/posture/i);
+    expect(said).not.toContain("service key: none minted");
+  });
+
   it("names the recorded answer on a re-run, instead of a default it is not taking", async () => {
     const root = await fixture();
     await mkdir(join(root, ".vendo"), { recursive: true });
@@ -292,7 +316,9 @@ describe("VENDO_SERVICE_KEY", () => {
   it("says so in the receipt when the composition it did not author holds no serviceAuth", async () => {
     const root = await mcpFixture();
     const answers = { useCase: "mcp" as const, auth: "clerk" as const, posture: "local" as const, baseUrl: "http://localhost:3000" };
-    expect(await run(root, output(), { ...answers, yes: true })).toBe(0);
+    // A local door wires the key by default now, so the composition WITHOUT
+    // serviceAuth — the one this whole scenario needs — is the explicit opt-out.
+    expect(await run(root, output(), { ...answers, yes: true, serviceKey: false })).toBe(0);
     const composition = await readFile(join(root, "lib", "vendo.ts"), "utf8");
     expect(composition).toContain("mcp: true,");
 

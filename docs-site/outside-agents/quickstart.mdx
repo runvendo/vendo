@@ -218,12 +218,17 @@ already did this. Your app is the authorization server, your login is the
 sign-in, and nothing leaves your origin. Zero config, and it works on `http`, so
 this is the posture for local development.
 
-**Vendo Cloud broker (one answer).** With a `VENDO_API_KEY` in hand, init asks
-one more question — *How should outside agents sign in?* — and answering **Vendo
-Cloud broker** moves the OAuth surface off your domain to a stable
-`yourcompany.mcp.vendo.run` tenant that Vendo provisions on first use. There is
-nothing to copy: no console visit, no environment values, no keys. It needs an
-https `VENDO_BASE_URL`, per the warning in Step 1.
+**Vendo Cloud broker (no question).** With a `VENDO_API_KEY` in hand, your
+deployment gets this one automatically: the OAuth surface moves off your domain
+to a stable `yourcompany.mcp.vendo.run` tenant that Vendo provisions on first
+use. There is nothing to copy: no console visit, no environment values, no keys.
+It needs an https `VENDO_BASE_URL`, per the warning in Step 1.
+
+Init writes both, and each lands where it belongs. `VENDO_SERVICE_KEY` goes into
+`.env.local`, which is dev-only and gitignored, so your machine keeps the local
+answer; your deployment never sees that variable and takes the broker. If a copy
+of it does reach production, the explicit key wins and the door stays local —
+`vendo doctor` warns about exactly that (E-MCP-010).
 
 To front the door with a broker you run yourself, set both values where you
 deploy. An explicit override always wins over the Cloud default.

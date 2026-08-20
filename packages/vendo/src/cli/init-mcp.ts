@@ -21,9 +21,11 @@ import { join, relative, sep } from "node:path";
 import type { AuthMatch } from "./init-auth.js";
 import { compositionModuleSource, type ScaffoldModel } from "./init-scaffolds.js";
 
-/** Which authorization server fronts the door. ANSWERED by the operator and
-    nothing else (10-mcp §3.1) — init writes the posture into the composition,
-    it never discovers one and never reaches a broker to find out. */
+/** Which authorization server fronts the door. Init no longer ASKS this — a
+    Cloud key answers both environments at once, and the runtime resolves which
+    one it is per environment (compose-mcp.ts) — so it arrives only as the
+    `--posture` flag, for a host that wants a Cloud-fronted-only door. Init
+    still never discovers a posture and never reaches a broker to find out. */
 export type McpPosture = "local" | "broker";
 
 export interface McpPlanInput {
@@ -64,8 +66,9 @@ export interface McpPlanInput {
       which a pure planner cannot read. */
   serverActions: boolean;
   posture: McpPosture;
-  /** Did the user say yes to "will your own backend call these tools
-      machine-to-machine?" */
+  /** Wire the dev sign-in key. Not a question any more: a local door gets one by
+      default, because `.env.local` is dev-only and the deployment — which never
+      sees the variable — takes the Cloud broker instead (compose-mcp.ts). */
   serviceKey: boolean;
   /** A well-formed `VENDO_SERVICE_KEY` already in the host's env files, to
       REUSE. Minting one unconditionally rotated the secret on every re-run and
