@@ -30,6 +30,8 @@ export interface AppFrameProps {
    * that app alone (renderer.tsx's TreeView documents why the tree cannot say).
    */
   appId?: string;
+  /** The slot this app is rendering in. Used to scope hole components. */
+  slot?: string;
   components?: Record<string, ComponentType>;
   data?: Record<string, Json>;
   onAction?(req: { nodeId: string; action: string; payload?: Json }): Promise<ToolOutcome>;
@@ -166,7 +168,7 @@ function HttpFrame({ url, keepalive }: { url: string; keepalive?: AppFrameKeepal
 }
 
 /** 08-ui §5; 06-apps §1 — render every app execution plane fail-soft. */
-export function AppFrame({ surface, appId, components = {}, data, onAction = unavailableAction, onParked, onStateChange, keepalive }: AppFrameProps) {
+export function AppFrame({ surface, appId, slot, components = {}, data, onAction = unavailableAction, onParked, onStateChange, keepalive }: AppFrameProps) {
   if (surface.kind === "http") {
     return <HttpFrame url={surface.url} keepalive={keepalive} />;
   }
@@ -183,6 +185,7 @@ export function AppFrame({ surface, appId, components = {}, data, onAction = una
       <PayloadView
         payload={payload}
         {...(appId === undefined ? {} : { appId })}
+        slot={slot}
         components={components}
         data={data}
         onAction={onAction}

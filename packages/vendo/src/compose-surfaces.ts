@@ -254,7 +254,9 @@ const capabilityAndCatalog = (composition: VendoComposition): Pick<VendoComposit
 const remixHoles = (wiring: CreateVendoConfig["remixWiring"]): NormalizedCatalog =>
   normalizeCatalogConfig(
     Object.keys(Object.fromEntries(
-      Object.values(wiring ?? {}).flatMap(({ holes }) => Object.entries(holes ?? {})),
+      Object.entries(wiring ?? {}).flatMap(([slot, { holes }]) =>
+        Object.keys(holes ?? {}).map((name) => [`${slot}:${name}`, true] as const)
+      ),
     )).map((name) => ({ name, description: "A host component a ported remix screen renders." })),
     "createVendo({ remixWiring })",
   );

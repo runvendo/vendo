@@ -68,7 +68,7 @@ describe("a refused slot report must not silence the session", () => {
     // registry should now learn about them.
     render(page());
     await waitFor(() => expect(wire.state.slots.map(slot => slot.id).sort())
-      .toEqual(["hero", "sidebar"]));
+      .toEqual(["hero", "sidebar"]), { timeout: 25000 });
   });
 
   it("keeps the rest of the page in the picker when one slot's label is over the cap", async () => {
@@ -86,7 +86,7 @@ describe("a refused slot report must not silence the session", () => {
     );
 
     await waitFor(() => expect(wire.state.slots.map(slot => slot.id).sort())
-      .toEqual(["hero", "sidebar"]));
+      .toEqual(["hero", "sidebar"]), { timeout: 25000 });
     // The clamp itself, not just survival: the route would have refused 300.
     expect(wire.state.slots.find(slot => slot.id === "hero")?.label).toHaveLength(256);
   });

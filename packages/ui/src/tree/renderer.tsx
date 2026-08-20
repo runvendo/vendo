@@ -67,6 +67,8 @@ export interface TreeViewProps {
    * passes it; see {@link TreeView} for what it buys.
    */
   appId?: string;
+  /** The slot this app is rendering in. Used to scope hole components. */
+  slot?: string;
   components: Record<string, ComponentType>;
   data?: Record<string, Json>;
   onAction(req: { nodeId: string; action: string; payload?: Json }): Promise<ToolOutcome>;
@@ -105,6 +107,8 @@ export interface PayloadRendererProps {
   payload: UIPayload;
   /** As {@link TreeViewProps.appId}. */
   appId?: string;
+  /** As {@link TreeViewProps.slot}. */
+  slot?: string;
   components: Record<string, ComponentType>;
   data?: Record<string, Json>;
   onAction(req: { nodeId: string; action: string; payload?: Json }): Promise<ToolOutcome>;
@@ -235,7 +239,8 @@ function VendoTreeRenderer({ payload, ...props }: PayloadRendererProps) {
 
 /** Dispatch is exclusively by the payload tag. */
 export function PayloadView(props: PayloadRendererProps) {
-  if (props.payload.formatVersion !== VENDO_TREE_FORMAT) {
+  const { payload, appId, slot, components, data, onAction, onParked, onStateChange, interactive } = props;
+  if (payload.formatVersion !== VENDO_TREE_FORMAT) {
     return (
       <ContainedNotice label="Unsupported UI format">
         {`No renderer is registered for "${props.payload.formatVersion}".`}
@@ -873,6 +878,7 @@ function NodeShell({ nodeId, outcome, mark, shell, wet, children }: {
  */
 function StatefulTreeView({
   tree: painted,
+  slot,
   components,
   data,
   onAction,
@@ -898,6 +904,18 @@ function StatefulTreeView({
   // `useVendoState` (kit/state.ts) — one implementation, two venues.
   const [viewState, updateState] = useKeyedState(onStateChange);
   const [outcomes, setOutcomes] = useState<Record<string, ToolOutcome | undefined>>({});
+
+  const resolvedComponents = useMemo(() => {
+    if (slot === undefined) return components;
+    const resolved = { ...components };
+    const prefix = `${slot}:`;
+    for (const key of Object.keys(components)) {
+      if (key.startsWith(prefix)) {
+        resolved[key.slice(prefix.length)] = components[key]!;
+      }
+    }
+    return resolved;
+  }, [components, slot]);
 
   const runAction = useCallback(async (nodeId: string, action: string, payload?: Json) => {
     let outcome: ToolOutcome;
@@ -934,7 +952,7 @@ function StatefulTreeView({
     setOutcomes((current) => ({ ...current, [nodeId]: { status: "error", error: { code: "screen", message } } }));
   }, []);
   // What the screen may render: the Kit plus whatever this host registered.
-  const catalog = useMemo(() => [...KIT_COMPONENT_NAMES, ...Object.keys(components)], [components]);
+  const catalog = useMemo(() => [...KIT_COMPONENT_NAMES, ...Object.keys(resolvedComponents)], [resolvedComponents]);
   const screen = useScreen({ interactive, base: painted, catalog, locale, timeZone, runAction, onFailure: failNode });
   // Every press still waiting on an approval, read straight off the outcome
   // slots that hold its notice — resolving one clears the slot, which is also
@@ -1136,7 +1154,7 @@ function StatefulTreeView({
             generated={streaming ? tree.components ?? {} : validation.tree.components ?? {}}
             inClientGranted={inClientGranted}
             furnishings={furnishings}
-            components={components}
+            components={resolvedComponents}
             data={data ?? validation.tree.data ?? {}}
             state={viewState}
             streaming={streaming}
