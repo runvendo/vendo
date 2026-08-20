@@ -18,6 +18,7 @@
  * the same composed host and the same minimal MCP client from
  * `mcp-door.test-util.ts`.
  */
+import { vendoApprovalRefSchema } from "@vendoai/core";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   MOUNT,
@@ -135,6 +136,16 @@ describe("the MCP door, as an OUTSIDE agent sees it — pinned before door-ctx",
       // the turn-bearing path REPLACES, and the one this path keeps.
       expect(answered.text).toContain("needs approval");
       expect(answered.text).toContain("retry");
+      // ADDITIVE, beside the unchanged prose: the same `vendo/approval-ref@1`
+      // the in-process tool pack mints, so an outside loop reads the parked id
+      // off a typed field instead of regexing it out of that sentence. Parsed
+      // through core's own schema — the reader's contract, not a shape copied
+      // into this file.
+      const ref = vendoApprovalRefSchema.parse(answered.structuredContent);
+      expect(ref.summary).toBe(`Send a payment to a payee — ${WRITE_TOOL} {"amount":1400}`);
+      // One id, two spellings of the same answer: the prose names what the
+      // typed field carries.
+      expect(answered.text).toContain(ref.approvalId);
     });
     expect(shapeOf(rows.at(-1))).toEqual({
       outcome: "pending-approval",
