@@ -88,3 +88,5 @@ export type {
 export type { CommitResult, WorkspaceFs } from "./workspace.js";
 export { WORKSPACE_INLINE_MAX_BYTES, appRootPath } from "./workspace.js";
 export type { AppMount } from "./workspace.js";
+
+// scratch: proving changeset-required can go red. Do not merge.
