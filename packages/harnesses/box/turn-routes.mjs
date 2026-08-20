@@ -175,18 +175,38 @@ export const createSessionRoutes = (options = {}) => {
    * after collecting the events it just read and committing them, so a cursor
    * past a `wrote` event means that write has landed in the store.
    */
-  const ackSync = (state, cursor) => {
-    if (cursor <= state.acked) return;
-    state.acked = cursor;
+  const ackSync = (state, cursor, failure) => {
+    // CLAMPED to what this box actually SERVED. The cursor is the host's own
+    // count coming home, so on its own it proves nothing: a poll claiming 999
+    // would release every parked write with no collect behind it. The box acks
+    // only events it handed out, which is the part the protocol guarantees.
+    const acked = Math.min(cursor, state.served);
+    if (acked <= state.acked) return;
+    state.acked = acked;
+    state.syncFailure = typeof failure === "string" && failure !== "" ? failure : undefined;
     wake(state);
   };
 
-  /** Park until the host has synced every event below `through`, or the bound. */
+  /** This turn is over — let go of every parked write. No ack is coming, and a
+   *  turn cut short has no next tool call left to warn. */
+  const releaseWrites = (state) => {
+    state.acked = state.events.length;
+    state.syncFailure = undefined;
+    wake(state);
+  };
+
+  /**
+   * Park until the host has synced every event below `through`.
+   *
+   * THROWS rather than resolving when the sync did not happen — a barrier that
+   * releases on a failed sync is the original race back again, minus the
+   * evidence. The caller says so to the model in band.
+   */
   const syncedThrough = async (state, through) => {
     const deadline = Date.now() + SYNC_ACK_WAIT_MS;
     while (state.acked < through) {
       const remaining = deadline - Date.now();
-      if (remaining <= 0) return;
+      if (remaining <= 0) throw new Error("the host did not confirm the workspace sync in time");
       await new Promise((resolve) => {
         const timer = setTimeout(resolve, remaining);
         // A write nobody is coming back for must not be the reason this process
@@ -195,6 +215,7 @@ export const createSessionRoutes = (options = {}) => {
         state.waiters.push(() => { clearTimeout(timer); resolve(); });
       });
     }
+    if (state.syncFailure !== undefined) throw new Error(state.syncFailure);
   };
 
   /**
@@ -245,7 +266,7 @@ export const createSessionRoutes = (options = {}) => {
 
   const startMessage = async (payload) => {
     const messageId = `msg_${randomUUID()}`;
-    const state = { events: [], waiters: [], done: false, acked: 0 };
+    const state = { events: [], waiters: [], done: false, acked: 0, served: 0 };
     messages.set(messageId, state);
     for (const stale of [...messages.keys()].slice(0, -MESSAGES_RETAINED)) messages.delete(stale);
     current = state;
@@ -305,6 +326,8 @@ export const createSessionRoutes = (options = {}) => {
     for (;;) {
       const fresh = state.events.slice(cursor);
       if (fresh.length > 0 || state.done) {
+        // What the box has actually HANDED OUT — the ceiling on any later ack.
+        state.served = state.events.length;
         return { events: fresh, cursor: cursor + fresh.length, done: state.done };
       }
       const remaining = deadline - Date.now();
@@ -438,7 +461,7 @@ export const createSessionRoutes = (options = {}) => {
 
       if (match[2] === "poll") {
         const cursor = Number.isInteger(payload?.cursor) ? payload.cursor : 0;
-        ackSync(state, cursor);
+        ackSync(state, cursor, payload?.syncError);
         return { status: 200, body: await poll(state, cursor, payload?.waitMs) };
       }
       if (match[2] === "steer") {
@@ -459,7 +482,7 @@ export const createSessionRoutes = (options = {}) => {
       // which is the whole reason a live session interrupts instead of aborting.
       // Any write still parked on a sync ack is released first: the host has
       // stopped polling this message, so the ack it waits for is never coming.
-      ackSync(state, state.events.length);
+      releaseWrites(state);
       await session?.interrupt().catch(() => undefined);
       return { status: 200, body: { ok: true } };
     },

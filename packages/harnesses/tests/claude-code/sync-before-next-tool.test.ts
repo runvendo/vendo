@@ -40,6 +40,7 @@ import {
   testSkills,
   testTranscript,
   testWorkspace,
+  type TestWorkspace,
   unusedModels,
   userMessage,
 } from "../../src/test-doubles.test-util.js";
@@ -68,24 +69,27 @@ type PostToolUseHook = (raw: Record<string, unknown>) => Promise<unknown>;
 
 /** The engine's OWN registered `PostToolUse` hook, invoked and awaited exactly
  *  as the engine invokes it — awaiting it is the behaviour under test. */
-async function firePostToolUse(options: Record<string, unknown>, file: string): Promise<void> {
+async function firePostToolUse(
+  options: Record<string, unknown>,
+  file: string,
+): Promise<Record<string, unknown>> {
   const hooks = options["hooks"] as { PostToolUse?: Array<{ hooks?: PostToolUseHook[] }> } | undefined;
   const hook = hooks?.PostToolUse?.[0]?.hooks?.[0];
   expect(typeof hook).toBe("function");
-  await hook!({
+  return await hook!({
     hook_event_name: "PostToolUse",
     tool_name: "Write",
     tool_input: { file_path: file },
     tool_response: {},
     tool_use_id: "tu_1",
-  });
+  }) as Record<string, unknown>;
 }
 
 /**
  * One turn, as the engine runs it: write the file, fire the hook, then make the
  * tool call the model would make next.
  */
-function sdkWritingThenCalling(root: string, nextToolCall: () => void) {
+function sdkWritingThenCalling(root: string, nextToolCall: (hookOutput: Record<string, unknown>) => void) {
   return {
     query: ({ prompt, options }: { prompt: unknown; options: Record<string, unknown> }) => ({
       async *[Symbol.asyncIterator]() {
@@ -99,8 +103,7 @@ function sdkWritingThenCalling(root: string, nextToolCall: () => void) {
             type: "assistant",
             message: { content: [{ type: "tool_use", name: "Write", input: { file_path: file } }] },
           };
-          await firePostToolUse(options, file);
-          nextToolCall();
+          nextToolCall(await firePostToolUse(options, file));
           yield {
             type: "result",
             subtype: "success",
@@ -153,6 +156,26 @@ function boxRunningTheRealLoop(root: string, sdk: unknown): SandboxAdapterLike {
   };
 }
 
+/** One real turn, all the way through the runtime. */
+async function runTurn(sandbox: SandboxAdapterLike, workspace: TestWorkspace, thread: string): Promise<void> {
+  const guard = testGuard();
+  const runtime = createHarnessRuntime({
+    tools: boundRegistry({}, guard),
+    guard,
+    skills: testSkills([]),
+    transcript: testTranscript(),
+  });
+  await readSse(await runtime.run({
+    harness: claudeCode({ sandbox, ...testAppsHooks() }) as never,
+    threadId: thread as ThreadId,
+    messages: [userMessage("m1", "build me a spending screen")],
+    ctx: ctx(),
+    workspace,
+    models: unusedModels(),
+    interactive: true,
+  }));
+}
+
 test("the tool call after a write reaches a store that already holds the write", async () => {
   const root = mkdtempSync(path.join(tmpdir(), "vendo-row-"));
   roots.push(root);
@@ -163,24 +186,82 @@ test("the tool call after a write reaches a store that already holds the write",
     landedBeforeNextCall = workspace.commits.some((commit) => commit.changed.includes(SCREEN));
   }));
 
-  const guard = testGuard();
-  const runtime = createHarnessRuntime({
-    tools: boundRegistry({}, guard),
-    guard,
-    skills: testSkills([]),
-    transcript: testTranscript(),
-  });
-  await readSse(await runtime.run({
-    harness: claudeCode({ sandbox, ...testAppsHooks() }) as never,
-    threadId: "thr_read_your_own_write" as ThreadId,
-    messages: [userMessage("m1", "build me a spending screen")],
-    ctx: ctx(),
-    workspace,
-    models: unusedModels(),
-    interactive: true,
-  }));
+  await runTurn(sandbox, workspace, "thr_read_your_own_write");
 
   expect(landedBeforeNextCall).toBe(true);
+});
+
+test("a hot sync that CONFLICTS tells the model, instead of acking a write that never landed", async () => {
+  // The barrier's failure mode matters more than its happy path: releasing on a
+  // sync that did NOT happen is the original race back again, minus the
+  // evidence. A conflict is the honest version of that — the commit is refused,
+  // nothing lands, and `syncHot` used to answer `[]` exactly as it does for an
+  // empty diff.
+  const root = mkdtempSync(path.join(tmpdir(), "vendo-row-conflict-"));
+  roots.push(root);
+  const workspace = testWorkspace({ [SCREEN]: "screen v1" });
+  workspace.conflictOn = [SCREEN];
+  let told: unknown;
+  let landedBeforeNextCall: boolean | undefined;
+  const sandbox = boxRunningTheRealLoop(root, sdkWritingThenCalling(root, (hookOutput) => {
+    told = hookOutput["systemMessage"];
+    landedBeforeNextCall = workspace.commits.some((commit) => commit.changed.includes(SCREEN));
+  }));
+
+  await runTurn(sandbox, workspace, "thr_read_your_own_write_conflict");
+
+  // Nothing landed — which is precisely why the model has to hear about it.
+  expect(landedBeforeNextCall).toBe(false);
+  expect(told).toMatch(/has not reached the workspace/);
+});
+
+test("an inflated poll cursor does not release a parked write", async () => {
+  // The cursor is the HOST's own count coming home. Taken on trust it is not an
+  // ack at all: a poll can claim any number and walk every parked write past a
+  // sync that never ran.
+  const root = mkdtempSync(path.join(tmpdir(), "vendo-row-cursor-"));
+  roots.push(root);
+  const auth = { "x-vendo-box-token": "tok" };
+  let released: string | undefined;
+  const routes = createSessionRoutes({
+    root,
+    token: "tok",
+    env: {},
+    openSession: (input: Record<string, unknown>) => ({
+      async send() {
+        const wrote = input["onFileWritten"] as (path: string) => Promise<void>;
+        await wrote(`${root}/user/apps/app_1/app.tsx`).then(
+          () => { released = "resolved"; },
+          () => { released = "threw"; },
+        );
+      },
+      steer: () => false,
+      async interrupt() { /* nothing to stop */ },
+      async end() { /* nothing to close */ },
+    }),
+  }) as {
+    handle: (method: string, pathname: string, headers: Record<string, string>, payload: unknown)
+      => Promise<{ status: number; body: Record<string, unknown> }>;
+  };
+
+  const started = await routes.handle("POST", "/session/message", auth, { prompt: "build it" });
+  const messageId = String(started.body["messageId"]);
+  // A poll that claims to have consumed 999 events when the box has served none.
+  const bogus = await routes.handle("POST", `/session/${messageId}/poll`, auth, { cursor: 999, waitMs: 0 });
+  expect(bogus.body["events"]).toEqual([]);
+  // Drained before asserting, or "still parked" would just mean "has not got
+  // round to it yet" and the assertion would hold with no clamp at all.
+  await new Promise((resolve) => setImmediate(resolve));
+  expect(released).toBeUndefined();
+
+  // The honest sequence still releases it: one poll is served the event, the
+  // next carries the cursor back as the ack.
+  const served = await routes.handle("POST", `/session/${messageId}/poll`, auth, { cursor: 0, waitMs: 0 });
+  expect(served.body["events"]).toEqual([{ type: "wrote", path: `${root}/user/apps/app_1/app.tsx` }]);
+  await routes.handle("POST", `/session/${messageId}/poll`, auth, { cursor: 1, waitMs: 0 });
+  // The park unwinds through the session's own continuation, not the poll's.
+  await new Promise((resolve) => setImmediate(resolve));
+  expect(released).toBe("resolved");
 });
 
 test("machine: \"local\" holds the model behind its own write too — the rungs are identical", async () => {

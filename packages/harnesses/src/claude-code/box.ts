@@ -324,6 +324,10 @@ export async function boxMachine(options: BoxMachineOptions): Promise<SessionMac
       const budgetMs = options.messageBudgetMs ?? MESSAGE_BUDGET_MS;
       const deadline = Date.now() + budgetMs;
       let cursor = 0;
+      /** A hot sync that FAILED, owed to the box on the next poll. The ack and its
+       *  failure travel the same way, so a parked write learns the sync did not
+       *  happen instead of waiting out its whole bound and proceeding as if it had. */
+      let syncError: string | undefined;
 
       // Interrupt the TURN, not the conversation — and do it the moment Stop is
       // pressed. The door parks a poll for POLL_WAIT_MS when the box has nothing
@@ -356,14 +360,23 @@ export async function boxMachine(options: BoxMachineOptions): Promise<SessionMac
               `the turn outran its ${budgetMs}ms message budget`,
             );
           }
-          const polled = await request(`/session/${messageId}/poll`, { cursor, waitMs: POLL_WAIT_MS });
+          const polled = await request(`/session/${messageId}/poll`, {
+            cursor,
+            waitMs: POLL_WAIT_MS,
+            ...(syncError === undefined ? {} : { syncError }),
+          });
+          syncError = undefined;
           for (const event of Array.isArray(polled["events"]) ? polled["events"] : []) {
             const named = event as { type?: unknown; path?: unknown };
             // `wrote` is the native PostToolUse hook coming home. It is NOT a
             // HarnessEvent — it is the signal that replaced the 1.2s file-watch
             // timer, so it goes to the hot-sync callback and never to the user.
             if (named.type === "wrote") {
-              await message.onFileWritten?.(typeof named.path === "string" ? named.path : undefined);
+              try {
+                await message.onFileWritten?.(typeof named.path === "string" ? named.path : undefined);
+              } catch (error) {
+                syncError = error instanceof Error ? error.message : String(error);
+              }
               continue;
             }
             message.emit(event as never);

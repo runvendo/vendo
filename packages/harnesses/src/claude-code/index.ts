@@ -694,9 +694,13 @@ export function claudeCode(
           for (const path of await checkout.syncHot(hot)) landed.add(path);
         };
 
+        /** The barrier the write hook awaits. It must NOT resolve unless the write
+         *  actually reached the store: a swallowed failure here puts the model
+         *  back to racing its own write, silently, which is the worse half of the
+         *  bug this barrier exists for. The caller says so in band. */
         const syncHotNow = async (): Promise<void> => {
           if (finished) return;
-          await serialize(syncHot).catch(() => undefined);
+          await serialize(syncHot);
         };
 
         // `Turn.skills` finally reaches this harness. Before cc-native the pack
