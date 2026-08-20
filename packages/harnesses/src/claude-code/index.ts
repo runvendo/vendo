@@ -694,9 +694,9 @@ export function claudeCode(
           for (const path of await checkout.syncHot(hot)) landed.add(path);
         };
 
-        const syncHotNow = (): void => {
+        const syncHotNow = async (): Promise<void> => {
           if (finished) return;
-          void serialize(syncHot).catch(() => undefined);
+          await serialize(syncHot).catch(() => undefined);
         };
 
         // `Turn.skills` finally reaches this harness. Before cc-native the pack

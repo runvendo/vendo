@@ -76,7 +76,7 @@ export interface SessionMessage extends SessionOpen {
   emit: (event: ClaudeTurnEvent) => void;
   /** A file the turn wrote, from the SDK's native PostToolUse hook. `undefined`
    *  means a write whose path we cannot know (`Bash`). */
-  onFileWritten?: (path: string | undefined) => void;
+  onFileWritten?: (path: string | undefined) => void | Promise<void>;
   signal?: AbortSignal;
 }
 

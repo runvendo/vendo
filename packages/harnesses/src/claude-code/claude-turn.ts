@@ -179,7 +179,7 @@ interface ClaudeSessionInput {
    * naming a path (`Bash`), which the host answers with one narrow
    * collect-by-shape rather than a whole-tree read.
    */
-  onFileWritten?: (path: string | undefined) => void;
+  onFileWritten?: (path: string | undefined) => void | Promise<void>;
   /**
    * The host's own MCP door, and a credential for the turn in flight.
    *
@@ -490,7 +490,7 @@ export function createClaudeSession(input: ClaudeSessionInput): ClaudeSession {
   const onPostToolUse = async (raw: unknown): Promise<Record<string, unknown>> => {
     const hook = raw as { tool_input?: { file_path?: unknown } };
     const written = hook.tool_input?.file_path;
-    input.onFileWritten?.(typeof written === "string" ? written : undefined);
+    await input.onFileWritten?.(typeof written === "string" ? written : undefined);
     // This hook OBSERVES. Permission is the box and the door; a hook that
     // returned a decision here would be a permission system smuggled back in.
     return {};

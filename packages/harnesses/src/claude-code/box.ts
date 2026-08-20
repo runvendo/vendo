@@ -363,7 +363,7 @@ export async function boxMachine(options: BoxMachineOptions): Promise<SessionMac
             // HarnessEvent — it is the signal that replaced the 1.2s file-watch
             // timer, so it goes to the hot-sync callback and never to the user.
             if (named.type === "wrote") {
-              message.onFileWritten?.(typeof named.path === "string" ? named.path : undefined);
+              await message.onFileWritten?.(typeof named.path === "string" ? named.path : undefined);
               continue;
             }
             message.emit(event as never);
