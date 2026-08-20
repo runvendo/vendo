@@ -25,6 +25,22 @@ The workspace calls — the upload and the turn-end read, both of which are the
 same twice — are now sent again once if the transport drops, so a blip no longer
 costs the turn. And a Cloud sandbox that cannot be reached now says so: the
 adapter turns the transport fault into a named `sandbox-unavailable` failure
-carrying the cause, and the runtime's operator log prints that cause alongside
-the message. The observed failure used to reach the log as undici's bare
-`fetch failed` — three words naming neither Vendo nor the call.
+carrying the cause, and the runtime's operator log prints the ROOT of that cause
+chain alongside the message. The observed failure used to reach the log as
+undici's bare `fetch failed` — three words naming neither Vendo nor the call.
+
+The retry is what made the rest necessary. Aborting a request cancels this host's
+leg of it and nothing else, so a chunk this host gave up on can still land after
+its own replay — and the first chunk of an upload carries the reset that empties
+the box's root. Every materialize now mints a GENERATION and carries it on each
+chunk: the box refuses a generation it has already moved past, empties the root
+once per generation instead of once per request, and reports the generation it
+holds. That report is also how a box whose supervisor RESTARTED — same machine,
+same token, empty disk — stops passing as the box that holds the conversation:
+the host reads its own generation back before it treats an empty disk as news.
+
+And the retry itself now knows what a retry is for. It replayed everything,
+including answers — a meter refusal, a rejected key, a machine the provider had
+destroyed — and threw the first error away to say the second one twice. Only a
+call that DROPPED may be sent again, only while the box is still waiting for it,
+and the attempt that failed is logged rather than discarded.

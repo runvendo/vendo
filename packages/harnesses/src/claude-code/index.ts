@@ -833,6 +833,13 @@ export function claudeCode(
         let collected: SyncFile[] | undefined;
         try {
           if (materialized) collected = await machine.collect();
+          else {
+            log({
+              code: "harnesses.claude-code-workspace-not-materialized",
+              level: "error",
+              message: "[vendo] claude-code: the box never received the workspace; nothing is synced back",
+            });
+          }
         } catch (error) {
           log({
             code: "harnesses.claude-code-workspace-read-failed",
