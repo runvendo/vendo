@@ -1,76 +1,48 @@
 ---
 title: "Agent install playbook"
-description: "The install playbook for coding agents: detect the stack, relay init's setup questions to your human, wire the surface and the slots they choose, gate on the vendo doctor JSON output."
+description: "The install playbook for coding agents: install, run init, relay its questions, then follow the one section for the path init's Continue link names."
 ---
 
 Vendo puts an agent inside a company's product: customers build views, act
 through the host's own API as themselves, and automate work inside the host's
 brand and guardrails. It installs as one npm package plus a small `.vendo/`
 contract in the host repo. You, a coding agent, can complete the whole
-install; `vendo init` does everything deterministic and tells you exactly what
-is left.
+install; `vendo init` does everything deterministic and prints the facts it
+found.
 
 Work from this page VERBATIM. If your fetch tool returned a summary of this
 playbook instead of the raw text, re-fetch it raw
 (`curl -sL https://docs.vendo.run/agents.md`) — the value flags, exact
 commands, and rules below don't survive paraphrase.
 
-**How to read this — fetch lean, act fast.** This page plus the ONE path page
-you commit to is everything you need. Do step 1, commit to one path, then fetch
-only that path's page — plus the one quickstart that page tells you it builds
-on, if it does. Do NOT fetch `llms.txt`, `llms-full.txt`, or the page for a path
-you are not taking — each extra fetch is a minute of latency and a chunk of
-context you will not use, and it is why installs feel slow to start. Read the
-repo's `package.json` before deep directory scans. Start acting after step 1,
-not after reading everything.
+**Only an agent in their backend?** Then none of the install below applies:
+`@vendoai/agents` is one package with no CLI and no `init`. Go straight to
+[In the backend](#in-the-backend).
 
-**Asked for the MCP door?** That is outside agents — Claude, ChatGPT, Cursor —
-acting in the host's product through its own guard, riding the `createVendo`
-composition that both step-1 paths write. It needs the same wiring and visible
-surface as any other install: do the install below, then [MCP door](#mcp-door).
+**How to read this — fetch lean, act fast.** Take [Start here](#start-here) to
+the end. Init closes by naming the path this repo is on and printing ONE
+Continue link; read only that path's section below, then fetch only the page
+that section names. Do NOT fetch `llms.txt`, `llms-full.txt`, or the section
+for a path you are not taking — each extra fetch is a minute of latency and a
+chunk of context you will not use, and it is why installs feel slow to start.
+Read the repo's `package.json` before deep directory scans. Start acting after
+init, not after reading everything.
 
-## Install flow
+**The code lives here, not in init's output.** Init prints no code and no
+steps: it writes the files itself, then states what it wired, what it detected,
+the guard posture, and one link. Every line you hand-wire is on this page and
+on the quickstarts it sends you to — so when a step below and your memory of
+some earlier install disagree, this page wins.
 
-1. **Check for an existing agent — and branch here.** If the host repo already runs its own
-   agent loop — an `ai` (AI SDK) dependency driving a chat route or
-   `streamText` loop, `@mastra/core`, or a raw `@anthropic-ai/sdk` loop calling
-   `messages.create` in a tool-use cycle — stop and ask your human which path
-   they want: install Vendo's agent (this playbook), or keep their loop and
-   add Vendo's tool pack. Never assume the full install in a repo that
-   already has an agent.
+## Start here
 
-   **If they choose the tool pack, one walkthrough is your page.** Fetch exactly ONE
-   framework walkthrough and follow it end to end — do not read both:
-   - AI SDK loop → `https://docs.vendo.run/existing-agent/ai-sdk.md`
-   - Mastra loop → `https://docs.vendo.run/existing-agent/mastra.md`
+Every path shares these four steps. Do them in order, in the repo you were
+pointed at.
 
-   Those two shims — `@vendoai/vendo/ai-sdk` and `@vendoai/vendo/mastra` — are
-   the only ways the pack is delivered. A raw `@anthropic-ai/sdk` loop takes the
-   AI SDK walkthrough, and adding `ai` to the repo is part of that answer: say
-   so when you put the choice to your human, rather than after they pick.
-
-   Both walkthroughs build on the `lib/vendo.ts` — the `createVendo` instance
-   and the `resolvePrincipal` export — defined in
-   `https://docs.vendo.run/existing-agent/quickstart.md`. Fetch that page too
-   when the walkthrough imports from it; it is the one exception to the
-   one-page rule, not an invitation to browse.
-
-   **Steps 2 to 5 still apply on that path, and they come first.** Detect the
-   stack, install the package, run init — with `--use-case agent-loop`, the
-   answer that records this shape and tells doctor not to look for a
-   `<VendoProvider>` or a visible Vendo surface — and hand-wire whatever the
-   agent tail names. The walkthrough is the code that goes INTO your human's
-   loop; it is not a substitute for the install underneath it.
-
-   Then come back for steps 6 and 7. The walkthrough wires your human's chat.
-   It never asks where their users keep the screens they build, and that
-   question is here. Taken straight through, steps 2 to 10 are the FULL-install
-   path, for the human who chose Vendo's agent.
-
-2. **Detect the stack.** Read `package.json`. A `next` dependency means
+1. **Detect the stack.** Read `package.json`. A `next` dependency means
    Next.js; an `express` dependency means Express. Anything else — Cloudflare
    Workers, Bun, Deno, Hono, Fastify, Lambda, bare Node — is the third
-   scaffolded path: pass `--framework custom` in step 4 and init writes a
+   scaffolded path: pass `--framework custom` in step 3 and init writes a
    runtime-neutral `vendo/server.ts` exporting `handleVendoRequest(request,
    env)`, which your runtime mounts in one line
    ([Edge runtimes](/production/edge-runtimes)).
@@ -82,20 +54,20 @@ surface as any other install: do the install below, then [MCP door](#mcp-door).
    `package.json` of the directory init targets. Run at the root of a workspace
    repo and detection finds no framework: init errors non-interactively, or
    lands on the runtime-neutral custom scaffold a Next or Express app should
-   not get. Choose the app package now; the install in step 3 targets it, and
+   not get. Choose the app package now; the install in step 2 targets it, and
    every later command runs in (or is pointed at) that directory.
 
    Read that file before you believe it. Under pnpm 10 `pnpm-workspace.yaml` is
    also where plain settings live — `onlyBuiltDependencies`,
-   `minimumReleaseAge`, the exclude list in step 3 — so a copy with no
+   `minimumReleaseAge`, the exclude list in step 2 — so a copy with no
    `packages:` key is an ordinary single-app repo, and treating it as a
    monorepo sends you hunting for an app package that does not exist.
 
-3. **Install the package, then verify what actually resolved.**
+2. **Install the package, then verify what actually resolved.**
 
    ```bash
    npm install @vendoai/vendo
-   npx vendo --version   # must be >= 0.28.0
+   npx vendo --version   # must be >= 0.29.0
    ```
 
    In a workspace repo, install into the app package with the host's own
@@ -125,7 +97,7 @@ surface as any other install: do the install below, then [MCP door](#mcp-door).
    day by default via `minimumReleaseAge`; npm's `min-release-age` is
    opt-in) will SILENTLY resolve a fresh Vendo release to that stale
    version — or to nothing. Everything this playbook uses (`init --agent`,
-   `vendo login`, `doctor --json`) does not exist there. If the version is
+   `vendo login`, `sync --ai`) does not exist there. If the version is
    old or missing, exclude Vendo from the cooldown and reinstall:
 
    ```yaml
@@ -141,12 +113,11 @@ surface as any other install: do the install below, then [MCP door](#mcp-door).
    Upgrading instead of installing fresh? If the repo carries a direct
    `@vendoai/vendo` dependency next to the `vendoai` alias (common in
    0.4.1-era installs), bump BOTH to the same version — bumping `vendoai`
-   alone half-upgrades: new CLI, old runtime. `vendo doctor` (0.4.3+) flags
-   the mismatch.
+   alone half-upgrades: new CLI, old runtime.
 
-4. **Run init in agent mode and relay its questions.** Init asks; you carry
+3. **Run init in agent mode and relay its questions.** Init asks; you carry
    the questions to your human and their answers back. Both commands below run from
-   the app package directory (step 2's pick). `vendo init` can also be
+   the app package directory (step 1's pick). `vendo init` can also be
    pointed at it from the root (`npx vendo init apps/web`), but `vendo login`
    writes the minted key to `.env.local` **in the directory it runs from** —
    a login at a workspace root lands the key where the framework never loads
@@ -173,6 +144,10 @@ surface as any other install: do the install below, then [MCP door](#mcp-door).
    `VENDO_BASE_URL`. Say what each option gets their users, not what it
    configures.
 
+   One more consent gate rides ahead of the grading pass: that pass spends
+   model tokens, so init asks before it runs. Relay it like the rest — the
+   answer is money, and it is not yours to give.
+
    Take the model answer first, before you re-run anything. It is the one
    answer that has no flag: the Vendo Cloud pick is a login you run now, and
    the key only counts once login has written it to `.env.local`.
@@ -196,10 +171,7 @@ surface as any other install: do the install below, then [MCP door](#mcp-door).
    SAME request — no new code, no duplicate key — so the human's approval lands
    whenever it arrives. Never background this command and never wrap it in a
    shorter timeout: a 90s bounded call returns on its own; a killed call is why
-   you loop. On success the CLI may suggest re-running `vendo init` — that
-   applies only when the repo is not wired yet. In a repo you already
-   initialized, nothing needs re-running: the key is picked up from
-   `.env.local`, so go straight to doctor.
+   you loop.
    The credential is delivered straight to the CLI (no email OTP, and
    no key ever transits your transcript; the raw protocol is
    [auth.md](https://vendo.run/auth.md)). If they bring a provider key,
@@ -215,6 +187,7 @@ surface as any other install: do the install below, then [MCP door](#mcp-door).
    answer on the first call skips the ask pass and writes in one go, which is
    right only when your human has already told you everything.
 
+   `--use-case` takes `embedded`, `agent-loop`, or `mcp`.
    `--auth` takes `authJs`, `clerk`, `supabase`, `auth0`, `jwt`, or `none`.
    `--byo` means your human brings their own model key; `--cloud-key <key>`
    answers with an existing Vendo Cloud key. A `VENDO_API_KEY` already sitting
@@ -222,142 +195,269 @@ surface as any other install: do the install below, then [MCP door](#mcp-door).
    it is, and never asks. If they bring their own key, tell them to put it in
    `.env.local` as `ANTHROPIC_API_KEY=...` or `OPENAI_API_KEY=...` and to tell
    you when it is there. It never passes through your chat.
-   `--framework <next|express|custom>` is required only when detection fails
-   (init errors with that exact instruction rather than guessing); `custom` is
-   the answer for every non-Next, non-Express host. See the
+   `--framework <next|express|custom>` matters when detection fails: agent mode
+   does NOT stop to ask, it falls through to `custom`. So a Next or Express host
+   whose `package.json` you could not read is a runtime-neutral scaffold nobody
+   asked for — pass the flag yourself whenever step 1 left you unsure. See the
    [CLI reference](/reference/cli#vendo-init-dir) for every other flag and
    [vendo init](/reference/vendo-init) for exactly what it writes.
 
-5. **Hand-wire the gaps the agent tail names.** The write run ends
-   with an `Agent tail:` block listing the exact files this run left for you;
-   typically: wrap the root layout (or client entry) in the printed
-   `<VendoProvider>` lines, pass real host components to the provider
-   ([tools and catalog](/generated/host-components)), and add the auth line if
-   none was wired ([host auth](/production/auth)). Follow the tail, not memory;
-   it is derived from what init actually wrote in this repo. Apply those edits
-   and report them in one line, not a list of diffs.
+4. **Take the Continue link.** The write run prints no code and no steps. It
+   ends on four computed lines and one URL — what it wired, what it detected,
+   the guard posture it left you, and where to go next:
 
-   **Next.js: `serverExternalPackages`.** Init adds
-   `serverExternalPackages: ["@vendoai/apps", "esbuild", "@electric-sql/pglite", "@vendoai/store"]`
-   to `next.config.*` itself, creating the file if the repo has none. It prints
-   the line for you to paste instead when the config is one it cannot read as an
-   object literal (a function of `phase`, a computed export) — do that paste.
-   `@vendoai/apps` is the entry that matters and an `"esbuild"` entry without it
-   is INERT: the checker reaches esbuild through a variable specifier the bundler
-   cannot see, so there is no static request for Next to match. Bundled, that
-   import resolves from the app root where pnpm never hoists esbuild, and every
-   generated screen fails its checks while the app itself looks fine. Doctor
-   fails [`E-CFG-004`](/production/troubleshooting/e-cfg-004) until it is there.
-   On Next 14 the key is `experimental.serverComponentsExternalPackages`.
-
-6. **Offer the overlay, then mount it.** `VendoProvider` is provider-only and
-   renders NOTHING by itself. Doctor gates on both halves: E-WIRE-004 until a
-   layout mounts `<VendoProvider>`, E-WIRE-006 until something visible renders
-   inside it. The overlay is that visible half, and it is a question first.
-   Say what it is in their product's terms: a floating assistant button on
-   every page, where their users ask for things like "show me my top customers
-   as a chart" and get a working screen built right there. Ask, then mount:
-
-   ```tsx
-   import { VendoOverlay } from "@vendoai/vendo/react";
-   // inside the VendoProvider wrap:
-   <VendoOverlay />
+   ```
+   Wired: .env.example, .vendo/install.json, …, lib/vendo.ts, next.config.mjs
+   Detected: Next.js · no auth detected · npm · port 3000
+   Guard: writes run without approval — how to tighten: vendo.run/agents.md
+   Continue: https://docs.vendo.run/product/quickstart
    ```
 
-   On the own-loop path there is no overlay to place. Your human keeps their
-   chat, their loop, and their model; wire that chat to render Vendo's guarded
-   tool cards and generated screens inline, and say so plainly. On the MCP path
-   the outside AI app is the surface. Either way, confirm something visible
-   exists before you call the install done: doctor green alone does not prove
-   your human can see anything.
+   The receipt carries the same as structured fields (`wrote`, `detected`,
+   `guardPosture`, `continueUrl`). That Continue URL is your section below, and
+   its section names the one page to fetch:
 
-7. **Offer slots, and explain what a slot is.** A slot is a spot on one of
-   your human's own pages where a user can keep a screen they built: a chart
-   pinned to their dashboard, still there tomorrow. Without one, everything a
-   user builds lives in that user's own list of views. Say that much, then
-   give three ways out: name a place, let you read the app and bring back
-   options, or skip. Say that skipping is fine. If they want options, come back
-   with two or three real pages and a reason each ("the dashboard, since your
-   data tables live there"), and let them take one, several, or none.
+   | Continue link | Your section |
+   | --- | --- |
+   | `/product/quickstart` | [In the product](#in-the-product) |
+   | `/existing-agent/ai-sdk` or `/existing-agent/mastra` | [In an agent you already run](#in-an-agent-you-already-run) |
+   | `/outside-agents/quickstart` | [Outside agents over MCP](#outside-agents-over-mcp) |
 
-   A slot is markup, so wiring one is your paste:
+   One link, one section, one page. If init named a path your human did not
+   expect, that is a question for them, not a second install. Nothing in that
+   tail is a paste: init writes the files itself and the code lives on the
+   pages below.
 
-   ```tsx
-   import { VendoSlot } from "@vendoai/vendo/react";
+   **A backend agent takes none of this.** `@vendoai/agents` needs no CLI and
+   no init — see [In the backend](#in-the-backend), which starts from an empty
+   project rather than from a Continue link.
 
-   <VendoSlot
-     id="home-hero"
-     label="Dashboard hero"
-     description="main dashboard area, where users keep KPI views"
-   >
-     <YourOriginalCard />
-   </VendoSlot>
-   ```
+### Next.js: `serverExternalPackages`
 
-   Always give a `label`: it is what a person picking a destination reads and
-   what an assistant matches a request against, so write it as meaning, not as
-   an id. The description is how the assistant finds the right slot by meaning.
-   A slot with children renders them untouched while it is empty; a slot
-   with none shows users an invitation with prompt chips instead, which is the
-   hint that this space builds itself.
-   Filled, it holds one view per person. On the own-loop path pass `onAuthor`
-   so pressing an empty slot opens your human's own chat rather than Vendo's
-   palette. See
-   [where the screen lands](/product/mount-the-surface#slots).
+Every path on Next.js needs this line, so it is here rather than in four
+places. Init adds it to `next.config.*` itself, creating the file if the repo
+has none. Add it by hand when the config is one init cannot read as an object
+literal (a function of `phase`, a computed export):
 
-8. **Do the judgment init leaves you.** Init writes the deterministic
-   contract. The parts that need reading the code are yours, and doctor does
-   not grade them, so nothing but you will catch a miss. Four things:
+```js next.config.ts
+serverExternalPackages: ["@vendoai/apps", "esbuild", "@electric-sql/pglite", "@vendoai/store"],
+```
 
-   - **Tool descriptions.** Write each extracted tool as the task a user would
-     ask for, not the endpoint it calls.
-   - **Risk grades.** Anything destructive or irreversible gets `confirmEach`
-     in `.vendo/overrides.json`, the file that means "a human decided this"
-     and that sync never clobbers.
-   - **The product brief.** Replace the `.vendo/brief.md` placeholder with
-     what this product does and for whom, read out of the code.
-   - **Theme slots.** Fill anything `.vendo/theme.json` left unresolved from
-     the app's own styles.
+`@vendoai/apps` is the entry that matters and an `"esbuild"` entry without it
+is INERT: the checker reaches esbuild through a variable specifier the bundler
+cannot see, so there is no static request for Next to match. Bundled, that
+import resolves from the app root where pnpm never hoists esbuild, and every
+generated screen fails its checks while the app itself looks fine
+([`E-CFG-004`](/production/troubleshooting/e-cfg-004)). On Next 14 the key is
+`experimental.serverComponentsExternalPackages`.
 
-9. **Gate on doctor.** Doctor reads the repo, so no server has to be running.
-   Loop:
+## What every path shares
 
-   ```bash
-   npx vendo doctor --json
-   ```
+Read this once. Each section below says how its own path shows these to a
+person; the mechanics are the same everywhere.
 
-   Every failing or warning check carries an `error_code` and a `fix_ref` URL
-   into the [verify page](/production/troubleshooting). Fix, re-run, repeat until exit 0.
+**The guard's default posture.** Reads and writes RUN without approval.
+Destructive and ungraded calls ASK: the person gets an approve/deny card, and
+the call resumes on yes. A standing grant they already gave runs a destructive
+call without a new ask, and away runs, rate breakers, and an org policy can turn
+a would-be run into an ask — or into a refusal. To ask before writes too,
+compose the cautious preset — a `guard()` option, not a `.vendo/policy.json`
+field:
 
-10. **Show it running.** Doctor green is the gate, but your human should SEE
-    the install, not take your word for it. Start the dev server,
-    hand them the exact URL, and give them one concrete first ask to type
-    into the product's chat surface. For example: "ask it to build a small
-    dashboard from your data; a guarded write will render an approve/deny
-    card inline."
-    Name which of their agent's surfaces now renders Vendo output (the chat
-    page, the overlay, an embed) so they know where to look.
+```ts
+guard: guard({ policy: "cautious" }),
+```
 
-## MCP door
+The preset expands to explicit rules, and inline rules win with no merge, so it
+REPLACES `.vendo/policy.json`'s rules rather than tightening them. That is why
+init writes `guard({ policy: {} })`: the empty object is the shape that keeps
+reading the file.
 
-Additive to the install flow above: take these in order, and skip none of the
-install's own steps.
+**If every call parks, the tools are ungraded, not broken.** An ungraded tool
+asks before each call, which reads as an agent that will not do anything.
+Grade them, then restart the dev server:
 
-Run step 4 with `--use-case mcp` (interactively: pick **outside agents over
-MCP**) and init writes 1 and 2 below for you — the composition with
-`mcp: true`, a thin catch-all route over it, and the origin-root discovery
-route:
+```bash
+npx vendo sync --ai
+```
+
+The restart is not optional: the runtime memoizes the merged tool registry on
+first use and holds it for the life of the process, so a sync against a running
+server changes nothing the person can see.
+
+Grading can only ever TIGHTEN on its own. Where the pass wants to loosen a tool
+— run something that currently asks — it queues that as a pending proposal
+instead of applying it, because the guard law admits no loosening without a
+human. Those are your human's to accept, never yours.
+
+**`VENDO_BASE_URL` names your human's own origin.** Init's dev-URL question
+already wrote it into `.env.local`. It is load-bearing wherever a `vendo_*` tool
+runs OUTSIDE the wire route init wrote — their own chat route — because that
+call is a real HTTP request back at their API and nothing else says where to
+send it. Unset there, the first tool call throws `Cannot execute … set
+VENDO_BASE_URL, or pass baseUrl`. Deployments set the same variable in the
+hosting platform, to the public URL with the path prefix included
+([environment variables](/reference/environment-variables)). The MCP door reads
+it for a second reason — discovery — covered in that section.
+
+**The judgment work init leaves you.** Init writes the deterministic contract.
+The parts that need reading the code are yours, and nothing but you will catch
+a miss. Four things:
+
+- **Tool descriptions.** Write each extracted tool as the task a user would
+  ask for, not the endpoint it calls.
+- **Risk grades.** Anything destructive or irreversible that grading missed
+  gets `confirmEach` in `.vendo/overrides.json`, the file that means "a human
+  decided this" and that sync never clobbers.
+- **The product brief.** Replace the `.vendo/brief.md` placeholder with
+  what this product does and for whom, read out of the code.
+- **Theme slots.** Fill anything `.vendo/theme.json` left unresolved from
+  the app's own styles.
+
+**Done is the product working.** The install is complete when your human's app
+runs and its agent answers from their own API — one real ask, in the real
+surface, answered with real data. Start their dev server, hand them the exact
+URL, and give them one concrete first ask to type. `vendo doctor --json` is a
+separate, optional checkup: it grades files and wiring on disk and never
+contacts the running app, so a green doctor is not a working install, and a
+working install does not need one. Every code it prints links to its exact fix
+on the [verify page](/production/troubleshooting).
+
+## In the product
+
+Vendo brings the loop, the model, and the chat surface, and renders generated
+screens in the host's own brand. Init wrote this path with `--use-case
+embedded`. The one page for it:
+[`https://docs.vendo.run/product/quickstart.md`](/product/quickstart).
+
+**Mount the provider, then something visible.** `VendoProvider` is
+provider-only and renders NOTHING by itself, so a repo with only the provider
+has a working install nobody can see. The overlay is the visible half, and it
+is a question first. Say what it is in their product's terms: a floating
+assistant button on every page, where their users ask for things like "show me
+my top customers as a chart" and get a working screen built right there. Ask,
+then mount both in the root layout:
+
+```tsx app/layout.tsx
+import { VendoProvider, VendoOverlay } from "@vendoai/vendo/react";
+import type { VendoTheme } from "@vendoai/vendo";
+import theme from "../.vendo/theme.json";
+
+<VendoProvider baseUrl="/api/vendo" theme={theme as VendoTheme}>
+  {children}
+  <VendoOverlay />
+</VendoProvider>
+```
+
+`baseUrl` is where init mounted the route, path prefix included — an app served
+under `/maple` passes `baseUrl="/maple/api/vendo"`.
+
+Host components take TWO registrations, and they are different halves. What the
+agent may build FROM is the server-side catalog — `createVendo({ catalog })`
+merged over `.vendo/catalog.json` — because that is where the descriptions and
+prop schemas live. The provider's `components` prop is the browser half, which
+draws those names. Register in one only and you get either a component the agent
+was never told about, or a name nothing can draw
+([tools and catalog](/generated/host-components)).
+
+**Offer slots, and explain what a slot is.** A slot is a spot on one of your
+human's own pages where a user can keep a screen they built: a chart pinned to
+their dashboard, still there tomorrow. Without one, everything a user builds
+lives in that user's own list of views. Say that much, then give three ways
+out: name a place, let you read the app and bring back options, or skip. Say
+that skipping is fine. If they want options, come back with two or three real
+pages and a reason each ("the dashboard, since your data tables live there"),
+and let them take one, several, or none.
+
+```tsx
+import { VendoSlot } from "@vendoai/vendo/react";
+
+<VendoSlot
+  id="home-hero"
+  label="Dashboard hero"
+  description="main dashboard area, where users keep KPI views"
+>
+  <YourOriginalCard />
+</VendoSlot>
+```
+
+Always give a `label`: it is what a person picking a destination reads and
+what the assistant matches a request against, so write it as meaning, not as
+an id. The description is how the assistant finds the right slot by meaning.
+A slot with children renders them untouched while it is empty; a slot with
+none shows users an invitation with prompt chips instead, which is the hint
+that this space builds itself. Filled, it holds one view per person. See
+[where the screen lands](/product/mount-the-surface#slots).
+
+**Guard and done on this path.** Approve/deny cards render inside the overlay,
+so the person answers them where they asked. Done is their dev server running,
+the overlay opening on one of their own pages, and one ask coming back as a
+live screen built from their API.
+
+## In an agent you already run
+
+The host keeps its loop, its chat, and its model; Vendo adds a guarded tool
+pack to it. Init wrote this path with `--use-case agent-loop`, which also tells
+doctor not to look for a `<VendoProvider>` or a visible Vendo surface.
+
+**One walkthrough is your page.** Fetch exactly ONE and follow it end to end —
+do not read both:
+
+- AI SDK loop → [`https://docs.vendo.run/existing-agent/ai-sdk.md`](/existing-agent/ai-sdk)
+- Mastra loop → [`https://docs.vendo.run/existing-agent/mastra.md`](/existing-agent/mastra)
+
+Those two shims — `@vendoai/vendo/ai-sdk` and `@vendoai/vendo/mastra` — are
+the only ways the pack is delivered. A raw `@anthropic-ai/sdk` loop takes the
+AI SDK walkthrough, and adding `ai` to the repo is part of that answer: say so
+when you put the choice to your human, rather than after they pick.
+
+**Both walkthroughs build on one file.** Init writes the `createVendo` call in
+`lib/vendo.ts` (`src/lib/vendo.ts` when the app lives under `src/`), with the
+wire route a thin handler over it. The caller resolver beside it is YOURS to
+add — init does not write it, and a chat route that imports a name nobody
+exported is a compile error on your human's first build:
+
+```ts lib/vendo.ts
+export const resolvePrincipal = (req: Request) => auth.principal(req);
+```
+
+Both sides have to resolve the SAME subject. Your human's loop and the wire
+route the embeds call are two different requests, and an app or approval
+created under one subject is invisible to a surface asking as another.
+[`https://docs.vendo.run/existing-agent/quickstart.md`](/existing-agent/quickstart)
+has that file in both shapes — with an auth preset and without — and it is
+the one exception to the one-page rule, not an invitation to browse.
+
+**This is the path `VENDO_BASE_URL` is load-bearing on**: the tool runs in
+THEIR chat route, which is not a request the wire route ever sees.
+
+**Guard and done on this path.** There is no overlay to place. Vendo calls
+arrive in the host's chat as `dynamic-tool` parts: hand every finished one to
+`<VendoToolResult>`, which renders plain results, the live screen `vendo_make`
+returns, and approve/deny cards, all under one provider. A chat-only host that
+holds a ref it stored rather than one from a live call renders
+`<VendoApprovalEmbed refValue={…} />` directly instead
+([embeds](/existing-agent/embeds)). Done is their own chat answering one real
+ask with a Vendo card built from their API.
+
+## Outside agents over MCP
+
+Outside agents — Claude, ChatGPT, Cursor — act in the host's product through
+its own guard, riding the same `createVendo` composition every other path
+writes. Init wrote this path with `--use-case mcp`. The one page for it:
+[`https://docs.vendo.run/outside-agents/quickstart.md`](/outside-agents/quickstart).
+
+Init writes 1 and 2 below when the repo is Next.js on one of the four zero-arg
+presets (`--auth authJs|clerk|supabase|auth0`). On anything else — Express,
+`--auth none`, or `--auth jwt` (init prints the recipe instead: it cannot guess
+a signing secret) — it writes nothing MCP, and 1 and 2 are yours:
 
 ```bash
 npx vendo init --agent --use-case mcp --auth authJs --base-url http://localhost:3000
 ```
 
-That path needs Next.js and one of the four zero-arg presets,
-`--auth authJs|clerk|supabase|auth0`. On anything else — Express, `--auth none`,
-or `--auth jwt` (init prints the recipe instead: it cannot guess your signing
-secret) — it prints why and writes nothing MCP, and 1 and 2 are yours to wire.
-Once the use case is `mcp`, two more questions come back on that run for you to
-relay. Who runs the OAuth plumbing: Vendo can host it at a stable
+Once the use case is `mcp`, two more questions come back for you to relay. Who
+runs the OAuth plumbing: Vendo can host it at a stable
 `yourcompany.mcp.vendo.run` so none of it sits on your human's domain
 (`--posture broker`, and it uses their Vendo Cloud account), or their app can
 serve it itself with zero config (`--posture local`). And, on the local posture
@@ -367,15 +467,21 @@ provisions its own, so pairing `--service-key` with `--posture broker` exits `1`
 rather than discarding the key. Answer as flags on the next run; 3 is always
 yours.
 
-1. **`mcp: true` plus the OAuth adapter.** Written by `--use-case mcp`; add it
-   to the `createVendo({...})` init wrote otherwise. The door mints its own
-   principals through a `HostOAuthAdapter`, and `createVendo` THROWS at
-   composition without one.
-   Every named preset carries it, so `--auth authJs|clerk|supabase|auth0` (or
-   `jwt({ secret })`) is the whole answer; `--auth none` is NOT — it writes a
-   demo `principal` and no oauth seam, so the door stays shut until that seam is
-   filled. An `auth` preset owns the seam: a separately passed `oauth` is
-   ignored whenever `auth` is set. Which preset:
+**The broker needs an https origin.** Cloud registers `VENDO_BASE_URL` as the
+tenant's forwarding address and refuses one that is not https, so
+`--posture broker` with the dev `http://localhost:…` above THROWS rather than
+writing a door that would die on its first request. While your human is local,
+that means the local posture — zero config, and it works on http. The broker is
+the answer once they have an https origin to point it at.
+
+1. **`mcp: true` plus the OAuth adapter.** The door mints its own principals
+   through a `HostOAuthAdapter`, and `createVendo` THROWS at composition
+   without one. Every named preset carries it, so `--auth
+   authJs|clerk|supabase|auth0` (or `jwt({ secret })`) is the whole answer;
+   `--auth none` is NOT — it writes a demo `principal` and no oauth seam, so
+   the door stays shut until that seam is filled. An `auth` preset owns the
+   seam outright: pass `oauth` (or `principal`, or `actAs`) beside `auth` and
+   `createVendo` THROWS naming the mixed keys. Which preset:
    [host auth](/production/auth).
 
    ```ts
@@ -404,30 +510,33 @@ yours.
    ```
 
    Leave `actAs` out. A stub returning empty headers is worse than an absent
-   seam, because a fixed demo principal can never act as anyone else. Doctor
-   cannot see the seam either way, so nothing about it moves step 9's gate.
-   The price of leaving it out is that your own route-bound tools answer
+   seam, because a fixed demo principal can never act as anyone else. The price
+   of leaving it out is that the host's own route-bound tools answer
    `not-implemented` over the door, while `vendo_make` and the apps tools
    work. Every client acts as that one person: a demo or an internal tool,
-   not a multi-user product.
+   not a multi-user product. Server-action-bound tools answer
+   `not-implemented` over MCP whatever `actAs` says — they execute in-process
+   with the present user's session, and a door call has none.
 
-2. **The discovery route.** Also written by `--use-case mcp`. The door's
-   discovery documents live at ORIGIN-ROOT paths, outside `/api/vendo`, so the
-   catch-all route never sees them and that directory needs a handler of its
-   own:
+2. **The discovery route.** The door's discovery documents live at ORIGIN-ROOT
+   paths, outside `/api/vendo`, so the catch-all route never sees them and that
+   directory needs a handler of its own:
 
    ```ts
    // app/.well-known/[...vendo]/route.ts (src/app when the repo uses it)
    import { wellKnownVendoHandler } from "@vendoai/vendo/server";
-   import { vendo } from "@/vendo/server"; // wherever init put the composition
+   import { vendo } from "@/lib/vendo"; // wherever init put the composition
 
    export const { GET, POST } = wellKnownVendoHandler(vendo);
    ```
 
    The handler answers only the door's own paths and 404s everything else under
-   `/.well-known`. Express and custom hosts instead mount the same composition
-   at the origin root as well (`app.use("/.well-known", mountVendo())`),
-   registered after the app's own well-known routes.
+   `/.well-known`. An Express host instead mounts the `mountVendo()` that init
+   generated into its own `vendo/server.ts` at the origin root as well
+   (`app.use("/.well-known", mountVendo())`) — registered AFTER the app's own
+   well-known routes, because that middleware is terminal: anything behind it
+   gets Vendo's not-found JSON. Custom runtimes route `/.well-known` into the
+   same `handleVendoRequest(request, env)` they already export.
 
 3. **`VENDO_BASE_URL`.** It names the origin the door actually answers on: the
    dev origin while your human is local, the deployment's FULL public URL (path
@@ -444,28 +553,65 @@ yours.
    Init's dev-URL question already wrote that line (`--base-url` is the same
    answer as a flag). Production is set where the host DEPLOYS — in the
    platform's own environment settings, never in a committed file — and that one
-   stays your human's. Doctor FAILS
-   [`E-MCP-009`](/production/troubleshooting/e-mcp-009) on an MCP-wired project with neither
-   this variable nor `mcp: { baseUrl }`.
+   stays your human's ([`E-MCP-009`](/production/troubleshooting/e-mcp-009)).
 
 4. **`serviceAuth` — only when asked for.** Skip it unless the HOST's own
    backend has to act for a user who is not at a browser (a nightly job, a
    queue worker). `mcp: { serviceAuth: { keys: [...] } }` opens an RFC 8693
    exchange at the door's own token endpoint: the backend posts a key plus one
    of the host's user ids and gets back a short-lived token bound to that user.
-   The keys are opaque secrets your human generates — ask before creating one
-   (Rules of engagement below). On the MCP init path, `--service-key` generates
-   one into `.env.local` and wires it, but only under local posture: a
-   broker-fronted door serves no token endpoint of its own, so the key is the
-   console's to create there. Third-party agents need none of it; they run
-   the per-user OAuth the door already serves. Recipe:
+   The keys are opaque secrets your human generates — ask before creating one.
+   On the MCP init path, `--service-key` generates one into `.env.local` and
+   wires it, but only under local posture: a broker-fronted door serves no
+   token endpoint of its own, so the key is the console's to create there.
+   Third-party agents need none of it; they run the per-user OAuth the door
+   already serves. Recipe:
    [MCP door](/outside-agents/how-the-door-works).
 
-5. **Verify: step 9's gate, nothing new.** The registry checks grade
-   `server.json` and the challenge only when those files already exist —
-   publishing to the MCP registry is a separate job, not part of reaching
-   green. Every `E-MCP` code with its exact fix:
-   [verify](/production/troubleshooting/e-mcp-004).
+**Guard and done on this path.** The outside AI app is the surface, and the
+door runs the same guard as everything else — a parked call comes back to that
+agent as an in-band error naming the approval id and telling it the approval is
+waiting in your human's own product, to be resolved there and the call retried.
+Never a silent success, and never a link: the door serves no approval UI of its
+own. Done is their own MCP client connected, signed in
+as one of their users, and one real ask answered from their API. Publishing to
+the MCP registry is a separate job, not part of being installed
+([`E-MCP-004`](/production/troubleshooting/e-mcp-004)).
+
+## In the backend
+
+**Skip everything above.** This path takes no CLI, no `init`, and nothing moved
+around — it starts from an empty project. There is no Continue link to arrive
+on and no `.vendo/` contract to write; if your human wants only an agent in
+their backend, none of steps 1 to 4 apply. The one page for it:
+[`https://docs.vendo.run/backend/quickstart.md`](/backend/quickstart).
+
+One package and one call at module scope. `agent()` is the only export of the
+three — the object it returns carries the other two:
+
+```bash
+npm install @vendoai/agents ai zod
+```
+
+- `chat(message)` is one turn and the answer, with no route and no stream in
+  the way.
+- `handler()` is the whole agent as one fetch handler — the chat turn, the
+  thread list and transcript, and the approvals wire — mounted on one
+  catch-all route.
+- `run(task)` is work nobody is watching.
+
+Left unset, the agent thinks in this process, and threads and audit rows are
+persisted automatically with zero setup.
+
+**Guard and done on this path.** The UI stays the host's, so approvals do not
+render themselves — they come back in the turn. Every result is a `TurnResult`:
+`ok` carries the typed `output`, and `interrupted` carries the `interruptions`
+a person has to answer plus a `resume(decisions)` that carries on from exactly
+where it stopped. `resume()` is not a rerun. A tool graded `write` or above is
+one the guard asks about every time, so the very FIRST `chat()` on a fresh
+agent usually comes back `interrupted` with nothing run — that is the guard
+working, not a broken install. Done is one real turn, driven from their own
+backend, answering from their own API.
 
 ## Rules of engagement
 
@@ -478,9 +624,6 @@ yours.
   registered in `vendo/registry.tsx` exist, and only with the props their
   schemas declare. Only tools in `.vendo/tools.json` exist. Copy real names
   from source; see [tools and catalog](/generated/host-components).
-- **Doctor green is the only definition of done.** `vendo doctor --json`
-  exiting 0 (no `broken` checks) is complete; anything less is not, and
-  nothing more is required.
 - **Run `vendo init` before touching `.vendo/`.** Init writes the whole
   `.vendo/` contract (`tools.json`, `overrides.json`, `policy.json`,
   `brief.md`, `theme.json`) itself, and the AI grading pass writes
@@ -511,13 +654,14 @@ yours.
 | Surface | What it serves |
 | --- | --- |
 | `https://vendo.run/agents.md` | This playbook as raw Markdown (append `.md` to any docs page) |
+| `https://docs.vendo.run/product/quickstart.md` | The in-product path: the provider, the overlay, and slots |
 | `https://docs.vendo.run/existing-agent/quickstart.md` | The tool-pack path for hosts that already have an agent |
-| `https://docs.vendo.run/backend/quickstart.md` | The backend path: `agent()`, `respond()`, `run()`, and no Vendo UI to mount |
+| `https://docs.vendo.run/backend/quickstart.md` | The backend path: one package, `agent()`, `chat()`, `handler()`, `run()` — no CLI and no Vendo UI to mount |
 | `https://vendo.run/auth.md` | The raw claim-ceremony protocol behind `vendo login` |
 | `https://docs.vendo.run/llms.txt` | Index of every docs page for LLM ingestion (also at `/.well-known/llms.txt`) |
 | `https://docs.vendo.run/llms-full.txt` | The whole docs site as one file |
 | `npx vendo init --agent` | Init's setup questions as one JSON object, answered back as flags on a re-run |
-| `npx vendo sync --json --ai` | One machine-readable sync report object on stdout. Pass `--ai`: a sync that cannot ask reports `judgment: skipped`, and every ungraded tool then asks before each call. Do NOT pass it to `init --agent` — init rejects that pair, because in agent mode the judgment is yours. |
+| `npx vendo sync --json --ai` | One machine-readable sync report object on stdout. `--ai` is what grades non-interactively: WITHOUT it a run that cannot ask reports `judgment: skipped`, and every ungraded tool then asks before each call. `init --agent` takes the same flag and grades by default. |
 | `.claude/skills/vendo-setup/` | Setup skill shipped in the npm tarball; init writes it when `.claude/` exists and it is missing, and never overwrites an edited copy |
 
 See the [CLI reference](/reference/cli) for every flag and exit code.

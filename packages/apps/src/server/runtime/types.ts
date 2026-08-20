@@ -695,13 +695,20 @@ export interface AppsRuntime {
    * one reads as a current constraint. Both are capped here (`app-memory.ts`)
    * rather than in the schema, so a stored row survives a cap that changes.
    *
+   * `landed` is the other half of an `ask` on a REMIX, and only there: the wish
+   * list replays on every Update, so only a change that reached the screen
+   * belongs on it. The ask itself is recorded either way.
+   *
    * There is deliberately no second row-write door for this. Every caller —
    * `vendo_make`'s create arms, its edit arm, the screen assembler's decisions —
    * comes through here, which is also the one place the `editor` level is
    * checked. A caller treats a rejection as a non-event: memory is never worth
    * failing a make over.
    */
-  remember(input: { appId: AppId; ask?: string; decisions?: string }, ctx: RunContext): Promise<void>;
+  remember(
+    input: { appId: AppId; ask?: string; decisions?: string; landed?: boolean },
+    ctx: RunContext,
+  ): Promise<void>;
   /**
    * The capped version log.
    *

@@ -224,17 +224,6 @@ html.dark img[src$="/images/logos/mastra.svg"] {
   color: rgba(243, 242, 247, 0.82);
 }
 
-/* The prompt is literal one-span-per-line markup (Mintlify strips JSX
-   expressions from SSR, so real newlines can't survive). Blocks restore the
-   line breaks; the gap class is the blank line between paragraphs. */
-.vendo-agent-prompt-line {
-  display: block;
-}
-
-.vendo-agent-prompt-line-gap {
-  margin-top: 1lh;
-}
-
 /* Masking the text rather than painting a gradient over it: the prompt fades
    into whatever the card's background happens to be, in either theme. */
 .vendo-agent-prompt-clip:not([data-expanded]) .vendo-agent-prompt-pre {

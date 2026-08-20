@@ -162,6 +162,41 @@ export const appRecordInput = (
   };
 };
 
+/** In-flight writers, per app row. Cleared by the last one out. */
+const rowWriters = new Map<AppId, Promise<unknown>>();
+
+/**
+ * One writer at a time on an app row — read included.
+ *
+ * A save asserts the row is still byte-identical to the baseline it computed
+ * over and REFUSES otherwise (`assertCurrent`, doors/write-surface.ts), because a
+ * document computed over a stale row would revert the edit that landed there.
+ * That assertion cannot tell an edit from a write that is not one, so the
+ * live-props courier — which writes `seed.props` whenever the host re-renders,
+ * and mints no version because the person changed nothing — killed one ✦ mint in
+ * three with `app changed under this save`.
+ *
+ * Ordering the two writers is what keeps that assertion STRICT. Loosening it
+ * instead is what would let a genuine concurrent edit be reverted, and a writer
+ * that does not come through here is still refused exactly as before.
+ *
+ * Per process, like `buildsInFlight` (doors/placement-surface.ts): it closes the
+ * window between two requests the same host serves, which is where the courier
+ * and the mint it races both live.
+ */
+export const onAppRow = async <T>(appId: AppId, write: () => Promise<T>): Promise<T> => {
+  // `then(write, write)` because a writer ahead that THREW still had its turn:
+  // the queue orders writers, it does not couple their outcomes.
+  const mine = (rowWriters.get(appId) ?? Promise.resolve()).then(write, write);
+  const queued = mine.catch(() => undefined);
+  rowWriters.set(appId, queued);
+  try {
+    return await mine;
+  } finally {
+    if (rowWriters.get(appId) === queued) rowWriters.delete(appId);
+  }
+};
+
 /** Bounded read-mutate-CAS on the app row; the store's revision receipt
  *  arbitrates racers (a row that carries no revision falls back to put). */
 export const updateAppRow = async (
