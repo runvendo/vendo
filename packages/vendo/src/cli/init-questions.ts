@@ -94,49 +94,20 @@ const devUrlQuestion = (port: number): InitQuestion => ({
   ],
 });
 
-const SERVICE_KEY_PROMPT = "Will your own backend call these tools machine to machine, like a nightly job? If yes I'll set up a service key.";
-
-const POSTURE: InitQuestion = {
-  id: "posture",
-  prompt: "When an outside agent connects, its user always signs in with your app's own login. Who should run the OAuth plumbing around that? Vendo can host it at yourcompany.mcp.vendo.run so none of it lives on your domain (recommended, uses your new cloud account). Or your app serves it itself, also fine, zero config.",
+/** The MCP arm's ONE question, and the models question's twin: both are
+ *  answered by the same Cloud key, so an MCP run asks this instead of `models`
+ *  rather than beside it. Init no longer asks WHERE outside agents sign in —
+ *  that was a deployment fact nobody has at install time, and a key settles
+ *  both environments: the dev machine on its own door, the deployment on the
+ *  Cloud broker. */
+const MCP_SIGN_IN: InitQuestion = {
+  id: "mcp-sign-in",
+  prompt: "Vendo Cloud (recommended) or bring your own keys? One free Cloud key runs your models and signs outside agents in — on this machine while you develop, and through Vendo's broker once you deploy, with nothing to copy either way.",
   options: [
-    { label: "Vendo hosts the OAuth plumbing", flag: "--posture broker", recommended: true },
-    { label: "Your app serves it itself", flag: "--posture local" },
+    { label: "Vendo Cloud, free key", command: "npx vendo login --wait 90", recommended: true },
+    { label: "Own keys", flag: "--byo", note: "put the key in .env.local first, it never enters the chat" },
   ],
 };
-
-/** MCP's extras. They are relayed together and answered together — see the
- *  single gate in `initQuestions`.
- *
- *  Without a Cloud key there is no posture QUESTION: a keyless run cannot reach
- *  a broker, so local is simply the default (the same rule the terminal flow
- *  follows — init.ts's posture select only appears with a key in hand). Offering
- *  the broker anyway would write a tenant URL that does not exist and silently
- *  drop the service key with it, so the one remaining question carries the
- *  settled `--posture local` on both of its answers instead. */
-function mcpQuestions(cloudKey: boolean): InitQuestion[] {
-  if (!cloudKey) {
-    return [{
-      id: "service-key",
-      prompt: SERVICE_KEY_PROMPT,
-      options: [
-        { label: "Yes", flag: "--posture local --service-key" },
-        { label: "No", flag: "--posture local" },
-      ],
-    }];
-  }
-  return [
-    POSTURE,
-    {
-      id: "service-key",
-      prompt: SERVICE_KEY_PROMPT,
-      options: [
-        { label: "Yes", flag: "--service-key" },
-        { label: "No", note: "send the other answers without --service-key" },
-      ],
-    },
-  ];
-}
 
 const PRESETS = Object.keys(AUTH_FAMILY_INFO) as AuthPresetName[];
 
@@ -195,8 +166,8 @@ export async function initQuestions(input: {
   /** A model key is already in hand (env or .env.local), so the models
       question is settled and disappears on the re-run. */
   modelKey: boolean;
-  /** A Vendo Cloud key specifically — the only thing a broker posture can run
-      on, so it decides whether the MCP sign-in question exists at all. */
+  /** A Vendo Cloud key specifically — it settles sign-in for both environments
+      at once, so it decides whether the MCP arm's question exists at all. */
   cloudKey: boolean;
   /** The port the host's `dev` script names — the dev-URL question's prefill.
       Passed in rather than read here so the whole set stays assertable. */
@@ -217,14 +188,15 @@ export async function initQuestions(input: {
   if (options.auth === undefined) {
     questions.push(authQuestion({ ...(detected === undefined ? {} : { wired: detected }), matches: detection.matches.length }));
   }
-  if (!input.modelKey && options.byo !== true && options.cloudKey === undefined) questions.push(MODELS);
-  if (options.baseUrl === undefined) questions.push(devUrlQuestion(input.devPort));
-  // ONE gate for the MCP extras: they travel in the same relay, so `--posture`
-  // on the way back is what says they were answered. A bare `--service-key` has
-  // no "no" spelling, so gating on it would ask forever.
-  if (options.useCase === "mcp" && options.posture === undefined) {
-    questions.push(...mcpQuestions(input.cloudKey));
+  // A Cloud key answers the model AND how outside agents sign in, so the MCP
+  // arm asks its own spelling of the same question IN THE SAME SLOT — two
+  // questions with two identical answers is a question asked twice. Both close
+  // on the same evidence: a key in .env.local, or `--byo`.
+  if (!input.cloudKey && options.byo !== true && options.cloudKey === undefined) {
+    if (options.useCase === "mcp") questions.push(MCP_SIGN_IN);
+    else if (!input.modelKey) questions.push(MODELS);
   }
+  if (options.baseUrl === undefined) questions.push(devUrlQuestion(input.devPort));
   if (questions.length === 0) return null;
   return {
     status: "questions",

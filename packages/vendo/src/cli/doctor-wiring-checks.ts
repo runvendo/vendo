@@ -5,7 +5,7 @@ import { CLERK_PRESET_IMPORT, composesOwnStore, detectFramework, detectVendoWiri
 import { vendoPackageInvocation } from "./provider-deps.js";
 import { compositionModulePath, importsGeneratedMap, importsSplitComposition, missingRegistrations, registrationKey, requiredServerActions, serverActionsWiring } from "./init-scaffolds.js";
 import { readUseCase } from "./install-record.js";
-import { checkMcpBaseUrl } from "./doctor-mcp-checks.js";
+import { checkMcpBaseUrl, checkMcpSignInKeys } from "./doctor-mcp-checks.js";
 import { CLERK_ENV_GUIDANCE, clerkServerEnvSatisfied, SUPABASE_ENV_GUIDANCE, supabaseServerEnvSatisfied } from "./init-auth.js";
 import type { DoctorRun } from "./doctor-report.js";
 import { walk } from "./theme/walk.js";
@@ -323,6 +323,7 @@ export async function checkWiring(run: DoctorRun): Promise<void> {
   // Static, so it fires on a project nobody has started yet — which is exactly
   // when a missing base URL is still cheap to fix.
   await checkMcpBaseUrl(run);
+  await checkMcpSignInKeys(run);
   await checkPresetEnv(run);
   await checkTenantConnectorVault(run);
 

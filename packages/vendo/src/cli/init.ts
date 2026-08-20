@@ -5,6 +5,7 @@ import { stdin, stdout } from "node:process";
 import { scrubErrorDetail, type Telemetry } from "@vendoai/telemetry";
 import { detectDepVersions, installedAiVersion } from "./dep-versions.js";
 import { ensureEnvLocalIgnored, runCloudStep, upsertEnvLocal, type CloudStepOptions } from "./cloud-init.js";
+import { runDeviceLogin } from "./cloud/device-login.js";
 import type { InitPolishSeam } from "./init-judgment.js";
 import { BROKER_NEEDS_HTTPS, planMcp, SERVICE_KEY_ON_BROKER, wellFormedServiceKey, type McpPosture } from "./init-mcp.js";
 import { initQuestions } from "./init-questions.js";
@@ -121,6 +122,10 @@ interface InitFacts {
   wrote: string[];
   detected: { framework: string; auth: string; packageManager: string; port: number };
   guardPosture: string;
+  /** MCP arm with a Cloud key: the one line saying what that key settled for
+      both environments. Absent everywhere else — a run with no key cannot
+      promise a deployment anything. */
+  signIn?: string;
   continueUrl: string;
   /** Slots the extraction was unsure of and KEPT as extracted. Nothing blocks
       on them: init asks nothing once the question phase is over. */
@@ -201,9 +206,14 @@ export interface InitOptions {
       and a public URL in .env.local would repoint local dev's discovery,
       callbacks and credential forwarding at the deployed origin. */
   baseUrl?: string;
-  /** --posture: how outside agents sign in (MCP use case only). */
+  /** --posture: which authorization server fronts the door (MCP use case
+      only). No longer a question — a Cloud key answers both environments at
+      once — so this is the escape hatch for a host that wants a
+      Cloud-fronted-only door and no sign-in key on its dev machine. */
   posture?: McpPosture;
-  /** --service-key: set up a machine-to-machine key (MCP use case only). */
+  /** --service-key: the dev sign-in key, which a local door wires by default.
+      `false` is the explicit opt-out (no flag spells it; a programmatic caller
+      can). MCP use case only. */
   serviceKey?: boolean;
   /** --ai / --no-ai (`--ai-polish` is the legacy spelling of `--ai`): `true`
       runs the judgment pass with no prompt, `false` forces it off, and
@@ -246,7 +256,7 @@ export interface InitOptions {
   /** Test seam: interactivity override for the auth confirm (default: TTY),
       mirroring the judgment step's `interactive`. */
   interactive?: boolean;
-  /** Test seam: the use-case question, and the MCP posture select that hangs
+  /** Test seam: the use-case question, and the MCP sign-in select that hangs
       off it. Mirrors the auth picker's shape. */
   selectUseCase?: (question: string, options: SelectOption[]) => Promise<string>;
   /** Test seam: the free-text asks (the dev base URL). "" is "nobody was
@@ -631,23 +641,65 @@ async function continueUrl(root: string, useCase: InitUseCase): Promise<string> 
     : CONTINUE_URLS[useCase];
 }
 
-const POSTURE_OPTIONS: SelectOption[] = [
+/** The MCP arm's ONE question, and only for a run that holds no Cloud key.
+ *  Init used to ask WHERE outside agents sign in, and the answer was a
+ *  deployment fact nobody has at install time: the dev machine wants the door's
+ *  own OAuth (it works on http, zero config), the deployment wants the broker.
+ *  A Cloud key gives both, so the only thing left worth asking is whether they
+ *  want the key — which is also the models answer, so the two are one question.
+ */
+const SIGN_IN_QUESTION = "Vendo Cloud (recommended) or bring your own keys?";
+const SIGN_IN_OPTIONS: SelectOption[] = [
   {
-    value: "broker",
-    label: "Vendo Cloud broker — keys managed in the console, stable tenant URL, OAuth surface stays off your domain",
-    hint: "recommended with your Cloud account",
+    value: "cloud",
+    label: "Vendo Cloud — free key, one browser click",
+    hint: "recommended — runs your models, and outside agents sign in through it",
   },
-  { value: "local", label: "Local — your app serves its own OAuth (zero config, fully standard)" },
+  { value: "byo", label: "Bring my own keys" },
 ];
 
-/** Variant C. Init asks two more questions here and then WRITES what it
+/** The closing fact a Cloud-keyed MCP install owes its reader: BOTH environments
+    are answered, and neither one needed a decision. */
+const SIGN_IN_FACT =
+  "Sign-in: Vendo Cloud — dev runs on this machine; your deployment uses the Cloud broker automatically.";
+
+/** The `vendo login` ceremony, run inline from the MCP arm: the same device
+ *  login the cloud step runs, landing the minted VENDO_API_KEY in .env.local.
+ *  It can never fail the install — a declined, aborted or broken login leaves
+ *  the run on the bring-your-own path, which is a working install whose
+ *  deployment simply fronts its own sign-in. Returns whether a key landed. */
+async function mintCloudKey(input: {
+  root: string;
+  options: InitOptions;
+  output: Output;
+  pretty: PrettyOutput | null;
+}): Promise<boolean> {
+  const { root, options, output, pretty } = input;
+  // A secret is about to land on disk, so make the file safe to hold one BEFORE
+  // it holds one — the same order the cloud step uses.
+  await ensureEnvLocalIgnored(root, output);
+  const login = options.cloud?.deviceLogin ?? (() => runDeviceLogin([], {
+    output,
+    root,
+    env: options.env ?? process.env,
+    // init picks the key up in this same run, so the standalone re-run hint is
+    // noise, and a rail on screen makes the machine-readable receipt noise too.
+    rerunHint: false,
+    ...(pretty === null ? {} : { pretty: true }),
+  }));
+  if (await login().catch(() => 1) === 0) return true;
+  output.error(
+    "warning: Vendo Cloud sign-in did not complete — continuing with your own keys. "
+    + "Run `vendo login` and re-run `vendo init` to switch.",
+  );
+  return false;
+}
+
+/** Variant C. Init asks at most ONE question here and then WRITES what it
  *  legitimately owns: it creates the composition file, so putting `mcp: true`
  *  and a serviceAuth key into a file it is authoring is not editing anyone's
- *  code. It never discovers posture and never reaches a broker — the operator's
- *  environment values live on the continue page.
- *
- *  The posture select only appears when the run holds a Cloud key: a keyless
- *  run cannot use a broker, so local is simply the default. */
+ *  code. It never reaches a broker — the operator's environment values live on
+ *  the continue page. */
 async function planMcpScaffold(input: {
   root: string;
   options: InitOptions;
@@ -663,20 +715,37 @@ async function planMcpScaffold(input: {
       refusal below is the only thing that still reads it: a Cloud-fronted door
       cannot stand on an http origin. Null when the run could not ask. */
   baseUrl: string | null;
-}): Promise<{ modelWritten: ScaffoldPlan["modelWritten"]; serviceAuthUnwired: boolean } | null> {
-  const { root, options, output, pretty, interactive, changes, framework, authWired, cloudKey, models, baseUrl } = input;
-  const ask = options.yes === true || !interactive;
+}): Promise<{
+  modelWritten: ScaffoldPlan["modelWritten"];
+  serviceAuthUnwired: boolean;
+  /** The closing sign-in line, or null when this run has no Cloud key to make
+      the claim with. */
+  signIn: string | null;
+  /** Does the run hold a Cloud key now? Only ever MORE true than the cloud
+      step's answer: the sign-in question can mint one after that step ran, and
+      the install record reads the key its wiring will actually resolve. */
+  cloudKey: boolean;
+} | null> {
+  const { root, options, output, pretty, interactive, changes, framework, authWired, models, baseUrl } = input;
+  const unattended = options.yes === true || !interactive;
 
-  let posture: McpPosture = options.posture ?? "local";
-  if (options.posture === undefined && cloudKey && !ask) {
+  // The one question the MCP arm still owns, asked only when nothing has
+  // answered it yet. An unattended run never reaches it: a browser must not
+  // open for someone who never asked for one.
+  let cloudKey = input.cloudKey;
+  if (!cloudKey && !unattended) {
     const select = options.selectUseCase ?? (pretty === null ? plainSelect : pretty.select);
-    posture = (await select("How should outside agents sign in?", POSTURE_OPTIONS)) as McpPosture;
+    if (await select(SIGN_IN_QUESTION, SIGN_IN_OPTIONS) === "cloud") {
+      cloudKey = await mintCloudKey({ root, options, output, pretty });
+    }
   }
 
-  // `cli.ts` refuses the flag pair it can read off argv. A posture chosen at
-  // the SELECT never reaches argv, so the same mistake arrived here and the key
-  // was dropped in silence — the one path where a user could still believe it
-  // landed. Same explanation, same way out, one lead-in for each arrival.
+  const posture: McpPosture = options.posture ?? "local";
+
+  // `cli.ts` refuses the flag pair it can read off argv; a programmatic caller
+  // reaches this function without passing through it, and dropping the key in
+  // silence is the one outcome where a user could still believe it landed. Same
+  // explanation, same way out, one lead-in for each arrival.
   if (options.serviceKey === true && posture === "broker") {
     throw new VendoError("validation", `--service-key does not apply to the broker posture you chose: ${SERVICE_KEY_ON_BROKER}`);
   }
@@ -687,14 +756,15 @@ async function planMcpScaffold(input: {
     throw new VendoError("validation", `The Vendo Cloud broker cannot front a door at ${baseUrl}: ${BROKER_NEEDS_HTTPS}`);
   }
 
-  // Local doors only. A Cloud-fronted door's service key is provisioned with
-  // the tenant and listed, rotated and revoked in the console, so asking here
-  // would offer a decision init cannot act on.
-  let serviceKey = options.serviceKey === true;
-  if (options.serviceKey === undefined && !ask && posture === "local") {
-    const confirm = options.confirmAuth ?? (pretty === null ? askYesNo : pretty.confirm);
-    serviceKey = await confirm("Will your own backend call these tools machine-to-machine?", false);
-  }
+  // Wired by DEFAULT, and never asked about. The key lands in `.env.local`,
+  // which is dev-only and gitignored (this run verifies it), and the
+  // composition reads the variable at boot — so the pin holds sign-in on this
+  // machine and cannot ride to production through git. The deployment finds no
+  // VENDO_SERVICE_KEY, and the runtime ladder hands it the Cloud broker
+  // (compose-mcp.ts's `declaredBrokerage`). Both environments are answered, so
+  // there is nothing to choose between. A Cloud-fronted door provisions its own
+  // key with the tenant, so `--posture broker` still wires none.
+  const serviceKey = options.serviceKey ?? posture === "local";
 
   const composition = await compositionModulePath(root);
   const appDir = await appDirectory(root);
@@ -766,6 +836,10 @@ async function planMcpScaffold(input: {
     // not in the composition. Init never rewrites a file it did not author, so
     // that one line is the developer's — at the continue URL, not here.
     serviceAuthUnwired: planned === undefined && mcp.serviceKeyValue !== undefined,
+    // Claimed only where BOTH halves are true: a broker-only door serves no
+    // sign-in on this machine, so saying dev runs here would be a lie.
+    signIn: cloudKey && serviceKey ? SIGN_IN_FACT : null,
+    cloudKey,
   };
 }
 
@@ -1197,10 +1271,8 @@ async function unattendedDefaultLines(input: {
       lines.push("model key: only what is already in the environment — no login offer, so a keyless host cannot answer one turn — --byo, or --cloud-key <key>");
     } else if (question.id === "dev-url") {
       lines.push(`VENDO_BASE_URL: not written — your own agent loop, any backend process and the MCP door each fail their FIRST tool call without it — --base-url ${devBaseUrl(await devPort(root))}`);
-    } else if (question.id === "posture") {
-      lines.push("MCP sign-in: local — your app serves its own OAuth — --posture local | broker");
-    } else if (question.id === "service-key") {
-      lines.push("service key: none minted — --service-key if your backend calls these tools machine-to-machine");
+    } else if (question.id === "mcp-sign-in") {
+      lines.push("sign-in and model: your own keys — no browser opens, and your deployment fronts its own sign-in — --byo, or run `vendo login` first for a free Vendo Cloud key");
     }
   }
   // Never one of `initQuestions`' relayed questions (it is mechanical, not a
@@ -1687,6 +1759,7 @@ async function emitEnding(input: {
   keptUncertain: string[];
   pendingLoosenings: number;
   serviceAuthUnwired: boolean;
+  signIn: string | null;
   judged: boolean;
 }): Promise<void> {
   const { root, options, output, useCase, framework, wrote, keptUncertain, pendingLoosenings } = input;
@@ -1702,6 +1775,7 @@ async function emitEnding(input: {
       port: await devPort(root),
     },
     guardPosture: GUARD_POSTURE,
+    ...(input.signIn === null ? {} : { signIn: input.signIn }),
     continueUrl: await continueUrl(root, useCase),
     keptUncertain,
     pendingLoosenings,
@@ -1723,6 +1797,7 @@ async function emitEnding(input: {
   output.log(`\nWired: ${facts.wrote.join(", ")}`);
   output.log(`Detected: ${name} · ${family} · ${packageManager} · port ${port}`);
   output.log(`Guard: ${facts.guardPosture}`);
+  if (facts.signIn !== undefined) output.log(facts.signIn);
   if (facts.keptUncertain.length > 0) {
     output.log(`Kept as extracted (uncertain): ${facts.keptUncertain.join(", ")}`);
   }
@@ -1864,8 +1939,8 @@ export async function runInit(input: InitOptions): Promise<number> {
     // refuses a non-https origin). It used to be asked at the very end, minutes past
     // the AI pass, by which point the person who started the install had walked
     // away; the MCP arm always needed it up here anyway, since the door derives
-    // every discovery URL from it. The MCP arm's own two questions follow, and
-    // then nothing in this run prompts again.
+    // every discovery URL from it. The MCP arm's own single question follows,
+    // and then nothing in this run prompts again.
     const baseUrl = await captureDevBaseUrl({ root, options, output, pretty });
 
     const consent = await askJudgmentUpFront({ root, env, options, pretty });
@@ -1892,7 +1967,9 @@ export async function runInit(input: InitOptions): Promise<number> {
 
     const modelKey = await recordedModelKey({
       root, models, landed: modelLanded,
-      cloudKeyValid: cloud.keyValid,
+      // The MCP arm's sign-in question can mint a key AFTER the cloud step ran,
+      // and the record must name the key this install's wiring will resolve.
+      cloudKeyValid: cloud.keyValid || mcp?.cloudKey === true,
       authoredComposition: compositionPath !== null,
     });
 
@@ -2005,6 +2082,7 @@ export async function runInit(input: InitOptions): Promise<number> {
       wrote: [...planned, ...changes.map((change) => change.path)],
       pendingLoosenings: flow.judged.queued,
       serviceAuthUnwired: mcp?.serviceAuthUnwired === true,
+      signIn: mcp?.signIn ?? null,
       judged: flow.judged.ran,
     });
 

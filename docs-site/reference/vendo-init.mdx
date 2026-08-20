@@ -140,7 +140,7 @@ The `status` field tells the two runs apart, so an agent never has to guess whet
 | `questions` | `detected` (framework and any auth preset), and `questions`: each one a chat-ready `prompt` with its `options` |
 | `written` | `wrote` (every file of the install), `pasteEdits` (the mount and any other paste), `tools`, `riskRecommendations`, and `judgment`, whose `checklist` names the four calls only a reader of the code can make |
 
-The answer flags are the ones init already has: `--use-case`, `--auth`, `--cloud-key` or `--byo`, `--base-url`, and on the MCP path `--posture` and `--service-key`. Nothing else is asked. The `zod` bump, uncertain theme slots, and the closing live check never surface in agent mode. They take exactly the defaults `--yes` takes.
+The answer flags are the ones init already has: `--use-case`, `--auth`, `--cloud-key` or `--byo`, and `--base-url`. Nothing else is asked — the MCP path asks no extra question of its own, it asks the Cloud one in its own words, and `--cloud-key`/`--byo` answer it. The `zod` bump, uncertain theme slots, and the closing live check never surface in agent mode. They take exactly the defaults `--yes` takes.
 
 ## Every flag
 
@@ -157,8 +157,8 @@ The answer flags are the ones init already has: `--use-case`, `--auth`, `--cloud
 | `--theme <slot=value>` | repeatable | answers an uncertain theme slot |
 | `--framework <name>` | `next`, `express`, `custom` | overrides framework detection |
 | `--engine <name>` | `claude`, `codex`, `npx` | pins the AI-pass engine instead of first-available |
-| `--posture <name>` | `local`, `broker` | how outside agents sign in. `--use-case mcp` only |
-| `--service-key` | | generate a machine-to-machine service key. `--use-case mcp` only |
+| `--posture <name>` | `local`, `broker` | which authorization server fronts the door. Not asked — `broker` opts out of the dev sign-in key. `--use-case mcp` only |
+| `--service-key` | | the dev sign-in key, which a local door wires by default. `--use-case mcp` only |
 | `--yes` | | skip every prompt and take the detected defaults |
 | `--agent` | | ask through a coding agent: print the questions as JSON, or write when the answers ride along |
 | `--force` | | regenerate Vendo-owned files under `.vendo/`. Never replaces host source |

@@ -76,6 +76,7 @@ export const DOCTOR_ERROR_CODES = {
   "E-MCP-007": "the local MCP registry auth challenge is malformed",
   "E-MCP-008": "RETIRED — doctor no longer fetches the live registry auth challenge",
   "E-MCP-009": "the MCP door is wired but VENDO_BASE_URL is not set (discovery advertises the wrong origin)",
+  "E-MCP-010": "a dev sign-in key (VENDO_SERVICE_KEY) is set alongside a Cloud key on an https deployment, so the door serves its own OAuth instead of the Cloud broker",
   "E-SCHED-001": "RETIRED — doctor no longer reads machines and schedules off a running app",
   "E-TURN-001": "RETIRED — doctor no longer runs a model turn",
   "E-TURN-002": "RETIRED — doctor no longer runs a model turn",

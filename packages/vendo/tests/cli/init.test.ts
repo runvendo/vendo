@@ -947,7 +947,7 @@ describe("vendo init (zero-question)", () => {
     const composition = await readFile(join(root, "lib", "vendo.ts"), "utf8");
     expect(composition).toContain(`import { anthropic } from "@ai-sdk/anthropic";`);
     expect(composition).toContain(`  models: { default: anthropic("claude-sonnet-4-6") }, // ANTHROPIC_API_KEY supplies the key`);
-    expect(composition).toContain("mcp: true,");
+    expect(composition).toContain('mcp: serviceKey === "" ? true : { serviceAuth: { keys: [serviceKey] } },');
     // One selection per host, across BOTH files init wrote on this path.
     expect(`${route}${composition}`.match(/models:/g)).toHaveLength(1);
     expect(`${route}${composition}`.match(/@ai-sdk\/anthropic/g)).toHaveLength(1);
@@ -1737,36 +1737,33 @@ describe("vendo init --agent (ask first, then write)", () => {
     expect(sink.logs.join("\n")).not.toContain("Judgment: delegated to you");
   });
 
-  it("asks MCP's two extra questions on the re-run that picked mcp", async () => {
+  /** The MCP arm used to relay TWO extra questions — where outside agents sign
+      in, and whether a backend needs a service key — and neither is an answer
+      anybody has at install time. One Cloud key settles sign-in for BOTH
+      environments, so the arm asks whether they want the key, and that is all.
+      It takes the models question's slot rather than standing beside it: two
+      questions with the same two answers is one question asked twice. */
+  it("relays the MCP arm's one Cloud question, and drops it the moment a key exists", async () => {
     const root = await fixture();
-    await writeFile(join(root, ".env.local"), `VENDO_API_KEY=vnd_${"c".repeat(40)}\n`);
     const sink = output();
     expect(await run(root, sink, { agent: true, useCase: "mcp", auth: "clerk" })).toBe(0);
     const asked = questionsOf(sink.logs);
     // The dev URL rides along on every path, MCP included — the door's own
     // discovery derives from it.
-    expect(asked.questions.map((question) => question.id)).toEqual(["dev-url", "posture", "service-key"]);
-    const byId = (id: string): InitQuestions["questions"][number] | undefined =>
-      asked.questions.find((question) => question.id === id);
-    expect(byId("posture")?.prompt).toContain("yourcompany.mcp.vendo.run");
-    expect(byId("posture")?.options[0]?.flag).toBe("--posture broker");
-    expect(byId("service-key")?.prompt).toContain("machine to machine");
-    expect(byId("service-key")?.options[0]?.flag).toBe("--service-key");
-  });
+    expect(asked.questions.map((question) => question.id)).toEqual(["mcp-sign-in", "dev-url"]);
+    const signIn = asked.questions.find((question) => question.id === "mcp-sign-in")!;
+    expect(signIn.options[0]).toMatchObject({ command: "npx vendo login --wait 90", recommended: true });
+    expect(signIn.options[1]?.flag).toBe("--byo");
+    // The deleted question, in every spelling it ever had.
+    expect(JSON.stringify(asked)).not.toContain("posture");
+    expect(JSON.stringify(asked)).not.toContain("service-key");
+    expect(JSON.stringify(asked)).not.toContain("OAuth");
 
-  /** A keyless run cannot reach a broker, so posture is not a decision — the
-      terminal flow never shows that select either. Offering it here would write
-      a tenant URL that does not exist and drop the service key with it. */
-  it("never offers the broker to a host with no Cloud key: the one MCP question settles posture", async () => {
-    const root = await fixture();
-    const sink = output();
-    expect(await run(root, sink, { agent: true, useCase: "mcp", auth: "clerk", byo: true })).toBe(0);
-    const asked = questionsOf(sink.logs);
-    expect(asked.questions.map((question) => question.id)).toEqual(["dev-url", "service-key"]);
-    expect(JSON.stringify(asked)).not.toContain("broker");
-    // Both answers carry the settled posture, so the SAME gate closes.
-    expect(asked.questions.find((question) => question.id === "service-key")?.options.map((option) => option.flag))
-      .toEqual(["--posture local --service-key", "--posture local"]);
+    // …and with a key in .env.local the MCP arm has nothing left to ask.
+    await writeFile(join(root, ".env.local"), `VENDO_API_KEY=vnd_${"c".repeat(40)}\n`);
+    const keyed = output();
+    expect(await run(root, keyed, { agent: true, useCase: "mcp", auth: "clerk" })).toBe(0);
+    expect(questionsOf(keyed.logs).questions.map((question) => question.id)).toEqual(["dev-url"]);
   });
 
   /** detectAuthPreset reports `wired: null` when two families match, precisely
@@ -2404,7 +2401,7 @@ describe("the five questions", () => {
       interactive: true,
       askText: async (_question, _hint, prefill) => prefill ?? "",
       confirmAuth: async () => false,
-      selectUseCase: async () => "local",
+      selectUseCase: async () => "byo",
     })).toBe(0);
 
     expect(await readFile(join(root, ".env.local"), "utf8")).toContain("VENDO_BASE_URL=http://localhost:4300");
@@ -2427,11 +2424,11 @@ describe("the five questions", () => {
       .toMatchObject({ status: "ok", message: expect.stringContaining("VENDO_BASE_URL is set") });
   });
 
-  // The flag pair is refused in cli.ts, which reads argv. A posture CHOSEN at
-  // the select never reaches argv, so the same mistake arrived here silently
-  // and the key was dropped — the one path where a user could still believe it
-  // landed. Same refusal, same words, whichever way they got here.
-  it("refuses a service key when the broker posture is chosen at the select, not only when it is a flag", async () => {
+  // The flag pair is refused in cli.ts, which reads argv. A programmatic caller
+  // never passes through it, so the same mistake arrived here silently and the
+  // key was dropped — the one path where a user could still believe it landed.
+  // Same refusal, same words, whichever way they got here.
+  it("refuses a service key on a broker door however the pair arrived, not only off argv", async () => {
     const root = await fixture();
     const sink = output();
     expect(await run(root, sink, {
@@ -2440,8 +2437,8 @@ describe("the five questions", () => {
       baseUrl: "http://localhost:3000",
       interactive: true,
       serviceKey: true,
+      posture: "broker",
       cloud: { cloudProbe: async () => ({ present: true, ok: true, unlocks: [] as readonly string[] }) },
-      selectUseCase: async () => "broker",
       askText: async (_question, _hint, prefill) => prefill ?? "",
       confirmAuth: async () => false,
     })).toBe(1);
@@ -2453,18 +2450,17 @@ describe("the five questions", () => {
     // It refuses INSTEAD of writing: no composition landed on the way out.
     expect(await readdir(root)).not.toContain("lib");
 
-    // The control: the SAME broker posture with no key asked for is the
-    // recommended Cloud path and still writes. The guard fires on the key, not
-    // on the posture. (An https origin, because Cloud refuses to front any
-    // other — the refusal directly below.)
+    // The control: the SAME broker door with no key asked for still writes. The
+    // guard fires on the key, not on the door. (An https origin, because Cloud
+    // refuses to front any other — the refusal directly below.)
     const cloudOnly = await fixture();
     expect(await run(cloudOnly, output(), {
       useCase: "mcp",
       auth: "clerk",
       baseUrl: "https://app.acme.com",
       interactive: true,
+      posture: "broker",
       cloud: { cloudProbe: async () => ({ present: true, ok: true, unlocks: [] as readonly string[] }) },
-      selectUseCase: async () => "broker",
       askText: async (_question, _hint, prefill) => prefill ?? "",
       confirmAuth: async () => false,
     })).toBe(0);
@@ -2477,7 +2473,7 @@ describe("the five questions", () => {
   // previous question just captured and the Cloud posture cannot coexist. The
   // pair used to pass init and print `Wired (5 files)` over a door that was
   // already dead.
-  it("refuses the Cloud broker posture on an http origin instead of writing a door that cannot work", async () => {
+  it("refuses a Cloud-fronted door on an http origin instead of writing one that cannot work", async () => {
     const root = await fixture();
     const sink = output();
     expect(await run(root, sink, {
@@ -2485,8 +2481,8 @@ describe("the five questions", () => {
       auth: "clerk",
       baseUrl: "http://localhost:3004",
       interactive: true,
+      posture: "broker",
       cloud: { cloudProbe: async () => ({ present: true, ok: true, unlocks: [] as readonly string[] }) },
-      selectUseCase: async () => "broker",
       askText: async (_question, _hint, prefill) => prefill ?? "",
       confirmAuth: async () => false,
     })).toBe(1);
@@ -2500,6 +2496,160 @@ describe("the five questions", () => {
     // …and it refuses INSTEAD of reporting success over a dead door.
     expect(await readdir(root)).not.toContain("lib");
     expect(sink.logs.join("\n")).not.toContain("Wired");
+  });
+});
+
+/**
+ * Cloud once, and never a sign-in question.
+ *
+ * Init used to ask WHERE outside agents sign in. That answer is not one answer:
+ * the dev machine wants the door's own OAuth (it works on http, zero config)
+ * and the deployment wants the broker — and nobody knows their deployment while
+ * they are installing. A Cloud key settles both, because the runtime resolves
+ * the door per environment (compose-mcp.ts's `declaredBrokerage`) and the key
+ * init writes for the dev machine lives in `.env.local`, which never ships. So
+ * the only thing left worth asking is whether they want a key at all, and only
+ * when they have none.
+ */
+describe("the MCP arm asks about Cloud once, and never about sign-in", () => {
+  const serviceKeyIn = (envLocal: string): string | undefined =>
+    /^VENDO_SERVICE_KEY=(.+)$/m.exec(envLocal)?.[1];
+  const refuse = (what: string) => async (question: string): Promise<never> => {
+    throw new Error(`${what}: ${question}`);
+  };
+
+  /** A real key in the real file init reads, never a probe stub: "a key is in
+      hand" is the whole precondition, so a test that mocks the detection cannot
+      prove the run holds one. */
+  async function mcpHost(cloudKey = false): Promise<string> {
+    const root = await fixture();
+    await writeFile(join(root, "package.json"), JSON.stringify({
+      name: "host",
+      dependencies: { next: "16.0.0", "@clerk/nextjs": "7.0.0" },
+    }));
+    if (cloudKey) await writeFile(join(root, ".env.local"), `VENDO_API_KEY=vnd_${"e".repeat(40)}\n`);
+    return root;
+  }
+
+  /** Everything an interactive MCP run needs answered EXCEPT sign-in, with
+      every remaining prompt wired to throw — so a question that comes back
+      fails the test by name instead of by silence. */
+  const interactiveMcp = {
+    useCase: "mcp" as const,
+    auth: "clerk" as const,
+    baseUrl: "http://localhost:3000",
+    interactive: true,
+    askText: async (): Promise<string> => "",
+    confirmAuth: refuse("confirmed"),
+    selectUseCase: refuse("selected"),
+  };
+
+  /** The wiring a run holding a Cloud key lays down, with nobody asked. */
+  async function expectCloudWiring(root: string, logs: string): Promise<void> {
+    expect(serviceKeyIn(await readFile(join(root, ".env.local"), "utf8"))).toMatch(/^[0-9a-f]{64}$/);
+    expect(await readFile(join(root, "lib", "vendo.ts"), "utf8"))
+      .toContain('mcp: serviceKey === "" ? true : { serviceAuth: { keys: [serviceKey] } },');
+    expect(logs).toContain(
+      "Sign-in: Vendo Cloud — dev runs on this machine; your deployment uses the Cloud broker automatically.",
+    );
+  }
+
+  it("wires both environments in silence when a Cloud key is already in hand", async () => {
+    const root = await mcpHost(true);
+    const sink = output();
+    expect(await run(root, sink, { ...interactiveMcp, cloud: {} })).toBe(0);
+
+    await expectCloudWiring(root, sink.logs.join("\n"));
+    // The deleted question, and the vocabulary it taught.
+    const everything = [...sink.logs, ...sink.errors].join("\n");
+    expect(everything).not.toContain("How should outside agents sign in?");
+    expect(everything).not.toMatch(/posture/i);
+    expect(everything).not.toContain("serves its own OAuth");
+    expect(everything).not.toContain("machine-to-machine");
+  });
+
+  it("offers the key once when there is none, and runs the login inline", async () => {
+    const root = await mcpHost();
+    const sink = output();
+    let asked = "";
+    let logins = 0;
+    expect(await run(root, sink, {
+      ...interactiveMcp,
+      selectUseCase: async (question) => { asked = question; return "cloud"; },
+      cloud: {
+        ...NO_CLOUD,
+        deviceLogin: async () => {
+          logins += 1;
+          await writeFile(join(root, ".env.local"), `VENDO_API_KEY=vnd_${"d".repeat(40)}\n`);
+          return 0;
+        },
+      },
+    })).toBe(0);
+
+    expect(asked).toBe("Vendo Cloud (recommended) or bring your own keys?");
+    expect(logins).toBe(1);
+    await expectCloudWiring(root, sink.logs.join("\n"));
+    // The key the install records is the one its wiring will actually resolve —
+    // minted after the cloud step had already answered "no key".
+    expect(JSON.parse(await readFile(join(root, ".vendo", "install.json"), "utf8")))
+      .toMatchObject({ modelKey: "VENDO_API_KEY" });
+  });
+
+  /** A login that never completes must not take the install with it: the door
+      it would have written is the SAME door, minus the promise about the
+      deployment. Init states what it wired and moves on. */
+  it("finishes the install on the bring-your-own path when the login does not complete", async () => {
+    const root = await mcpHost();
+    const sink = output();
+    expect(await run(root, sink, {
+      ...interactiveMcp,
+      selectUseCase: async () => "cloud",
+      cloud: { ...NO_CLOUD, deviceLogin: async () => 1 },
+    })).toBe(0);
+
+    expect(sink.errors.join("\n")).toContain("Vendo Cloud sign-in did not complete");
+    expect(sink.logs.join("\n")).not.toContain("Sign-in: Vendo Cloud");
+    // The door still landed, and so did the key that signs dev in.
+    expect(await readFile(join(root, "app", ".well-known", "[...vendo]", "route.ts"), "utf8"))
+      .toContain("wellKnownVendoHandler");
+    expect(serviceKeyIn(await readFile(join(root, ".env.local"), "utf8"))).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it("opens no browser for a run that answered bring-your-own", async () => {
+    const root = await mcpHost();
+    const sink = output();
+    expect(await run(root, sink, {
+      ...interactiveMcp,
+      selectUseCase: async () => "byo",
+      cloud: { ...NO_CLOUD, deviceLogin: async () => { throw new Error("opened a browser"); } },
+    })).toBe(0);
+    expect(sink.logs.join("\n")).not.toContain("Sign-in: Vendo Cloud");
+    expect(await readFile(join(root, "lib", "vendo.ts"), "utf8"))
+      .toContain('mcp: serviceKey === "" ? true : { serviceAuth: { keys: [serviceKey] } },');
+  });
+
+  /** --yes is "take the defaults", and no default may open a browser. With a
+      key the defaults ARE the Cloud wiring; without one they are the keyless
+      install, stated out loud. */
+  it("takes the silent Cloud wiring under --yes with a key, and never logs in without one", async () => {
+    const keyed = await mcpHost(true);
+    const keyedSink = output();
+    expect(await run(keyed, keyedSink, {
+      useCase: "mcp", auth: "clerk", yes: true, baseUrl: "http://localhost:3000",
+      cloud: { deviceLogin: async () => { throw new Error("opened a browser"); } },
+    })).toBe(0);
+    await expectCloudWiring(keyed, keyedSink.logs.join("\n"));
+
+    const keyless = await mcpHost();
+    const keylessSink = output();
+    expect(await run(keyless, keylessSink, {
+      useCase: "mcp", auth: "clerk", yes: true, baseUrl: "http://localhost:3000",
+      cloud: { ...NO_CLOUD, deviceLogin: async () => { throw new Error("opened a browser"); } },
+    })).toBe(0);
+    expect(keylessSink.logs.join("\n")).not.toContain("Sign-in: Vendo Cloud");
+    // The door still opened; only the promise about the deployment is missing.
+    expect(await readFile(join(keyless, "app", ".well-known", "[...vendo]", "route.ts"), "utf8"))
+      .toContain("wellKnownVendoHandler");
   });
 });
 

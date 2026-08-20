@@ -1680,6 +1680,66 @@ describe("vendo doctor error codes + fix_refs", () => {
     });
   });
 
+  /**
+   * E-MCP-010 — the dev sign-in key, found on a deployment.
+   *
+   * `vendo init` writes VENDO_SERVICE_KEY into `.env.local`, which is dev-only
+   * and gitignored, so the pin that keeps sign-in on the developer's machine
+   * cannot ride to production through git. It can still get there by hand — and
+   * an explicit serviceAuth outranks the Cloud key beside it, so the deployment
+   * quietly serves its own OAuth instead of the broker its key already pays for.
+   * Nothing is broken, which is exactly why nothing else says so.
+   */
+  describe("E-MCP-010 — a dev sign-in key on a Cloud-keyed deployment", () => {
+    const CLOUD_KEY = `vnd_${"a".repeat(40)}`;
+    const SERVICE_KEY = "f".repeat(64);
+
+    async function doorHost(): Promise<string> {
+      const root = await healthy();
+      await mkdir(join(root, "lib"), { recursive: true });
+      await writeFile(join(root, "lib", "vendo.ts"),
+        'import { createVendo } from "@vendoai/vendo/server";\n'
+        + 'const serviceKey = process.env.VENDO_SERVICE_KEY ?? "";\n'
+        + 'export const vendo = createVendo({ mcp: serviceKey === "" ? true : { serviceAuth: { keys: [serviceKey] } } });\n');
+      return root;
+    }
+
+    const deployed = {
+      ...MODEL_PINNED,
+      VENDO_BASE_URL: "https://app.acme.com",
+      VENDO_API_KEY: CLOUD_KEY,
+      VENDO_SERVICE_KEY: SERVICE_KEY,
+    };
+
+    it("warns without failing, and names the variable to delete", async () => {
+      const { exit, report } = await jsonChecks({ targetDir: await doorHost(), env: deployed });
+      const check = report.checks.find((entry) => entry.id === "mcp/sign-in-keys");
+      expect(check).toMatchObject({ status: "warning", error_code: "E-MCP-010" });
+      expect(check?.message).toBe(
+        "dev sign-in key found alongside a Cloud key on an https deployment — delete VENDO_SERVICE_KEY to use the Cloud broker.",
+      );
+      expect(check?.fix_ref).toBe(doctorFixRef("E-MCP-010"));
+      // Advisory: a host may run its own door on purpose.
+      expect(exit).toBe(0);
+    });
+
+    /** Every leg of the AND, one at a time — a warning that fires on a dev
+        machine is a warning nobody reads. */
+    it.each([
+      ["the dev machine's own http origin", { ...deployed, VENDO_BASE_URL: "http://localhost:3000" }],
+      ["no Cloud key to be displacing", { ...deployed, VENDO_API_KEY: "" }],
+      ["no dev sign-in key at all", { ...deployed, VENDO_SERVICE_KEY: "" }],
+    ] as const)("stays silent on %s", async (_label, env) => {
+      const { report } = await jsonChecks({ targetDir: await doorHost(), env });
+      expect(report.checks.some((entry) => entry.id === "mcp/sign-in-keys")).toBe(false);
+    });
+
+    it("stays silent on a host with no door, whatever is in its environment", async () => {
+      const { report } = await jsonChecks({ targetDir: await healthy(), env: deployed });
+      expect(report.checks.some((entry) => entry.id === "mcp/sign-in-keys")).toBe(false);
+    });
+  });
+
   // The registry artifacts a published host keeps on disk. Absent files say
   // nothing; present ones are graded, with no registry round-trip.
   describe("the MCP registry artifacts on disk", () => {
