@@ -673,6 +673,15 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
             // A harness that throws is a bug in the thinker, not in the user's
             // day. The real error goes to the operator's terminal; the user gets
             // a plain sentence, and NOTHING of the internals travels.
+            // …and the cause with it. A transport fault's whole message is
+            // "fetch failed"; everything that tells a refused connect from a
+            // dropped socket is underneath. Kept as TEXT, because this detail is
+            // structured and a host's own sink may serialize it. A VendoError
+            // carries the reason on `detail` (the class takes no ErrorOptions),
+            // a native throw on `cause`.
+            const under = isVendoError(error)
+              ? (error.detail as { cause?: unknown } | undefined)?.cause
+              : (error as { cause?: unknown } | undefined)?.cause;
             log({
               code: "harnesses.runtime-run-failed",
               level: "error",
@@ -682,6 +691,7 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
                   harness: input.harness.name,
                   threadId: input.threadId,
                   error: error instanceof Error ? error.message : String(error),
+                  ...(under === undefined ? {} : { cause: String(under) }),
                 },
               },
             });

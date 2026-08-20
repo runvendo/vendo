@@ -35,7 +35,7 @@
  * resumes on the same session) and worse for cost (a parked write holds a
  * sandbox for up to 90s). Recorded in the lane's close note as a deviation.
  */
-import { log, VENDO_DEV_PORT, VENDO_DEV_PORT_ENV, VendoError, WARM_THREAD_PREFIX } from "@vendoai/core";
+import { isVendoError, log, VENDO_DEV_PORT, VENDO_DEV_PORT_ENV, VendoError, WARM_THREAD_PREFIX } from "@vendoai/core";
 import type { CheckoutFile, SyncFile, TreeState } from "../materialize.js";
 import { emptyTree } from "../materialize.js";
 import { MESSAGE_BUDGET_MS, type SessionMachine, type SessionMessage } from "./machine.js";
@@ -300,8 +300,29 @@ export async function boxMachine(options: BoxMachineOptions): Promise<SessionMac
     message: `[vendo] claude-code: box ready by ${served} in ${Date.now() - startedAt}ms`,
   });
 
-  const request = async (path: string, body?: unknown): Promise<Record<string, unknown>> => {
-    const { status, json } = await control(box.machine, box.token, path, body);
+  /**
+   * `repeatable` is the caller's promise that this call is the same twice — the
+   * workspace seam is (the same bytes to the same path; a read), a call that
+   * starts work is not. Only those may be replayed, because a transport fault
+   * carries no answer: whether the box applied the call is exactly what we do
+   * not know. The replay is instant — what died was a connection, not a quota.
+   */
+  const request = async (
+    path: string,
+    body?: unknown,
+    repeatable = false,
+  ): Promise<Record<string, unknown>> => {
+    const call = (): Promise<{ status: number; json: unknown }> =>
+      control(box.machine, box.token, path, body);
+    const { status, json } = await (repeatable ? call().catch(call) : call())
+      // `hello` reads a transport fault as "the box did not answer" and moves on;
+      // a call somebody is waiting on has to SAY so, in this file's own voice —
+      // undici's bare `TypeError: fetch failed` names neither the box nor Vendo.
+      // An adapter that already named its own failure keeps its sentence.
+      .catch((cause: unknown) => {
+        if (isVendoError(cause)) throw cause;
+        throw new VendoError("sandbox-unavailable", `box ${path} could not be reached`, { cause });
+      });
     if (status !== 200 && status !== 202) {
       // Carry the box's own sentence: a bare status turns every box problem
       // into a guessing game on the host side.
@@ -344,13 +365,13 @@ export async function boxMachine(options: BoxMachineOptions): Promise<SessionMac
             readOnly: file.readOnly,
             base64: Buffer.from(file.bytes).toString("base64"),
           })),
-        });
+        }, true);
       }
-      if (files.length === 0) await request("/session/workspace", { reset: true, files: [] });
+      if (files.length === 0) await request("/session/workspace", { reset: true, files: [] }, true);
     },
 
     async collect(paths) {
-      const answer = await request("/session/collect", paths === undefined ? {} : { paths });
+      const answer = await request("/session/collect", paths === undefined ? {} : { paths }, true);
       const files = Array.isArray(answer["files"]) ? answer["files"] : [];
       return files.flatMap((raw): SyncFile[] => {
         const entryFile = raw as { path?: unknown; base64?: unknown };
