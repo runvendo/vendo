@@ -144,6 +144,20 @@ jobs:
                   (dep) => dep.replace(/\d+\.\d+\.\d+/, version)));
             ' "$version" "$dir/package.json"
           done
+          # Fail closed on whatever the rewrite could not reach. That regex only
+          # moves EXACT pins, so a range (`^0.36.1`), a `pnpm.overrides` entry or
+          # anything else added to these files later would be skipped in silence
+          # while the PR still went out claiming it covered all three projects —
+          # the same shape of miss as vendo-web#608, one layer up. Every pin is
+          # exact today, so this is quiet until the day it is not.
+          for dir in . apps/console apps/console/checker; do
+            missed=$(grep -oE '"@vendoai/[^"]+": "[^"]+"' "$dir/package.json" \
+              | grep -v '^"@vendoai/telemetry"' | grep -vF ": \"$version\"") || true
+            if [ -n "$missed" ]; then
+              echo "::error::$dir/package.json still holds @vendoai deps the bump could not rewrite, so this release is only half applied: $missed"
+              exit 1
+            fi
+          done
           if git diff --quiet; then
             echo "vendo-web is already on $version"
             exit 0
