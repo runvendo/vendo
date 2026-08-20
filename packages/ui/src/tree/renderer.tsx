@@ -911,7 +911,11 @@ function StatefulTreeView({
     const prefix = `${slot}:`;
     for (const key of Object.keys(components)) {
       if (key.startsWith(prefix)) {
-        resolved[key.slice(prefix.length)] = components[key]!;
+        const bareKey = key.slice(prefix.length);
+        if (!Object.prototype.hasOwnProperty.call(resolved, bareKey)) {
+          resolved[bareKey] = components[key]!;
+        }
+        delete resolved[key];
       }
     }
     return resolved;

@@ -219,7 +219,7 @@ function MountedApp({ appId, placement, onParked }: { appId: string; placement?:
     if (error && !isLoading) return <SlotLoadFailed reason={error} onRetry={() => void refresh()} />;
     return <SlotGhost label="Loading app…" loading appId={appId} />;
   }
-  return <AppFrame key={appId} surface={surface} components={components} keepalive={keepalive} onParked={onParked} onAction={({ action, payload }) => client.apps.call(appId, action, payload ?? {})} />;
+  return <AppFrame key={appId} slot={id} surface={surface} components={components} keepalive={keepalive} onParked={onParked} onAction={({ action, payload }) => client.apps.call(appId, action, payload ?? {})} />;
 }
 
 /** A generated view pinned into a slot (08-ui §4 — "or a pinned component").
@@ -461,7 +461,7 @@ export function VendoSlot({ id, label, description, appId: appIdProp, pin, onAut
     // `reload` remounts the app, so Refresh is a real round trip through
     // get+open — and the wait is the shape-true skeleton, not a frozen view.
     ? <MountedApp key={reload} appId={appId} placement={resolvesItself ? { slotId: id, onChanged: () => void discovery.refresh() } : undefined} onParked={parked} />
-    : <AppFrame surface={{ kind: "tree", payload: pin!.payload }} components={components} data={pin!.data} onAction={pin!.onAction} onParked={parked} />;
+    : <AppFrame slot={id} surface={{ kind: "tree", payload: pin!.payload }} components={components} data={pin!.data} onAction={pin!.onAction} onParked={parked} />;
   const body = (
     <FluidReveal stateKey={appId ? `app:${appId}` : `pin:${id}`} initialExit={children}>
       <PinMount slot={id} fallback={Fallback}>{mounted}</PinMount>
