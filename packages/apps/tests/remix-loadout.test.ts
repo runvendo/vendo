@@ -35,6 +35,8 @@ import {
 import type { LanguageModel } from "ai";
 import { describe, expect, it } from "vitest";
 import type { SeedBaseline } from "../src/contract/index.js";
+import type { AgentToolsDataDependencies } from "../src/server/doors/agent-tools.js";
+import { runMakeTool } from "../src/server/doors/make-tool.js";
 import { createApps, type AppsConfig, type AppsRuntime } from "../src/server/index.js";
 import { guardFixture } from "../src/server/testing/guard-fixture.js";
 import { memoryStore } from "../src/server/testing/memory-store.js";
@@ -250,6 +252,36 @@ describe("an automation-shaped ask inside a remix (#1568)", () => {
     expect(receipt.status).toBe("failed");
     expect(receipt.say).toContain("main chat");
     expect(engine.creates).toEqual([]);
+  });
+});
+
+describe("the read that decides it (#1568)", () => {
+  it("fails CLOSED — a row it could not read back never reaches the automation door", async () => {
+    // `seed` is the only thing standing between a remix and that door, so a read
+    // that did not resolve is not a licence to arm one.
+    const engine = fakeAutomations();
+    const { runtime, store } = hostWith(engine);
+    await seedAppRow(engineOverAdapter(store), {
+      format: VENDO_APP_FORMAT,
+      id: "app_unreadable",
+      name: "Invoice board",
+      ui: "tree",
+    }, ctx.principal.subject);
+    const blind = new Proxy(runtime(), {
+      get: (target, property, receiver) => property === "get"
+        ? async () => { throw new Error("store hiccup"); }
+        : Reflect.get(target, property, receiver) as unknown,
+    });
+    const { call, updates } = makeCall({
+      request: "Add the totals row and refresh it every monday",
+      app: "app_unreadable",
+    });
+
+    const outcome = await runMakeTool(blind, {} as AgentToolsDataDependencies, call, ctx);
+
+    expect(engine.creates).toEqual([]);
+    expect(cardsIn(updates)).toEqual([]);
+    expect(receiptOf(outcome).say).toContain("main chat");
   });
 });
 

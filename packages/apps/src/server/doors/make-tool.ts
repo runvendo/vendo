@@ -381,13 +381,15 @@ const remixComponent = async (
 const ASKS_TO_RECUR = /\b(?:every|each)\s+(?:\d+\s+)?(?:minute|hour|day|night|morning|afternoon|evening|week|weekday|month|year|monday|tuesday|wednesday|thursday|friday|saturday|sunday)s?\b|\b(?:daily|hourly|nightly|weekly|monthly|on a schedule|on a timer)\b/i;
 
 /**
- * What a remix is told when the ask was automation-shaped: the redirect, never
+ * What the person is told when the door stayed shut: the redirect, never
  * silence. Conditional, because the sniff below is a WORD in the person's own
  * sentence and "Tracked monthly" is a caption, not a schedule — a sentence that
- * assumes it was a schedule would be wrong most of the time it appeared.
+ * assumes it was a schedule would be wrong most of the time it appeared. It says
+ * nothing about WHY, so it is equally true of a remix and of a row this door
+ * could not read back.
  */
 const SCHEDULE_ELSEWHERE = "If you also meant to have something run on a schedule, "
-  + "ask for it in the main chat — a remix only changes this view.";
+  + "that didn't get set up here — ask for it in the main chat.";
 
 /**
  * Arm the schedule the same ask asked for, on the app it just produced.
@@ -418,12 +420,19 @@ const withCompoundSchedule = async (
   const built = makeReceiptSchema.safeParse(outcome.output);
   if (!built.success) return outcome;
   const made = built.data;
-  const document = await runtime.get(made.id as AppId, ctx).catch(() => null);
-  // Ahead of the failed-build gate below, because a failure is the LOUDEST way
-  // to drop the ask: asked to "refresh this view every Monday morning", the
+  // `null` is an ANSWER (no such row, so not a remix); `undefined` is the read
+  // itself not resolving, and that FAILS CLOSED — `seed` is the only thing
+  // standing between a remix and the automation door, so a read that answered
+  // nothing is not a licence to arm one.
+  //
+  // Both ahead of the failed-build gate below, because a failure is the LOUDEST
+  // way to drop the ask: asked to "refresh this view every Monday morning", the
   // screen agent tries to build the schedule into the view, cannot, and the
   // person is told only that it did not go through (browser walk, 2026-08-20).
-  if (document?.seed !== undefined) return receipt({ ...made, say: `${made.say} ${SCHEDULE_ELSEWHERE}` });
+  const document = await runtime.get(made.id as AppId, ctx).catch(() => undefined);
+  if (document === undefined || document?.seed !== undefined) {
+    return receipt({ ...made, say: `${made.say} ${SCHEDULE_ELSEWHERE}` });
+  }
   if (made.status === "failed") return outcome;
   const authored = await runtime.automation
     .author({ appId: made.id as AppId, instruction: ask, mode: "goal" }, ctx)
