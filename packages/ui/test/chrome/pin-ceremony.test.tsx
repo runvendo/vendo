@@ -343,8 +343,8 @@ describe("the slot refreshes on the pin, not on the next poll tick", () => {
 
   /** The affordance's own reading of whether the pin landed, next to the button
    *  that takes it — `usePinNudge` is what settles a pin card into "pinned". */
-  function PinAndNudge({ appId }: { appId: string }) {
-    const pin = usePinAction();
+  function PinAndNudge({ appId, slot }: { appId: string; slot?: string }) {
+    const pin = usePinAction(slot);
     const nudge = usePinNudge(appId, true);
     return (
       <>
@@ -354,8 +354,10 @@ describe("the slot refreshes on the pin, not on the next poll tick", () => {
     );
   }
 
-  function PinButton() {
-    const pin = usePinAction();
+  /** `slot` is the destination `PlacementAction` reads off the registry and
+   *  hands the hook; omitted is a page that has reported none. */
+  function PinButton({ slot }: { slot?: string }) {
+    const pin = usePinAction(slot);
     return pin ? <button type="button" onClick={() => pin({ appId: "app_1", payload: {} })}>Pin</button> : null;
   }
 
@@ -367,9 +369,9 @@ describe("the slot refreshes on the pin, not on the next poll tick", () => {
     const onPin = vi.fn();
 
     render(
-      <VendoProvider client={client} onPin={onPin} pinSlot="hero">
+      <VendoProvider client={client} onPin={onPin}>
         <VendoSlot id="hero" />
-        <PinButton />
+        <PinButton slot="hero" />
       </VendoProvider>,
     );
     // The slot is polling (and empty) before the pin.
@@ -384,16 +386,16 @@ describe("the slot refreshes on the pin, not on the next poll tick", () => {
     expect(await screen.findByText("Invoices app surface", undefined, { timeout: 2500 })).toBeTruthy();
   });
 
-  it("offers the affordance on a host that wired a pinSlot and no onPin at all", async () => {
+  it("offers the affordance on a host that wired no onPin at all — a known slot is the whole wiring", async () => {
     const place = vi.spyOn(client.apps, "place");
     render(
-      <VendoProvider client={client} pinSlot="hero"><PinButton /></VendoProvider>,
+      <VendoProvider client={client}><PinButton slot="hero" /></VendoProvider>,
     );
     fireEvent.click(screen.getByRole("button", { name: "Pin" }));
     await waitFor(() => expect(place).toHaveBeenCalledWith("app_1", "hero"));
   });
 
-  it("hides the affordance when the host wired neither onPin nor a pinSlot", () => {
+  it("hides the affordance when there is neither a destination nor an onPin", () => {
     render(<VendoProvider client={client}><PinButton /></VendoProvider>);
     expect(screen.queryByRole("button", { name: "Pin" })).toBeNull();
   });
@@ -413,8 +415,8 @@ describe("the slot refreshes on the pin, not on the next poll tick", () => {
     const onPin = vi.fn();
 
     render(
-      <VendoProvider client={dead} onPin={onPin} pinSlot="hero">
-        <PinAndNudge appId="app_unwritten" />
+      <VendoProvider client={dead} onPin={onPin}>
+        <PinAndNudge appId="app_unwritten" slot="hero" />
         <VendoToasts />
       </VendoProvider>,
     );

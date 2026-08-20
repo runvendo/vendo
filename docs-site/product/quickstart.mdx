@@ -90,8 +90,8 @@ instead of in the panel.
 
 The id and the file are both yours. `spend-breakdown` on a bank's overview page
 is this example's choice: pick any string, and put the slot on whichever page you
-want the surface to appear on. The one rule is that the same string appears in
-both places — on `VendoSlot` here, and on the provider's `pinSlot` below.
+want the surface to appear on. Nothing else has to know it — a mounted slot
+reports itself, which is what makes it somewhere a view can be pinned.
 
 ```tsx app/overview/page.tsx focus={3,9}
 "use client";
@@ -107,17 +107,6 @@ export default function Overview() {
     </section>
   );
 }
-```
-
-Name that slot on the provider. It is where the panel's pin button sends a
-finished view.
-
-```tsx app/layout.tsx focus={4}
-<VendoProvider
-  baseUrl="/api/vendo"
-  theme={theme as VendoTheme}
-  pinSlot="spend-breakdown"
->
 ```
 
 Empty, the slot shows a ghost with prompts that open the panel. Ask for a

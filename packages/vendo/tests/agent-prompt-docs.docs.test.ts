@@ -22,7 +22,10 @@ import { compositionModuleSource } from "../src/cli/init-scaffolds.js";
  *  3. what init's composition module actually exports. Both existing-agent
  *     walkthroughs import from that one file, and a name a page assumed init
  *     writes is a TS2305 on the reader's first build — the `resolvePrincipal`
- *     class.
+ *     class. Init writes that resolver itself now, on the agent-loop arm the
+ *     two walkthroughs send their readers down, so the pages DESCRIBE the file
+ *     rather than adding to it: every export they print has to be one the
+ *     scaffold really emits.
  *
  * It reads sources, so it is a plain test against the repo, not a build check.
  */
@@ -105,11 +108,12 @@ describe("the Next externals list the docs print is the one init writes", () => 
 });
 
 /** Every name init's composition module exports, across both shapes it writes
- *  (an auth preset was detected, or it was not). */
+ *  (an auth preset was detected, or it was not) on the arm these two pages send
+ *  their readers down. */
 const scaffoldExports = (): Set<string> => {
   const names = new Set<string>();
   for (const auth of [null, { preset: "authJs" as const, dependency: "next-auth" }]) {
-    for (const [, name] of compositionModuleSource({ serverActions: false, auth }).matchAll(
+    for (const [, name] of compositionModuleSource({ serverActions: false, auth, agentLoop: true }).matchAll(
       /export (?:const|function) (\w+)/g,
     )) {
       names.add(name!);
@@ -118,7 +122,7 @@ const scaffoldExports = (): Set<string> => {
   return names;
 };
 
-/** What a page shows the reader writing into that same file themselves. */
+/** What a page prints as the contents of that same file. */
 const shownExports = (page: string): Set<string> =>
   new Set(
     [...page.matchAll(/```ts lib\/vendo\.ts[^\n]*\n([\s\S]*?)```/g)].flatMap((block) =>
@@ -132,34 +136,38 @@ const composedImports = (page: string): string[] =>
   );
 
 describe("the existing-agent track imports only what lib/vendo.ts really holds", () => {
-  it("every imported name is one init writes or one a walkthrough shows being added", async () => {
+  it("every name the walkthroughs print and import is one init's scaffold really writes", async () => {
     const written = scaffoldExports();
-    // Both halves of the union have to be readable, or a slice that silently
-    // matched nothing would pass this test forever — and the split itself is
-    // the fact under test: init writes the instance, the reader writes the
-    // resolver, and a page that forgets which is which publishes a TS2305.
+    // The derivation has to be readable, or a matchAll that silently found
+    // nothing would pass this test forever — and BOTH names are the fact under
+    // test: init writes the instance AND the resolver on the agent-loop arm, so
+    // a page that shows the reader adding either one is teaching a hand-edit to
+    // a file init just wrote.
     expect([...written], "the scaffold's own exports must be readable").toContain("vendo");
+    expect(
+      [...written],
+      "init must still write the resolver — the walkthroughs describe it rather than add it",
+    ).toContain("resolvePrincipal");
 
     const pages = new Map<string, string>();
     for (const file of WALKTHROUGHS) pages.set(file, await read(file));
 
-    // Each page stands alone now, so each one has to show the resolver itself.
-    const shown = new Set<string>();
+    // Each page stands alone, printing the file for itself; every export in
+    // that print has to be one the scaffold emits.
     for (const [file, text] of pages) {
       const own = shownExports(text);
+      expect([...own], `${file} must still print init's composition module`).toContain("resolvePrincipal");
       expect(
         [...own].filter((name) => !written.has(name)),
-        `${file} must still show what init does not write`,
-      ).not.toEqual([]);
-      for (const name of own) shown.add(name);
+        `${file} prints a lib/vendo.ts export init does not write`,
+      ).toEqual([]);
     }
 
-    const available = new Set([...written, ...shown]);
     const missing: string[] = [];
     for (const [file, text] of pages) {
       const imported = composedImports(text);
       expect(imported, `${file} must still import from the composition module`).toContain("vendo");
-      missing.push(...imported.filter((name) => !available.has(name)).map((name) => `${file}: ${name}`));
+      missing.push(...imported.filter((name) => !written.has(name)).map((name) => `${file}: ${name}`));
     }
     expect(missing).toEqual([]);
   });

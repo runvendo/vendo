@@ -27,32 +27,32 @@ pnpm exec vendo init
 
 Answer the first question with **Through my own agent loop (AI SDK / Mastra)**, and take **Vendo Cloud** on the model one. Init reads your repo, writes the wire route, lands a `VENDO_API_KEY` in `.env.local`, and adds Vendo's `serverExternalPackages` entries to your Next config.
 
-Init put the `createVendo` call in `lib/vendo.ts` already (`src/lib/vendo.ts` when your app lives under `src/`); export the caller resolver beside it, so your chat route, your wire route, and the pack all share one instance.
+Init wrote `lib/vendo.ts` for you (`src/lib/vendo.ts` when your app lives under `src/`) — the `createVendo` call, and the caller resolver beside it, so your chat route, your wire route, and the pack all share one instance.
 
-```ts lib/vendo.ts focus={5}
+```ts lib/vendo.ts focus={6}
 import { authJs } from "@vendoai/vendo/auth/auth-js";
 import { createVendo } from "@vendoai/vendo/server";
 
 const auth = authJs();
-export const resolvePrincipal = (req: Request) => auth.principal(req);
 export const vendo = createVendo({ auth });
+export const resolvePrincipal = (req: Request) => auth.principal(req);
 ```
 
-Swap `authJs()` for your own provider's preset — [Auth](/production/auth) lists all five.
+Init wires whichever provider it detects — swap `authJs()` for another preset any time ([Auth](/production/auth) lists all five).
 
-With no provider yet, init wrote a demo principal in place of a preset, and the resolver you export beside it hands your chat route that same subject:
+With no provider yet, init wrote a demo principal in place of a preset, and the resolver beside it hands your chat route that same subject:
 
 ```ts lib/vendo.ts
 import { createVendo } from "@vendoai/vendo/server";
 
-// init writes the principal; the resolver is
-// yours. Swap both for a real session lookup.
+// init writes both — swap them for
+// your real session lookup.
 const principal = async () => ({
   kind: "user" as const,
   subject: "demo-user",
 });
-export const resolvePrincipal = (_req: Request) => principal();
 export const vendo = createVendo({ principal });
+export const resolvePrincipal = (_req: Request) => principal();
 ```
 
 Either way, your loop and your wire route have to resolve the same subject — a mismatch has no error; the embed just polls a screen it will never be shown ([Auth](/production/auth)).

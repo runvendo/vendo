@@ -32,16 +32,17 @@ export interface VendoContextValue {
    */
   transport?: ChatTransport<UIMessage>;
   /**
-   * Optional host handler for pinning a previewed app into the product. When
-   * present, generated views show a "Pin to dashboard" action; nothing is
-   * saved to the host surface until the user invokes it.
+   * Optional host handler for pinning a previewed app into the product — the
+   * DIY path, for a host that keeps placement in its own product state.
+   *
+   * WHERE a pin lands is not a prop: a mounted `<VendoSlot>` reports itself to
+   * the slot registry, and the placement affordance reads that registry (see
+   * `PlacementAction`). So a host that mounts one slot gets a real
+   * `apps.place` write with no config at all, and this handler is a mirror it
+   * may also keep. With NO slot reported it is the whole pin, and the only
+   * thing that puts a "Pin to dashboard" action on a finished view.
    */
   onPin?(app: { appId: string; payload: unknown }): void | Promise<void>;
-  /** Which VendoSlot a pin lands in. Set it and a pin becomes REAL: the pin
-   *  action places the app in this slot through the wire (`apps.place`) and
-   *  the slot picks it up on its own — a host needs no pin route of its own.
-   *  Unset, a pin is presentation plus whatever `onPin` chooses to do. */
-  pinSlot?: string;
   /** Optional host-supplied friendly tool metadata, keyed by tool name/id
       (ENG-216 humanization seam — additive, UI-side, no wire/contract change). */
   tools: ToolMetaMap;
@@ -164,8 +165,6 @@ export function VendoProvider(props: {
   fonts?: string;
   transport?: ChatTransport<UIMessage>;
   onPin?(app: { appId: string; payload: unknown }): void | Promise<void>;
-  /** The slot pins land in — see VendoContextValue.pinSlot. */
-  pinSlot?: string;
   tools?: ToolMetaMap;
   connectors?: ConnectorOption[];
   discoverability?: VendoDiscoverability;
@@ -182,7 +181,7 @@ export function VendoProvider(props: {
   onNavigate?(nav: VendoNavigation): void;
   children: ReactNode;
 }): ReactNode {
-  const { client, baseUrl, components, remixWiring, theme, fonts, transport, onPin, pinSlot, tools, connectors, discoverability, greeting, intl, captureScreen, routes, onNavigate, children } = props;
+  const { client, baseUrl, components, remixWiring, theme, fonts, transport, onPin, tools, connectors, discoverability, greeting, intl, captureScreen, routes, onNavigate, children } = props;
   const currency = intl?.currency;
   const locale = intl?.locale;
   // Installed during RENDER, not in an effect: the formatters are called while
@@ -201,7 +200,6 @@ export function VendoProvider(props: {
       fonts,
       transport,
       onPin,
-      pinSlot,
       tools: tools ?? {},
       connectors: connectors ?? "auto",
       discoverability: discoverability ?? "default",
@@ -211,7 +209,7 @@ export function VendoProvider(props: {
       routes,
       onNavigate,
     }),
-    [client, baseUrl, components, remixWiring, theme, fonts, transport, onPin, pinSlot, tools, connectors, discoverability, greeting, resolvedIntl, captureScreen, routes, onNavigate],
+    [client, baseUrl, components, remixWiring, theme, fonts, transport, onPin, tools, connectors, discoverability, greeting, resolvedIntl, captureScreen, routes, onNavigate],
   );
   return <VendoContext.Provider value={value}>{children}</VendoContext.Provider>;
 }

@@ -27,8 +27,10 @@ export const AUTH_PRESET_SPECIFIER: Record<AuthPresetName, string> = {
  *  planner used to refuse such a host with "wire an auth preset".
  *
  *  Both spellings of each preset's subpath (an aliased host is wired too),
- *  comments stripped like every other source probe here, and the `auth: preset(`
- *  call has to be there as well — an import on its own is not a wiring. `jwt()`
+ *  comments stripped like every other source probe here, and the call has to be
+ *  there as well — an import on its own is not a wiring. Either spelling of the
+ *  call counts: `auth: preset()` inline, or the `const auth = preset()` the
+ *  agent-loop arm hoists so its exported resolver shares the instance. `jwt()`
  *  and an anonymous composition carry no oauth half, so neither is an answer. */
 export async function composedAuthPreset(compositionPath: string): Promise<AuthPresetName | null> {
   const source = await readOptional(compositionPath);
@@ -38,7 +40,7 @@ export async function composedAuthPreset(compositionPath: string): Promise<AuthP
   return presets.find((preset) => {
     const subpath = AUTH_PRESET_SPECIFIER[preset].replace("@vendoai/vendo", "");
     return new RegExp(`["'](?:@vendoai/vendo|vendoai)${subpath}["']`).test(code)
-      && new RegExp(`\\bauth\\s*:\\s*${preset}\\s*\\(`).test(code);
+      && new RegExp(`\\bauth\\s*[:=]\\s*${preset}\\s*\\(`).test(code);
   }) ?? null;
 }
 

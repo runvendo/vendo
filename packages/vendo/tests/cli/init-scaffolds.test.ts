@@ -5,6 +5,7 @@ import { execPath } from "node:process";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
+import { composedAuthPreset } from "../../src/cli/init-auth.js";
 import { compositionModulePath, compositionModuleSource, compositionSpecifier, customServerSource, devScriptPort, expressServerSource, routeSource, vendoEnvExample } from "../../src/cli/init-scaffolds.js";
 
 const run = promisify(execFile);
@@ -107,6 +108,49 @@ describe("the split Next composition", () => {
   it("keeps the anonymous principal when no preset is wired", () => {
     expect(compositionModuleSource({ serverActions: false, auth: null }))
       .toContain(`principal: async () => ({ kind: "user" as const, subject: "demo-user" })`);
+  });
+
+  /** The agent-loop arm's host resolves the caller in its OWN loop, so the
+   *  module exports a resolver over the same identity the wire composed — the
+   *  one line every agent-loop host used to hand-add to a file init had just
+   *  written. Both shapes hoist, because a second `clerk()` (or a second demo
+   *  principal) in the chat route is a second subject the wire never sees. */
+  it("exports the caller resolver on the agent-loop arm, over the identity the wire shares", () => {
+    const preset = compositionModuleSource({ serverActions: false, auth: clerk, agentLoop: true });
+    expect(preset).toContain("const auth = clerk();\n");
+    expect(preset).toContain("\n  auth,\n");
+    expect(preset).not.toContain("auth: clerk(),");
+    expect(preset).toContain("export const resolvePrincipal = (req: Request) => auth.principal(req);\n");
+
+    const anonymous = compositionModuleSource({ serverActions: false, auth: null, agentLoop: true });
+    expect(anonymous).toContain(`const principal = async () => ({ kind: "user" as const, subject: "demo-user" });\n`);
+    expect(anonymous).toContain("\n  principal,\n");
+    expect(anonymous).toContain("export const resolvePrincipal = (_req: Request) => principal();\n");
+  });
+
+  /** The seam: a LATER `--use-case mcp` run over a composition it did not
+   *  write re-decides nothing, so this file is the only evidence a preset is
+   *  wired. Read back through the real reader — the hoisted spelling is a
+   *  wiring too, or the MCP arm refuses a host that is already wired. */
+  it("reads back as a wired preset, so a later MCP run is not refused", async () => {
+    const root = await mkdtemp(join(tmpdir(), "vendo-composed-auth-"));
+    cleanup.push(root);
+    const composition = join(root, "vendo.ts");
+    await writeFile(composition, compositionModuleSource({ serverActions: false, auth: clerk, agentLoop: true }));
+    expect(await composedAuthPreset(composition)).toBe("clerk");
+  });
+
+  /** Every other arm shares this file. An export none of their readers import
+   *  is noise, so the resolver appears on the agent-loop arm only. */
+  it("leaves the resolver off every other arm", () => {
+    for (const source of [
+      compositionModuleSource({ serverActions: false, auth: null }),
+      compositionModuleSource({ serverActions: true, auth: clerk }),
+      compositionModuleSource({ serverActions: false, auth: clerk, mcp: { serviceAuth: false } }),
+      compositionModuleSource({ serverActions: false, auth: clerk, agentLoop: false }),
+    ]) {
+      expect(source).not.toContain("resolvePrincipal");
+    }
   });
 });
 

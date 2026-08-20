@@ -1,7 +1,7 @@
 ---
 title: "Apps in your product"
 sidebarTitle: "Quickstart: apps"
-description: "Teach your model when to build an app, put a slot in one of your own pages, and name where a pin lands."
+description: "Teach your model when to build an app, put a slot in one of your own pages, and pin a finished app into it."
 ---
 
 Every app your agent makes already renders where the conversation is: inline
@@ -10,7 +10,7 @@ Vendo's panel on the in-product track. That needs nothing more than what you
 already have.
 
 This page is for what a conversation cannot do. A chat bubble scrolls away —
-these four steps give a generated app a permanent place in your product.
+these three steps give a generated app a permanent place in your product.
 
 <Steps>
 
@@ -122,24 +122,13 @@ Empty, it invites; filled, the view mounts in place.
 
 </Step>
 
-<Step title="Name the pin destination">
-
-This is the `<VendoProvider>` you already mounted in the render step — one more
-prop names the slot a pin lands in.
-
-```tsx
-<VendoProvider baseUrl="/api/vendo" pinSlot="spend-breakdown">
-```
-
-Vendo's own UI reads its config from the provider, so this one prop turns the
-placement action on for every finished view — in Vendo's panel and on the embed
-card in your own chat alike. With one slot in your product it is a one-click
-**Pin to dashboard**; with several, the same button is an **Add to…** picker
-and the person chooses the slot.
-
-</Step>
-
 <Step title="Pin something">
+
+The slot is the whole wiring. Once one is mounted, every finished app grows a
+placement action on its bar — in Vendo's panel and on the embed card in your own
+chat alike. With one slot in your product that is a one-click **Pin to
+dashboard**; with several, the same button is an **Add to…** picker and the
+person chooses.
 
 Ask for a dashboard, press **Pin to dashboard**, and reload the page. It is in
 your product now.

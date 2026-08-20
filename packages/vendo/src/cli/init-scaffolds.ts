@@ -13,15 +13,20 @@ import { appDirectory, readOptional } from "./shared.js";
 
 /** The wired preset line plus its escape-hatch comment. The lead-in stays
     honest about how the preset got here: detection cites the found
-    dependency, a picker pick says "Selected". */
-export function authConfigLines(auth: AuthMatch): string {
+    dependency, a picker pick says "Selected".
+
+    `hoisted` binds the preset to a module-scope `const auth` instead of writing
+    the config key inline — what the agent-loop arm needs, where the resolver
+    this module exports has to reach the SAME instance the wire composed. */
+export function authConfigLines(auth: AuthMatch, hoisted = false): string {
   const origin = auth.source === "picked"
     ? `Selected ${AUTH_FAMILY_INFO[auth.preset].name}`
     : `Detected ${auth.dependency}`;
-  return `  // ${origin} — ${auth.preset}() fills the identity seams\n` +
-    `  // (request→user, actAs, door OAuth); options and the per-seam escape\n` +
-    `  // hatch: https://docs.vendo.run/production/auth.\n` +
-    `  auth: ${auth.preset}(),\n`;
+  const pad = hoisted ? "" : "  ";
+  return `${pad}// ${origin} — ${auth.preset}() fills the identity seams\n` +
+    `${pad}// (request→user, actAs, door OAuth); options and the per-seam escape\n` +
+    `${pad}// hatch: https://docs.vendo.run/production/auth.\n` +
+    (hoisted ? `const auth = ${auth.preset}();\n` : `  auth: ${auth.preset}(),\n`);
 }
 
 /** The anonymous-composition principal line (no auth preset wired). The
@@ -102,6 +107,39 @@ export function routeSource(composition: string): string {
 }
 
 /**
+ * The agent-loop arm's identity, HOISTED out of the `createVendo` call: the
+ * wire and the host's own loop read one binding, so they can never resolve
+ * different subjects. Init writes the resolver because the arm cannot work
+ * without it — every agent-loop host was hand-adding this one line to a file
+ * init had just written.
+ */
+function sharedIdentity(auth: AuthMatch | null): { binding: string; key: string; resolver: string } {
+  if (auth !== null) {
+    return {
+      binding: authConfigLines(auth, true),
+      key: `  auth,\n`,
+      resolver: `// Your own agent loop resolves its caller through the SAME preset the wire\n` +
+        `// does — import this beside \`vendo\`.\n` +
+        `export const resolvePrincipal = (req: Request) => auth.principal(req);\n`,
+    };
+  }
+  return {
+    // The subject matches the demo principal both existing-agents quickstarts
+    // used to set in their chat routes by hand (0.4.1 E2E cert blocker B4: two
+    // sides that disagree render an infinite skeleton). One binding, so they
+    // cannot.
+    binding: `// Who your callers act as. The wire and your own agent loop both resolve\n` +
+      `// through this one function, so they can never land on different subjects —\n` +
+      `// a mismatch has no error; the embeds just poll a screen nobody is shown.\n` +
+      `// Replace it with your real session lookup.\n` +
+      `const principal = async () => ({ kind: "user" as const, subject: "demo-user" });\n`,
+    key: `  principal,\n`,
+    resolver: `// Your own agent loop resolves its caller here — import this beside \`vendo\`.\n` +
+      `export const resolvePrincipal = (_req: Request) => principal();\n`,
+  };
+}
+
+/**
  * The Next composition module (`lib/vendo.ts`, or `src/lib/vendo.ts`) — the one
  * file that calls `createVendo`, exporting the instance the thin route, the
  * origin-root discovery route and the host's own agent loop all import.
@@ -118,8 +156,13 @@ export function compositionModuleSource(options: {
   /** The MCP door (10-mcp), and whether first-party service auth is wired off
       the environment with it (local posture only). */
   mcp?: { serviceAuth: boolean };
+  /** The agent-loop arm (`--use-case agent-loop`), where the host's own loop
+      needs the caller: this module exports the resolver too. Off on every other
+      arm — the file is shared, and an export nothing imports is noise. */
+  agentLoop?: boolean;
 }): string {
   const serviceAuth = options.mcp?.serviceAuth === true;
+  const shared = options.agentLoop === true ? sharedIdentity(options.auth) : null;
   return modelImportLine(options.models ?? null) +
     authImportLine(options.auth) +
     `import { createVendo, guard } from "@vendoai/vendo/server";\n` +
@@ -130,9 +173,10 @@ export function compositionModuleSource(options: {
         `// user — svc: attribution in the audit. The key stays in the environment.\n` +
         `const serviceKey = process.env.VENDO_SERVICE_KEY ?? "";\n`
       : "") +
+    (shared === null ? "" : `\n${shared.binding}`) +
     `\nexport const vendo = createVendo({\n` +
     // The composition module is always TypeScript (it feeds a Next route).
-    (options.auth === null ? anonymousPrincipalLines(true) : authConfigLines(options.auth)) +
+    (shared?.key ?? (options.auth === null ? anonymousPrincipalLines(true) : authConfigLines(options.auth))) +
     modelConfigLine(options.models ?? null) +
     (options.serverActions ? `  serverActions,\n` : "") +
     `  guard: guard({ policy: {} }), // .vendo/policy.json: destructive asks, reads run\n` +
@@ -143,7 +187,8 @@ export function compositionModuleSource(options: {
         (serviceAuth
           ? `  mcp: serviceKey === "" ? true : { serviceAuth: { keys: [serviceKey] } },\n`
           : `  mcp: true,\n`)) +
-    `});\n`;
+    `});\n` +
+    (shared === null ? "" : `\n${shared.resolver}`);
 }
 
 /** Where a Next host's composition lives: `lib/vendo.ts`, under `src/` exactly

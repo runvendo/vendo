@@ -1858,6 +1858,44 @@ describe("vendo init --agent (ask first, then write)", () => {
     expect(mcpReceipt.wrote).toContain("app/.well-known/[...vendo]/route.ts");
   });
 
+  /** The agent-loop host runs its own loop, which needs the caller — so the
+   *  composition init writes exports the resolver over the SAME identity the
+   *  wire composed. Both walkthroughs used to open by telling the reader to
+   *  hand-add that line to a file init had just written. */
+  it("the agent-loop arm writes the caller resolver, in both identity shapes", async () => {
+    const preset = await fixture();
+    await writeFile(join(preset, "package.json"), JSON.stringify({
+      name: "host",
+      dependencies: { next: "16.0.0", "@clerk/nextjs": "6.0.0" },
+    }));
+    await writeFile(join(preset, ".env.local"), "CLERK_SECRET_KEY=sk_test_x\n");
+    expect(await agentRun(preset, output(), { useCase: "agent-loop", auth: "clerk" })).toBe(0);
+    const wired = await readFile(join(preset, "lib", "vendo.ts"), "utf8");
+    // Hoisted, not inline: a second clerk() in the chat route would be a second
+    // decode the wire never sees.
+    expect(wired).toContain("const auth = clerk();");
+    expect(wired).toContain("\n  auth,\n");
+    expect(wired).toContain("export const resolvePrincipal = (req: Request) => auth.principal(req);");
+
+    const demo = await fixture();
+    expect(await agentRun(demo, output(), { useCase: "agent-loop" })).toBe(0);
+    const anonymous = await readFile(join(demo, "lib", "vendo.ts"), "utf8");
+    expect(anonymous).toContain(`const principal = async () => ({ kind: "user" as const, subject: "demo-user" });`);
+    expect(anonymous).toContain("\n  principal,\n");
+    expect(anonymous).toContain("export const resolvePrincipal = (_req: Request) => principal();");
+  });
+
+  /** …and nowhere else: the composition is one file across every arm, so an
+   *  export the embedded and MCP readers never import is noise in theirs. */
+  it.each([
+    ["embedded", {}],
+    ["mcp", { auth: "clerk", posture: "local" }],
+  ] as const)("the %s arm's composition carries no resolver", async (useCase, extra) => {
+    const root = await fixture();
+    expect(await agentRun(root, output(), { useCase, ...extra })).toBe(0);
+    expect(await readFile(join(root, "lib", "vendo.ts"), "utf8")).not.toContain("resolvePrincipal");
+  });
+
 
   it("names the detected auth in the question, and drops the models one once a key exists", async () => {
     const root = await fixture();
