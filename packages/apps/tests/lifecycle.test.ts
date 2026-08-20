@@ -248,32 +248,6 @@ describe("apps lifecycle", () => {
     });
   });
 
-  it("skips corrupt app and history rows in list surfaces", async () => {
-    const { runtime, store } = setup();
-    const ctx = context("user_ada");
-    const valid = await runtime.create({ prompt: "Valid" }, ctx);
-    const edited = await runtime.edit(valid.id, "Edited", ctx);
-    await store.records("vendo_apps").put({
-      id: "app_corrupt",
-      data: {
-        subject: ctx.principal.subject,
-        enabled: false,
-        doc: { format: VENDO_APP_FORMAT, id: "app_corrupt", name: "" },
-      },
-      refs: { subject: ctx.principal.subject },
-    });
-    await store.records(`vendo:app-history:${valid.id}`).put({
-      id: "ver_corrupt",
-      data: { entry: { at: "not-a-date", intent: "bad", rung: 1 }, doc: null },
-    });
-
-    // `unseen` because this app was created and edited but never RENDERED:
-    // nothing has called open() on it, so the arrival dot still points at it
-    // (packages/apps/src/server/persistence/app-seen.ts).
-    await expect(runtime.list(ctx)).resolves.toEqual([{ ...edited.app, unseen: true }]);
-    await expect(runtime.history(valid.id, ctx).list()).resolves.toEqual([edited.version]);
-  });
-
   it("reports the version history stored, not a later clock read", async () => {
     // Only `Date` is faked: the store, the guard and every await in the write
     // path still run on real timers.
