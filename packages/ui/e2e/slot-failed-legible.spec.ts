@@ -18,7 +18,12 @@ import { openScenario, screenshotPath } from "./helpers.js";
 test("a failed card keeps its headline and its ways out in a host-sized slot", async ({ page }) => {
   await openScenario(page, "slot-states");
   const slot = page.locator('[data-vendo-slot="slot-failed"]');
-  await expect(slot.getByRole("alert")).toBeVisible();
+  // The card paints TWICE: the headline and "Clear this slot" at once, then the
+  // classified reason and "Try again" when the one detail read answers. Both the
+  // clip and the measurement below are about the settled card — the first paint
+  // carries the short generic line, which fits — so anchor on the only thing
+  // that read puts on screen, and let the suite's own expect budget do the wait.
+  await expect(slot.getByRole("button", { name: "Try again" })).toBeVisible();
 
   // A host that lets a rail-width slot size itself — the reason then wraps to
   // more lines than the card is tall, which is the whole of the bug.
