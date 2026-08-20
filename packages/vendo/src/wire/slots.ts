@@ -8,11 +8,9 @@ import {
 import { json, requestJson, route, string, type RouteEntry } from "./shared.js";
 
 /** The slot REGISTRY — which slots this caller's surfaces mount, as opposed to
-    which app sits in one (`/apps/placements`). Two sources, merged on read
+    which app sits in one (`/apps/placements`). One source
     (`packages/apps/src/slots.ts`): the surfaces report themselves in here and
-    the read ages out whatever stopped being reported, while a slot the host
-    DECLARED in `createVendo({ slots })` is always in the answer — it never
-    decays, needs no render, and beats a report of the same id.
+    the read ages out whatever stopped being reported.
 
     Subject scoping happens through `context()` alone, exactly like
     `/connections`: no caller-supplied subject exists on this surface, and a

@@ -18,7 +18,6 @@ One key is required, an identity, as either `principal` or an `auth` preset. `oa
 | `memberships` | `(principal) => Promise<Membership[]>`, the twin of `auth.memberships` for the `principal` trio. Set it and it wins outright. With `VENDO_API_KEY` and this seam unset, memberships come from Vendo Cloud, so `async () => []` is how a deployment with no orgs declines the tenant directory |
 | `tools` | Host tool declarations in memory, the same `ExtractedTool[]` sync writes to `.vendo/tools.json`, and executable tools. The two shapes are told apart by `execute` |
 | `skills` | `Skill[]` mounted at `/host/skills` for the harness to list cheaply and load on demand. A name collision fails at boot naming both |
-| `slots` | `SlotDescriptor[]` this deployment always has, declared instead of reported by a page render. A declared slot never decays and needs no render, and wins over a page report of the same id |
 | `catalog` | Host components exposed to the generation prompt, merged with `.vendo/catalog.json` with explicit entries winning by name |
 | `routes` | The host's own pages a generated view may link to, `{ name: { path, description } }`. A `<Link to="name">` refuses any name the map does not carry |
 | `theme` | Programmatic override for `.vendo/theme.json`. Resolved once at compose, so unlike design rules it is not re-read live |
