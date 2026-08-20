@@ -620,10 +620,19 @@ async function runGradingStages(input: {
  *  it off. The spec's relative server mount is the only other place it is
  *  written down — doctor holds the two to agreement (E-CFG-003) — and it is
  *  already how the prefix reaches host tool calls. Without it the probe asks a
- *  mounted host one prefix short and reads its own 404 back as "not reachable". */
+ *  mounted host one prefix short and reads its own 404 back as "not reachable".
+ *
+ *  Total on purpose, the way doctor's own mount check is (`doctor-config-checks`):
+ *  this reads a file and parses it, it runs OUTSIDE the probe's error boundary,
+ *  and no prefix is the answer the probe already handles. A spec that will not
+ *  parse costs the run its impact line, never the sync. */
 async function declaredMount(root: string): Promise<string> {
-  const spec = await firstOpenApiSpec(root);
-  return spec === null ? "" : await openApiMountPath(spec);
+  try {
+    const spec = await firstOpenApiSpec(root);
+    return spec === null ? "" : await openApiMountPath(spec);
+  } catch {
+    return "";
+  }
 }
 
 async function probeImpact(input: {

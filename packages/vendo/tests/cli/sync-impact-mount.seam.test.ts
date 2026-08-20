@@ -92,3 +92,36 @@ describe("[sync impact] the probe reaches a wire mounted under a path prefix", (
     expect(result.impact).toEqual([{ tool: "host_a", apps: [], automations: [], grants: 0 }]);
   }, 120_000);
 });
+
+describe("[sync impact] a spec the prefix cannot be read from", () => {
+  /** Reading the mount is best-effort, and it happens outside the probe's own
+   *  error boundary. A spec that will not parse must cost the run its IMPACT
+   *  line and nothing else: `vendo sync` exists to write the catalog, and an
+   *  unreadable openapi.json is not a reason to abandon that. */
+  it("degrades to the root URL instead of aborting the sync", async () => {
+    const root = await mkdtemp(join(tmpdir(), "vendo-sync-impact-badspec-"));
+    cleanups.push(() => rm(root, { recursive: true, force: true }));
+    await mkdir(join(root, ".vendo"), { recursive: true });
+    await writeFile(join(root, "openapi.json"), "{ not json at all", "utf8");
+
+    const asked: string[] = [];
+    const offline = (async (input: string | URL) => {
+      asked.push(String(input));
+      throw new Error("offline");
+    }) as unknown as typeof fetch;
+
+    const result = await runSyncFlow({
+      root,
+      output: { log: () => {}, error: () => {} },
+      mode: "incremental",
+      interactive: false,
+      yes: true,
+      ai: false,
+      sync: CHANGED,
+      fetchImpl: offline,
+    });
+
+    expect(asked).toEqual(["http://localhost:3000/api/vendo/sync/impact"]);
+    expect(result.impact).toBeNull();
+  }, 120_000);
+});
