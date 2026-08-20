@@ -136,30 +136,15 @@ Host functions do not cross. Callbacks, your router, and context-style hooks are
 
 `vendo sync` splits every `<Remixable>` component in two.
 
-<Frame caption="One component, two halves. The port is what a wish edits; the home half is what your page keeps running.">
-  <svg viewBox="0 0 700 128" width="100%" role="img" aria-label="Sync splits a Remixable component into a ported half, which is real TSX in the screen dialect that the agent edits, and a home half of unportable subtrees that stay in your app and render natively as holes.">
-    <rect x="1" y="34" width="182" height="60" rx="10" fill="currentColor" fillOpacity="0.04" stroke="currentColor" strokeOpacity="0.22" />
-    <text x="92" y="60" fontSize="8" letterSpacing="1.2" textAnchor="middle" fill="currentColor" fillOpacity="0.55">YOUR COMPONENT</text>
-    <text x="92" y="78" fontSize="11" fontWeight="600" textAnchor="middle" fill="currentColor">&lt;Remixable&gt;</text>
-    <line x1="183" y1="64" x2="222" y2="64" stroke="#6c3bff" strokeOpacity="0.4" strokeWidth="1.5" />
-    <path d="M232 64 l-10 -5 v10 z" fill="#6c3bff" fillOpacity="0.6" />
-    <text x="207" y="52" fontSize="9" textAnchor="middle" fill="#6c3bff">sync</text>
-    <rect x="232" y="1" width="212" height="54" rx="10" fill="#6c3bff" fillOpacity="0.08" stroke="#6c3bff" strokeOpacity="0.35" />
-    <text x="338" y="24" fontSize="11" fontWeight="600" textAnchor="middle" fill="#6c3bff">the ported half</text>
-    <text x="338" y="42" fontSize="10" textAnchor="middle" fill="#6c3bff" fillOpacity="0.75">real TSX, your classes — the wish edits this</text>
-    <rect x="232" y="73" width="212" height="54" rx="10" fill="currentColor" fillOpacity="0.04" stroke="currentColor" strokeOpacity="0.22" />
-    <text x="338" y="96" fontSize="11" fontWeight="600" textAnchor="middle" fill="currentColor">the home half</text>
-    <text x="338" y="114" fontSize="10" textAnchor="middle" fill="currentColor" fillOpacity="0.6">the parts a sandbox cannot run</text>
-    <line x1="444" y1="28" x2="483" y2="28" stroke="#6c3bff" strokeOpacity="0.3" />
-    <path d="M493 28 l-10 -5 v10 z" fill="#6c3bff" fillOpacity="0.5" />
-    <line x1="444" y1="100" x2="483" y2="100" stroke="currentColor" strokeOpacity="0.3" />
-    <path d="M493 100 l-10 -5 v10 z" fill="currentColor" fillOpacity="0.4" />
-    <rect x="493" y="14" width="206" height="28" rx="7" fill="none" stroke="#6c3bff" strokeOpacity="0.3" />
-    <text x="596" y="32" fontSize="10" textAnchor="middle" fill="#6c3bff" fillOpacity="0.85">runs sandboxed</text>
-    <rect x="493" y="86" width="206" height="28" rx="7" fill="none" stroke="currentColor" strokeOpacity="0.25" />
-    <text x="596" y="104" fontSize="10" textAnchor="middle" fill="currentColor" fillOpacity="0.8">runs natively, in your bundle</text>
-  </svg>
-</Frame>
+<Columns cols={2}>
+  <Card title="The ported half" icon="pen-line">
+    Real TSX in the screen dialect, carrying your JSX and your class names. A wish edits this, and it runs sandboxed.
+  </Card>
+
+  <Card title="The home half" icon="house">
+    The parts a sandbox cannot run, cut out and kept in your app. It runs natively, in your own bundle.
+  </Card>
+</Columns>
 
 The **ported half** is your component rewritten into the dialect a generated screen speaks: real TSX, your JSX, your class names, your inline styles, your call sites still reading the way you wrote them. It lands on the baseline as `ported.source`, and it is the file the agent opens and edits when a wish mints the remix.
 
