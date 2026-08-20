@@ -36,6 +36,15 @@ export type {
   TextChannelRegistration,
 } from "./channels.js";
 export type { TextChannelApi, VendoChannels } from "./types.js";
+// What `vendo.agentTools` hands a hand-rolled loop. Structural mirrors of the
+// Messages API's own shapes, so this package depends on no model SDK and the
+// host annotates nothing.
+export type {
+  VendoAgentMessage,
+  VendoAgentTool,
+  VendoAgentToolResult,
+  VendoAgentTools,
+} from "./agent-tools.js";
 export type {
   Judge,
   PolicyConfig,

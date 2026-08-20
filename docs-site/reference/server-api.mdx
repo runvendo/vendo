@@ -52,6 +52,7 @@ The composition registers app capability tools in actions and guard-binds every 
 export interface Vendo {
   handler(req: Request): Promise<Response>;
   tokenFor(who: Request | string): Promise<string>;
+  agentTools(who: Request | string): Promise<VendoAgentTools>;
   emit(event: string, payload: Json, principal: Principal): Promise<RunId[]>;
   putUserFile(input: {
     principal: Principal;
@@ -78,6 +79,7 @@ export interface Vendo {
 | --- | --- |
 | `handler` | Fetch-style and framework-agnostic. Mount at `/api/vendo/[...]` |
 | `tokenFor` | One short-lived MCP access token bound to one of your users, for a backend agent connecting to this deployment's door. Pass the `Request` to read the signed-in user off its session cookie, or a user id to mint headlessly. A blank id is refused rather than minted. See [Your own agent](/outside-agents/your-own-agent) |
+| `agentTools` | The door, already wired, for an agent loop you wrote yourself: `tools` in the shape the Messages API takes, `results(message)` to run what the model picked, `embeds` for the typed envelopes those calls produced. One handle per conversation — the session it opens is what a parked approval resumes on. Same `Request \| userId` duality as `tokenFor`. See [Your own agent](/outside-agents/your-own-agent) |
 | `emit` | The host-event seam. Returns the ids of runs started for enabled automations owned by that principal, and throws `not-implemented` under `automations: false` |
 | `putUserFile` | Pushes a file into one user's own drawer from host code — the programmatic half of the chat drop, through the same server-side write. Same name replaces the file that was there. It reaches the user the next time they chat; nothing is delivered and no turn starts |
 | `usage` | Reads the store's usage meter. Throws `not-implemented` on a meterless store |
