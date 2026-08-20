@@ -86,6 +86,31 @@ jobs:
             exit 1
           fi
 
+      # Arm GitHub's native auto-merge so the version PR merges itself the
+      # moment ci/integration/conformance/audit are green — main runs a merge
+      # queue (ruleset merge-queue-main, SQUASH), so this enqueues rather than
+      # merges directly. It sits AFTER the 0.x guard on purpose: a version PR
+      # that crossed the ceiling must never be armed.
+      #
+      # RELEASE_PAT, not GITHUB_TOKEN, and this step is worthless without it —
+      # for both halves of the same rule. Without the PAT the version PR gets no
+      # checks at all (see the header), so required checks never report and
+      # auto-merge would wait forever; and the merge it eventually performs is
+      # attributed to whoever armed it, so a GITHUB_TOKEN merge would land on
+      # main without re-triggering this workflow — no tag, no publish.
+      - name: Arm auto-merge on the version PR
+        if: steps.changesets.outputs.pullRequestNumber != ''
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
+          PR: ${{ steps.changesets.outputs.pullRequestNumber }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::notice::RELEASE_PAT is not set — PR #$PR stays a manual merge"
+            exit 0
+          fi
+          # Re-arming an armed PR is a no-op, so this is safe on every push.
+          gh pr merge "$PR" --auto --squash
+
       # THE CHANGESET RACE: a changeset-carrying PR landed in the gap between
       # this version PR being cut and it merging, so the tag step below sees
       # those leftover changesets and skips — a green run that released nothing
