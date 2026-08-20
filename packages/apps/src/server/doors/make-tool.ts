@@ -381,6 +381,15 @@ const remixComponent = async (
 const ASKS_TO_RECUR = /\b(?:every|each)\s+(?:\d+\s+)?(?:minute|hour|day|night|morning|afternoon|evening|week|weekday|month|year|monday|tuesday|wednesday|thursday|friday|saturday|sunday)s?\b|\b(?:daily|hourly|nightly|weekly|monthly|on a schedule|on a timer)\b/i;
 
 /**
+ * What a remix is told when the ask was automation-shaped: the redirect, never
+ * silence. Conditional, because the sniff below is a WORD in the person's own
+ * sentence and "Tracked monthly" is a caption, not a schedule — a sentence that
+ * assumes it was a schedule would be wrong most of the time it appeared.
+ */
+const SCHEDULE_ELSEWHERE = "If you also meant to have something run on a schedule, "
+  + "ask for it in the main chat — a remix only changes this view.";
+
+/**
  * Arm the schedule the same ask asked for, on the app it just produced.
  *
  * Through `runtime.automation.author` — so a schedule that arrives with an app
@@ -389,6 +398,17 @@ const ASKS_TO_RECUR = /\b(?:every|each)\s+(?:\d+\s+)?(?:minute|hour|day|night|mo
  *
  * Never fatal. The app is on the person's page; an automation that could not be
  * planned is a sentence on the receipt, not a failed make.
+ *
+ * NOT ON A REMIX (#1568). A remix is the ✦ on one of the host's own components,
+ * and what it may do is edit that component, read its data and call its declared
+ * actions — authoring an automation is not on that list, and this arm is the one
+ * way it got there. It got there on a purely COSMETIC wish, too: the sniff reads
+ * the person's own words, so `a caption that reads "Tracked monthly"` armed a
+ * schedule, asked its author to grant 34 scopes for a text label, and left the
+ * remix repainted as an automation board with nothing in it. `seed` is what says
+ * a row is a remix (`compose-apps.ts`'s `storedScreen` reads it the same way), so
+ * the ✦ mint and every later wish are covered alike — a follow-up arrives naming
+ * the APP, not the component.
  */
 const withCompoundSchedule = async (
   { runtime, ctx, ask, stream }: MakeCall,
@@ -396,8 +416,15 @@ const withCompoundSchedule = async (
 ): Promise<ToolOutcome> => {
   if (outcome.status !== "ok") return outcome;
   const built = makeReceiptSchema.safeParse(outcome.output);
-  if (!built.success || built.data.status === "failed") return outcome;
+  if (!built.success) return outcome;
   const made = built.data;
+  const document = await runtime.get(made.id as AppId, ctx).catch(() => null);
+  // Ahead of the failed-build gate below, because a failure is the LOUDEST way
+  // to drop the ask: asked to "refresh this view every Monday morning", the
+  // screen agent tries to build the schedule into the view, cannot, and the
+  // person is told only that it did not go through (browser walk, 2026-08-20).
+  if (document?.seed !== undefined) return receipt({ ...made, say: `${made.say} ${SCHEDULE_ELSEWHERE}` });
+  if (made.status === "failed") return outcome;
   const authored = await runtime.automation
     .author({ appId: made.id as AppId, instruction: ask, mode: "goal" }, ctx)
     .catch((error: unknown) => {
