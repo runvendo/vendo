@@ -279,3 +279,87 @@ describe("authJs() oauth login redirect", () => {
     expect(resolve).toHaveBeenCalled();
   });
 });
+
+describe("the session cookie name follows the REQUEST, not VENDO_BASE_URL", () => {
+  // Auth.js decides `__Secure-` names from the request's OWN protocol. Deriving
+  // them from VENDO_BASE_URL instead made the two disagree for an app served
+  // over http that declares an https public URL — which the Cloud posture
+  // forces — so `getToken` looked for a cookie the wire never carried and
+  // returned null before it ever attempted decryption.
+  const preset = authJs({ secret, user: userResolver });
+
+  it("resolves an http request's session even when VENDO_BASE_URL is https", async () => {
+    vi.stubEnv("VENDO_BASE_URL", "https://host.test");
+    const request = withCookie(await sessionCookie("maple_yousef"), "http://localhost:3004/api/vendo/threads");
+    expect(await preset.principal(request)).toMatchObject({ subject: "maple_yousef" });
+  });
+
+  it("still resolves an https request's __Secure- session", async () => {
+    vi.stubEnv("VENDO_BASE_URL", "https://host.test");
+    const request = withCookie(
+      await sessionCookie("maple_yousef", {}, "__Secure-authjs.session-token"),
+      "https://host.test/api/vendo/threads",
+    );
+    expect(await preset.principal(request)).toMatchObject({ subject: "maple_yousef" });
+  });
+});
+
+describe("the http narrowing cannot become an https downgrade", () => {
+  const preset = authJs({ secret });
+
+  it("honours a plain-named cookie on http, and never on https", async () => {
+    vi.stubEnv("VENDO_BASE_URL", "https://app.example.com");
+    const plain = await sessionCookie("user_secure");
+
+    // The narrowing itself: behind TLS termination the wire is http, and this
+    // is the request shape real production traffic then arrives as.
+    await expect(preset.principal(withCookie(plain, "http://internal:3000/api/vendo/threads")))
+      .resolves.toEqual({ kind: "user", subject: "user_secure" });
+
+    // The guarantee that has to survive it: the SAME cookie over https is
+    // nobody, so anything that can write over http cannot plant a session an
+    // https origin then trusts.
+    await expect(preset.principal(withCookie(plain, "https://app.example.com/api/vendo/threads")))
+      .resolves.toBeNull();
+  });
+
+  it("refuses a cookie renamed across the boundary, because the name is the salt", async () => {
+    vi.stubEnv("VENDO_BASE_URL", "https://app.example.com");
+    const bodyOf = (cookie: string) => cookie.slice(cookie.indexOf("=") + 1);
+
+    // "Plant over http, spend over https": a token minted for the plain name,
+    // re-presented under the __Secure- name on an https request.
+    const planted = bodyOf(await sessionCookie("user_secure"));
+    await expect(preset.principal(withCookie(
+      `__Secure-authjs.session-token=${planted}`,
+      "https://app.example.com/api/vendo/threads",
+    ))).resolves.toBeNull();
+
+    // And the downgrade: a real __Secure- token stripped to the plain name on
+    // an http request, which is the leg the narrowing newly reads.
+    const stolen = bodyOf(await sessionCookie("user_secure", {}, "__Secure-authjs.session-token"));
+    await expect(preset.principal(withCookie(
+      `authjs.session-token=${stolen}`,
+      "http://internal:3000/api/vendo/threads",
+    ))).resolves.toBeNull();
+  });
+
+  it("resolves the session seam tokenFor actually calls, on an http request", async () => {
+    vi.stubEnv("VENDO_BASE_URL", "https://app.example.com");
+    const request = withCookie(await sessionCookie("maple_yousef"), "http://internal:3000/api/vendo/threads");
+    const session = await preset.oauth?.session?.(request, { returnTo: request.url });
+    expect(session).toMatchObject({ subject: "maple_yousef" });
+  });
+
+  it("still mints actAs material its own principal seam accepts", async () => {
+    vi.stubEnv("VENDO_BASE_URL", "https://app.example.com");
+    const material = await preset.actAs?.({ kind: "user", subject: "user_secure" }, grantFor("user_secure"));
+    expect(material?.headers["cookie"]).toMatch(/^__Secure-authjs\.session-token=/);
+    // Mint and verify must agree: the material is replayed at the deployment's
+    // own https base URL, which is where actAs sends it.
+    await expect(preset.principal(new Request(
+      "https://app.example.com/api/vendo/threads",
+      { headers: material!.headers },
+    ))).resolves.toEqual({ kind: "user", subject: "user_secure" });
+  });
+});

@@ -94,29 +94,15 @@ describe("the MCP door, as an OUTSIDE agent sees it — pinned before door-ctx",
       // The read that keeps a `slot` argument honest: without it an outside
       // agent can only guess a slot id, and a guess lands nowhere.
       "vendo_slots_list",
+      // The user's own drawer, at the door on purpose: an outside agent
+      // connects AS the user, and putting their files where that agent can
+      // reach them is the whole point of the door. The isolation that matters
+      // is per-USER, not per-door, and it is pinned in
+      // `mcp-door-user-files.e2e.test.ts`.
+      "vendo_user_files_list",
+      "vendo_user_files_put",
+      "vendo_user_files_read",
     ]);
-  });
-
-  it("never offers the user's own file drawer — it is the in-product agent's, not an outside agent's", async () => {
-    const { vendo } = await composedHost(async () => undefined);
-    const door = await openDoor(vendo, await bearer(vendo));
-
-    const offered = new Set((await door.listTools()).map((tool) => tool.name));
-    const inAgent = new Set((await vendo.actions.descriptors()).map(({ name }) => name));
-
-    // Both directions, in one place, so a change that re-exposes these fails
-    // saying WHY rather than as a count that drifted. An outside agent connects
-    // AS the user, so it would inherit every `vendo_*` tool by default — the
-    // door menu deliberately cannot curate that namespace, and `withholdTools`
-    // (compose-mcp.ts) is what holds these two back. Files someone uploaded to
-    // talk to THIS product about are not an external agent's to read.
-    for (const tool of ["vendo_user_files_list", "vendo_user_files_read"]) {
-      expect(offered.has(tool), `${tool} must never reach an outside agent`).toBe(false);
-      expect(inAgent.has(tool), `${tool} must stay on the in-product agent`).toBe(true);
-    }
-    // …and a call is refused too, not merely hidden from the listing.
-    const answered = await door.callTool("vendo_user_files_read", { name: "ledger.csv" });
-    expect(answered.isError).toBe(true);
   });
 
   it("a READ the policy runs: ok · rule · present · mcp · the granted subject", async () => {

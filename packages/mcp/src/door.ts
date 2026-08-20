@@ -33,6 +33,7 @@ import {
   ListToolsRequestSchema,
   ReadResourceRequestSchema,
   type CallToolResult,
+  type ProgressToken,
   type Tool,
 } from "@modelcontextprotocol/sdk/types.js";
 import { connectPage } from "./connect-page.js";
@@ -60,6 +61,12 @@ const SHIM_URI = "ui://vendo/tree-shim.html";
 const SHIM_MIME_TYPE = "text/html;profile=mcp-app";
 const OPEN_IN_PRODUCT_KIND = "vendo/open-in-product@1";
 const SHIM_THEME_MARKER = "<!--VENDO_MCP_THEME-->";
+/** A stock MCP client abandons a tools/call after 60s, and a
+ *  notifications/progress extends that deadline only for a client that opted in
+ *  with `resetTimeoutOnProgress` — it defaults to false, so frames arrive and
+ *  the call still dies on time. The door beats regardless, because beating is
+ *  the only half it owns and vendo_make routinely runs longer. */
+const PROGRESS_HEARTBEAT_MS = 15_000;
 
 interface HostIdentity {
   name: string;
@@ -781,7 +788,8 @@ class Door {
       return { tools };
     });
     state.server.setRequestHandler(CallToolRequestSchema, async (request) =>
-      this.#callTool(request.params.name, request.params.arguments ?? {}, state, identity));
+      withProgress(state.server, request.params._meta?.progressToken, () =>
+        this.#callTool(request.params.name, request.params.arguments ?? {}, state, identity)));
 
     if (this.#config.apps !== undefined) {
       state.server.setRequestHandler(ListResourcesRequestSchema, async () => ({
@@ -940,6 +948,12 @@ class Door {
     if (this.#config.apps === undefined || descriptor === undefined) {
       return inBandError(`not-found: Tool ${name} was not found`);
     }
+    // Args are judged BEFORE the guard is asked: a call that can never execute
+    // must not mint a parked approval for a human to resolve.
+    const invalid = appToolArgsError(name, args);
+    if (invalid !== undefined) {
+      return mapOutcome({ status: "error", error: { code: "validation", message: invalid } }, identity.name);
+    }
     const id = await this.#replayId(state, name, args);
     const call = { id, tool: name, args: args as Json };
     const decision = await this.#config.guard.check(call, descriptor, ctx);
@@ -996,18 +1010,12 @@ class Door {
       if (name === "vendo_apps_list") {
         return { status: "ok", output: await apps.list(ctx) };
       }
-      const appId = typeof args.appId === "string" ? args.appId : undefined;
-      if (!appId) return { status: "error", error: { code: "validation", message: "appId is required" } };
+      const appId = args.appId as string;
       if (name === "vendo_apps_open") {
         const opened = await apps.open(appId, ctx);
         return { status: "ok", output: await this.#mcpAppsOpenOutput(opened, args, ctx, identity) as Json };
       }
-      const ref = typeof args.ref === "string" ? args.ref : undefined;
-      if (!ref) return { status: "error", error: { code: "validation", message: "ref is required" } };
-      if (!Object.hasOwn(args, "args")) {
-        return { status: "error", error: { code: "validation", message: "args is required" } };
-      }
-      return { status: "ok", output: await apps.call(appId, ref, args.args as Json, ctx) };
+      return { status: "ok", output: await apps.call(appId, args.ref as string, args.args as Json, ctx) };
     } catch (error) {
       // Preserve the VendoError taxonomy (e.g. "cloud-required",
       // "sandbox-unavailable") — 00-overview's "one error taxonomy" convention.
@@ -1665,9 +1673,48 @@ function canonicalJson(value: unknown): string {
   return JSON.stringify(value) ?? "null";
 }
 
+/** The ride-along tools' argument contract, as one refusal reason or none. */
+function appToolArgsError(name: string, args: Record<string, unknown>): string | undefined {
+  if (name === "vendo_apps_list") return undefined;
+  if (typeof args.appId !== "string" || args.appId === "") return "appId is required";
+  if (name === "vendo_apps_open") return undefined;
+  if (typeof args.ref !== "string" || args.ref === "") return "ref is required";
+  if (!Object.hasOwn(args, "args")) return "args is required";
+  return undefined;
+}
+
 function appToolPreview(name: string, args: Record<string, unknown>): string {
   const preview = `${name} ${stringify(args)}`;
   return preview.length > 500 ? `${preview.slice(0, 499)}…` : preview;
+}
+
+/**
+ * Keep a long tools/call alive on the CLIENT's clock, for a client that asked
+ * to be kept alive by sending a progressToken. The beat rides the standalone
+ * stream — `notification()` with no relatedRequestId — because the door answers
+ * POSTs with `enableJsonResponse`, and the transport drops a request-related
+ * notification when there is no SSE body to write it to.
+ */
+async function withProgress<T>(
+  server: Server,
+  progressToken: ProgressToken | undefined,
+  call: () => Promise<T>,
+): Promise<T> {
+  if (progressToken === undefined) return call();
+  let progress = 0;
+  // Rejects only once the client is already gone, which the call's own result
+  // reports; an unawaited beat must not surface as an unhandled rejection.
+  const beat = () => void server.notification({
+    method: "notifications/progress",
+    params: { progressToken, progress: ++progress },
+  }).catch(() => {});
+  beat();
+  const timer = setInterval(beat, PROGRESS_HEARTBEAT_MS);
+  try {
+    return await call();
+  } finally {
+    clearInterval(timer);
+  }
 }
 
 function mapOutcome(outcome: ToolOutcome, productName: string): CallToolResult {

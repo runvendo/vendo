@@ -25,6 +25,7 @@ import {
   pressControls,
   ScreenError,
   warmScreenEngine,
+  type FlatNode,
   type FlatTree,
   type InertControl,
   type ScreenErrorKind,
@@ -88,6 +89,14 @@ export interface ScreenPaintInput {
   readonly queries: Record<string, unknown>;
   readonly catalog: readonly string[];
   readonly now?: number;
+  /** The component's props — a PORT's paint can depend on its host call site.
+   *  JSON only; they cross into the VM by serialization, like every value. */
+  readonly props?: Record<string, unknown>;
+  /** What this SCREEN is, stamped on every node the paint emits — see
+   *  {@link flattenTree}. `"ported"` is the splitter's port of a host component,
+   *  and it is what lets a brick paint the host's own class. Set by the gauntlet
+   *  off the dialect it graded in, never by the screen. */
+  readonly source?: FlatNode["source"];
   /** The wall the screen's formats resolve against, as `bootScreen` takes it —
    *  carried through because the gate has to paint on the SAME wall the surface
    *  renders on, or a date it judged is not the date the person is shown. Unset
@@ -219,7 +228,7 @@ export const nodeToolchain = (): ScreenToolchain => ({
     let instance: ScreenInstance | undefined;
     try {
       instance = bootScreen(input);
-      const tree = flattenTree(instance.tree());
+      const tree = flattenTree(instance.tree(), input.source);
       const misses = instance.misses();
       // Every press gets its own screen, booted from the same input — see
       // press.ts for why, and for why a pressed write never happens.

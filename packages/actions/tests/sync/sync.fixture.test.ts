@@ -70,6 +70,9 @@ describe("vendoSync host fixture", () => {
     expect(first.pins).toEqual({
       captured: ["AliasedCard", "BarrelCard", "InvoiceCard", "NamespaceCard"],
       drifted: [],
+      // The slots the wiring file covers — non-empty is what makes the sync
+      // report say the wiring's two hookup call sites out loud.
+      ported: ["AliasedCard", "BarrelCard", "InvoiceCard", "NamespaceCard"],
     });
     expect(first.remixableErrors).toEqual([]);
     const invoicePin = JSON.parse(await fs.readFile(path.join(out, "remixable", "InvoiceCard.json"), "utf8"));
@@ -88,7 +91,14 @@ describe("vendoSync host fixture", () => {
     expect(await fs.readFile(path.join(out, "catalog.json"), "utf8")).toBe(firstCatalogBytes);
     expect(second.tools).toEqual({ added: [], removed: [], changed: [] });
     expect(second.breaking).toEqual([]);
-    expect(second.pins).toEqual({ captured: [], drifted: [] });
+    // `ported` says what the wiring COVERS, not what changed — an idempotent
+    // re-run still names its slots, because the hookup reminder rides on it.
+    expect(second.pins).toEqual({ captured: [], drifted: [], ported: ["AliasedCard", "BarrelCard", "InvoiceCard", "NamespaceCard"] });
     expect(second.remixableErrors).toEqual([]);
-  });
+    // Two full syncs, each now also splitting four remixable cards: 10.8s on an
+    // idle box, against the 30s default this inherited by carrying no budget of
+    // its own. That margin does not survive a shared CI runner — it timed out at
+    // exactly 30000ms in 2 of 3 runs. The budget states the work rather than
+    // buying headroom: `composio.live.test.ts` beside it already does the same.
+  }, 120_000);
 });

@@ -36,7 +36,7 @@ const result = await vendo.tenantConnectors.register({
   org: "acme",
   name: "billing",
   kind: "mcp",
-  url: "https://mcp.acme.example/sse",
+  url: "https://mcp.acme.example/mcp",
   token: pastedToken,
 });
 
@@ -44,6 +44,15 @@ if (result.status === "ok") {
   console.log(result.tools.map((tool) => tool.name)); // ["mcp_billing_lookup_invoice"]
 }
 ```
+
+<Warning>
+  **Paste the server's Streamable HTTP URL — usually `/mcp`, never `/sse`.** The
+  connector POSTs every JSON-RPC message to that one URL and reads a
+  `text/event-stream` answer to that same POST. It speaks no legacy HTTP+SSE —
+  there is no GET-opened stream and no second message URL — so a `/sse` endpoint
+  refuses the POST and the registration comes back `unavailable`, carrying the
+  server's own `MCP HTTP <status>` as its message.
+</Warning>
 
 A refusal is typed, never a thrown string:
 
@@ -83,7 +92,7 @@ export default function AddConnector() {
         <option value="mcp">MCP server</option>
         <option value="openapi">OpenAPI spec</option>
       </select>
-      <input name="url" placeholder="https://mcp.acme.example/sse" />
+      <input name="url" placeholder="https://mcp.acme.example/mcp" />
       <textarea name="spec" placeholder="Paste an OpenAPI document" />
       <input name="token" type="password" placeholder="Paste the token" />
       <button type="submit">Add</button>

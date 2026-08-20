@@ -126,6 +126,7 @@ export const VENDO_TOOL_TITLES: Readonly<Record<string, string>> = {
   vendo_knowledge_search: "Look it up in the docs",
   vendo_user_files_list: "See the files you shared",
   vendo_user_files_read: "Read a file you shared",
+  vendo_user_files_put: "Save a file to your files",
   vendo_text_me: "Text me",
   // The verbs and `ask_user` authored these titles inline first; they moved here
   // verbatim so the CLIENT can say them too — a live browser proof caught a verb

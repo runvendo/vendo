@@ -131,8 +131,11 @@ describe.sequential("remix W1c — the review-kind lifecycle through the real um
     const root = await mkdtemp(join(tmpdir(), "vendo-review-journey-"));
     cleanups.push(async () => rm(root, { recursive: true, force: true }));
     await mkdir(join(root, "src"), { recursive: true });
+    // Display-only tags, so the REAL splitter emits the ported half the ✦
+    // gesture seeds from — a `<form>`/`<button>` host is refused, and a
+    // baseline with no port has no remix to review at all.
     const hostSource = `export default function TransferPanel() {
-  return <form><span>Transfer</span><button>Send</button></form>;
+  return <section><span>Transfer</span><p>Send</p></section>;
 }\n`;
     await writeFile(join(root, "src", "TransferPanel.tsx"), hostSource);
     await writeFile(join(root, "src", "page.tsx"), `

@@ -618,6 +618,42 @@ export const createBuildSurface = (
         // earns, and the reason a refused one earned none. All three are this
         // runtime's own doors, bound to this caller's ctx.
         runQuery: screenQueryRunner(deps.caller, ctx),
+        // The dialect, off the ROW — a remix is the one app whose screen the loop
+        // did not write, and `seed` is what says so (the same discriminator the
+        // assembler's checkout reads, `compose-apps.ts` `storedScreen`). The
+        // splitter grades its port `ported` too, so the two grades agree by
+        // construction rather than by two hands writing the same option twice.
+        //
+        // The baselines are checked FIRST because they cost nothing and they
+        // settle it: a deployment that captured no `<Remixable>` has no baseline
+        // to seed from, so it can hold no remix and no port — and a paint here
+        // must not go asking the store about a row on every screen a host without
+        // remixes ever renders, least of all on the read half (`saves: false`).
+        ported: async (appId) => (config.seedBaselines ?? []).length > 0
+          && (await deps.runtime().get(appId, ctx))?.seed !== undefined,
+        // The props a port paints with, off the SAME row. Consulted by the floor
+        // only after `ported` answered yes, so an authored screen costs no extra
+        // read.
+        //
+        // THE COURIER WINS. `seed.props` is what the `<Remixable>` wrapper last
+        // shipped from the live host instance this remix stands in for; the
+        // baseline's `sampleProps` is what `vendo sync` captured, frozen the day
+        // it ran. Preferring the capture is how a remixed balance card painted
+        // its sync-time number forever while the host's own component, two
+        // inches away, painted today's — the port renders FROM its props and no
+        // prop is in any source it could read, so the courier is the page's only
+        // route in.
+        //
+        // The capture remains the fallback, and a real one: a remix whose wrapper
+        // has not couriered yet — the seconds between the row landing and the
+        // first render, or a host that mounts it somewhere no wrapper wraps —
+        // paints on the captured values rather than on nothing.
+        props: async (appId) => {
+          const seed = (await deps.runtime().get(appId, ctx))?.seed;
+          if (seed === undefined) return undefined;
+          if (seed.props !== undefined) return seed.props;
+          return (config.seedBaselines ?? []).find((candidate) => candidate.slot === seed.component)?.sampleProps;
+        },
         ...rowHalf,
       });
     },

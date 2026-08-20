@@ -12,6 +12,7 @@ import {
   VENDO_APP_FORMAT,
   sha256Hex,
   type AppId,
+  type Json,
   type TreeNode,
 } from "@vendoai/core";
 import {
@@ -23,7 +24,7 @@ import {
 } from "../../contract/index.js";
 // The screen engine, by its own path: the contract door does not carry it yet.
 import { SCREEN_FILE } from "../../contract/genui/component/index.js";
-import { checkComponentScreen, screenName } from "./component-screen.js";
+import { PORTED_SCREEN_DIALECT, checkComponentScreen, screenName } from "./component-screen.js";
 import { screenCatalog } from "./screen-typings.js";
 import type { FloorDependencies } from "./deps.js";
 import { runChecks } from "./layer.js";
@@ -129,10 +130,30 @@ export interface AppFloorOptions {
    * toolchain installed after a floor was built still reaches that floor.
    */
   toolchain?: ScreenToolchain;
+  /**
+   * Whether this app's screen is the splitter's PORT of a host component — the
+   * one dialect whose display tags take the host's `className`
+   * (`checking/screen-typings.ts` `jsxFrame`).
+   *
+   * DERIVED, never carried in the screen: a model-authored screen that could
+   * spell its own dialect would unlock `className` for itself. Composition fills
+   * this off the row (`doors/build-surface.ts`), which is also the only way the
+   * grade `vendo sync` ran and the grade the floor runs can agree — assembled
+   * twice, they drifted, and a port sync blessed was refused on its first save.
+   */
+  ported?: (appId: AppId) => Promise<boolean>;
+  /**
+   * The props a PORTED screen paints with — the host's own captured
+   * sampleProps, resolved off the row's seed the same way `ported` is, and
+   * consulted only when `ported` answered yes. Never invented: a port whose
+   * paint depends on props and whose baseline captured none is refused, not
+   * blessed on made-up data.
+   */
+  props?: (appId: AppId) => Promise<Record<string, Json> | undefined>;
 }
 
 export const createAppFloor = (
-  { deps, checks, runQuery, delivered, refused, toolchain }: AppFloorOptions,
+  { deps, checks, runQuery, delivered, refused, toolchain, ported, props }: AppFloorOptions,
 ): AppFloor => {
   let resolved: Promise<FloorDependencies> | undefined;
   const once = (): Promise<FloorDependencies> => resolved ??= deps();
@@ -171,11 +192,18 @@ export const createAppFloor = (
           + " queries could not be executed and nothing about it was checked"]);
       }
       const resolved = await once();
+      // Props ride the dialect: only a PORTED screen has a host call site to
+      // inherit them from, so they are resolved behind the same answer — an
+      // authored screen costs no extra row read.
+      const isPorted = await ported?.(appId) === true;
+      const seedProps = isPorted ? await props?.(appId) : undefined;
       const checked = await checkComponentScreen({
+        ...(isPorted ? PORTED_SCREEN_DIALECT : {}),
         source,
         hostTools: resolved.tools ?? [],
         catalog: screenCatalog(resolved.catalog),
         ...(resolved.routes === undefined ? {} : { routes: resolved.routes }),
+        ...(seedProps === undefined ? {} : { props: seedProps }),
         runQuery: (tool, input) => runQuery(appId, tool, input),
         toolchain,
       });
@@ -232,6 +260,9 @@ export const createAppFloor = (
           compiledSource: checked.compiled,
           queries: checked.queries ?? {},
           queryPlan: checked.queryPlan ?? [],
+          // The client's own VM boots from this half, and a ported screen that
+          // lost its props there would paint blank on the first click.
+          ...(seedProps === undefined ? {} : { props: seedProps }),
         },
       };
     },

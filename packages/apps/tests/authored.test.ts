@@ -32,6 +32,7 @@ import { beforeAll, describe, expect, it, vi } from "vitest";
 import { bindTools, guardFixture, type GuardFixture } from "../src/server/testing/guard-fixture.js";
 import { memoryStore } from "../src/server/testing/memory-store.js";
 import { basicLanguageModel } from "../src/server/testing/scripted-model.js";
+import { FIXTURE_SCREEN } from "../src/server/testing/screen-document.js";
 import { seedAppRow } from "../src/server/testing/seed-app-row.js";
 import { createAppHistory } from "../src/server/persistence/history.js";
 import { createApps, seedComponentName, type AppsRuntime, type SeedBaseline } from "../src/server/index.js";
@@ -453,6 +454,10 @@ describe("a refused write at the history cap", () => {
         hash: "sha256:host-NEW",
         exportable: false,
         capturedAt: "2026-08-03T00:00:00.000Z",
+        // A re-seed lays the host's CURRENT port down before it replays the
+        // recorded instruction, so a baseline the splitter could not port has no
+        // re-seed to refuse mid-write in the first place.
+        ported: { source: FIXTURE_SCREEN, tools: [], holes: [] },
       }],
       screen: REPLAYS_NOTHING,
     });
@@ -588,6 +593,10 @@ describe("a save computed over a row that changed under it", () => {
         hash: "sha256:host-NEW",
         exportable: false,
         capturedAt: "2026-08-03T00:00:00.000Z",
+        // A re-seed lays the host's CURRENT port down before it replays the
+        // recorded instruction, so a baseline the splitter could not port has no
+        // re-seed to refuse mid-write in the first place.
+        ported: { source: FIXTURE_SCREEN, tools: [], holes: [] },
       }],
       screen: REPLAYS_NOTHING,
     });

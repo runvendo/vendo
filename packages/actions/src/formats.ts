@@ -539,8 +539,10 @@ export interface SyncReport {
   tools: { added: string[]; removed: string[]; changed: string[] };
   breaking: BreakingChange[];
   /** `pruned` (absent when empty) — stale baselines deleted because no
-   *  `<Remixable>` wrapper names their slot anymore. */
-  pins: { captured: string[]; drifted: string[]; pruned?: string[] };
+   *  `<Remixable>` wrapper names their slot anymore. `ported` (absent when
+   *  empty) — the slots the wiring file covers, which is what makes the report
+   *  say the wiring's TWO hookup call sites out loud. */
+  pins: { captured: string[]; drifted: string[]; pruned?: string[]; ported?: string[] };
   catalog: { discovered: number; registered: number };
   /** Registered host components whose source sync captured, so the console can
    *  render them for real. `skipped` = could not be captured at all;

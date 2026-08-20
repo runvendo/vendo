@@ -327,7 +327,7 @@ describe("vendo sync", () => {
     expect(logs).toContain("catalog.json: 2 discovered, 1 registered");
   });
 
-  it("prints the schema coverage line, naming the blind tools", async () => {
+  it("prints the schema coverage line, naming the blind tools AND the file that cures them", async () => {
     const logs: string[] = [];
     expect(await runSync({
       targetDir: ".",
@@ -339,6 +339,24 @@ describe("vendo sync", () => {
       }),
     })).toBe(0);
     expect(logs.join("\n")).toContain("tool schemas: inputs 3/3 · outputs 1/3 — blind: host_a, host_b");
+    // #1339: the single highest-leverage file a host can add was named nowhere
+    // — a blind tool is a method and a path with no parameters, and the agent
+    // cannot use what it cannot see. The report itself names the cure.
+    expect(logs.join("\n")).toContain("openapi.json");
+  });
+
+  it("full schema coverage earns no openapi hint — nothing to cure", async () => {
+    const logs: string[] = [];
+    expect(await runSync({
+      targetDir: ".",
+      output: { log: (line) => logs.push(line), error() {} },
+      sync: async () => report([], [], {
+        total: 2,
+        inputs: { known: 2, unknown: [] },
+        outputs: { known: 2, unknown: [] },
+      }),
+    })).toBe(0);
+    expect(logs.join("\n")).not.toContain("openapi.json");
   });
 
   it("--json prints exactly one machine-readable object carrying report and impact", async () => {

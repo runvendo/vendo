@@ -431,7 +431,15 @@ export class ChannelEventLog {
     }
     if (Date.now() - (this.sweptAt.get(conversationId) ?? 0) >= PRUNE_INTERVAL_MS) {
       this.sweptAt.set(conversationId, Date.now());
-      await this.prune(conversationId);
+      // OFF the critical path, not awaited: the sweep is a page read plus one
+      // delete per expired row, and inline it stood seven serial hosted round
+      // trips in front of whichever person's text happened to be the one that
+      // came due (measured 4.95s on production Maple). Safe to detach on all
+      // three counts — it only ever deletes rows older than any retry, so nothing
+      // a live delivery reads depends on it; the mark above is already set, so the
+      // next claim this hour does not start a second one; and a sweep that fails
+      // is simply made again when the interval comes round.
+      void this.prune(conversationId).catch(() => undefined);
     }
     return true;
   }

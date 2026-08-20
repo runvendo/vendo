@@ -341,10 +341,10 @@ describe("vendo init (zero-question)", () => {
       name: "host",
       dependencies: { next: "16.0.0", [dependency]: "1.0.0" },
     }));
-    // ENG-422: a supabase host with no server env would rightly carry the
-    // env advisory — a satisfied env keeps this test about SILENT wiring
-    // (the advisory has its own tests in init-auth.test.ts).
-    await writeFile(join(root, ".env.local"), "SUPABASE_URL=http://127.0.0.1:54321\n");
+    // ENG-422 / #1338: a supabase or clerk host with no server env would
+    // rightly carry the env advisory — a satisfied env keeps this test about
+    // SILENT wiring (the advisories have their own tests in init-auth.test.ts).
+    await writeFile(join(root, ".env.local"), "SUPABASE_URL=http://127.0.0.1:54321\nCLERK_SECRET_KEY=sk_test_x\n");
     const sink = output();
     expect(await run(root, sink)).toBe(0);
     const route = await readFile(join(root, "lib", "vendo.ts"), "utf8");
@@ -2844,6 +2844,87 @@ describe("the five questions", () => {
     const report = JSON.parse(doctorLogs[0]!) as { checks: Array<{ id: string; status: string; message: string }> };
     expect(report.checks.find((check) => check.id === "mcp/base-url"))
       .toMatchObject({ status: "ok", message: expect.stringContaining("VENDO_BASE_URL is set") });
+  });
+
+  // The flag pair is refused in cli.ts, which reads argv. A posture CHOSEN at
+  // the select never reaches argv, so the same mistake arrived here silently
+  // and the key was dropped — the one path where a user could still believe it
+  // landed. Same refusal, same words, whichever way they got here.
+  it("refuses a service key when the broker posture is chosen at the select, not only when it is a flag", async () => {
+    const root = await fixture();
+    const sink = output();
+    expect(await run(root, sink, {
+      useCase: "mcp",
+      auth: "clerk",
+      baseUrl: "http://localhost:3000",
+      interactive: true,
+      serviceKey: true,
+      cloud: { cloudProbe: async () => ({ present: true, ok: true, unlocks: [] as readonly string[] }) },
+      selectUseCase: async () => "broker",
+      askText: async (_question, _hint, prefill) => prefill ?? "",
+      confirmAuth: async () => false,
+      confirmCheck: async () => false,
+      confirmZodBump: async () => false,
+    })).toBe(1);
+
+    const errors = sink.errors.join("\n");
+    expect(errors).toContain("--service-key does not apply");
+    expect(errors).toContain("provisioned with the tenant on first use");
+    expect(errors).toContain("https://docs.vendo.run/outside-agents/service-keys-and-broker");
+    // It refuses INSTEAD of writing: no composition landed on the way out.
+    expect(await readdir(root)).not.toContain("lib");
+
+    // The control: the SAME broker posture with no key asked for is the
+    // recommended Cloud path and still writes. The guard fires on the key, not
+    // on the posture. (An https origin, because Cloud refuses to front any
+    // other — the refusal directly below.)
+    const cloudOnly = await fixture();
+    expect(await run(cloudOnly, output(), {
+      useCase: "mcp",
+      auth: "clerk",
+      baseUrl: "https://app.acme.com",
+      interactive: true,
+      cloud: { cloudProbe: async () => ({ present: true, ok: true, unlocks: [] as readonly string[] }) },
+      selectUseCase: async () => "broker",
+      askText: async (_question, _hint, prefill) => prefill ?? "",
+      confirmAuth: async () => false,
+      confirmCheck: async () => false,
+      confirmZodBump: async () => false,
+    })).toBe(0);
+    expect(await readdir(cloudOnly)).toContain("lib");
+  });
+
+  // The blocker a live proof against production Cloud hit: Cloud registers
+  // VENDO_BASE_URL as the tenant's forwarding address and answers
+  // `400 The forwarding address must be an https:// URL`, so the dev origin the
+  // previous question just captured and the Cloud posture cannot coexist. The
+  // pair used to pass init and print `Wired (5 files)` over a door that was
+  // already dead.
+  it("refuses the Cloud broker posture on an http origin instead of writing a door that cannot work", async () => {
+    const root = await fixture();
+    const sink = output();
+    expect(await run(root, sink, {
+      useCase: "mcp",
+      auth: "clerk",
+      baseUrl: "http://localhost:3004",
+      interactive: true,
+      cloud: { cloudProbe: async () => ({ present: true, ok: true, unlocks: [] as readonly string[] }) },
+      selectUseCase: async () => "broker",
+      askText: async (_question, _hint, prefill) => prefill ?? "",
+      confirmAuth: async () => false,
+      confirmCheck: async () => false,
+      confirmZodBump: async () => false,
+    })).toBe(1);
+
+    const errors = sink.errors.join("\n");
+    // It names the origin it refused, why Cloud refuses it, and both ways out.
+    expect(errors).toContain("http://localhost:3004");
+    expect(errors).toContain("forwarding address");
+    expect(errors).toContain("Take the local posture");
+    expect(errors).toContain("--base-url");
+    // …and it refuses INSTEAD of reporting success over a dead door.
+    expect(await readdir(root)).not.toContain("lib");
+    expect(sink.logs.join("\n")).not.toContain("Wired");
   });
 
   it("offers the doctor check only when nothing is left to paste, and never changes the exit code", async () => {

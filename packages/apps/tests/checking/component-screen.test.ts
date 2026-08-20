@@ -614,6 +614,102 @@ export default function S() { return <img><Text text="x" /></img>; }
     expect(text.match(/writes the HTML element/gu)).toHaveLength(1);
   });
 
+  /**
+   * `className` is a DIALECT, not a prop. A port carries the host's own classes —
+   * that is the whole point of porting one — and a screen a model authored has no
+   * such prop to write, so it cannot borrow the host's chrome even if it tries.
+   * The tag surface stays an allowlist in both: nothing else joined it.
+   */
+  const CLASSED = `import { Text } from "@vendo/screen";
+export default function S() { return <div className="maple-card rounded-lg"><Text text="x" /></div>; }
+`;
+
+  it("takes the host's className on a PORTED screen's display tag", async () => {
+    const passing = await checkComponentScreen({
+      source: CLASSED, hostTools: tools, catalog, runQuery: async () => ROWS, ported: true,
+    });
+    expect(passing.issues).toEqual([]);
+    expect(passing.ok).toBe(true);
+  });
+
+  it("has no className at all in the dialect a MODEL authors", async () => {
+    const { codes, text } = await refusal(CLASSED);
+    expect(codes).toEqual(["types"]);
+    expect(text).toContain("className");
+  });
+
+  /**
+   * The splitter's `<button>` rewrite target. A ported Button is the host's own
+   * button mechanically rewritten, so it carries exactly what the host tag
+   * carried — its class, its inline style, and its children in place of
+   * `label`. The model-authored dialect keeps Button as it was: `label`
+   * required, no class, no style.
+   */
+  const HOST_BUTTON = `import { Button } from "@vendo/screen";
+export default function S() {
+  return <Button className="chip" style={{ height: 28 }} onClick={() => {}}>1W</Button>;
+}
+`;
+
+  it("takes the host button's class, style and children on a PORTED screen's Button", async () => {
+    const passing = await checkComponentScreen({
+      source: HOST_BUTTON, hostTools: tools, catalog, runQuery: async () => ROWS, ported: true,
+    });
+    expect(passing.issues).toEqual([]);
+    expect(passing.ok).toBe(true);
+  });
+
+  it("keeps Button label-required, class-free and style-free in the dialect a MODEL authors", async () => {
+    const { codes } = await refusal(HOST_BUTTON);
+    expect(codes).toEqual(["types"]);
+  });
+
+  /**
+   * THE PROPS SLOT. A ported component's paint can depend on the props its host
+   * call site passes — and a query runs before the screen renders, so nothing
+   * in the source can carry them. The check paints with the props it is HANDED
+   * (the host's own captured sampleProps; never invented), and a component
+   * that paints nothing without props still refuses loudly rather than
+   * shipping a screen that opens blank.
+   */
+  const PROPPED = `export default function S({ total }: { total?: number }) {
+  if (total === undefined) return null;
+  return <p>{total}</p>;
+}
+`;
+
+  it("paints a props-dependent PORTED screen with the props it is handed", async () => {
+    const passing = await checkComponentScreen({
+      source: PROPPED, hostTools: tools, catalog, runQuery: async () => ROWS, ported: true,
+      props: { total: 7 },
+    });
+    expect(passing.issues).toEqual([]);
+    expect(passing.ok).toBe(true);
+    expect(JSON.stringify(passing.initialTree)).toContain("7");
+  });
+
+  it("still refuses the same screen loudly when no props arrive", async () => {
+    const refused = await checkComponentScreen({
+      source: PROPPED, hostTools: tools, catalog, runQuery: async () => ROWS, ported: true,
+    });
+    expect(refused.ok).toBe(false);
+    expect(refused.issues.map(({ message }) => message).join("\n")).toContain("painted nothing");
+  });
+
+  it("still refuses a prop no display tag has, in either dialect", async () => {
+    const idProp = `import { Text } from "@vendo/screen";
+export default function S() { return <div id="card"><Text text="x" /></div>; }
+`;
+    const { codes, text } = await refusal(idProp);
+    expect(codes).toEqual(["types"]);
+    expect(text).toContain("id");
+
+    const ported = await checkComponentScreen({
+      source: idProp, hostTools: tools, catalog, runQuery: async () => ROWS, ported: true,
+    });
+    expect(ported.ok).toBe(false);
+  });
+
   it("refuses a style property the paint allowlist does not name, on a brick and on a Kit component alike", async () => {
     // The renderer drops these at paint (`safeStyle`, one door for every node).
     // Legal here, a screen compiled clean and then quietly did not paint what

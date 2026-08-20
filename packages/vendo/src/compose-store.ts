@@ -62,6 +62,11 @@ export function isHostedStore(store: VendoStore): store is HostedStore {
     host who wires `files:` gets rows deleted and objects left behind forever.
     One resolution, returned beside the store it may be backed by, so every
     consumer is handed the same instance. */
+/** Which of the two backings that resolution landed on — the same vocabulary
+    the boot summary's `files` row prints, so the upload door can name where a
+    refused file would have gone. */
+export type FilesVenue = "byo" | "store";
+
 function selectFiles(configured: FilesAdapter | undefined, store: VendoStore): FilesAdapter {
   if (configured !== undefined) return configured;
   // Deferred to first use, not built at compose: `storeFiles` resolves a blob

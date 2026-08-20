@@ -23,6 +23,7 @@ import type { McpDoor } from "@vendoai/mcp";
 import type { VendoStore } from "@vendoai/store";
 import type { Telemetry } from "@vendoai/telemetry";
 import type { ByoApprovalResolution } from "../byo-approvals.js";
+import type { FilesVenue } from "../compose-store.js";
 import type { HarnessTurns } from "../harness-turn.js";
 import type { ChannelDoor } from "../channels.js";
 import type { ConnectionsService } from "../connections.js";
@@ -34,7 +35,7 @@ import type { ConnectionsService } from "../connections.js";
     stays is what only the umbrella has. The per-request RunContext resolution
     lives in wire/context.ts; server.ts assembles the table from the per-area
     modules under src/wire/. */
-export { errorResponse, hex, internalError, json, requestJson, routeSegments, string } from "@vendoai/agents/http";
+export { errorResponse, hex, internalError, json, object, requestJson, routeSegments, string } from "@vendoai/agents/http";
 
 /** Re-exported, not redeclared: the one version literal lives in
     @vendoai/core, beside the deployment-identity headers that stamp it. */
@@ -44,6 +45,9 @@ export const BASE_PATH = "/api/vendo";
 /** Re-exported, not redeclared: the venue tag is what the ONE sandbox ladder
     returns (@vendoai/apps), and /status reports it verbatim. */
 export type { SandboxVenue };
+
+/** Re-exported for the same reason: `selectFiles` is what decides it. */
+export type { FilesVenue };
 
 /** How inference is served: "custom" (a host-passed model) or "ladder" (the
     composed vendoModel default — provider env key, then VENDO_API_KEY via the
@@ -119,6 +123,12 @@ export interface WireDeps {
       Undefined with no Cloud key — the door then refuses every delivery. */
   channelInboundSecret: () => Promise<string | undefined>;
   sandbox: SandboxVenue;
+  /** The resolved `createVendo({ uploadMaxBytes })`, and which backing the
+      bytes it admits will land in — the drop door refuses over its cap and
+      names both, so raising it past what the backing can hold is visible from
+      the refusal itself. */
+  uploadMaxBytes: number;
+  files: FilesVenue;
   model: ModelVenue;
   doctor: {
     present(ctx: RunContext): Promise<ToolOutcome>;

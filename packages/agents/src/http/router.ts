@@ -142,7 +142,7 @@ export function internalError(): Response {
   return errorResponse(new VendoError("not-implemented", "Internal Vendo error"));
 }
 
-function object(value: unknown, label: string): Record<string, unknown> {
+export function object(value: unknown, label: string): Record<string, unknown> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new VendoError("validation", `${label} must be an object`);
   }

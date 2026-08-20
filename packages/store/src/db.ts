@@ -263,12 +263,22 @@ async function releaseSharedPglite(dataDir: string, entry: SharedPglite): Promis
     store's copy is visible here as a transiently truncated read, which pglite
     surfaces as `Invalid FS bundle size` (seen on CI 2026-08-16, healed by the
     next read). One delayed retry is the fix; a second identical failure means
-    the installed package really is truncated. */
-async function createPgliteRetryingTruncatedBundle(dataDir: string): Promise<PGlite> {
+    the installed package really is truncated.
+
+    `PGlite failed to initialize properly` joins it: the wasm engine intermittently
+    loses a boot with no lock file and no short read to blame, which on a
+    `memory://` store left zero recovery path (CI killed one random test out of
+    ~300 in `packages/agents` on two unrelated branches). Both are signatures of a
+    boot that never started, so a second attempt is free of side effects — unlike
+    `Aborted()`, which means a half-opened data dir and belongs to the stale-lock
+    heal below, not here. */
+const TRANSIENT_BOOT = /Invalid FS bundle size|failed to initialize properly/;
+
+async function createPgliteRetryingTransientBoot(dataDir: string): Promise<PGlite> {
   try {
     return await PGlite.create(dataDir);
   } catch (error) {
-    if (!/Invalid FS bundle size/.test(errorMessage(error))) throw error;
+    if (!TRANSIENT_BOOT.test(errorMessage(error))) throw error;
     await wait(500);
     try {
       return await PGlite.create(dataDir);
@@ -284,7 +294,7 @@ async function createPgliteRetryingTruncatedBundle(dataDir: string): Promise<PGl
 /** ENG-350 — self-heal a stale lock instead of hard-aborting boot. */
 async function createPgliteHealingStaleLock(dataDir: string): Promise<PGlite> {
   try {
-    return await createPgliteRetryingTruncatedBundle(dataDir);
+    return await createPgliteRetryingTransientBoot(dataDir);
   } catch (error) {
     const lock = readPgliteLock(dataDir);
     if (!lock) throw error;
@@ -298,7 +308,7 @@ async function createPgliteHealingStaleLock(dataDir: string): Promise<PGlite> {
     );
     fs.rmSync(lock.path, { force: true });
     try {
-      return await createPgliteRetryingTruncatedBundle(dataDir);
+      return await createPgliteRetryingTransientBoot(dataDir);
     } catch (retryError) {
       throw new Error(
         `[vendo] PGlite data directory "${dataDir}" failed to open even after clearing its stale lock — the store is likely corrupt. Back up and delete the directory to start fresh, or set a Postgres url. Cause: ${errorMessage(retryError)}`,

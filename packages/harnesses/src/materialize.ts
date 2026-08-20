@@ -254,8 +254,13 @@ export async function checkoutWorkspace(
     if (staged.size === 0 && removed.length === 0) return [];
     const result = await workspace.commit();
     // A conflict means nothing landed (§3.2): the checkout's view of the store is
-    // unchanged, so the next sync retries the same diff.
-    if (result.status !== "ok") return [];
+    // unchanged, so the next sync retries the same diff. SAID OUT LOUD, because
+    // answering `[]` made "nothing landed" and "there was nothing to land"
+    // indistinguishable — which is how the mid-turn barrier came to acknowledge
+    // a write that never reached the store. Every caller already catches.
+    if (result.status !== "ok") {
+      throw new Error(`the workspace changed underneath this sync: ${result.paths.join(", ")}`);
+    }
     for (const [path, hash] of staged) hashes.set(path, hash);
     for (const path of removed) hashes.delete(path);
     // `removed` are paths that WERE in the checkout, so their rows existed and

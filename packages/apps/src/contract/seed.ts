@@ -34,6 +34,18 @@ export interface SeedBaseline {
   subSources?: Record<string, SeedSubSource>;
   sampleProps?: Record<string, Json>;
   styles?: SeedStyle[];
+  ported?: SeedPort;
+}
+
+/** The splitter's output for this slot: the PORTED half a remix starts from.
+ *  Absent = the component was not provably splittable and gets no ✦. */
+export interface SeedPort {
+  /** The ported component: real TSX in the screen dialect, host classNames intact. */
+  source: string;
+  /** Envelope names this port's `useQuery`/`tools.*` calls bind to. */
+  tools: string[];
+  /** Component names the port renders as holes (npm + host sub-components). */
+  holes: string[];
 }
 
 /** Captured source-owned virtual module plus its own resolved import table. */
@@ -58,6 +70,12 @@ const seedStyleSchema = z.object({
   css: z.string(),
 }).passthrough() satisfies z.ZodType<SeedStyle>;
 
+const seedPortSchema = z.object({
+  source: z.string(),
+  tools: z.array(z.string()),
+  holes: z.array(z.string()),
+}).passthrough() satisfies z.ZodType<SeedPort>;
+
 /** 06-apps §8 — validated persisted representation of a captured host baseline. */
 export const seedBaselineSchema = z.object({
   slot: z.string(),
@@ -70,6 +88,7 @@ export const seedBaselineSchema = z.object({
   subSources: z.record(seedSubSourceSchema).optional(),
   sampleProps: z.record(z.unknown()).optional(),
   styles: z.array(seedStyleSchema).optional(),
+  ported: seedPortSchema.optional(),
 }).passthrough() satisfies z.ZodType<SeedBaseline>;
 
 /**

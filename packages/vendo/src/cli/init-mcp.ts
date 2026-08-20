@@ -21,9 +21,9 @@ import { MCP_MOUNT } from "../door-paths.js";
 import type { AuthMatch } from "./init-auth.js";
 import { compositionModuleSource, type ScaffoldModel } from "./init-scaffolds.js";
 
-/** Which authorization server fronts the door. DECLARED by the operator and
-    nothing else (10-mcp §3.1) — init prints environment lines, it never
-    discovers posture and never reaches a broker to find out. */
+/** Which authorization server fronts the door. ANSWERED by the operator and
+    nothing else (10-mcp §3.1) — init writes the posture into the composition,
+    it never discovers one and never reaches a broker to find out. */
 export type McpPosture = "local" | "broker";
 
 export interface McpPlanInput {
@@ -120,8 +120,6 @@ export interface McpPlan {
       discovery points at the wrong origin surfaces hours later as "Claude can't
       find my server". */
   steps: string[];
-  /** Environment lines the operator sets where they deploy (broker posture). */
-  envLines: string[];
   /** The provider and file of the `models` line this plan wrote — the
       composition module, never the route it replaced. The caller's closing
       summary names this file, so it can never point a reader at a route that
@@ -133,25 +131,41 @@ export interface McpPlan {
 }
 
 /** The plan's closing block, as a pretty run reads it: each step numbered by
-    its headline, its detail indented under it, and the environment values as a
-    closing group under one sentence that says where they go. A flat list of
+    its headline and its detail indented under it. A flat list of
     `headline\ndetail` strings reads as a wall — the numbers and the indent are
     what make it read as steps. (Plain runs print the same strings unnumbered:
     the newline becomes an indent and nothing else, since a plain transcript is
     parsed as often as it is read.) */
-export function mcpStepLines(plan: Pick<McpPlan, "steps" | "envLines">): string[] {
+export function mcpStepLines(plan: Pick<McpPlan, "steps">): string[] {
   const lines: string[] = [];
   plan.steps.forEach((step, index) => {
     const [headline, ...detail] = step.split("\n");
     lines.push(`${index + 1}. ${headline}`);
     for (const rest of detail) lines.push(`   ${rest}`);
   });
-  if (plan.envLines.length > 0) {
-    lines.push("", "Set where you deploy — both values live on the console's MCP page:");
-    for (const env of plan.envLines) lines.push(`   ${env}`);
-  }
   return lines;
 }
+
+/** Why a service key cannot ride the broker posture, in the ONE voice both
+    refusals speak: `cli.ts` catches the flag pair it can read off argv, and
+    init catches a posture chosen at the select, which never reaches argv. The
+    lead-in differs because the user did two different things; the explanation
+    and the way out must not. */
+export const SERVICE_KEY_ON_BROKER =
+  "a Cloud-fronted door's service key is provisioned with the tenant on first use, so this one would be "
+  + "discarded. Drop --service-key, or pass --posture local to declare your own "
+  + "(https://docs.vendo.run/outside-agents/service-keys-and-broker)";
+
+/** Why a Cloud-fronted door cannot stand on an http origin. Cloud registers
+    `VENDO_BASE_URL` as the tenant's forwarding address and refuses one that is
+    not https, so the two answers used to pass init, print `Wired`, and leave a
+    door that died on its first request. Same shape as the refusal above: the
+    lead-in names the origin, this says why and how out. */
+export const BROKER_NEEDS_HTTPS =
+  "Vendo Cloud registers that origin as the tenant's forwarding address and refuses one that is not https, "
+  + "so this door would be written now and fail on its first request. Take the local posture — zero config, "
+  + "and it works on http — or re-run with --base-url set to an https origin "
+  + "(https://docs.vendo.run/outside-agents/quickstart)";
 
 /** A fresh service key: 32 random bytes, hex. `planMcp` mints one itself when
     the answers call for it AND the host has none to reuse; this is separately
@@ -194,10 +208,20 @@ const KEYLESS_SIGN_IN =
   + "to front it with an external authorization server (e.g. Vendo Cloud's broker) — "
   + "same client URL either way.";
 
+/** The Cloud sign-in pointer, and the reason this path prints no environment
+    values at all: the runtime reads the broker URL and the federation secret
+    from Cloud and provisions the tenant on first use, so there is nothing for
+    the operator to copy. The two variables survive as an explicit override,
+    which — adapter rule — always wins over the Cloud default. */
+const CLOUD_SIGN_IN =
+  "Sign-in: Vendo Cloud fronts the door — your VENDO_API_KEY provisions the tenant on first use, "
+  + "so there is nothing to copy. Set VENDO_MCP_BROKER_URL and VENDO_MCP_FEDERATION_SECRET to point "
+  + "at a broker of your own instead — same client URL either way.";
+
 export function planMcp(input: McpPlanInput): McpPlan {
   const { root, appDir, composition, framework, authWired, serverActions, cloudKey, posture, serviceKey, baseUrl } = input;
   const models = input.models ?? null;
-  const refuse = (why: string): McpPlan => ({ changes: [], compositionSource: null, steps: [], envLines: [], modelWritten: null, blocked: why });
+  const refuse = (why: string): McpPlan => ({ changes: [], compositionSource: null, steps: [], modelWritten: null, blocked: why });
 
   if (framework !== "next") {
     return refuse(
@@ -239,11 +263,12 @@ export function planMcp(input: McpPlanInput): McpPlan {
     `Point any MCP client at \`${clientBase}${MCP_MOUNT}\`\nyour users' setup page ships free at \`${MCP_MOUNT}/connect\` — copy for Claude · ChatGPT · Cursor included`,
     "Claude Code: `/plugin marketplace add runvendo/vendo` then `/plugin install vendo@vendo`",
   ];
-  if (!cloudKey) steps.push(KEYLESS_SIGN_IN);
-  if (serviceKey) {
-    steps.push(serviceAuth
-      ? `Your backend exchanges \`VENDO_SERVICE_KEY\` at \`${clientBase}${MCP_MOUNT}/token\`\nfor a 10-minute token acting as a named user — svc: attribution in the audit`
-      : "Create the service key on the console's keys page (Service keys)\nit lands in the broker — exchange it at `<your tenant URL>/token`");
+  if (posture === "broker") steps.push(CLOUD_SIGN_IN);
+  else if (!cloudKey) steps.push(KEYLESS_SIGN_IN);
+  // Only the local door has a step here: Cloud provisions the service key
+  // itself, and the console is where it is listed, rotated and revoked.
+  if (serviceAuth) {
+    steps.push(`Your backend exchanges \`VENDO_SERVICE_KEY\` at \`${clientBase}${MCP_MOUNT}/token\`\nfor a 10-minute token acting as a named user — svc: attribution in the audit`);
   }
 
   return {
@@ -254,11 +279,5 @@ export function planMcp(input: McpPlanInput): McpPlan {
       : {}),
     modelWritten: models === null ? null : { provider: models.provider, path: relative(root, composition).split(sep).join("/") },
     steps,
-    envLines: posture === "broker"
-      ? [
-          "`VENDO_MCP_BROKER_URL=<your tenant MCP endpoint>`",
-          "`VENDO_MCP_FEDERATION_SECRET=<secret>`",
-        ]
-      : [],
   };
 }

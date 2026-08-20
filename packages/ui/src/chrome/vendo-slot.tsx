@@ -1,8 +1,9 @@
-import { log, type Json, type ToolOutcome, type UIPayload } from "@vendoai/core";
+import { log, type AppId, type Json, type ToolOutcome, type UIPayload } from "@vendoai/core";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useVendoProvider } from "../context.js";
 import { announcePin } from "../pin-events.js";
 import { useApp } from "../hooks/use-app.js";
+import { useAppSharing } from "../hooks/use-app-sharing.js";
 import { useReportSlot } from "../hooks/use-placements.js";
 import { useSlotApp } from "../hooks/use-slot-app.js";
 import { FluidReveal } from "../tree/fluid-reveal.js";
@@ -189,7 +190,7 @@ function SlotBuildFailed({ appId, slotId, onChanged }: {
   );
 }
 
-function MountedApp({ appId, onParked }: { appId: string; onParked?: (parked: ParkedPress) => void }) {
+function MountedApp({ appId, placement, onParked }: { appId: string; placement?: { slotId: string; onChanged(): void }; onParked?: (parked: ParkedPress) => void }) {
   const { client, components } = useVendoProvider();
   const { surface, error, isLoading, refresh } = useApp(appId);
   // The served-surface keepalive: an on-screen embed pings the
@@ -202,6 +203,18 @@ function MountedApp({ appId, onParked }: { appId: string; onParked?: (parked: Pa
   useEffect(() => {
     if (surface?.kind === "tree") rememberShape(appId, surface.payload);
   }, [appId, surface]);
+  // A build that landed and a screen that no longer opens. The placement says
+  // "ready" — build-time truth, honestly reported — so only the open knows, and
+  // the card that names the reason and clears the slot has to be reachable from
+  // here too, or the slot prints the wire's own vocabulary at the person.
+  //
+  // Only a PLACEMENT gets that card, for the same reason the ✦ below hides
+  // Revert from a host-asserted app: there is no row to clear, and discovery is
+  // stood down, so both of its buttons would write to the wire and leave the
+  // screen exactly as it was. Without one the frame still says the reason.
+  if (surface?.kind === "failed" && placement !== undefined) {
+    return <SlotBuildFailed appId={appId} slotId={placement.slotId} onChanged={placement.onChanged} />;
+  }
   if (!surface) {
     if (error && !isLoading) return <SlotLoadFailed reason={error} onRetry={() => void refresh()} />;
     return <SlotGhost label="Loading app…" loading appId={appId} />;
@@ -305,6 +318,8 @@ export function VendoSlot({ id, label, description, appId: appIdProp, pin, onAut
   const resolvesItself = appIdProp === undefined && pin === undefined;
   // The placed app's own build status — discovery's, and only discovery's.
   const status = resolvesItself ? discovery.status : undefined;
+  // The ✦ menu's share item — asked for only where the ✦ is actually worn.
+  const sharing = useAppSharing(appId as AppId, appId !== undefined && resolvesItself);
 
   // A slot id lives in the host's markup and nowhere else, so a surface that is
   // not on this page (the embed's "Add to…" picker) can only learn this slot
@@ -445,7 +460,7 @@ export function VendoSlot({ id, label, description, appId: appIdProp, pin, onAut
   const mounted = appId
     // `reload` remounts the app, so Refresh is a real round trip through
     // get+open — and the wait is the shape-true skeleton, not a frozen view.
-    ? <MountedApp key={reload} appId={appId} onParked={parked} />
+    ? <MountedApp key={reload} appId={appId} placement={resolvesItself ? { slotId: id, onChanged: () => void discovery.refresh() } : undefined} onParked={parked} />
     : <AppFrame surface={{ kind: "tree", payload: pin!.payload }} components={components} data={pin!.data} onAction={pin!.onAction} onParked={parked} />;
   const body = (
     <FluidReveal stateKey={appId ? `app:${appId}` : `pin:${id}`} initialExit={children}>
@@ -464,6 +479,7 @@ export function VendoSlot({ id, label, description, appId: appIdProp, pin, onAut
             appId={appId}
             title={pinTitle}
             context={`The view being edited is the "${pinTitle}" app (${appId}), pinned in the "${id}" slot.`}
+            {...(sharing === undefined ? {} : { sharing })}
             onRefresh={() => setReload(n => n + 1)}
             onRevert={() => client.apps.unplace(appId, id).then(() => void discovery.refresh())}
           >

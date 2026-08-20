@@ -134,6 +134,34 @@ describe("VendoSlot build states", () => {
       expect(await screen.findByText("Invoices app surface")).toBeTruthy();
     });
 
+    // The build landed, so the placement says "ready" and the app mounts — and
+    // the open answers that its screen is gone. Only the mounted surface knows,
+    // so the failed card has to be reachable from there too.
+    it("shows the failed card when a ready app's screen no longer opens", async () => {
+      const reason = "the screen no longer compiles: spending.data is undefined";
+      wire.state.deadScreens.set("app_1", reason);
+      wire.state.placements.push({ slot: "hero", appId: "app_1" });
+      slot("hero");
+      await screen.findByText(reason);
+      expect(screen.getByRole("button", { name: "Clear this slot" })).toBeTruthy();
+    });
+
+    // A host-asserted appId is the host's own markup decision: there is no
+    // placement row to clear, and discovery is stood down, so the card's writes
+    // would land on the wire and change nothing on screen. The reason is still
+    // said — in the notice the frame renders for every one of its callers.
+    it("a host-asserted app says why, without a clear that could never land", async () => {
+      const reason = "the screen no longer compiles: spending.data is undefined";
+      wire.state.deadScreens.set("app_1", reason);
+      render(
+        <VendoProvider client={client}>
+          <VendoSlot id="hero" appId="app_1"><span>Original hero</span></VendoSlot>
+        </VendoProvider>,
+      );
+      await screen.findByText(reason);
+      expect(screen.queryByRole("button", { name: "Clear this slot" })).toBeNull();
+    });
+
     it("mounts the placed app — the http surface", async () => {
       wire.state.httpApps.set("app_1", "/frame-target.html");
       wire.state.placements.push({ slot: "hero", appId: "app_1" });

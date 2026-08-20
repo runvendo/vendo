@@ -17,6 +17,7 @@ import { engineOverAdapter } from "@vendoai/core";
  */
 import {
   VENDO_APP_FORMAT,
+  type Json,
   type RunContext,
   type ToolRegistry,
 } from "@vendoai/core";
@@ -29,6 +30,7 @@ import {
 import { describe, expect, it } from "vitest";
 import { createApps, type AppsConfig, type AppsRuntime } from "../src/server/index.js";
 import { scriptedScreenAssembler } from "../src/server/testing/screen-assembler.js";
+import { FIXTURE_SCREEN } from "../src/server/testing/screen-document.js";
 import { guardFixture } from "../src/server/testing/guard-fixture.js";
 import { memoryStore } from "../src/server/testing/memory-store.js";
 import { basicLanguageModel } from "../src/server/testing/scripted-model.js";
@@ -62,6 +64,11 @@ const baseline = (hash = "sha256:maple-base"): SeedBaseline => ({
   subSources: { "src/format-currency.ts": { source: "export const money = 1;", imports: {} } },
   sampleProps: { valueCents: 120_000_000 },
   styles: [{ path: "src/app.css", css: ".host { color: rebeccapurple; }" }],
+  // The splitter's half — the ported source the ✦ seeds as the app's own
+  // `app.tsx`. Deliberately shares not one byte with `SOURCE` above, so the
+  // "nothing of the capture reaches the remix" assertions still mean what they
+  // say: the PORT travels, the raw capture never does.
+  ported: { source: FIXTURE_SCREEN, tools: [], holes: [] },
 });
 
 /** The ONE builder, as a fixture: it writes `app.tsx` and lands it through
@@ -137,6 +144,38 @@ describe("seed.from — the ✦ gesture is a create that starts from something",
     const runtime = runtimeWith(memoryStore());
     await expect(runtime.seed.from({ component: "never-synced", instruction: "add a sparkline" }, owner))
       .rejects.toThrow(/no captured baseline/);
+  });
+
+  /**
+   * THE PROPS SLOT, at the seed door. A port whose paint depends on a prop
+   * renders nothing without one — the host's own mid-stream guard — and the
+   * floor grades it with the BASELINE's own sampleProps, the same captured
+   * values sync graded it with. Both directions pinned: with the sampleProps
+   * the seed lands; without them the gesture refuses loudly instead of
+   * minting a remix that opens blank.
+   */
+  const PROPPED_PORT = `export default function StatCard({ total }: { total?: number }) {
+  if (total === undefined) return null;
+  return <section><p>{total}</p></section>;
+}
+`;
+  const proppedBaseline = (sampleProps?: Record<string, Json>): SeedBaseline => ({
+    ...baseline(),
+    ported: { source: PROPPED_PORT, tools: [], holes: [] },
+    ...(sampleProps === undefined ? {} : { sampleProps }),
+  });
+
+  it("paints a props-dependent port with the baseline's own sampleProps", async () => {
+    const { runtime } = buildingRuntime(memoryStore(), { seedBaselines: [proppedBaseline({ total: 7 })] });
+    const app = await runtime.seed.from({ component: SLOT, instruction: "add a sparkline" }, owner);
+    expect(app.seed?.component).toBe(SLOT);
+    expect(app.buildFailed).toBeUndefined();
+  });
+
+  it("refuses the same port loudly when the baseline captured no sampleProps", async () => {
+    const { runtime } = buildingRuntime(memoryStore(), { seedBaselines: [proppedBaseline()] });
+    const app = await runtime.seed.from({ component: SLOT, instruction: "add a sparkline" }, owner);
+    expect(app.buildFailed?.reason).toContain("painted nothing");
   });
 });
 

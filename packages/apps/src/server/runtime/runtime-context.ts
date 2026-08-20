@@ -181,8 +181,12 @@ export interface AppsRuntimeContext {
   editVersions: Map<AppId, VersionEntry>;
   /** Why an edit's own save did NOT land, keyed by app. */
   editRefusals: Map<AppId, { intent: string; reason: string }>;
+  /** The source a RE-SEED's replay starts from, published for that replay only. */
+  replaySources: Map<AppId, string>;
   /** THIS edit's captured row, or nothing. */
   takeEditVersion(appId: AppId, instruction: string): VersionEntry | undefined;
+  /** THIS replay's starting source, or nothing — gone once read. */
+  takeReplaySource(appId: AppId): string | undefined;
   /** ONE instruction through the ONE builder. */
   assembleEdit(
     appId: AppId,
@@ -260,7 +264,7 @@ const createStores = (
   | "parkedActions" | "inClientApprovals"> => {
   const engine = engineOf(config.ops, config.store);
   const placementRows = placementStore(engine);
-  const slots = createSlotRegistry(engine);
+  const slots = createSlotRegistry(engine, config.slots);
   const data = createAppData({ ops: config.ops, store: config.store });
   const history = createAppHistory(engine);
   // Lane E — parked egress approvals (approved state lives on the document's

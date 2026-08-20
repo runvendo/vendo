@@ -175,10 +175,17 @@ export const EDIT_APP_TOOL = "edit_app";
  * A fresh build's app is the file the run is about to write, so opening it or
  * listing its saved records can only answer `not-found`: two entries on a
  * ten-step menu whose one possible use is a step spent learning that. An edit
- * starts the other way round — the document already on the person's screen is the
- * thing being changed, so reading it is the first move. Withheld from the brief's
- * button half too on a fresh build (`withheld` below): a screen cannot offer to
- * open an app nobody has made yet.
+ * starts the other way round — the app already on the person's screen is the
+ * thing being changed, so what it is showing is worth a step. Withheld from the
+ * brief's button half too on a fresh build (`withheld` below): a screen cannot
+ * offer to open an app nobody has made yet.
+ *
+ * NEITHER OF THESE READS THE SOURCE, and believing otherwise cost a whole
+ * investigation: `vendo_apps_open` is the client's render door
+ * (`apps` persistence/open.ts `paintedScreenSurface`) — it RE-RUNS the screen and
+ * answers with the flattened tree plus the compiled module, deliberately, because
+ * that is what a caller mounts. The `app.tsx` a run starts from reaches the model
+ * as {@link ScreenInput.source} instead, and only for a remix.
  */
 const EDIT_TOOLS: readonly string[] = ["vendo_apps_open", "vendo_apps_data_list"];
 
@@ -294,6 +301,11 @@ export interface ScreenInput {
    *  in the same bytes the box rung is handed. Knowledge, not instruction, so it
    *  sits with the job description rather than with the deployment's voice. */
   briefing?: string;
+  /** The `app.tsx` this run starts from — a REMIX's ported source, and nothing
+   *  else's ({@link ScreenAssemblerDeps.storedScreen} answers only for a seeded
+   *  row, `replayFrom` only for a re-seed). Absent on every other edit, whose
+   *  first message stays the ask alone. See {@link startingSource}. */
+  source?: string;
 }
 
 /** What one assembly run answers. `ScreenOutcome` plus the title an assembled
@@ -616,6 +628,39 @@ const judgeScreen = async (
   return refusal(path, findings);
 };
 
+/**
+ * The screen this run starts from, IN FRONT OF THE MODEL — the remix's whole
+ * reason to exist, and the one thing it never had.
+ *
+ * A remix's first act is an edit of the host component's own ported code
+ * (`remix/seed-surface.ts` `seedFrom`), and the loop checks that code out into
+ * the workspace. But the workspace is not somewhere this loop can READ: the
+ * loadout carries no file hand, `edit_app` can only replace passages the model
+ * quotes back character for character, and `vendo_apps_open` answers with the
+ * render rather than the source ({@link EDIT_TOOLS}). So the port sat staged and
+ * invisible, and every remix wrote a replacement out of the catalog instead —
+ * guessing a host component's props, which the checks floor then refused. The
+ * ask alone could never have produced anything else.
+ *
+ * A message rather than a section of the brief: the brief heads a cached prefix
+ * shared by every assembly, and this is one app's file.
+ *
+ * REMIXES ONLY. `source` is filled from the source this run starts on, which
+ * exists for a seeded row and nothing else — an ordinary edit's first message is
+ * still the ask, byte for byte.
+ */
+const startingSource = (source: string | undefined): string =>
+  source === undefined ? "" : `This app already has a screen: the host's own component, ported into this dialect.
+It is below, and it is what the ask under it changes — edit THIS code, keep every
+part the ask does not name, and never replace it with something built from the
+catalog.
+
+\`\`\`tsx
+${source}
+\`\`\`
+
+`;
+
 /** How much room the screen has, when the host said. Said ONLY then: a screen
  *  cannot measure its own surface, so a width this file guessed would read to the
  *  writer exactly like one the host measured. Absent, the paragraph above it ends
@@ -828,6 +873,11 @@ export async function assembleScreen(
    *  handed back inside a save or fetched by the fallback below — the repair round
    *  is capped at one, and nothing else bounds it. */
   let reviewed = false;
+  /** What the run said about the SCREEN, kept from the moment a verdict bought a
+   *  repair round. Everything the loop says from there answers the REVIEWER
+   *  ("Fixed the double count"), and the receipt is spoken to the PERSON
+   *  (`make-receipt.ts` §3.1). */
+  let described: string | undefined;
 
   /**
    * ONE writer at a time, over the whole read-apply-write.
@@ -986,7 +1036,10 @@ export async function assembleScreen(
         ? undefined
         : await judgeScreen(surface, input.appId, `${directory}/${APP_FILE}`, input.request, input.viewport);
       reviewed = true;
-      if (findings !== undefined) return { ...answer, note: `${note}\n\n${findings}` };
+      if (findings !== undefined) {
+        described = spoken.trim();
+        return { ...answer, note: `${note}\n\n${findings}` };
+      }
       ended?.abort();
     }
     return { ...answer, note };
@@ -1123,7 +1176,11 @@ export async function assembleScreen(
   loadout.push(acting(saveApp), acting(editApp));
 
   const turn: Turn<VendoHarnessOptions> = {
-    messages: [{ id: `screen_${input.appId}`, role: "user", parts: [{ type: "text", text: input.request }] }],
+    messages: [{
+      id: `screen_${input.appId}`,
+      role: "user",
+      parts: [{ type: "text", text: `${startingSource(input.source)}${input.request}` }],
+    }],
     // The listings are read ONCE and handed back verbatim: a closed loadout has
     // nothing to discover, so re-reading them mid-run would be a second projection
     // of the same static menu.
@@ -1280,10 +1337,13 @@ export async function assembleScreen(
      *  above narrowed `record.painted` to "not false" for the rest of this block,
      *  and the repair round below is the one thing that can still make it false. */
     const painted = (): boolean | undefined => record.painted;
-    /** What describes the screen the person is looking at, taken BEFORE the repair
-     *  round: the round may write bytes that never reach them, and a receipt is
-     *  about the screen, not about the last thing the model typed. */
-    let say = words();
+    /** What describes the screen the person is looking at, taken from before the
+     *  verdict on either route to a repair round: `described` where the closing
+     *  save carried the findings back and the same drive went on to repair, and
+     *  this drive's own words where it ended unjudged and the fallback below is
+     *  what asks. A receipt is about the screen, not about the last thing the
+     *  model typed. */
+    const say = described ?? words();
     let title = record.title;
     if (instruction !== undefined && !surface.signal.aborted) {
       // The document rides along: a drive starts from the messages it is given, so
@@ -1301,21 +1361,16 @@ export async function assembleScreen(
         }],
       }], { maxSteps: REPAIR_STEPS });
       /**
-       * A REPAIR THE FLOOR REFUSED DID NOT HAPPEN — so it does not get to describe
-       * the screen.
+       * A REPAIR THE FLOOR REFUSED DID NOT HAPPEN — so it does not get to NAME the
+       * screen either.
        *
        * Its bytes landed and nothing painted, which leaves the person looking at
-       * the screen from before the round. The round's own closing words are then
-       * "Fixed the date format." over a date that is still wrong, and its
-       * `record.title` is the name of a screen nobody ever saw. The screen itself
-       * STANDS — taking away a painted screen because a patch on it failed is the
-       * one thing worse than an unrepaired screen — so what changes here is only
-       * what is SAID about it.
+       * the screen from before the round, while its `record.title` is the name of a
+       * screen nobody ever saw. The screen itself STANDS — taking away a painted
+       * screen because a patch on it failed is the one thing worse than an
+       * unrepaired screen — so what a refused round costs it is only the new name.
        */
-      if (painted() !== false) {
-        say = words();
-        title = record.title;
-      }
+      if (painted() !== false) title = record.title;
     }
     return {
       kind: "assembled",
@@ -1351,6 +1406,31 @@ export interface ScreenAssemblerDeps {
   /** This principal's workspace, unwrapped. The assembler wraps it with the
    *  render seam itself, so composition never has to know that it must. */
   workspace: (ctx: RunContext) => Promise<WorkspaceFs>;
+  /**
+   * The app's stored `app.tsx` — what the checkout below projects into the
+   * workspace when the workspace has none.
+   *
+   * Composition fills it from `AppsRuntime.get`, exactly as it fills `render` and
+   * `remember`: this file depends on no store and must never reach for one. The
+   * reader that cannot do without it is the ✦ remix — `seed.from` writes the
+   * splitter's ported source to the ROW, and this loop can only edit code it can
+   * SEE in the workspace. Unfilled — or answering `undefined`, which is what
+   * composition does for every app that is NOT a remix — an edit starts from
+   * whatever the workspace already holds, which is exactly today's behaviour.
+   */
+  storedScreen?: (appId: AppId, ctx: RunContext) => Promise<string | undefined>;
+  /**
+   * The source THIS run must start from, replacing whatever the workspace holds
+   * — `AppsRuntime.takeReplaySource`, published by a re-seed for its own replay
+   * and gone once read.
+   *
+   * Deliberately NOT folded into `storedScreen`: that one fills an EMPTY
+   * workspace and must never overwrite a save, while this one exists precisely
+   * to overwrite. Keeping them two slots is what makes the overwrite
+   * unreachable from an ordinary edit — an ordinary edit publishes nothing, so
+   * there is nothing for it to take.
+   */
+  replayFrom?: (appId: AppId) => string | undefined;
   /** The seam's optional halves — the checks floor and source persistence. A
    *  screen assembled here passes the same floor every other author's does, or it
    *  does not paint. */
@@ -1404,6 +1484,50 @@ export function screenAssembler(deps: ScreenAssemblerDeps): ScreenAssembler {
   return {
     async assemble(request: ScreenRequest, ctx: RunContext): Promise<ScreenOutcome> {
       const base = await deps.workspace(ctx);
+      // THE CHECKOUT — contract §3.2's law applied on the way IN: the row is the
+      // truth and the workspace is a working copy of it. The ✦ gesture writes a
+      // remix's PORTED `app.tsx` straight to the row (`seed.from`), so without
+      // this the loop's first `edit_app` finds no file and rewrites the component
+      // from nothing — the one thing a fork exists not to do.
+      //
+      // Through the UNWRAPPED workspace on purpose: the floor already graded
+      // these bytes before the row stored them, so painting them again here would
+      // buy nothing and cost a second gauntlet on every edit. It never overwrites
+      // — a file already here belongs to a save, and a save is newer than the row.
+      const checkout = `${appDirectory(request.appId)}/${APP_FILE}`;
+      // A RE-SEED replays the recorded wish onto the host's NEW port, so its
+      // starting point REPLACES the workspace copy — the person's old screen is
+      // what it is replacing. Nothing has been written to the row: this run's own
+      // save is the single landing, so a replay that never saves leaves the
+      // stored screen untouched. Only a re-seed publishes one.
+      let start = deps.replayFrom?.(request.appId);
+      // Otherwise the ordinary checkout, which only ever FILLS an empty
+      // workspace and can never overwrite a save.
+      if (start === undefined && !(await base.exists(checkout))) {
+        start = await deps.storedScreen?.(request.appId, ctx);
+      }
+      // Blank is not a screen — `open()` reads it the same way — and an empty
+      // file would leave `edit_app` editing nothing, which is worse than none.
+      //
+      // STAGED, NEVER COMMITTED — DO NOT ADD A `commit()` HERE. It looks like a
+      // missing half, and it is not: the staging IS the mechanism.
+      //
+      // A staged write is visible to this run's own reads and to nothing else
+      // (`workspace-fs.ts:91`, and `readFile` at `:276`), so a run that saves
+      // nothing lands nothing — the row keeps the person's screen and so does the
+      // workspace. Whatever the run DOES save commits this along with it, which is
+      // the only moment either copy should move.
+      //
+      // Committing here instead lands the checked-out source whether or not the
+      // run ever used it, and that is DATA LOSS with a green test in front of it:
+      // a failed re-seed leaves the host's new port sitting in the workspace, the
+      // next ordinary edit opens that instead of the person's screen, and saves it
+      // over the top. The row-level guarantee still passes the whole time, because
+      // the loss happens a turn later. Proven: re-add the commit and
+      // `remix-port-seed.e2e.test.ts`'s re-seed guarantee goes red on the
+      // workspace half.
+      const staged = start !== undefined && start.trim() !== "" ? start : undefined;
+      if (staged !== undefined) await base.writeFile(checkout, staged);
       /** The last SETTLED paint of this app, kept as it goes past on its way to the
        *  person's screen. It is the only place the resolved query answers exist —
        *  the seam spreads them beside the description on the final paint — so the
@@ -1456,6 +1580,7 @@ export function screenAssembler(deps: ScreenAssemblerDeps): ScreenAssembler {
           request: request.request,
           ...(request.viewport === undefined ? {} : { viewport: request.viewport }),
           ...(pack === undefined ? {} : { briefing: renderBriefingPack(pack) }),
+          ...(staged === undefined ? {} : { source: staged }),
         },
       );
       if (result.kind !== "assembled") return result;

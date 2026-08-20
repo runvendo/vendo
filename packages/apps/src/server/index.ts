@@ -185,6 +185,17 @@ export {
   type ScreenTypecheckResult,
 } from "./checking/toolchain.js";
 export type { ComponentScreenIssue } from "./checking/component-screen.js";
+/**
+ * The checks-floor gauntlet itself, exported for the same reason as the floor
+ * above: the hand that SYNCS a ported component is not in this package, and a
+ * port nothing checked is a port nobody can trust.
+ */
+export {
+  PORTED_SCREEN_DIALECT,
+  checkComponentScreen,
+  type ComponentScreenCheck,
+  type ComponentScreenOptions,
+} from "./checking/component-screen.js";
 // The component screen's own two facts every writer of one needs: which file it
 // is, and the title it gives itself. Public because the hand that SAVES a screen
 // is not in this package — the screen agent lives in the umbrella, and a harness

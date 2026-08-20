@@ -86,6 +86,20 @@ jobs:
             exit 1
           fi
 
+      # THE CHANGESET RACE: a changeset-carrying PR landed in the gap between
+      # this version PR being cut and it merging, so the tag step below sees
+      # those leftover changesets and skips — a green run that released nothing
+      # (phantom 0.31.0 on 2026-08-19, run 32250259707). Every other skip is a
+      # healthy no-op; this one loses a release, so it has to be loud. Nothing to
+      # repair by hand: the version PR the step above just re-opened ships this
+      # one's changelog too, under the next number.
+      - name: Fail a swallowed release
+        # Quoted because the commit subject it matches contains a colon.
+        if: "steps.changesets.outputs.hasChangesets == 'true' && startsWith(github.event.head_commit.message, 'chore: version packages')"
+        run: |
+          echo "::error::Release skipped: changesets landed after this version PR was cut. Nothing was published — merge the next Version Packages PR to release."
+          exit 1
+
       # No changesets left = this push is the version PR landing (or an ordinary
       # commit after a release, where the tag already exists and this no-ops), so
       # package.json already holds the released version. `changeset tag` is

@@ -150,7 +150,7 @@ const descriptors = [
     // for themselves. A model with no way to see the real slot ids guesses one,
     // and a guessed id is a placement aimed at a spot no page renders: the row
     // is written, nothing ever shows it, and the user is told their view landed.
-    description: "List the places on the user's page where a generated view can go. Each entry has an `id`, a `label` the user would recognize, and a `description` of what that place is for. Pass an `id` from this list to `vendo_make`'s `slot` or to `vendo_apps_pin`'s `slot`, and never invent one: an id that is not here belongs to no page, so nothing would ever appear there. An empty list means the page the user is on offers no place to put a view, so make the view without a slot.",
+    description: "List the places where a generated view can go. Each entry has an `id`, a `label` the user would recognize, and a `description` of what that place is for. Some are reported by the pages the user has open; others the host declared in its own config, and those are always there whether or not any page is rendering. Either way, an id in this list is a real destination — pass one to `vendo_make`'s `slot` or to `vendo_apps_pin`'s `slot`, and never invent one: an id that is not here belongs to no place, so nothing would ever appear there. An empty list means there is no place to put a view, so make the view without a slot.",
     inputSchema: {
       $schema: DRAFT_2020_12,
       type: "object",

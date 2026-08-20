@@ -51,15 +51,21 @@ const payloadFor = (
   compiledSource: string,
   queries: Record<string, unknown>,
   queryPlan?: Array<{ tool: string; input?: Json }>,
+  source?: "ported",
+  props?: Record<string, Json>,
 ): UIPayload => {
-  const first = bootScreen({ compiledSource, queries, catalog: CATALOG, now: Date.UTC(2026, 1, 1) });
+  const first = bootScreen({ compiledSource, queries, catalog: CATALOG, now: Date.UTC(2026, 1, 1), ...(props === undefined ? {} : { props }) });
   try {
-    const flat = flattenTree(first.tree());
+    const flat = flattenTree(first.tree(), source);
     return {
       formatVersion: VENDO_TREE_FORMAT,
       root: flat.root,
       nodes: Object.values(flat.nodes),
-      interactive: { compiledSource, queries, ...(queryPlan === undefined ? {} : { queryPlan }) },
+      interactive: {
+        compiledSource, queries,
+        ...(queryPlan === undefined ? {} : { queryPlan }),
+        ...(props === undefined ? {} : { props }),
+      },
     } as unknown as UIPayload;
   } finally {
     first.dispose();
@@ -188,6 +194,78 @@ export default function Reference() {
     expect(host.calls).toEqual([]);
   });
 
+  /**
+   * A PORTED screen keeps the host's own classes across a repaint.
+   *
+   * The served paint says what the screen IS on every node it carries, and a
+   * brick paints a host class for a `"ported"` node and for no other. A repaint
+   * comes from the VM, which emits elements and no provenance — so the bridge has
+   * to carry the served paint's own forward or the class silently disappears on
+   * the first click, leaving a correct screen that looks like a different
+   * component.
+   */
+  it("keeps a ported screen's host classes when a click repaints it", async () => {
+    const compiled = compile(`
+import { useState } from "react";
+import { Button, Stack } from "@vendo/screen";
+
+export default function Ported() {
+  const [total, setTotal] = useState("$1.2M");
+  return (
+    <Stack>
+      <article className="maple-card">{total}</article>
+      <Button label="Grow" onClick={() => setTotal("$1.3M")} />
+    </Stack>
+  );
+}`);
+    const host = hostPipe(() => ok(null));
+    render(
+      <PayloadView payload={payloadFor(compiled, {}, undefined, "ported")} components={{}} onAction={host.onAction} />,
+    );
+    expect(screen.getByText("$1.2M").getAttribute("class")).toBe("maple-card");
+
+    fireEvent.click(screen.getByRole("button", { name: "Grow" }));
+    await waitFor(() => expect(screen.getByText("$1.3M")).toBeTruthy());
+    expect(screen.getByText("$1.3M").getAttribute("class")).toBe("maple-card");
+  });
+
+  /**
+   * THE PROPS SLOT, client side. A ported screen's paint can depend on the
+   * props its host call site passed — the served tree carries the server's
+   * paint of them, and the bridge's own VM must boot with the SAME props or
+   * the first click that moves the screen paints the component's no-props
+   * branch instead. `interactive.props` is where they ride.
+   */
+  it("boots the bridge VM with the served paint's props, so a click keeps them", async () => {
+    const compiled = compile(`
+import { useState } from "react";
+import { Button, Stack, Text } from "@vendo/screen";
+
+export default function Propped({ label }: { label?: string }) {
+  const [n, setN] = useState(0);
+  if (label === undefined) return null;
+  return (
+    <Stack gap={4}>
+      <Text text={label + ":" + n} />
+      <Button label="More" onClick={() => setN(n + 1)} />
+    </Stack>
+  );
+}`);
+    const host = hostPipe(() => ok(null));
+    render(
+      <PayloadView
+        payload={payloadFor(compiled, {}, undefined, "ported", { label: "Total" })}
+        components={{}}
+        onAction={host.onAction}
+      />,
+    );
+    expect(screen.getByText("Total:0")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "More" }));
+    await waitFor(() => expect(screen.getByText("Total:1")).toBeTruthy());
+  });
+
+
   it("hands a Select's change to the screen as an EVENT, whichever way the Kit reported it", async () => {
     // `onChange={setAgent}` is the React reflex, and this is what it actually
     // gets. The two ways a Kit Select can report a change CONVERGE: a controlled
@@ -223,6 +301,7 @@ export default function Handover() {
     fireEvent.change(screen.getByLabelText("Loose"), { target: { value: "marco" } });
     await waitFor(() => expect(screen.getByText(asEvent("marco"))).toBeTruthy());
   });
+
 
   it("routes a handler's tool call through the host pipe, then re-reads and SUPPLIES", async () => {
     let rows = [...ROWS];

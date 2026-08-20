@@ -135,6 +135,7 @@ The old `agent: { … }` options bag is gone the same way. What the deployment c
 | `hostedStore` | `(options: HostedStoreOptions) => HostedStore` |
 | `hostedStoreOps` | `(options: HostedStoreOptions) => StoreOps` |
 | `eraseStore` | `(store, options: { files: FilesAdapter }) => { bySubject, byApp }` |
+| `s3Files` | `(options: S3FilesOptions) => FilesAdapter`. Any S3-compatible bucket — R2, S3, Supabase, MinIO. See [User data](/customize/user-data#your-own-bucket) |
 | `envSecrets` | `(prefix?: string) => SecretsProvider` |
 | `storeSecrets` | `(store: VendoStore) => SecretsProvider` |
 | `secretStore` | `(store: VendoStore) => { set, delete, list }` |

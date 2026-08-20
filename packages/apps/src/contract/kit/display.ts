@@ -25,6 +25,7 @@ export const DISPLAY_SPECS: readonly DisplayTagSpec[] = [
   { name: "div", summary: "A generic box. The default when nothing more specific fits." },
   { name: "span", summary: "A generic inline run, inside a line of text." },
   { name: "section", summary: "A themed region of the screen." },
+  { name: "article", summary: "A self-contained piece of content — a card, a post." },
   { name: "header", summary: "The top band of a screen or section." },
   { name: "footer", summary: "The bottom band of a screen or section." },
   { name: "aside", summary: "Content beside the main flow — a sidebar or a note." },

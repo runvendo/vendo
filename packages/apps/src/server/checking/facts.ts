@@ -328,7 +328,12 @@ export const kitNestingIssues = (tree: Tree): FactIssue[] => {
     const anchor = (message: string): FactIssue => at === "" ? atNode(nodeId, message) : atProp(nodeId, at, message);
     const spec = kitSpec(component);
     const kids: unknown[] = Array.isArray(children) ? children : [];
-    if (kids.length > 0 && CHILDLESS.has(component)) {
+    // A <Button> with no `label` really renders its children (`label ?? children`,
+    // packages/ui kit/forms/button.tsx) — the shape the splitter's <button>
+    // rewrite emits. Unreachable from the authored dialect, whose typings keep
+    // `label` required, so nothing a model writes gains a nesting it never had.
+    const rendersKids = component === "Button" && !(isRecord(props) && props["label"] !== undefined);
+    if (kids.length > 0 && CHILDLESS.has(component) && !rendersKids) {
       // The generic tail is true of every leaf and useful for almost none of
       // them, so a component whose own answer is not obvious names it
       // (`KitComponentSpec.childrenFix` — <Menu>'s entries are data plus one

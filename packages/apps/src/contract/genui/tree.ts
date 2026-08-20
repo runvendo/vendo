@@ -6,6 +6,7 @@ import {
   safeErrorMessage,
   TREE_MAX_NODES,
   TREE_MAX_QUERIES,
+  TREE_NODE_SOURCES,
   type TreeNode,
   treeNodeSchema,
   VENDO_TREE_FORMAT,
@@ -123,7 +124,7 @@ const nodeError = (node: unknown): TreeValidation | null => {
   if (typeof node.component !== "string") {
     return fail("provision", `node "${node.id}" must have a string component`);
   }
-  if (node.source !== undefined && !["prewired", "host", "generated"].includes(node.source as string)) {
+  if (node.source !== undefined && !TREE_NODE_SOURCES.includes(node.source as string)) {
     return fail("provision", `node "${node.id}" has an invalid source`);
   }
   if (node.children !== undefined

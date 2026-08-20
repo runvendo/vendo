@@ -1,12 +1,12 @@
 import { readFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import { installedVersion } from "./dep-versions.js";
-import { composesOwnStore, detectFramework, detectVendoWiring, SUPABASE_PRESET_IMPORT, wiresSupabaseAuth, wiresTenantConnectors, type VendoWiring } from "./framework.js";
+import { CLERK_PRESET_IMPORT, composesOwnStore, detectFramework, detectVendoWiring, SUPABASE_PRESET_IMPORT, wiresClerkAuth, wiresSupabaseAuth, wiresTenantConnectors, type VendoWiring } from "./framework.js";
 import { vendoPackageInvocation } from "./provider-deps.js";
 import { compositionModulePath, importsGeneratedMap, importsSplitComposition, missingRegistrations, registrationKey, requiredServerActions, serverActionsWiring } from "./init-scaffolds.js";
 import { readUseCase } from "./install-record.js";
 import { checkMcpBaseUrl } from "./doctor-mcp-checks.js";
-import { SUPABASE_ENV_GUIDANCE, supabaseServerEnvSatisfied } from "./init-auth.js";
+import { CLERK_ENV_GUIDANCE, clerkServerEnvSatisfied, SUPABASE_ENV_GUIDANCE, supabaseServerEnvSatisfied } from "./init-auth.js";
 import type { DoctorRun } from "./doctor-report.js";
 import { walk } from "./theme/walk.js";
 import { clientRoot, exists, readOptional, stripBom } from "./shared.js";
@@ -206,22 +206,47 @@ async function checkVendoResolvable(run: DoctorRun): Promise<void> {
  *  where a bare `supabase()` call is trusted; anywhere else only the preset
  *  IMPORT is evidence — a bare call in arbitrary host source is the host's
  *  own Supabase client. */
-async function checkSupabasePresetEnv(run: DoctorRun): Promise<void> {
+const PRESET_ENV_CHECKS = [
+  {
+    id: "wiring/supabase-env",
+    code: "E-AUTH-009",
+    importMarker: SUPABASE_PRESET_IMPORT,
+    bareCall: /[^\w.]supabase\s*\(/,
+    wiresAnywhere: wiresSupabaseAuth,
+    satisfied: supabaseServerEnvSatisfied,
+    pass: "supabase() has a server-side session secret (SUPABASE_JWT_SECRET and/or SUPABASE_URL)",
+    warn: () => `${SUPABASE_ENV_GUIDANCE} Neither is set — the first signed-in turn fails loud until one lands in .env.local.`,
+  },
+  {
+    // #1338 — the same disease, third preset. The consequence differs: the
+    // keyless clerk wire resolves signed-in users as ANONYMOUS (one loud
+    // server warning), so nothing fails loud enough to send anyone here —
+    // which makes the static warning the only early signpost.
+    id: "wiring/clerk-env",
+    code: "E-AUTH-010",
+    importMarker: CLERK_PRESET_IMPORT,
+    bareCall: /[^\w.]clerk\s*\(/,
+    wiresAnywhere: wiresClerkAuth,
+    satisfied: clerkServerEnvSatisfied,
+    pass: "clerk() has a server-side verification key (CLERK_SECRET_KEY and/or CLERK_JWT_KEY)",
+    warn: () => `${CLERK_ENV_GUIDANCE} Neither is set — signed-in users resolve as anonymous until one lands in .env.local.`,
+  },
+] as const;
+
+async function checkPresetEnv(run: DoctorRun): Promise<void> {
   const { root } = run;
   const routePath = await nextRoutePath(root);
-  let wiresSupabase: boolean;
-  if (routePath === null) {
-    wiresSupabase = await wiresSupabaseAuth(root);
-  } else {
-    const { source } = await compositionOf(root, routePath);
-    wiresSupabase = SUPABASE_PRESET_IMPORT.test(source) || /[^\w.]supabase\s*\(/.test(source);
-  }
-  if (!wiresSupabase) return;
-  if (await supabaseServerEnvSatisfied(root, run.env)) {
-    run.pass("wiring/supabase-env", "supabase() has a server-side session secret (SUPABASE_JWT_SECRET and/or SUPABASE_URL)");
-  } else {
-    run.warn("wiring/supabase-env", "E-AUTH-009",
-      `${SUPABASE_ENV_GUIDANCE} Neither is set — the first signed-in turn fails loud until one lands in .env.local.`);
+  const source = routePath === null ? null : (await compositionOf(root, routePath)).source;
+  for (const check of PRESET_ENV_CHECKS) {
+    // With a Next route we read its composition, where a bare call is trusted;
+    // anywhere else only the preset IMPORT is evidence (both spellings — the
+    // #1374/#1383 lessons baked into the table).
+    const wires = source !== null
+      ? check.importMarker.test(source) || check.bareCall.test(source)
+      : await check.wiresAnywhere(root);
+    if (!wires) continue;
+    if (await check.satisfied(root, run.env)) run.pass(check.id, check.pass);
+    else run.warn(check.id, check.code, check.warn());
   }
 }
 
@@ -298,7 +323,7 @@ export async function checkWiring(run: DoctorRun): Promise<void> {
   // Static, so it fires on a project nobody has started yet — which is exactly
   // when a missing base URL is still cheap to fix.
   await checkMcpBaseUrl(run);
-  await checkSupabasePresetEnv(run);
+  await checkPresetEnv(run);
   await checkTenantConnectorVault(run);
 
   if (await hasDependency(root)) run.pass("wiring/dependency", "@vendoai/vendo dependency is declared");

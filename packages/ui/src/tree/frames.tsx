@@ -192,6 +192,10 @@ export function AppFrame({ surface, appId, components = {}, data, onAction = una
     );
   }
 
+  if (surface.kind === "failed") {
+    return <ContainedNotice label="App unavailable" outcome="error">{surface.reason}</ContainedNotice>;
+  }
+
   const unknown = surface as { kind?: unknown };
   return (
     <ContainedNotice label="Unsupported app surface">

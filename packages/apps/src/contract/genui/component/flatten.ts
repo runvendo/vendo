@@ -43,8 +43,15 @@ const segment = (child: NestedNode | string, index: number): string =>
  * Two siblings written with the SAME key would claim one id (React warns about
  * exactly this); the second and later take a `~2` suffix rather than
  * overwriting the first, so a duplicate key costs stability, never a node.
+ *
+ * `source` is whoever asked for the paint saying what this SCREEN is, stamped on
+ * every node it emits — the VM emits elements, not provenance, so there is no
+ * finer truth to be had here. The gauntlet is the only hand that sets it, and it
+ * sets it off the DIALECT the screen was type-checked in
+ * (server/checking/screen-typings.ts), which is what actually holds the class
+ * boundary; a screen has no way to name its own.
  */
-export function flattenTree(root: NestedNode): FlatTree {
+export function flattenTree(root: NestedNode, source?: FlatNode["source"]): FlatTree {
   const nodes: Record<string, FlatNode> = {};
   const claimed = new Set<string>([ROOT]);
 
@@ -71,7 +78,7 @@ export function flattenTree(root: NestedNode): FlatTree {
         walk(child, childId);
       }
     });
-    nodes[id] = { id, component: node.component, props: node.props, children };
+    nodes[id] = { id, component: node.component, ...(source === undefined ? {} : { source }), props: node.props, children };
   };
 
   walk(root, ROOT);

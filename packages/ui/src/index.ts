@@ -13,7 +13,7 @@ export {
   type VendoClient,
   type VendoClientConfig,
 } from "./client.js";
-export { VendoProvider, hostComponentMap, useVendoProvider, useVendoDiscoverability, useVendoGreeting, useVendoTheme, useVendoThemeOrDefault, useVendoTools, type ConnectorOption, type HostComponentsInput } from "./context.js";
+export { VendoProvider, hostComponentMap, useVendoProvider, useVendoDiscoverability, useVendoGreeting, useVendoTheme, useVendoThemeOrDefault, useVendoTools, type ConnectorOption, type HostComponentsInput, type RemixWiringInput } from "./context.js";
 export { useVendoNavigate, useVendoRoutes } from "./routes.js";
 /** The standalone agent's conversation — one `agentHandler()` mount, no embed. */
 export { useVendoChat, type UseVendoChatOptions } from "./use-vendo-chat.js";

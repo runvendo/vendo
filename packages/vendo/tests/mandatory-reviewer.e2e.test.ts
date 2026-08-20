@@ -309,6 +309,16 @@ async function walk(
 
 const saveApp = (content: string, id: string) => () => call("save_app", { content }, id);
 
+/** Speak and save in ONE breath — the shape that carries a run's closing words on
+ *  its final save, so the reviewer answers inside that save's own result and the
+ *  repair is the next step of the same drive. */
+const speakAndSave = (text: string, content: string, id: string) => (): Chunk[] => [
+  { type: "text-start", id },
+  { type: "text-delta", id, delta: text },
+  { type: "text-end", id },
+  ...call("save_app", { content }, id),
+];
+
 /** No findings, whatever it is shown. */
 const NOTHING_WRONG = () => ({ findings: [] });
 
@@ -434,6 +444,45 @@ describe("the mandatory reviewer pass on a finished screen", () => {
     expect(walked.reviewerSeats).toEqual(["review"]);
     // …and the screen the person keeps is unaffected by which seat judged it.
     expect(makeReceiptSchema.parse((walked.result as { output: unknown }).output).status).toBe("ready");
+  }, 120_000);
+
+  /**
+   * THE RECEIPT IS ABOUT THE SCREEN, AND THE REPAIR ROUND IS ABOUT THE REVIEWER.
+   *
+   * A repair round is a conversation with the reviewer: the loop is handed a
+   * finding and answers it, so its words are "Fixed the double count" — addressed
+   * to the judge, about a defect the person never saw. Relayed verbatim as the
+   * receipt's `say` (`make-receipt.ts` §3.1), that is what the calling agent
+   * SPEAKS, and the person hears the repair log instead of their screen.
+   *
+   * Both routes to a repair round, because the words are lost differently on each:
+   * the closing save carries the verdict back into its own result and repairs
+   * inside the same drive, and a run that never spoke beside a save is judged
+   * afterwards and repaired by a second drive.
+   */
+  it("speaks about the SCREEN, not the repair, when the repair rode the writing drive", async () => {
+    const walked = await walk([
+      speakAndSave("Your upcoming bills are on your screen.", DOUBLE_COUNT, "c1"),
+      speakAndSave("Fixed the double count — the headline sums the bills alone now.", HONEST, "c2"),
+    ], readerCheckingTheRows);
+
+    // The round really ran: the second drive step was handed the finding verbatim.
+    expect(walked.writerPrompts[1] ?? "").toContain("bill_netflix, bill_adobe and bill_aws are in BOTH");
+    const receipt = makeReceiptSchema.parse((walked.result as { output: unknown }).output);
+    expect(receipt.status).toBe("ready");
+    expect(receipt.say).toBe("Your upcoming bills are on your screen.");
+  }, 120_000);
+
+  it("speaks about the SCREEN, not the repair, when the repair took a drive of its own", async () => {
+    const walked = await walk([
+      saveApp(DOUBLE_COUNT, "c1"),
+      () => speak("Your upcoming bills are on your screen."),
+      () => speak("Fixed the double count — the headline sums the bills alone now."),
+    ], readerCheckingTheRows);
+
+    expect(walked.writerPrompts[2] ?? "").toContain("bill_netflix, bill_adobe and bill_aws are in BOTH");
+    const receipt = makeReceiptSchema.parse((walked.result as { output: unknown }).output);
+    expect(receipt.say).toBe("Your upcoming bills are on your screen.");
   }, 120_000);
 
   it("never judges a screen that did not pass the mechanical floor", async () => {

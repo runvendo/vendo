@@ -46,6 +46,7 @@ import {
   type ReactNode,
 } from "react";
 import { createRoot } from "react-dom/client";
+import { Area, AreaChart, CartesianGrid, XAxis } from "recharts";
 import "./styles.css";
 
 const NOW = "2026-07-11T12:00:00.000Z";
@@ -899,6 +900,91 @@ function TreeScenario() {
     <TreeThemeBoundary>
       <TreeView tree={tree} components={components} onAction={onAction} />
     </TreeThemeBoundary>
+  );
+}
+
+/** A host sub-component hole — the host's own child component, which the port
+ *  kept calling by the name the host wrote. */
+function PriceBadge({ amount }: { amount?: number }) {
+  return <b className="host-card">{`$${(amount ?? 0).toLocaleString("en-US")}`}</b>;
+}
+
+/** `.vendo/generated/remix-wiring.ts` as the host imports it: the SAME const
+ *  `createVendo({ remixWiring })` takes, handed to the provider too. Every name
+ *  below is a hole the splitter found as a JSX tag in the host's own source —
+ *  four from npm, one of the host's own — and NONE of them is in the harness
+ *  `components` map, so the wiring's leg is the only way any of them paints. */
+const holeWiring = {
+  SpendCard: { tools: {}, holes: { AreaChart, Area, CartesianGrid, XAxis } },
+  AccountRow: { tools: {}, holes: { PriceBadge } },
+} as const;
+
+/** The paint a ported SpendCard produces: the chart and every part of it are
+ *  separate holes, so they arrive as separate nodes and recharts has to compose
+ *  them back through the renderer's own node wrappers. */
+const holePayload = {
+  formatVersion: "vendo-genui/v2",
+  root: "root",
+  nodes: [
+    { id: "root", component: "Stack", children: ["title", "badge", "chart"] },
+    { id: "title", component: "Text", props: { text: "Spending this year", variant: "heading" } },
+    { id: "badge", component: "PriceBadge", props: { amount: 4_820 } },
+    {
+      id: "chart",
+      component: "AreaChart",
+      props: {
+        width: 560,
+        height: 220,
+        data: [
+          { month: "Jan", value: 310 }, { month: "Feb", value: 480 }, { month: "Mar", value: 395 },
+          { month: "Apr", value: 620 }, { month: "May", value: 540 }, { month: "Jun", value: 760 },
+        ],
+      },
+      children: ["grid", "axis", "curve"],
+    },
+    { id: "grid", component: "CartesianGrid", props: { strokeDasharray: "3 3" } },
+    { id: "axis", component: "XAxis", props: { dataKey: "month" } },
+    {
+      id: "curve",
+      component: "Area",
+      props: { dataKey: "value", stroke: "#3b82f6", fill: "#bfdbfe", isAnimationActive: false },
+    },
+  ],
+} as UIPayload;
+
+function RemixHolesScenario() {
+  return (
+    <VendoProvider client={baseClient} remixWiring={holeWiring}>
+      <VendoSlot id="spend-card" pin={{ payload: holePayload }} />
+    </VendoProvider>
+  );
+}
+
+/** Two host components, both wrapped in `<Remixable>`. `SpendCard` split;
+ *  `LegacyCard` did not, and `vendo sync` said so in its report. */
+function SpendCard() {
+  return <article className="host-card"><h3>Spend card</h3><p>This one split.</p></article>;
+}
+SpendCard.displayName = "SpendCard";
+
+function LegacyCard() {
+  return <article className="host-card"><h3>Legacy card</h3><p>This one did not split.</p></article>;
+}
+LegacyCard.displayName = "LegacyCard";
+
+/** `.vendo/generated/remix-wiring.ts` as the host hands it to the provider — the
+ *  SAME const `createVendo({ remixWiring })` takes. Its keys are the slots sync
+ *  could split, and `LegacyCard` is not among them. */
+const gateWiring = { SpendCard: { tools: {}, holes: {} } };
+
+function RemixGateScenario() {
+  return (
+    <VendoProvider client={baseClient} remixWiring={gateWiring} theme={mapleTheme}>
+      <div style={{ display: "grid", gap: 24, maxWidth: 560 }}>
+        <Remixable><SpendCard /></Remixable>
+        <Remixable><LegacyCard /></Remixable>
+      </div>
+    </VendoProvider>
   );
 }
 
@@ -2046,6 +2132,8 @@ function scenario(pathname: string): { title: string; theme?: Partial<VendoTheme
     case "/notice": return { title: "Unconfigured policy", ownProvider: true, content: (<VendoProvider client={unconfiguredClient} components={components}><NoPolicyNotice /></VendoProvider>) };
     case "/tree": return { title: "Tree containment", content: <TreeScenario /> };
     case "/tree-injected": return { title: "Injected payload (captured host component)", content: <InjectedTreeScenario /> };
+    case "/tree-holes": return { title: "Remix holes — npm + host sub-component, from the generated wiring", content: <RemixHolesScenario />, ownProvider: true };
+    case "/remixable-gate": return { title: "Remix ✦ — offered only where sync could split the component", content: <RemixGateScenario />, ownProvider: true };
     case "/tree-inclient": return { title: "In-client venue (hash-pinned approval)", content: <InClientScenario /> };
     case "/tree-review": return { title: "Review-kind standing (pending / rejected)", content: <ReviewStandingScenario /> };
     case "/tree-drift": return { title: "Seed drift (host component updated)", content: <SeedDriftScenario /> };
@@ -2067,6 +2155,7 @@ function scenario(pathname: string): { title: string; theme?: Partial<VendoTheme
     case "/slot-fallback": return { title: "Slot pin fallback", content: <SlotFallbackScenario />, ownProvider: true };
     case "/slot-building": return { title: "Inline slot — a build landing in place", content: <SlotBuildingScenario /> };
     case "/slot-states": return { title: "Inline slot — ready / failed", content: <SlotStatesScenario /> };
+    case "/share-toggle": return { title: "Inline slot — the ✦ menu's share toggle", content: <VendoSlot id="slot-shared"><p>Host hero (shareable)</p></VendoSlot> };
     case "/slot-picker": return { title: "Add to… — embed writes a placement", content: <SlotPickerScenario />, ownProvider: true };
     case "/remixable": return { title: "Remixable — the ✦ is one door into the chat", content: <RemixableScenario />, ownProvider: true };
     case "/appframe": return { title: "App execution planes", content: <AppFrameScenario /> };

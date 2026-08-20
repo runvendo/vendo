@@ -44,10 +44,13 @@ async function main() {
     inputSchema: jsonSchema(entry.inputSchema),
     async execute(input: unknown) {
       console.log(`→ ${entry.name}(${JSON.stringify(input).slice(0, 300)})`);
+      // vendo_make routinely outruns the SDK's 60s default. `onprogress` is what
+      // puts a progressToken on the request — without one the door stays silent —
+      // and each of the door's heartbeats then restarts this clock.
       const result = await client.callTool({
         name: entry.name,
         arguments: input as Record<string, unknown>,
-      });
+      }, undefined, { onprogress: () => {}, resetTimeoutOnProgress: true });
       const text = textOf(result);
       console.log(`← ${text.slice(0, 300)}\n`);
       if (entry.name === "vendo_make" && result.isError !== true) receipts.push(text);

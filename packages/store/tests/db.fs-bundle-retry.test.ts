@@ -14,6 +14,7 @@ vi.mock("@electric-sql/pglite", () => ({
 const { createDb } = await import("../src/db.js");
 
 const truncatedBundle = () => new Error("Invalid FS bundle size: 3030528 !== 6293225");
+const initFailure = () => new Error("PGlite failed to initialize properly");
 const fakePglite = () => ({
   query: vi.fn(async () => ({ rows: [{ ok: 1 }] })),
   close: vi.fn(async () => {}),
@@ -21,7 +22,7 @@ const fakePglite = () => ({
 
 // memory:// keeps the subject alone: no data dir, so neither the writer lock
 // nor the stale-postmaster.pid heal has anything to say about these failures.
-describe("PGlite truncated FS bundle retry", () => {
+describe("PGlite transient boot retry", () => {
   beforeEach(() => {
     pgliteCreate.mockReset();
   });
@@ -46,6 +47,34 @@ describe("PGlite truncated FS bundle retry", () => {
     expect((error as Error).message).toContain("[vendo]");
     expect((error as Error).message).toContain("Reinstall dependencies");
     expect((error as Error).message).toContain("Invalid FS bundle size: 3030528 !== 6293225");
+    expect(pgliteCreate).toHaveBeenCalledTimes(2);
+    await db.close();
+  });
+
+  // The CI flake this second signature exists for: one memory:// store in a
+  // ~300-test file loses its wasm boot, with no lock file and no short read to
+  // heal (`tests/session.test.ts` on run 32311392574, `tests/interruptions.test.ts`
+  // on run 32234929102 — byte-identical stack, different random victim).
+  it("heals a transient wasm init failure with one retry", async () => {
+    pgliteCreate.mockRejectedValueOnce(initFailure()).mockResolvedValueOnce(fakePglite());
+
+    const db = createDb({ dataDir: "memory://boot-init-heals" });
+    await expect(db.query("select 1")).resolves.toEqual({ rows: [{ ok: 1 }] });
+
+    expect(pgliteCreate).toHaveBeenCalledTimes(2);
+    await db.close();
+  });
+
+  // Bounded, and honest about the cause: a second init failure is believed, and
+  // only the truncated-bundle case is reworded — this one keeps its own message.
+  it("gives up after one retry and keeps a permanent init failure's own message", async () => {
+    pgliteCreate.mockRejectedValue(initFailure());
+
+    const db = createDb({ dataDir: "memory://boot-init-permanent" });
+    const error = await db.query("select 1").catch((caught: unknown) => caught);
+
+    expect((error as Error).message).toBe("PGlite failed to initialize properly");
+    expect((error as Error).message).not.toContain("Reinstall dependencies");
     expect(pgliteCreate).toHaveBeenCalledTimes(2);
     await db.close();
   });

@@ -6,7 +6,7 @@
 // The inline wish form, its status line, and its pill states are deleted.
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { VendoProvider, createVendoClient, type VendoClient } from "../../src/index.js";
+import { VendoProvider, createVendoClient, type RemixWiringInput, type VendoClient } from "../../src/index.js";
 import { Remixable, VendoOverlay } from "../../src/chrome/index.js";
 import { CHROME_CSS } from "../../src/chrome/chrome-css.js";
 import { createWireServer } from "../wire-server.js";
@@ -31,6 +31,17 @@ if (typeof window.PointerEvent !== "function") {
 
 /** The slot is the wrapped component's identifier — what sync captures under. */
 const SLOT = "TopMerchants";
+
+/** `.vendo/generated/remix-wiring.ts` as the host hands it to the provider —
+ *  the SAME const `createVendo({ remixWiring })` takes. Its keys are the slots
+ *  `vendo sync` could split, so they are exactly the slots a ✦ may appear on. */
+const WIRING = { [SLOT]: { tools: {}, holes: {} } };
+
+/** A wrapped component the splitter could not port: it has a `<Remixable>` and
+ *  a captured baseline, and the wiring does not name it. */
+function Unsplittable() {
+  return <p>Unported host markup</p>;
+}
 
 function TopMerchants(_props: {
   title?: string;
@@ -75,9 +86,14 @@ describe("Remixable — one door into the chat, one ✦ menu on the remix", () =
   /** The remix the CHAT minted — the wrapper no longer mints anything itself. */
   const seedRemix = () => client.apps.seedFrom({ component: SLOT, instruction: "make it a chart" });
 
-  function mount(node = <Remixable><TopMerchants title="Top merchants" /></Remixable>) {
+  function mount(
+    node = <Remixable><TopMerchants title="Top merchants" /></Remixable>,
+    // `null` is "the host wired none at all" — an `undefined` argument would
+    // silently re-apply the default below.
+    remixWiring: RemixWiringInput | null = WIRING,
+  ) {
     return render(
-      <VendoProvider client={client}>
+      <VendoProvider client={client} remixWiring={remixWiring ?? undefined}>
         {node}
         <VendoOverlay launcher="none" />
       </VendoProvider>,
@@ -94,6 +110,48 @@ describe("Remixable — one door into the chat, one ✦ menu on the remix", () =
     expect(remixDoor()).toBeTruthy();
     // At rest the pill is inert — nothing invisible to misclick.
     expect(revealed()).toBe(false);
+  });
+
+  /** The whole ✦ apparatus for one slot — one node, or none at all. */
+  const chromeIn = (slot: string) =>
+    document.querySelector(`[data-vendo-remixable="${slot}"] .fl-remixable-chrome`);
+
+  /** The ✦ mark itself, for a named slot and WITHOUT assuming what it says. */
+  const pillIn = (slot: string) =>
+    document.querySelector(`[data-vendo-remixable="${slot}"] .fl-remix-pill`);
+
+  // The ✦ is an OFFER, and an offer nothing can honour must never be made. A
+  // component the splitter could not port has no source for a fork to start
+  // from; sync says so, loudly, in its report, and the wiring it writes simply
+  // does not name the slot. So the wrapper renders the host's own markup and
+  // nothing else — not a disabled ✦, not a greyed one.
+  it("shows NO ✦ at all on a component the splitter could not port", () => {
+    mount(<Remixable><Unsplittable /></Remixable>);
+    expect(screen.getByText("Unported host markup")).toBeTruthy();
+    expect(chromeIn("Unsplittable")).toBeNull();
+    expect(document.querySelector(".fl-remix-seed")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Remix this view with Vendo" })).toBeNull();
+  });
+
+  it("shows NO ✦ when the host wired no remix wiring at all — nothing has ported", () => {
+    mount(undefined, null);
+    expect(screen.getByText("Blue Bottle")).toBeTruthy();
+    expect(chromeIn(SLOT)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Remix this view with Vendo" })).toBeNull();
+  });
+
+  // The gate is on the OFFER, never on a remix that already exists: a re-sync
+  // that stops porting a slot must not strand someone's remix on the page with
+  // no way back. The management ✦ — status / open in panel / revert — stays.
+  //
+  // The mark, not its wording: what this test owns is that the mark is THERE,
+  // and the pin chrome has renamed it before. The sentence it carries is
+  // asserted where that rename lives, so pinning one here would only buy a
+  // second stale expectation.
+  it("still mounts and manages an EXISTING remix on a slot that no longer ports", async () => {
+    await client.apps.seedFrom({ component: "Unsplittable", instruction: "make it a chart" });
+    mount(<Remixable><Unsplittable /></Remixable>);
+    await waitFor(() => expect(pillIn("Unsplittable")).toBeTruthy());
   });
 
   it("blooms on hover and holds through the grace period on the way out", () => {
@@ -176,7 +234,10 @@ describe("Remixable — one door into the chat, one ✦ menu on the remix", () =
     vi.stubEnv("NODE_ENV", "development");
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     render(
-      <VendoProvider client={client}>
+      // Its own provider, deliberately WITHOUT the overlay — that absence is
+      // what this test is about. The wiring is not: without it the slot has no
+      // port, so the gate hides the ✦ and there is no door to press.
+      <VendoProvider client={client} remixWiring={WIRING}>
         <Remixable><TopMerchants title="Top merchants" /></Remixable>
       </VendoProvider>,
     );

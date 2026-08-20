@@ -16,6 +16,7 @@ import {
 import {
   catalogSummaryEntries,
   type BriefingPack,
+  type NormalizedCatalog,
   type VendoTheme,
 } from "@vendoai/apps/contract";
 import {
@@ -40,6 +41,7 @@ import {
   parseVendoTheme,
   selectHostTools,
 } from "./dot-vendo.js";
+import type { CreateVendoConfig } from "./types.js";
 
 /** The config surfaces, resolved to the shapes app generation and the system
  *  prompt read them through. */
@@ -198,6 +200,16 @@ const capabilityAndCatalog = (composition: VendoComposition): Pick<VendoComposit
         skills: [buildingAppsSkill],
       } satisfies Contribution]
       : []),
+    // The generated remix wiring: a ported component's data fetches, bound to
+    // the host's own functions. Folded name-keyed ACROSS slots — two remixable
+    // components that fetch the same envelope bind the same tool, and a name is
+    // global here, so that is one tool rather than two slots colliding.
+    {
+      from: "createVendo({ remixWiring })",
+      tools: Object.values(Object.fromEntries(
+        Object.values(config.remixWiring ?? {}).flatMap(({ tools }) => Object.entries(tools ?? {})),
+      )),
+    },
     // The host's own, last, so a collision message reads in the order the
     // deployment was assembled.
     { from: "createVendo({ tools, skills })", tools: hostToolDefinitions(config), skills: config.skills ?? [] },
@@ -213,11 +225,36 @@ const capabilityAndCatalog = (composition: VendoComposition): Pick<VendoComposit
   // (it normalizes through the same validator-building path as the file
   // read); explicit createVendo({ catalog }) registrations still win by name —
   // the host has the last word about its own screens.
+  const declared = config.profile?.catalog !== undefined
+    ? runtimeCatalogFromFile(config.profile.catalog, "createVendo({ profile: { catalog } })")
+    : runtimeCatalogFromJson(dotVendoFile("catalog.json", config.profileDir));
   const catalog = mergeRuntimeCatalog(
-    config.profile?.catalog !== undefined
-      ? runtimeCatalogFromFile(config.profile.catalog, "createVendo({ profile: { catalog } })")
-      : runtimeCatalogFromJson(dotVendoFile("catalog.json", config.profileDir)),
+    mergeRuntimeCatalog(remixHoles(config.remixWiring), declared),
     normalizeCatalogConfig(config.catalog),
   );
   return { capability, catalog };
 };
+
+/**
+ * The wiring's holes as catalog entries — the WEAKEST leg of that merge.
+ *
+ * A hole is a component the splitter proved the ported slot ALREADY renders, and
+ * its name has to resolve at both ends of ONE catalog: the checks floor types the
+ * screen against it (`screenCatalog` → `checkComponentScreen`) and the renderer
+ * paints it by the same name. Registered at only one end, sync blesses a port
+ * whose fork then refuses to build — the producer and the consumer each holding
+ * their own catalog is exactly how that shipped green.
+ *
+ * Weakest because it is DERIVED, not declared: a name is all a hole carries, so
+ * anything the host wrote about the same component — on disk or in
+ * `createVendo({ catalog })` — describes it better and keeps its props schema.
+ * Normalized through the shared normalizer so a hole faces the same /host
+ * projection grammar every other entry does.
+ */
+const remixHoles = (wiring: CreateVendoConfig["remixWiring"]): NormalizedCatalog =>
+  normalizeCatalogConfig(
+    Object.keys(Object.fromEntries(
+      Object.values(wiring ?? {}).flatMap(({ holes }) => Object.entries(holes ?? {})),
+    )).map((name) => ({ name, description: "A host component a ported remix screen renders." })),
+    "createVendo({ remixWiring })",
+  );

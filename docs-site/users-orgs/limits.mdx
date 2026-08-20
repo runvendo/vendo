@@ -208,6 +208,23 @@ strictly better. Every such denial logs `limits.callback_error`.
 
 ---
 
+## Per-tenant caps
+
+If you let [Vendo Cloud keep your tenant directory](/users-orgs/tenants),
+caps come with it — set in the console, not in code. Each one carries a
+**scope**:
+
+| Scope | Counts |
+| --- | --- |
+| `per-member` | one person's own usage |
+| `per-tenant` | the whole company's, against the `org:<id>` pool |
+
+The project sets defaults; a tenant can override them. An explicit
+`config.limits` wins over both — the same precedence rule as everywhere else
+on this page, just supplied by Cloud instead of your own callback.
+
+---
+
 ## What is not metered
 
 Automation firings. A schedule fire or a webhook delivery is nobody's request and

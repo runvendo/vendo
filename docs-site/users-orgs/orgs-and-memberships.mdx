@@ -56,6 +56,14 @@ Return `[]` for a caller who belongs to nothing. Leave the seam off entirely and
 nothing is asserted: sharing degenerates to plain ownership, no org owns a
 workspace, and there are no org pools to count.
 
+### …or let Cloud keep the directory
+
+Writing and maintaining this query is real work. [Tenants](/users-orgs/tenants)
+is Vendo Cloud keeping that roster for you — with `VENDO_API_KEY` set and no
+`auth.memberships` of your own, the SDK asks the directory instead. Set
+`auth.memberships` and your assertion wins, always; the directory is never
+consulted.
+
 ---
 
 ## Asserted, never stored
@@ -66,7 +74,8 @@ This is the whole model, and the rules that fall out of it:
   can never see two different answers.
 - **Never persisted.** There is no orgs table and no members table in the store.
   Removing someone from an org in your tables removes them from Vendo on their
-  very next request — nothing to propagate, no cache to invalidate.
+  very next request — nothing to propagate, and no cache to invalidate when you
+  assert memberships yourself.
 - An **ephemeral visitor is not even asked.** A principal you marked
   `ephemeral: true` belongs to no org by construction — your host issued them
   nothing.

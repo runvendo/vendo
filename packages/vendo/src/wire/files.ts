@@ -1,18 +1,12 @@
 import { UPLOAD_HEADER, VendoError } from "@vendoai/core";
+import { overCap } from "../user-files.js";
 import { json, route, type RouteEntry } from "./shared.js";
 
-/** What a browser may push through the drop door in one go, and the ONLY place
-    it is enforced. It is a DOOR cap, not a storage cap: `vendo.putUserFile` is
-    a trusted server caller and is bounded by whatever backs the `files:`
-    adapter instead. There is no 413 rung — an over-cap upload is a request the
-    caller can fix, which is what `validation` already means everywhere else on
-    this wire. */
-export const UPLOAD_MAX_BYTES = 5 * 1024 * 1024;
-
-const overCap = (name: string, bytes: number): VendoError => new VendoError(
-  "validation",
-  `${JSON.stringify(name)} is ${bytes} bytes and an upload may be at most ${UPLOAD_MAX_BYTES}. Send a smaller file.`,
-);
+/** The drawer's law — its cap and the refusal that names it — lives with the
+    drawer, because `vendo_user_files_put` is a second door onto the same bytes
+    and the two must refuse identically. Still named here: this is the door the
+    default describes. */
+export { UPLOAD_MAX_BYTES } from "../user-files.js";
 
 /**
  * The drop door: one file, raw bytes, into the caller's own drawer.
@@ -33,13 +27,14 @@ export const fileRoutes: RouteEntry[] = [
       throw new VendoError("validation", "POST /files needs the file's name: ?name=<percent-encoded filename>");
     }
     const ctx = await context("chat");
+    const { uploadMaxBytes: max, files: venue } = deps;
     // Refuse on the DECLARED length before reading, so an over-cap upload is
     // not held in memory to be measured. A body without one (chunked) still
     // has to be read, so the post-read check below stays the real bound.
     const declared = Number(request.headers.get("content-length"));
-    if (Number.isFinite(declared) && declared > UPLOAD_MAX_BYTES) throw overCap(name, declared);
+    if (Number.isFinite(declared) && declared > max) throw overCap(name, declared, max, venue);
     const bytes = new Uint8Array(await request.arrayBuffer());
-    if (bytes.byteLength > UPLOAD_MAX_BYTES) throw overCap(name, bytes.byteLength);
+    if (bytes.byteLength > max) throw overCap(name, bytes.byteLength, max, venue);
     const contentType = request.headers.get("content-type");
     return json(await deps.harness.putUserFile({
       principal: ctx.principal,

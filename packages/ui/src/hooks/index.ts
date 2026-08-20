@@ -2,6 +2,7 @@
 export { useActivity } from "./use-activity.js";
 export { useApp } from "./use-app.js";
 export { useApps } from "./use-apps.js";
+export { useAppSharing, type AppSharing } from "./use-app-sharing.js";
 export { useApprovals, useAttention } from "./use-approvals.js";
 // The shapes useAttention hands back (the finished-run headline the launcher
 // toast and any host notification hook read).

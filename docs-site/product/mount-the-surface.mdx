@@ -230,6 +230,33 @@ Every mounted slot reports itself to the server, which is how the panel knows
 which places exist. `label` is what a person reads when they pick one, and it
 defaults to the id read as words.
 
+A report ages out, though, and a product whose agent is the whole surface never
+renders a `<VendoSlot>` to make one. Declare those instead:
+
+```ts
+import { createVendo } from "@vendoai/vendo/server";
+
+createVendo({
+  slots: [
+    {
+      id: "spend-breakdown",
+      label: "Spend breakdown",
+      description: "Where this month's spending broke down by category",
+    },
+  ],
+});
+```
+
+`description` is optional — it's the sentence an agent reads to pick between
+two slots a label alone can't separate. A declared slot needs no render, never
+decays, and beats a page report of the same id, so no one's page can rewrite
+what you authored.
+
+Declaring one makes it a destination, not a display. The pin lands, but a person
+sees what is pinned there only where some page renders a `<VendoSlot>` with that
+id — so a product that renders none still needs to mount one somewhere before a
+pinned dashboard is visible to anybody.
+
 To make a pin land somewhere, name the destination on the provider with
 `pinSlot`. With one slot the panel shows **Pin to dashboard**; with several,
 the same button becomes a picker of your slots.

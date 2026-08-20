@@ -55,7 +55,7 @@ export function useMenuDismiss(open: boolean, onToggle: (open: boolean) => void)
  * tap that revealed it.
  */
 
-export function PinChrome({ appId, title, context, state, onRefresh, onRevert, children }: {
+export function PinChrome({ appId, title, context, state, sharing, onRefresh, onRevert, children }: {
   appId: string;
   /** What the app calls itself — the prefill names the THING, never an id. */
   title: string;
@@ -68,6 +68,13 @@ export function PinChrome({ appId, title, context, state, onRefresh, onRevert, c
    *  settled app. Vocabulary belongs to the caller: a remix that never built and
    *  a pinned app that will not load are not the same sentence. */
   state?: { label: string; name: string; status: string; busy?: boolean };
+  /** The one share the ✦ offers: this caller's tenant, and whether the app is
+   *  already shared with it. Absent ⇒ no menu item (not an owner, or in no
+   *  tenant). */
+  sharing?: {
+    org: string; display: string; shared: boolean;
+    onToggle(next: boolean): Promise<void>;
+  };
   onRefresh(): void;
   /** Undo this app's presence on the page; rejecting keeps the popover open. */
   onRevert(): Promise<void>;
@@ -76,6 +83,7 @@ export function PinChrome({ appId, title, context, state, onRefresh, onRevert, c
   const [revealed, setRevealed] = useState(false);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [sharingBusy, setSharingBusy] = useState(false);
   const wrap = useMenuDismiss(open, setOpen);
   const root = useMenuDismiss(revealed, setRevealed);
   const grace = useRef<number | undefined>(undefined);
@@ -173,6 +181,22 @@ export function PinChrome({ appId, title, context, state, onRefresh, onRevert, c
             {state === undefined ? null : <span className="fl-remix-status" role="status">{state.status}</span>}
             <button type="button" onClick={edit}>Edit in chat</button>
             <button type="button" onClick={() => { setOpen(false); onRefresh(); }}>Update</button>
+            {/* A switch, not a departure — the popover deliberately stays open. */}
+            {sharing === undefined ? null : (
+              <button
+                type="button"
+                aria-pressed={sharing.shared}
+                disabled={sharingBusy}
+                onClick={() => {
+                  setSharingBusy(true);
+                  void sharing.onToggle(!sharing.shared)
+                    .catch(() => vendoToast({ text: "That didn’t go through — try again.", state: "error" }))
+                    .finally(() => setSharingBusy(false));
+                }}
+              >
+                Share with {sharing.display}
+              </button>
+            )}
             <button type="button" className="is-danger" disabled={busy} onClick={revert}>
               {busy ? "Reverting…" : "Revert"}
             </button>

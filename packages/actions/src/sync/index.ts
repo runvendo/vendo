@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { canonicalJson, descriptorHash, VendoError, type JsonSchema, type ToolSemantics } from "@vendoai/core";
+import { canonicalJson, descriptorHash, VendoError, type Json, type JsonSchema, type ToolSemantics } from "@vendoai/core";
 import {
   VENDO_TOOLS_FORMAT,
   judgmentsFileSchema,
@@ -20,7 +20,7 @@ import { bindingIdentity, clearAliasCache, withUniqueNames, writeIfChanged } fro
 import { compilerFloorWarning, setCompilerRoot } from "./compiler-gate.js";
 import { scanComponentCatalog } from "./catalog-scan.js";
 import { writeCatalog } from "./catalog.js";
-import { captureHostComponents } from "./components.js";
+import { captureHostComponents, declaredSample } from "./components.js";
 import { runExtractors } from "./extractors.js";
 import { capturePins } from "./seeds.js";
 
@@ -398,7 +398,20 @@ export async function vendoSync(options: {
   const catalogScan = await scanComponentCatalog(root);
   warnings.push(...catalogScan.warnings);
   const catalog = await writeCatalog(out, catalogScan.entries);
-  const pins = await capturePins(root, out, new Set(overrides?.remix?.ignoreSlots ?? []));
+  // The host's own DECLARED sample props, matched to a remixable slot by the
+  // component's declaration site: the registry's registration points at the
+  // same (file, binding) the wrapper's child resolves to. Declared only — a
+  // sample generated from a schema is invented data, and a grade that passes
+  // on invented data is worse than a refusal.
+  const samplePropsFor = (file: string, slot: string): Record<string, Json> | undefined => {
+    for (const site of catalogScan.sites) {
+      if (site.file !== file || site.binding !== slot) continue;
+      const declared = declaredSample(catalogScan.entries.find((entry) => entry.name === site.name)?.examples);
+      if (declared !== null) return declared as Record<string, Json>;
+    }
+    return undefined;
+  };
+  const pins = await capturePins(root, out, new Set(overrides?.remix?.ignoreSlots ?? []), undefined, samplePropsFor);
   warnings.push(...pins.warnings);
   // The host's OWN registered components, captured for real so the console's
   // gallery renders them instead of a grey labeled block. Shares the pin walk's
@@ -423,6 +436,7 @@ export async function vendoSync(options: {
       captured: pins.captured,
       drifted: pins.drifted,
       ...(pins.pruned.length === 0 ? {} : { pruned: pins.pruned }),
+      ...(pins.ported.length === 0 ? {} : { ported: pins.ported }),
     },
     remixableErrors: pins.errors,
     catalog: { discovered: catalogScan.discovered, registered: catalogScan.registered },

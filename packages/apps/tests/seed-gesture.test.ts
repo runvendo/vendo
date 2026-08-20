@@ -16,6 +16,7 @@ import {
 import { describe, expect, it } from "vitest";
 import { createApps, type AppsConfig, type AppsRuntime } from "../src/server/index.js";
 import { scriptedScreenAssembler } from "../src/server/testing/screen-assembler.js";
+import { FIXTURE_SCREEN } from "../src/server/testing/screen-document.js";
 import { guardFixture } from "../src/server/testing/guard-fixture.js";
 import { memoryStore } from "../src/server/testing/memory-store.js";
 import { basicLanguageModel } from "../src/server/testing/scripted-model.js";
@@ -41,6 +42,10 @@ const baseline: SeedBaseline = {
   exportable: false,
   capturedAt: "2026-07-14T12:00:00.000Z",
   sampleProps: { valueCents: 120_000_000 },
+  // The splitter's half: what the ✦ seeds as the new app's own `app.tsx`, so the
+  // first edit changes the component's real ported code. A baseline without one
+  // gets no remix at all, which is what the refusal case below asserts.
+  ported: { source: FIXTURE_SCREEN, tools: [], holes: [] },
 };
 
 const runtimeWith = (store: StoreAdapter, overrides: Partial<AppsConfig> = {}) => createApps({
@@ -114,10 +119,18 @@ describe("06-apps §8 — the ✦ gesture is a fork and a first edit in one (see
 
     const app = await runtime.seed.from({ component: SLOT, instruction: "make the number blue" }, ctx);
 
-    // The provenance is stored, but there is no screen — so the app does not
-    // open, and the wrapper keeps the host component it was going to replace.
+    // The provenance is stored and the app does not open, so the wrapper keeps
+    // the host component it was going to replace. That is the claim, and it is
+    // the terminal marker that carries it now — not an absent screen.
     expect(app.seed?.wishes).toEqual(["make the number blue"]);
-    expect(screenOf(app)).toBeUndefined();
+    expect(await runtime.open(app.id, ctx)).toMatchObject({ kind: "failed" });
+    // OPEN QUESTION, deliberately not asserted either way: the app DOES now hold
+    // a screen — the splitter's port, seeded and gauntlet-passed before the
+    // instruction ran — and the marker is what keeps it shut. Whether a person
+    // whose first instruction failed should be handed that working port instead
+    // of nothing is a user-visible call that has not been made. Today's answer is
+    // "nothing", and this test pins only today's answer.
+    expect(app.buildFailed?.reason).toBeDefined();
   });
 
   it("marks a first edit that could not be written as FAILED, and lets the next tap retry", async () => {

@@ -182,6 +182,10 @@ export {
 // own options instead of relying on the VENDO_API_KEY default.
 export { hostedStore, hostedStoreOps, type HostedStore, type HostedStoreOptions } from "@vendoai/store";
 
+// The ready-made `files:` adapter, on the same surface for the same reason —
+// and the one the over-cap upload refusal names by hand.
+export { s3Files, type S3FilesOptions } from "@vendoai/store";
+
 // The composition merge, for anyone re-expressing a `ToolRegistry` as the
 // `tools:` entries createVendo takes.
 export {

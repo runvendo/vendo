@@ -18,12 +18,13 @@ One key is required, an identity, as either `principal` or an `auth` preset. `oa
 | `memberships` | `(principal) => Promise<Membership[]>`, the twin of `auth.memberships` for the `principal` trio. Set it and it wins outright. With `VENDO_API_KEY` and this seam unset, memberships come from Vendo Cloud, so `async () => []` is how a deployment with no orgs declines the tenant directory |
 | `tools` | Host tool declarations in memory, the same `ExtractedTool[]` sync writes to `.vendo/tools.json`, and executable tools. The two shapes are told apart by `execute` |
 | `skills` | `Skill[]` mounted at `/host/skills` for the harness to list cheaply and load on demand. A name collision fails at boot naming both |
+| `slots` | `SlotDescriptor[]` this deployment always has, declared instead of reported by a page render. A declared slot never decays and needs no render, and wins over a page report of the same id |
 | `catalog` | Host components exposed to the generation prompt, merged with `.vendo/catalog.json` with explicit entries winning by name |
 | `routes` | The host's own pages a generated view may link to, `{ name: { path, description } }`. A `<Link to="name">` refuses any name the map does not carry |
 | `theme` | Programmatic override for `.vendo/theme.json`. Resolved once at compose, so unlike design rules it is not re-read live |
 | `instructions` | The prose this deployment puts in front of the agent every turn. Override for `.vendo/brief.md`; a non-blank string wins, blank falls through |
 | `store` | Unset with `VENDO_API_KEY` set, the Cloud hosted store fills the slot |
-| `files` | Where workspace file content lives past 5 MiB. Unset, the store's own blobs back it and the first over-cap write fails naming this key |
+| `files` | Where every workspace file's content lives — one backing, no tiering. Set, `s3Files` or your own `FilesAdapter` holds all of them. Unset, the store's own blobs back it, capped at 5 MiB each, and the first over-cap write fails naming this key |
 | `sandbox` | Unlocks machine-backed apps. Unset, `VENDO_API_KEY` fills it with the Cloud sandbox; with neither, apps stay tree-only |
 | `harness` | Who thinks. Default `vendo()`, also `claudeCode()`, or your own via `defineHarness`. A harness declaring `requires: { sandbox: true }` with no sandbox is a boot error |
 | `knowledge` | Composes the `vendo_knowledge_search` tool. Unset, that tool does not exist |
@@ -31,6 +32,7 @@ One key is required, an identity, as either `principal` or an `auth` preset. `oa
 | `connections` | Explicit connected-accounts adapter. Always wins over the composed default |
 | `actAs` | Escape hatch supplying scoped auth material for away host API execution. Mutually exclusive with `auth` |
 | `serverActions` | The map `vendo sync` emits, keyed `"<module>#<exportName>"`. A missing key fails closed at execution |
+| `remixWiring` | The wiring `vendo sync` generates for your `<Remixable>` components, keyed by slot. Its tools join the one registry, guarded and audited like any host tool. Pass the same object to `<VendoProvider remixWiring={remixWiring}>` too — the provider renders the ported components' holes, and the ✦ appears only on slots it declares |
 | `guard` | The deployment's choke point as one value. See [below](#guard) |
 | `limits` | Per-user and per-org limits in your own logic. See [below](#limits) and [Limits](/users-orgs/limits) |
 | `secrets` | `{ get(name) }`. Default is environment-backed lookup |
@@ -46,6 +48,7 @@ One key is required, an identity, as either `principal` or an `auth` preset. `oa
 | `agents` | More agents built by `agent()`, registered by name so an automation they declared with `.on()` fires through them. Registration only; two agents sharing a name refuse to compose |
 | `sweep` | TTL-sweep cadence for expired parked calls and stranded approvals. See [below](#sweep) |
 | `toolOutputCap` | How much of one tool result reaches the model, in characters. Default `32000`; `0` disables |
+| `uploadMaxBytes` | What one upload may carry, in bytes — the same cap at both doors, `POST /files` from the browser and `vendo_user_files_put` over MCP. Default `5242880` (5 MiB). A door cap, not a storage cap — `vendo.putUserFile` is bounded by whatever backs `files:` |
 | `maxInitialTools` | Cap on the uncurated initial tool loadout. Default `128`; the rest stay discoverable via `find_tools` |
 | `loadout` | Explicit curated initial loadout, by tool name. Names that do not exist are dropped |
 | `apps` | `false` unmounts app generation entirely. See [below](#apps) |

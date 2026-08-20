@@ -72,6 +72,11 @@ fixtures/*/.vendo/data/
 # (packages/vendo/tests/harness-wire.test.ts) lands misses.jsonl here.
 packages/*/.vendo/data/
 
+# The splitter's remix wiring file — build output, rewritten whole on every
+# `vendo sync`. The captured baselines beside it (.vendo/remixable/) are
+# committed; this is derived from them and from the host's own source.
+**/.vendo/generated/
+
 # wave-6 orchestration lane briefs/signals (never committed)
 .lanes/
 

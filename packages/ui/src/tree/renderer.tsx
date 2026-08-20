@@ -2,6 +2,7 @@ import {
   TREE_MAX_COMPONENT_SOURCE_CHARS,
   TREE_MAX_GENERATED_COMPONENTS,
   TREE_MAX_TOTAL_COMPONENT_CHARS,
+  TREE_NODE_SOURCES,
   applyReshape,
   isPathBinding,
   isStateBinding,
@@ -148,7 +149,7 @@ const validateWalkTree = (input: WalkTree): WalkValidation => {
     if (!isPlainRecord(node)) return walkFail("each node must be an object");
     if (typeof node.id !== "string" || node.id.length === 0) return walkFail("each node must have a non-empty string id");
     if (typeof node.component !== "string") return walkFail(`node "${node.id}" must have a string component`);
-    if (node.source !== undefined && !["prewired", "host", "generated"].includes(node.source as string)) {
+    if (node.source !== undefined && !TREE_NODE_SOURCES.includes(node.source as string)) {
       return walkFail(`node "${node.id}" has an invalid source`);
     }
     if (node.children !== undefined
@@ -206,6 +207,8 @@ const readInteractive = (payload: UIPayload): ScreenInteractive | undefined => {
     compiledSource: value.compiledSource,
     queries: isPlainRecord(value.queries) ? value.queries : {},
     ...(plan.length === 0 ? {} : { queryPlan: plan }),
+    // JSON by the wire's nature; a malformed value simply doesn't ride.
+    ...(isPlainRecord(value.props) ? { props: value.props } : {}),
   };
 };
 
@@ -637,13 +640,16 @@ function generatedContent(context: NodeContent): ReactNode {
 }
 
 /** Which implementation wins for a built-in node. An explicit `source: "host"`
- *  means the host brand won the name. An undefined (or "prewired") source keeps
- *  the built-in first, so a stored app whose node collides with a host catalog
- *  name still renders the built-in it was written against. */
+ *  means the host brand won the name. A `"ported"` node's names are the host's
+ *  own — its `LineChart` is the npm chart the wiring registered as a hole, and
+ *  resolved built-in-first it became the Kit's, which throws on that chart's
+ *  props. An undefined (or "prewired") source keeps the built-in first, so a
+ *  stored app whose node collides with a host catalog name still renders the
+ *  built-in it was written against. */
 function resolveBuiltin(node: TreeNode, components: NodeRendererProps["components"]): ComponentType<Record<string, unknown>> | undefined {
   const kit = (KIT_COMPONENTS[node.component] ?? DISPLAY_BRICKS[node.component]) as ComponentType<Record<string, unknown>> | undefined;
   const host = components[node.component] as ComponentType<Record<string, unknown>> | undefined;
-  return node.source === "host" ? host ?? kit : kit ?? host;
+  return node.source === "host" || node.source === "ported" ? host ?? kit : kit ?? host;
 }
 
 /**
@@ -717,11 +723,24 @@ function builtinContent({ props, node, children, invoke, handle }: NodeContent):
   // a container (Stack/Grid) with one bad prop must not swallow its valid
   // children (same containment scope as the generated paths above).
   const screen = props.screen;
+  // `hostClass` is written AFTER the bound props, and that is what makes it
+  // unforgeable: a brick paints a class off a PORTED node and off nothing else
+  // (display-bricks.tsx), whatever a node's own props say.
+  //
+  // KNOWN EXPOSURE, and it holds only while a remix is SINGLE-PLAYER. The class
+  // lands in the host's own light DOM — that is how a port inherits the host's
+  // stylesheet — so a class the model borrowed from elsewhere in the host renders
+  // as real host chrome, not an imitation of it. A private view deceives only its
+  // author; the REVIEW path breaks that, because a second person is deciding
+  // whether to trust what they are shown. The levers, neither built and neither
+  // decided: render the review path in the sandboxed surface instead of the light
+  // DOM, or strip classes on that path alone.
   return mismatch !== null
     ? <>{dataShapeNotice(mismatch, props.streaming, node.component)}{children}</>
     : (
       <Implementation
         {...bound}
+        hostClass={node.source === "ported" ? bound?.className : undefined}
         {...(screen !== undefined && handlerBusy(node.props, screen.inFlight) ? { disabled: true } : {})}
       >
         {children}

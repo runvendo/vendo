@@ -192,7 +192,7 @@ export default function Page() {
 }
 `);
     const synced = await vendoSync({ root, out: join(root, ".vendo") });
-    expect(synced.pins).toEqual({ captured: [slot], drifted: [] });
+    expect(synced.pins).toEqual({ captured: [slot], drifted: [], ported: [slot] });
     const baselineFile = join(root, ".vendo", "remixable", `${slot}.json`);
     const oldHash = seedBaselineSchema.parse(JSON.parse(await readFile(baselineFile, "utf8"))).hash;
 
@@ -240,7 +240,7 @@ export default function Page() {
       "<article className=\"nw-card\"><span>Total net worth</span>",
     ));
     const resynced = await vendoSync({ root, out: join(root, ".vendo") });
-    expect(resynced.pins).toEqual({ captured: [], drifted: [slot] });
+    expect(resynced.pins).toEqual({ captured: [], drifted: [slot], ported: [slot] });
     const newBaseline = seedBaselineSchema.parse(JSON.parse(await readFile(baselineFile, "utf8")));
     expect(newBaseline.hash).not.toBe(oldHash);
 

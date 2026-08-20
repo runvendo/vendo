@@ -179,7 +179,7 @@ interface ClaudeSessionInput {
    * naming a path (`Bash`), which the host answers with one narrow
    * collect-by-shape rather than a whole-tree read.
    */
-  onFileWritten?: (path: string | undefined) => void;
+  onFileWritten?: (path: string | undefined) => void | Promise<void>;
   /**
    * The host's own MCP door, and a credential for the turn in flight.
    *
@@ -490,7 +490,17 @@ export function createClaudeSession(input: ClaudeSessionInput): ClaudeSession {
   const onPostToolUse = async (raw: unknown): Promise<Record<string, unknown>> => {
     const hook = raw as { tool_input?: { file_path?: unknown } };
     const written = hook.tool_input?.file_path;
-    input.onFileWritten?.(typeof written === "string" ? written : undefined);
+    try {
+      await input.onFileWritten?.(typeof written === "string" ? written : undefined);
+    } catch (error) {
+      // The write did NOT reach the workspace, and the model is about to ask the
+      // host about a file that is not there — it would read "app not found" as
+      // its own app being broken and set about "fixing" working code. So it is
+      // told the real reason, in band. Still not a decision: nothing is blocked
+      // and the turn carries on.
+      const why = error instanceof Error ? error.message : String(error);
+      return { systemMessage: `That file has not reached the workspace (${why}). Tools that read it may not see it yet.` };
+    }
     // This hook OBSERVES. Permission is the box and the door; a hook that
     // returned a decision here would be a permission system smuggled back in.
     return {};

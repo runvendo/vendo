@@ -21,6 +21,7 @@
  *    reports back through {@link ScreenInstance.settle}. The screen cannot
  *    reach the network, so this is the only way anything leaves it.
  */
+import type { TreeNode } from "@vendoai/core";
 import type { ScreenBudget } from "./budget.js";
 
 /** A function-valued prop, as it crosses the VM boundary. */
@@ -149,6 +150,10 @@ export interface BootScreenOptions {
    *  A read whose input the screen computes is not in here — it arrives through
    *  {@link ScreenInstance.supply} after the first paint names it. */
   queries: Record<string, unknown>;
+  /** The props the component mounts with — a PORT's paint can depend on what
+   *  its host call site passed. JSON only, enforced by construction: they
+   *  reach the VM as serialized text, so nothing callable can ride them. */
+  props?: Record<string, unknown>;
   /** The component names the screen may name. */
   catalog: readonly string[];
   /**
@@ -199,6 +204,8 @@ export const SCREEN_FILE = "app.tsx";
 export interface FlatNode {
   id: string;
   component: string;
+  /** Stamped by whoever asked for the paint — see {@link flattenTree}. */
+  source?: TreeNode["source"];
   props: Record<string, unknown>;
   /** Child ids, in paint order. A text child is a {@link SCREEN_TEXT_NODE}. */
   children: string[];

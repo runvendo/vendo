@@ -55,7 +55,8 @@ async function boot(): Promise<{ vendo: Vendo; store: VendoStore }> {
     await store.close().catch(() => undefined);
     await rm(dataDir, { recursive: true, force: true });
   });
-  vi.stubEnv("VENDO_API_KEY", "vnd_mcp_orgs_key");
+  // NO VENDO_API_KEY: `mcp: true` plus a key composes a Cloud-brokered door
+  // (compose-mcp.ts), and this test is about the LOCAL door's org handling.
   const vendo = createVendo({
     store,
     auth: {

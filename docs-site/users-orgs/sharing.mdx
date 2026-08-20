@@ -5,11 +5,23 @@ description: "Give one person, one team, or a whole org access to an app — a g
 ---
 
 <Note>
-  Sharing is a **server-side call** today. There is no HTTP route, no MCP tool,
-  and no CLI command for it — the Share dialog that used to front it was removed,
-  and the grant seam it wrote through stayed. You mount your own UI, or share from
-  your own backend logic.
+  An owner's ✦ menu on an app carries a **Share with &lt;tenant&gt;** toggle when
+  [Vendo Cloud's directory](/users-orgs/tenants) names a tenant the owner is in.
+  Turning it on grants `org:<tenantId>` at `viewer`; turning it off revokes it.
+  The wire mounts `GET /apps/:id/grants` and `PUT|DELETE
+  /apps/:id/grants/:principal` for it — everything below still applies, the
+  toggle is a thin front end over the same grant row.
 </Note>
+
+A tenant member the owner shared with sees the app through the same
+`grantedRecords` read every `org:` grant already used — no accept step. Leaving
+the tenant is the only revoke this share needs: membership lives in Cloud, so
+once someone is off the roster the grant stops matching them, with nothing for
+the owner to click. Unlike a membership your own host asserts per request, the
+directory answer is [cached 60 seconds per user](/users-orgs/tenants), so that
+lands on their next membership refresh — within a minute, not on the next
+request. While Cloud is unreachable the last known roster keeps being honoured,
+so a removed member keeps access until Cloud answers again.
 
 ## A share is a grant
 

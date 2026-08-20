@@ -32,6 +32,22 @@ Only tools in that file exist. Nothing else reaches your API.
 
 Extraction runs in a fixed order: OpenAPI, tRPC, Next.js server actions, then the route scan. Each one skips itself when your app has nothing for it.
 
+### Declare your schemas: openapi.json
+
+The single highest-leverage file you can add is an `openapi.json` at your app root (`public/openapi.json` and `docs/openapi.json` — or `.yaml` — are read too). Without a spec, a plain route scan finds your endpoints but not their shapes: each tool arrives as a method and a path with **no parameters and no output schema**, and the report says so —
+
+```text
+tool schemas: inputs 0/18 · outputs 0/18 — blind: host_customers_get, host_orders_list …
+```
+
+A blind tool is one the agent cannot really use: `GET /api/orders` may support `status`, `customer_id`, and `limit`, and the model has no way to know any of them exist. Add the spec and re-run `npx vendo init` (or `vendo sync`) and the same routes come back with every parameter name, type, and output shape declared:
+
+```text
+tool schemas: inputs 18/18 · outputs 18/18
+```
+
+Most frameworks can generate the file from your existing routes or validators — anything that emits standard OpenAPI 3.x works, and the spec never needs to be served: a file on disk is enough.
+
 ## One tool, honestly
 
 Every entry carries the same five fields. Here is one, whole.

@@ -1,6 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { sha256Hex } from "@vendoai/core";
+import { sha256Hex, type Json } from "@vendoai/core";
 import {
   seedBaselineSchema,
   type SeedBaseline,
@@ -21,7 +21,10 @@ import {
   resolveImportSource,
   visitNodes,
   walk,
+  writeIfChanged,
 } from "./common.js";
+import { splitSlot, type SplitInput } from "./split/index.js";
+import { remixWiringSource, type WiringSlot } from "./split/wiring.js";
 
 const MAX_SCAN_FILES = 5_000;
 const ROOT_FILE = /^(?:src\/)?(?:app\/layout|app\/root|pages\/_app)\.(?:[cm]?[jt]sx?)$/u;
@@ -39,6 +42,9 @@ const PLUMBING_HOOK = /^use(?:\w*Context|Router|Pathname|SearchParams|Params)$/u
 export interface PinCaptureResult {
   captured: string[];
   drifted: string[];
+  /** Slots that SPLIT this run — the ones the wiring file covers. Non-empty is
+   *  what makes the report say the two hookup call sites out loud. */
+  ported: string[];
   /** Baselines deleted because no wrapper names their slot this run — a stale
    *  baseline is a forkable zombie (checker round-1 ruling 2026-08-02). */
   pruned: string[];
@@ -291,6 +297,7 @@ function sameCapturedPayload(left: SeedBaseline | null, right: SeedBaseline): bo
     subSources: baseline.subSources ?? {},
     sampleProps: baseline.sampleProps,
     styles: baseline.styles ?? [],
+    ported: baseline.ported ?? null,
   });
   return JSON.stringify(payload(left)) === JSON.stringify(payload(right));
 }
@@ -354,21 +361,64 @@ function defaultExportName(source: string, file: string): string | null {
   return defaultExportOf(source, file)?.name ?? null;
 }
 
-export async function capturePins(
+/** The slot's PORTED half, spreadable into its baseline. One tier, and the
+ *  gauntlet is the only judge: a slot that does not split gets no `ported`, no ✦
+ *  and a loud line — while every other slot in this run still captures, still
+ *  ports, and still ships. */
+async function portFor(
+  input: SplitInput,
+  wiring: WiringSlot[],
+  homes: Map<string, string>,
+  warnings: string[],
+): Promise<Pick<SeedBaseline, "ported">> {
+  const split = await splitSlot(input);
+  if (!split.ok) {
+    // One issue per line: a real component fails the gauntlet a dozen ways at
+    // once, and a dozen repair instructions joined by semicolons is a wall
+    // nobody reads — which is the same as not reporting them.
+    warnings.push([`remixable component ${input.slot} was not split, so it stays un-remixable (the rest of this sync is unaffected):`, ...split.issues].join("\n    "));
+    return {};
+  }
+  wiring.push(split.wiring);
+  if (split.home !== undefined) homes.set(input.slot, split.home);
+  return { ported: split.port };
+}
+
+/** ONE wiring file per sync, covering every slot that split. Written whenever
+ *  this host has a wrapper at all, so a run where the last port stops splitting
+ *  empties it instead of leaving a binding nothing points at. */
+async function writeWiring(directory: string, slots: readonly WiringSlot[], anyWrapper: boolean): Promise<void> {
+  if (!anyWrapper) return;
+  await writeIfChanged(path.join(directory, "remix-wiring.ts"), remixWiringSource(slots));
+}
+
+/** One home module per slot the carver cut — `remix-holes/<Slot>.tsx`, the
+ *  files the wiring imports carved holes from. Regenerated whole, and a slot
+ *  that stopped needing one loses its file, so nothing lingers for the wiring
+ *  to dangle on. */
+async function writeHoles(directory: string, homes: ReadonlyMap<string, string>): Promise<void> {
+  const holesDir = path.join(directory, "remix-holes");
+  for (const [slot, home] of homes) await writeIfChanged(path.join(holesDir, `${slot}.tsx`), home);
+  let existing: string[] = [];
+  try {
+    existing = await fs.readdir(holesDir);
+  } catch {
+    return;
+  }
+  for (const entry of existing) {
+    const slot = entry.replace(/\.tsx$/u, "");
+    if (!homes.has(slot)) await fs.rm(path.join(holesDir, entry), { force: true });
+  }
+}
+
+/** Wrapper collisions are legal — the same component wrapped in two places is
+ *  ONE capture, many mount points — so sites group by slot before capture. */
+async function collectResolvedSites(
   root: string,
-  out: string,
-  ignoreSlots: ReadonlySet<string> = new Set(),
-  budgetBytes?: number,
-): Promise<PinCaptureResult> {
-  const result: PinCaptureResult = { captured: [], drifted: [], pruned: [], errors: [], warnings: [], styles: [] };
-  const realRoot = await fs.realpath(root);
-  const files = await walk(root, (relativePath) => /\.(?:[cm]?[jt]sx?)$/u.test(relativePath) && !/\.d\.ts$/u.test(relativePath), MAX_SCAN_FILES);
-  const remixableDir = path.join(out, "remixable");
-
-  result.styles = await captureRootStyles(root, realRoot, files, result.warnings);
-
-  // Wrapper collisions are legal — the same component wrapped in two places is
-  // ONE capture, many mount points — so sites group by slot before capture.
+  realRoot: string,
+  files: readonly string[],
+  result: PinCaptureResult,
+): Promise<Map<string, ResolvedSite[]>> {
   const bySlot = new Map<string, ResolvedSite[]>();
   for (const file of files) {
     const source = await fs.readFile(file, "utf8");
@@ -382,78 +432,122 @@ export async function capturePins(
       else grouped.push(resolved);
     }
   }
+  return bySlot;
+}
 
-  for (const [slot, sites] of [...bySlot.entries()].sort(([left], [right]) => left.localeCompare(right))) {
-    const [primary] = sites as [ResolvedSite, ...ResolvedSite[]];
-    // Two wrappers of the SAME component are one capture, many mount points
-    // (legal). Two DIFFERENT components sharing an exported name would leave
-    // one of them silently baseline-less, so ambiguity fails loudly instead.
-    const conflicting = sites.filter((site) => site.realFile !== primary.realFile);
-    if (conflicting.length > 0) {
-      const modules = [...new Set(sites.map((site) => portablePath(realRoot, site.realFile)))];
-      result.errors.push(`${portablePath(root, primary.file)}:${primary.line} — two different components both export "${slot}" (${modules.join(", ")}); rename one export so each remixable slot names one component`);
-      continue;
-    }
-    if (ignoreSlots.has(slot)) continue;
-    const review = sites.some((site) => site.review);
-    if (review && sites.some((site) => !site.review)) {
-      result.warnings.push(`remixable component ${slot} is wrapped both with and without review; capturing review: true`);
-    }
-    const baselineFile = path.resolve(remixableDir, `${slot}.json`);
-    if (!isInside(remixableDir, baselineFile)) {
-      result.errors.push(`${portablePath(root, primary.file)}:${primary.line} — remixable component name ${slot} is not a safe baseline filename; rename the component`);
-      continue;
-    }
-    if (!review) {
-      const signals = [...new Set([
-        ...plumbingSignals(primary.source, primary.realFile),
-        ...sites.flatMap((site) => site.functionProps).map((name) => `receives the function-typed prop ${name}`),
-      ])];
-      if (signals.length > 0) {
-        result.warnings.push(`remixable component ${slot} reaches into host plumbing (${signals.join("; ")}) — plumbing does not cross the fork boundary; consider <Remixable review> so approved remixes run natively in the page`);
-      }
-    }
-    const styles = result.styles;
-    const walked = await captureClosure({
-      root,
-      realRoot,
-      label: `remixable slot ${slot}`,
-      primaryFile: primary.realFile,
-      primarySource: primary.source,
-      ...(budgetBytes === undefined ? {} : { budgetBytes }),
-      warnings: result.warnings,
-    });
-    if (!walked.ok) {
-      // Never clobber: the previous baseline stays exactly as captured, so a
-      // fork keeps rendering while the host trims the closure.
-      result.warnings.push(overBudgetWarning(`remixable slot ${slot}`, walked.overBudget));
-      continue;
-    }
-    const { sourceImports, subSources } = walked.closure;
-    const hash = `sha256:${sha256Hex(primary.source)}`;
-    const existing = await readExisting(baselineFile);
-    const baseline: SeedBaseline = {
-      slot,
-      source: primary.source,
-      hash,
-      exportable: false,
-      capturedAt: new Date().toISOString(),
-      ...(review ? { review: true } : {}),
-      ...(Object.keys(sourceImports).length === 0 ? {} : { sourceImports }),
-      ...(Object.keys(subSources).length === 0 ? {} : { subSources }),
-      ...(styles.length === 0 ? {} : { styles }),
-    };
-    if (sameCapturedPayload(existing.baseline, baseline)) continue;
-    await fs.mkdir(path.dirname(baselineFile), { recursive: true });
-    await fs.writeFile(baselineFile, `${JSON.stringify(baseline, null, 2)}\n`, "utf8");
-    (existing.exists ? result.drifted : result.captured).push(slot);
+/** Shared per-run state a single slot's capture reads and writes into. */
+interface CaptureContext {
+  root: string;
+  realRoot: string;
+  remixableDir: string;
+  generatedDir: string;
+  budgetBytes?: number;
+  samplePropsFor?: (file: string, slot: string) => Record<string, Json> | undefined;
+  ignoreSlots: ReadonlySet<string>;
+  wiring: WiringSlot[];
+  homes: Map<string, string>;
+  result: PinCaptureResult;
+}
+
+/** One resolved slot's full capture: the collision, ignore-list, and
+ *  safe-filename refusals, the plumbing-signal warning, the closure walk and
+ *  split, and the baseline write (or the sameCapturedPayload no-op) — every
+ *  early exit below is a place the original loop iteration moved on. */
+async function captureSlot(slot: string, sites: readonly ResolvedSite[], ctx: CaptureContext): Promise<void> {
+  const { root, realRoot, remixableDir, generatedDir, budgetBytes, samplePropsFor, ignoreSlots, wiring, homes, result } = ctx;
+  const [primary] = sites as [ResolvedSite, ...ResolvedSite[]];
+  // Two wrappers of the SAME component are one capture, many mount points
+  // (legal). Two DIFFERENT components sharing an exported name would leave
+  // one of them silently baseline-less, so ambiguity fails loudly instead.
+  const conflicting = sites.filter((site) => site.realFile !== primary.realFile);
+  if (conflicting.length > 0) {
+    const modules = [...new Set(sites.map((site) => portablePath(realRoot, site.realFile)))];
+    result.errors.push(`${portablePath(root, primary.file)}:${primary.line} — two different components both export "${slot}" (${modules.join(", ")}); rename one export so each remixable slot names one component`);
+    return;
   }
-  // A baseline whose slot matches no discovered wrapper is a forkable zombie —
-  // delete it. A run with wrapper errors prunes nothing: an unresolvable
-  // wrapper's slot is unknowable, and deleting its baseline would turn a loud
-  // failure into silent data loss. A DEGRADED scan prunes nothing either — a
-  // missing host compiler parses every file to zero sites without one error,
-  // and a walk that hit its file cap may simply never have seen the wrapper.
+  if (ignoreSlots.has(slot)) return;
+  const review = sites.some((site) => site.review);
+  if (review && sites.some((site) => !site.review)) {
+    result.warnings.push(`remixable component ${slot} is wrapped both with and without review; capturing review: true`);
+  }
+  const baselineFile = path.resolve(remixableDir, `${slot}.json`);
+  if (!isInside(remixableDir, baselineFile)) {
+    result.errors.push(`${portablePath(root, primary.file)}:${primary.line} — remixable component name ${slot} is not a safe baseline filename; rename the component`);
+    return;
+  }
+  if (!review) {
+    const signals = [...new Set([
+      ...plumbingSignals(primary.source, primary.realFile),
+      ...sites.flatMap((site) => site.functionProps).map((name) => `receives the function-typed prop ${name}`),
+    ])];
+    if (signals.length > 0) {
+      result.warnings.push(`remixable component ${slot} reaches into host plumbing (${signals.join("; ")}) — plumbing does not cross the fork boundary; consider <Remixable review> so approved remixes run natively in the page`);
+    }
+  }
+  const styles = result.styles;
+  const walked = await captureClosure({
+    root,
+    realRoot,
+    label: `remixable slot ${slot}`,
+    primaryFile: primary.realFile,
+    primarySource: primary.source,
+    ...(budgetBytes === undefined ? {} : { budgetBytes }),
+    warnings: result.warnings,
+  });
+  if (!walked.ok) {
+    // Never clobber: the previous baseline stays exactly as captured, so a
+    // fork keeps rendering while the host trims the closure.
+    result.warnings.push(overBudgetWarning(`remixable slot ${slot}`, walked.overBudget));
+    return;
+  }
+  const { sourceImports, subSources } = walked.closure;
+  const sampleProps = samplePropsFor?.(primary.realFile, slot);
+  const ported = await portFor(
+    {
+      slot, source: primary.source, file: primary.realFile, root, generatedDir,
+      ...(sampleProps === undefined ? {} : { sampleProps }),
+    },
+    wiring,
+    homes,
+    result.warnings,
+  );
+  if (ported.ported !== undefined) result.ported.push(slot);
+  const hash = `sha256:${sha256Hex(primary.source)}`;
+  const existing = await readExisting(baselineFile);
+  const baseline: SeedBaseline = {
+    slot,
+    source: primary.source,
+    hash,
+    exportable: false,
+    capturedAt: new Date().toISOString(),
+    ...(review ? { review: true } : {}),
+    ...(Object.keys(sourceImports).length === 0 ? {} : { sourceImports }),
+    ...(Object.keys(subSources).length === 0 ? {} : { subSources }),
+    // On the baseline so the seed door grades the port with the SAME values
+    // sync just did — two graders, one source of props.
+    ...(sampleProps === undefined ? {} : { sampleProps }),
+    ...(styles.length === 0 ? {} : { styles }),
+    ...ported,
+  };
+  if (sameCapturedPayload(existing.baseline, baseline)) return;
+  await fs.mkdir(path.dirname(baselineFile), { recursive: true });
+  await fs.writeFile(baselineFile, `${JSON.stringify(baseline, null, 2)}\n`, "utf8");
+  (existing.exists ? result.drifted : result.captured).push(slot);
+}
+
+/** A baseline whose slot matches no discovered wrapper is a forkable zombie —
+ *  delete it. A run with wrapper errors prunes nothing: an unresolvable
+ *  wrapper's slot is unknowable, and deleting its baseline would turn a loud
+ *  failure into silent data loss. A DEGRADED scan prunes nothing either — a
+ *  missing host compiler parses every file to zero sites without one error,
+ *  and a walk that hit its file cap may simply never have seen the wrapper. */
+async function pruneZombieBaselines(
+  remixableDir: string,
+  files: readonly string[],
+  bySlot: ReadonlyMap<string, ResolvedSite[]>,
+  ignoreSlots: ReadonlySet<string>,
+  result: PinCaptureResult,
+): Promise<void> {
   const scanTrusted = parseModuleSource("", "compiler-probe.tsx") !== null
     && files.length < MAX_SCAN_FILES;
   if (scanTrusted && result.errors.length === 0) {
@@ -468,6 +562,41 @@ export async function capturePins(
       result.pruned.push(slot);
     }
   }
+}
+
+export async function capturePins(
+  root: string,
+  out: string,
+  ignoreSlots: ReadonlySet<string> = new Set(),
+  budgetBytes?: number,
+  /** The host's own DECLARED sample props for a component, by (file, slot) —
+   *  read off the catalog scan's registrations, never generated: a grade that
+   *  passes on invented data is worse than a refusal. */
+  samplePropsFor?: (file: string, slot: string) => Record<string, Json> | undefined,
+): Promise<PinCaptureResult> {
+  const result: PinCaptureResult = { captured: [], drifted: [], ported: [], pruned: [], errors: [], warnings: [], styles: [] };
+  const realRoot = await fs.realpath(root);
+  const files = await walk(root, (relativePath) => /\.(?:[cm]?[jt]sx?)$/u.test(relativePath) && !/\.d\.ts$/u.test(relativePath), MAX_SCAN_FILES);
+  const remixableDir = path.join(out, "remixable");
+  const generatedDir = path.join(out, "generated");
+  const wiring: WiringSlot[] = [];
+  const homes = new Map<string, string>();
+
+  result.styles = await captureRootStyles(root, realRoot, files, result.warnings);
+
+  const bySlot = await collectResolvedSites(root, realRoot, files, result);
+
+  const captureCtx: CaptureContext = {
+    root, realRoot, remixableDir, generatedDir, budgetBytes, samplePropsFor, ignoreSlots, wiring, homes, result,
+  };
+  for (const [slot, sites] of [...bySlot.entries()].sort(([left], [right]) => left.localeCompare(right))) {
+    await captureSlot(slot, sites, captureCtx);
+  }
+
+  await writeWiring(generatedDir, wiring, bySlot.size > 0);
+  await writeHoles(generatedDir, homes);
+  await pruneZombieBaselines(remixableDir, files, bySlot, ignoreSlots, result);
+
   result.captured.sort();
   result.drifted.sort();
   // Errors keep walk order: file order, then source position within a file

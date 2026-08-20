@@ -27,6 +27,11 @@ export interface ButtonProps extends KitStyled {
   /** Bound host-tool action (renderer-supplied). */
   onClick?: () => void;
   type?: "button" | "submit";
+  /** The host's own class, written by the RENDERER and only on a ported node
+   *  (tree/renderer.tsx, after the props it binds — same containment as the
+   *  display bricks): the splitter rewrites a host <button className> to this
+   *  component, and the host's CSS must keep styling it. */
+  hostClass?: string;
 }
 
 /**
@@ -71,7 +76,7 @@ const VARIANT_TONE: Readonly<Record<string, KitTone>> = {
   danger: "danger",
 };
 
-export function Button({ label, tone, variant, disabled = false, icon, loading = false, onClick, type = "button", style, children }: PropsWithChildren<ButtonProps>) {
+export function Button({ label, tone, variant, disabled = false, icon, loading = false, onClick, type = "button", style, children, hostClass }: PropsWithChildren<ButtonProps>) {
   const { motion } = useVendoThemeOrDefault();
   // `tone` is the taught prop and wins; `variant` is read only where no tone was
   // written, so a stored screen paints exactly as it did. An unknown word in
@@ -92,6 +97,7 @@ export function Button({ label, tone, variant, disabled = false, icon, loading =
       type={type}
       data-kit="Button"
       data-tone={paint}
+      className={hostClass}
       disabled={inert}
       aria-busy={loading ? true : undefined}
       onClick={() => {

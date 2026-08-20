@@ -56,7 +56,11 @@ export const uiPayloadSchema = z.object({
 export interface TreeNode {
   id: string;
   component: string;
-  source?: "prewired" | "host" | "generated";
+  /** Where the painted component came from. `ported` is a component the splitter
+   *  ported from host source, as opposed to `generated`, which the model wrote
+   *  from scratch — the marker that lets the renderer honor `className` on
+   *  ported nodes only. */
+  source?: "prewired" | "host" | "generated" | "ported";
   props?: Record<string, Json>;
   children?: string[];
 }
@@ -65,10 +69,17 @@ export interface TreeNode {
 export const treeNodeSchema = z.object({
   id: z.string(),
   component: z.string(),
-  source: z.enum(["prewired", "host", "generated"]).optional(),
+  source: z.enum(["prewired", "host", "generated", "ported"]).optional(),
   props: z.record(z.unknown()).optional(),
   children: z.array(z.string()).optional(),
 }).passthrough() satisfies z.ZodType<TreeNode>;
+
+/** The vocabulary itself, DERIVED from the schema above rather than written out
+ *  a second time — the two validators that walk a tree by hand instead of by zod
+ *  (apps genui/tree.ts, ui tree/renderer.tsx) read it from here. Three
+ *  hand-written copies is how `ported` came to be legal in one and refused by the
+ *  other two. */
+export const TREE_NODE_SOURCES: readonly string[] = treeNodeSchema.shape.source.unwrap().options;
 
 /** The one canonical non-null, non-array object guard (kill-list B6) — every
  *  package already depends on core, so a per-file redefinition is duplication,

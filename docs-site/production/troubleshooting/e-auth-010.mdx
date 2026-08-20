@@ -1,0 +1,42 @@
+---
+title: "E-AUTH-010"
+sidebarTitle: "E-AUTH-010"
+description: "clerk() is wired but neither CLERK_SECRET_KEY nor CLERK_JWT_KEY is set."
+---
+
+```text wiring/clerk-env
+warning: clerk() verifies sessions with CLERK_SECRET_KEY (mirroring Clerk's
+own SDKs) and/or CLERK_JWT_KEY (the instance's PEM public key, networkless) —
+server-side keys, not the NEXT_PUBLIC_* publishable key. Neither is set —
+signed-in users resolve as anonymous until one lands in .env.local.
+```
+
+`check: wiring/clerk-env` · `error_code: E-AUTH-010` · `doctor exits: 0`
+
+## What you're seeing
+
+A warning: your composition wires the `clerk()` auth preset, and neither of
+the keys it verifies sessions with is set.
+
+## Why
+
+Init detects the Clerk family from your dependencies — often a host that
+carries only the `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` — but the preset
+verifies sessions server-side: `CLERK_SECRET_KEY` (mirroring Clerk's own
+SDKs) and/or `CLERK_JWT_KEY` (the instance's PEM public key, which enables
+networkless verification). Without one, every static check passes and every
+signed-in user quietly resolves as **anonymous** — the server logs one loud
+warning, and visitors see the signed-out experience while believing they are
+signed in.
+
+## The fix
+
+Add either key to `.env.local` (both is fine). `CLERK_SECRET_KEY` is in the
+Clerk dashboard's API keys; `CLERK_JWT_KEY` is the instance's public key on
+the same page. A warning, not a failure: production-only env kept outside
+the local files doctor can read is legitimate — but then verify with a real
+signed-in turn where that env exists.
+
+## Related errors
+
+- [E-AUTH-009](/production/troubleshooting/e-auth-009) — the same gap in the supabase() preset

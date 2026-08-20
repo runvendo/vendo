@@ -87,26 +87,42 @@ function nextAuthV4Advisory(range: string): string {
 }
 
 const SUPABASE_SERVER_ENV = ["SUPABASE_JWT_SECRET", "SUPABASE_URL"] as const;
+const CLERK_SERVER_ENV = ["CLERK_SECRET_KEY", "CLERK_JWT_KEY"] as const;
 
 /** Env files a Next/Node host actually loads in development, checked in the
     same spirit the login flow writes `.env.local`: presence anywhere counts. */
 const HOST_ENV_FILES = [".env", ".env.local", ".env.development", ".env.development.local"];
 
-/** True when either server-side name is in the process env or any host env
-    file. Shared by init's advisory and doctor's E-AUTH-009 — the two must
-    never disagree about whether a supabase() host can verify sessions. */
-export async function supabaseServerEnvSatisfied(
+/** True when any of the names is in the process env or any host env file —
+    the one satisfaction rule every preset-env advisory and doctor check
+    shares, so init and doctor can never disagree about the same host. */
+async function serverEnvSatisfied(
   root: string,
   env: Record<string, string | undefined>,
+  names: readonly string[],
 ): Promise<boolean> {
-  if (SUPABASE_SERVER_ENV.some((name) => Boolean(env[name]))) return true;
+  if (names.some((name) => Boolean(env[name]))) return true;
   for (const file of HOST_ENV_FILES) {
     const body = await readOptional(join(root, file));
-    if (body !== null && SUPABASE_SERVER_ENV.some((name) => new RegExp(`^\\s*${name}\\s*=`, "m").test(body))) {
+    if (body !== null && names.some((name) => new RegExp(`^\\s*${name}\\s*=`, "m").test(body))) {
       return true;
     }
   }
   return false;
+}
+
+export async function supabaseServerEnvSatisfied(
+  root: string,
+  env: Record<string, string | undefined>,
+): Promise<boolean> {
+  return serverEnvSatisfied(root, env, SUPABASE_SERVER_ENV);
+}
+
+export async function clerkServerEnvSatisfied(
+  root: string,
+  env: Record<string, string | undefined>,
+): Promise<boolean> {
+  return serverEnvSatisfied(root, env, CLERK_SERVER_ENV);
 }
 
 /** The wire's own remediation copy, verbatim-adjacent: doctor and the first
@@ -115,11 +131,19 @@ export const SUPABASE_ENV_GUIDANCE =
   "supabase() verifies sessions with SUPABASE_JWT_SECRET (HS256, offline) and/or " +
   "SUPABASE_URL (ES256 via GoTrue's JWKS) — server-side names, not the NEXT_PUBLIC_* pair.";
 
-/** The second caveat: supabase() verifies sessions with server-side env the
-    NEXT_PUBLIC_* pair does not cover — a host detected FROM that pair wires
-    cleanly and then fails its first signed-in turn (ENG-422, field:
-    expense.fyi). Attached only when neither name is in the process env or any
-    host env file; a present name means the host already knows. */
+/** Same shape for clerk — and the same wording the keyless wire warns with
+    (#1338): the preset reads server-side keys, not the publishable key
+    detection saw. */
+export const CLERK_ENV_GUIDANCE =
+  "clerk() verifies sessions with CLERK_SECRET_KEY (mirroring Clerk's own SDKs) and/or " +
+  "CLERK_JWT_KEY (the instance's PEM public key, networkless) — server-side keys, not the NEXT_PUBLIC_* publishable key.";
+
+/** The second caveat, per preset: a family detected from its CLIENT-side
+    dependency verifies sessions with SERVER-side env the detection never saw —
+    the host wires cleanly and then signed-in turns misbehave (supabase fails
+    loud, ENG-422; clerk resolves signed-in users as anonymous, #1338).
+    Attached only when no name is in the process env or any host env file; a
+    present name means the host already knows. */
 async function supabaseEnvAdvisory(
   root: string,
   env: Record<string, string | undefined>,
@@ -128,6 +152,22 @@ async function supabaseEnvAdvisory(
   return `Auth: ${SUPABASE_ENV_GUIDANCE} ` +
     "Neither is set; add one to .env.local before the first signed-in turn (the wire fails loud until then).";
 }
+
+async function clerkEnvAdvisory(
+  root: string,
+  env: Record<string, string | undefined>,
+): Promise<string | undefined> {
+  if (await clerkServerEnvSatisfied(root, env)) return undefined;
+  return `Auth: ${CLERK_ENV_GUIDANCE} ` +
+    "Neither is set; add one to .env.local — signed-in users resolve as anonymous until then.";
+}
+
+/** The env advisories detection attaches post-hoc, one per family that has a
+    server-side half detection cannot see. */
+const ENV_ADVISORIES = [
+  { preset: "supabase", advisory: supabaseEnvAdvisory },
+  { preset: "clerk", advisory: clerkEnvAdvisory },
+] as const;
 
 /** Silent auth-preset detection from the host's package.json (zero-question
     contract): one unambiguous family gets wired; none or several stay
@@ -156,10 +196,12 @@ export async function detectAuthPreset(
       : undefined;
     return [{ preset, dependency, ...(advisory === undefined ? {} : { advisory }) }];
   });
-  const supabase = matches.find((match) => match.preset === "supabase");
-  if (supabase !== undefined && supabase.advisory === undefined) {
-    const advisory = await supabaseEnvAdvisory(root, env);
-    if (advisory !== undefined) supabase.advisory = advisory;
+  for (const { preset, advisory: envAdvisory } of ENV_ADVISORIES) {
+    const match = matches.find((candidate) => candidate.preset === preset);
+    if (match !== undefined && match.advisory === undefined) {
+      const advisory = await envAdvisory(root, env);
+      if (advisory !== undefined) match.advisory = advisory;
+    }
   }
   return { wired: matches.length === 1 ? matches[0]! : null, matches };
 }

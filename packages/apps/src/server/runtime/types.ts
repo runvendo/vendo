@@ -10,6 +10,7 @@
 import type {
   AccessLevel,
   AppAccess,
+  AppGrantRecord,
   AppId,
   ApprovalId,
   ApprovalRequest,
@@ -58,7 +59,7 @@ import type { SeedBaseline, SeedDrift } from "../../contract/index.js";
 import type { RemixRejection, ReviewQueueEntry } from "../remix/review.js";
 import type { SandboxAdapter } from "../escalation/sandbox.js";
 import type { ShipDiff } from "../remix/ship-diff.js";
-import type { SlotRegistry } from "../persistence/slots.js";
+import type { SlotDescriptor, SlotRegistry } from "../persistence/slots.js";
 
 /**
  * What this block may ask of the automations engine — four verbs, no more.
@@ -211,6 +212,9 @@ export interface AppsConfig {
    *  umbrella can back it with a first-request cloud read without doing I/O at
    *  compose time. */
   catalog: NormalizedCatalog;
+  /** Slots the host declared in its own config (`CreateVendoConfig.slots`),
+   *  merged into the page-reported registry on every read (slots.ts). */
+  slots?: readonly SlotDescriptor[];
   /** The pages a generated `<Link to>` may name (`CreateVendoConfig.routes`),
    *  for the FLOOR: a screen naming a route the host never registered is refused
    *  at generation, not left to render as dead text. What a WRITER is told about
@@ -575,6 +579,21 @@ export interface AppsRuntime {
    */
   floor(ctx: RunContext, options?: { saves?: boolean }): AppFloor;
   /**
+   * The source a RE-SEED's replay must start from, or nothing — and it is gone
+   * once read.
+   *
+   * Public for the same reason `authoredScreen` and `commitSource` are: the hand
+   * that has to act on it is not in this package. A re-seed replays the recorded
+   * wish onto the host's NEW port, and only the assembler holds a workspace to
+   * put that port in front of the model. This block never paints it into the row
+   * — the replay's own save is the single landing, so a replay that does not land
+   * leaves the person's screen untouched.
+   *
+   * Empty except during a re-seed's own replay, and emptied by the read. An
+   * ordinary edit never publishes one, so it can never take one.
+   */
+  takeReplaySource(appId: AppId): string | undefined;
+  /**
    * What every tool a binding may name really RETURNS, annotated with this
    * host's own field semantics — the `:money.cents`, `:date.iso`, `:enum(a|b)`
    * marks that decide whether a number is dollars or cents on screen.
@@ -630,17 +649,27 @@ export interface AppsRuntime {
    * The slot REGISTRY — which slots this caller's surfaces mount, as opposed to
    * which app sits in one (`placements` above).
    *
-   * Written by the surfaces themselves: a slot exists because a page renders
-   * it, so every render reports it and the read ages out whatever stopped being
-   * reported (slots.ts). Nothing else can know the list — a slot is a prop on a
-   * host's own component, invisible to the server until it renders.
+   * Two sources, merged on read (slots.ts). A REPORTED slot is written by the
+   * surface itself: it exists because a page renders it, so every render
+   * reports it again and the read ages out whatever stopped being reported. A
+   * DECLARED slot comes from the host's `slots` config — it never decays and
+   * needs no render, which is the only thing an agent-only product, where no
+   * page of ours renders a <VendoSlot>, has to pin to. Declared wins: a
+   * reported slot of the same id is dropped.
    */
   slots: SlotRegistry;
-  /** Build contract §9.3 — what level the CALLER holds. */
+  /** Build contract §9.2–§9.3 — what level the CALLER holds, and the grant
+   *  writes the ✦ share toggle needs. `list` is viewer-scoped (reading who
+   *  else can reach an app you can see); grant/revoke are owner-scoped. Every
+   *  write answers with the resulting list, so a surface never makes a second
+   *  round trip to learn what it just did. */
   access: {
     /** The caller's own level, or null when they cannot see the app at all —
      *  what the surface reads to decide between "Edit" and the fork offer. */
     levelFor(appId: AppId, ctx: RunContext): Promise<AccessLevel | null>;
+    list(appId: AppId, ctx: RunContext): Promise<AppGrantRecord[]>;
+    grant(appId: AppId, principal: string, level: AccessLevel, ctx: RunContext): Promise<AppGrantRecord[]>;
+    revoke(appId: AppId, principal: string, ctx: RunContext): Promise<AppGrantRecord[]>;
   };
   edit(appId: AppId, instruction: string, ctx: RunContext): Promise<EditResult>;
   /**
@@ -831,6 +860,20 @@ export interface AppsRuntime {
     drift(appId: AppId, ctx: RunContext): Promise<SeedDrift | null>;
     reseed(input: { appId: AppId }, ctx: RunContext): Promise<AppDocument>;
     from(input: SeedFromInput, ctx: RunContext): Promise<AppDocument>;
+    /**
+     * The COURIER: the live props of the host instance this remix stands in for,
+     * shipped by the `<Remixable>` wrapper on mount and on every change.
+     *
+     * A ported screen renders from its props, and no prop is in any source it
+     * could read — so without this the floor paints it on the baseline's frozen
+     * `sampleProps` and the remix shows the sync-time number forever. It writes
+     * `AppSeed.props` and NOTHING else: this is provenance about the call site,
+     * never a content edit, so it mints no version and replays no wish.
+     *
+     * Filtered here to the captured baseline's own declared prop names — a prop
+     * the host component never declared is dropped before it is stored.
+     */
+    props(input: { appId: AppId; props: Record<string, Json> }, ctx: RunContext): Promise<AppDocument>;
   };
   /**
    * execution-v2 — additive machine lifecycle surface (same additive precedent

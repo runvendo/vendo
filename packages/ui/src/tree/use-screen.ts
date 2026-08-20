@@ -149,6 +149,9 @@ export function useScreen(input: ScreenBridgeInput): ScreenBridge {
           now: Date.now(),
           locale: now.locale,
           timeZone: now.timeZone,
+          // The served paint's own mount props — without them a ported
+          // screen's first click paints the component's no-props branch.
+          ...(now.interactive?.props === undefined ? {} : { props: now.interactive.props }),
         });
         booted.current = { engine, screen };
         asked.current = new Map((now.interactive?.queryPlan ?? []).map((query) => [queryKey(query), query]));
@@ -187,7 +190,10 @@ export function useScreen(input: ScreenBridgeInput): ScreenBridge {
    *  the same conversion the served payload took, so a `$handler` and an
    *  `action` prop mean the same thing on the swap as on the first paint. */
   const paint = (engine: ScreenEngine, next: NestedNode): void => {
-    const flat = engine.flattenTree(next);
+    // The provenance the SERVER stamped, carried forward: the VM emits elements,
+    // not provenance, so a repaint has no other source for it — and a ported
+    // screen that lost it would drop the host's classes on its first click.
+    const flat = engine.flattenTree(next, base.nodes.find(({ id }) => id === base.root)?.source);
     setTree((current) => ({ ...(current ?? base), nodes: Object.values(flat.nodes).map(convertNode), root: flat.root }));
   };
 
@@ -263,6 +269,7 @@ export function useScreen(input: ScreenBridgeInput): ScreenBridge {
         now: Date.now(),
         locale,
         timeZone,
+        ...(interactive?.props === undefined ? {} : { props: interactive.props }),
       });
       instance.screen.dispose();
       booted.current = { engine: instance.engine, screen: next };

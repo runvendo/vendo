@@ -17,6 +17,7 @@ import { screenTypesCheck } from "../src/server/checking/facts.js";
 import type { FloorDependencies } from "../src/server/checking/deps.js";
 import { guardFixture } from "../src/server/testing/guard-fixture.js";
 import { memoryStore } from "../src/server/testing/memory-store.js";
+import { FIXTURE_SCREEN } from "../src/server/testing/screen-document.js";
 import { basicLanguageModel, scriptedLanguageModel } from "../src/server/testing/scripted-model.js";
 import { scriptedScreenAssembler } from "../src/server/testing/screen-assembler.js";
 
@@ -38,16 +39,22 @@ const captured = JSON.parse(
   readFileSync("../../examples/demo-bank/.vendo/remixable/NetWorthView.json", "utf8"),
 ) as SeedBaseline;
 
+/** The ported half here is the fixture screen `seed.test.ts` seeds from, and
+ *  DELIBERATELY shares not one byte with the capture — not because the capture
+ *  lacks a port (it has one now), but so "nothing of the capture reaches the
+ *  remix" keeps meaning what it says against the host's real 10KB of source. */
+const portable: SeedBaseline = { ...captured, ported: { source: FIXTURE_SCREEN, tools: [], holes: [] } };
+
 /** The gesture's own edit really runs here — the mint and the first edit are one
  *  operation, so a fixture that skipped the edit would test half of it. */
-const runtime = (store = memoryStore()) => {
+const runtime = (store = memoryStore(), baseline: SeedBaseline = portable, catalog: NormalizedCatalog = []) => {
   let built: AppsRuntime;
   built = createApps({
     store,
     guard: guardFixture(),
     tools,
-    catalog: [],
-    seedBaselines: [captured],
+    catalog,
+    seedBaselines: [baseline],
     model: basicLanguageModel(),
     screen: scriptedScreenAssembler(
       () => built,
@@ -64,6 +71,27 @@ const floorDeps = (): FloorDependencies => ({
 });
 
 describe("a seeded app survives its own edit door", () => {
+  /**
+   * The capture as the demo REALLY ships it now carries a ported half — the
+   * carver cut its SVG chart and its count-up hook home as holes (AreaChart,
+   * NetWorthViewCountUp) and the gauntlet blessed what remained — so the ✦ on
+   * the real bytes SEEDS. (This test used to pin the refusal, back when NetWorthView
+   * could not port; it moves with the contract it always guarded: the gesture
+   * answers honestly for what the splitter really produced.) The floor is
+   * given the holes the wiring would register, exactly as a wired host's
+   * runtime catalog carries them.
+   */
+  it("seeds the ✦ on the real capture, which the splitter genuinely ported", async () => {
+    expect(captured.ported).toBeDefined();
+    const holes = (captured.ported?.holes ?? []).map((name) => ({ name, description: "" }));
+    const app = await runtime(memoryStore(), captured, holes as NormalizedCatalog).seed.from(
+      { component: captured.slot, instruction: "show the balance as a sparkline" },
+      owner,
+    );
+    expect(app.seed?.component).toBe(captured.slot);
+    expect(app.buildFailed).toBeUndefined();
+  });
+
   /**
    * REGRESSION 1 — the mint used to carry the capture, and the wire edit door
    * then destroyed the app and returned 200.
@@ -108,8 +136,9 @@ describe("a seeded app survives its own edit door", () => {
    * the app arrived with the version that says where it came from. `seed.from`
    * puts the row itself, so a fresh remix has no history at all.
    *
-   * One gesture, two entries: where the remix came from, and the first edit —
-   * the trail says both because the gesture did both.
+   * One gesture, three entries: where the remix came from, the ported source
+   * landing as the app's own first version, and the first edit — the trail
+   * says all three because the gesture did all three.
    */
   it("records the version that says where the app came from", async () => {
     const store = memoryStore();
@@ -120,7 +149,7 @@ describe("a seeded app survives its own edit door", () => {
 
     const intents = (await runtime(store).history(app.id, owner).list()).map(({ intent }) => intent);
 
-    expect(intents).toHaveLength(2);
+    expect(intents).toHaveLength(3);
     expect(intents.some((intent) => intent.includes(captured.slot))).toBe(true);
     expect(intents).toContain("show the balance as a sparkline");
   });

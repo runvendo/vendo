@@ -135,6 +135,19 @@ export interface ComponentScreenOptions {
   /** The pages a `<Link to>` may name. Absent → the host registered no registry
    *  and stage 5 measures no link against one. */
   routes?: VendoRouteMap;
+  /** This source is the splitter's PORT of a host component, not a screen a model
+   *  authored — the one dialect whose display tags take the host's `className`.
+   *  Set from OUTSIDE the source in both places that grade a port
+   *  ({@link PORTED_SCREEN_DIALECT}); a screen that could spell its own dialect
+   *  would unlock `className` for itself. */
+  ported?: boolean;
+  /** The props the screen's component renders with — a PORT's paint can depend
+   *  on what its host call site passed, and a query resolves before the render,
+   *  so nothing in the source can carry them. JSON only, by the same law as
+   *  every value that crosses into the VM, and never invented: the caller hands
+   *  the host's own captured sampleProps or nothing — a screen that paints
+   *  nothing without props is refused, not blessed on made-up data. */
+  props?: Record<string, unknown>;
   /** The trusted executor, injected by the caller: this check runs the screen's
    *  queries for real, and it is the caller who holds the guard-bound registry. */
   runQuery: (tool: string, input?: unknown) => Promise<unknown>;
@@ -150,6 +163,12 @@ export interface ComponentScreenOptions {
    *  ({@link defaultToolchain}); the floor names it one layer up. */
   toolchain?: ScreenToolchain;
 }
+
+/** The dialect a PORT is graded in, spelled ONCE: `vendo sync` grades a port
+ *  with it and the runtime floor grades the same bytes with it again, and two
+ *  hand-assembled copies is exactly how a port sync blessed came to be refused
+ *  on its first save. */
+export const PORTED_SCREEN_DIALECT = { ported: true } as const;
 
 const issue = (code: string, message: string): ComponentScreenIssue => ({ code, message });
 
@@ -623,6 +642,7 @@ export async function checkComponentScreen(opts: ComponentScreenOptions): Promis
     catalog: opts.catalog,
     tools: opts.hostTools,
     note: (reason) => notes.push(reason),
+    ...(opts.ported === true ? { ported: true } : {}),
   });
   announceUntyped(notes);
 
@@ -674,6 +694,11 @@ export async function checkComponentScreen(opts: ComponentScreenOptions): Promis
         now,
         locale: opts.locale,
         timeZone: opts.timeZone,
+        // `source` off the DIALECT this screen was type-checked in — the only thing
+        // that decides whether a brick may paint a host class — and the PROPS the
+        // port's host call site passed; no screen can name either for itself.
+        ...(opts.ported === true ? { source: "ported" as const } : {}),
+        ...(opts.props === undefined ? {} : { props: opts.props }),
       });
     } catch (error) {
       // A paint answers a screen that failed with a verdict, so a THROW is the
@@ -708,7 +733,13 @@ export async function checkComponentScreen(opts: ComponentScreenOptions): Promis
   const treeIssues = await treeCheckIssues(initialTree, names, opts.routes);
   if (treeIssues.length > 0) return refuse(treeIssues, { compiled, queryPlan, initialTree });
 
-  const deadIssues = deadControlIssues(initialTree, painted.inert);
+  // The press verdict is for screens a MODEL writes — a decorative "Book
+  // appointment" whose handler reaches nothing. A PORT is the host's own
+  // shipped component, and its controls do what the host built them to do: a
+  // range switcher's current option legitimately paints nothing new when
+  // pressed again. Refusing that refuses real production UI, so the ported
+  // dialect keeps the press observations and drops the verdict.
+  const deadIssues = opts.ported === true ? [] : deadControlIssues(initialTree, painted.inert);
   if (deadIssues.length > 0) return refuse(deadIssues, { compiled, queryPlan, initialTree });
 
   return { ok: true, issues: [], compiled, queryPlan, initialTree, queries };

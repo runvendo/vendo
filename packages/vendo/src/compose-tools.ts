@@ -21,7 +21,7 @@ import {
 import { connectorDiscoveryRegistry } from "./connector-discovery.js";
 import { dotVendoFile } from "./dot-vendo.js";
 import { createSdkEvents, sdkRuntime, withSdkErrorReporting } from "./sdk-events.js";
-import { createUserFilesTools } from "./user-files.js";
+import { createUserFilesTools, uploadCapOf } from "./user-files.js";
 import { environment } from "./wire/shared.js";
 
 /** The discovery tools' ports. Each body only runs on a real tool call, long
@@ -179,8 +179,10 @@ export const composeTools = (composition: VendoComposition): Pick<VendoCompositi
   // and the SAME resolved `files` adapter the harness writes through, so a read
   // and a write can never resolve to different blobs.
   let drawer: ReturnType<typeof workspaceStore> | undefined;
-  actions.add(createUserFilesTools(async (principal) =>
-    await (drawer ??= workspaceStore(store, { files: composition.files })).open(principal)));
+  actions.add(createUserFilesTools(
+    async (principal) => await (drawer ??= workspaceStore(store, { files: composition.files })).open(principal),
+    uploadCapOf(config),
+  ));
 
   // Knowledge K1 — the tool exists exactly when an adapter is configured;
   // no adapter, no `vendo_knowledge_search` in any descriptor surface.

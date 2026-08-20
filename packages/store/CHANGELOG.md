@@ -1,5 +1,93 @@
 # @vendoai/store
 
+## 0.35.0
+
+### Patch Changes
+
+- 8d97a32: A wasm boot that never started gets the retry it already had a place for.
+  `PGlite.create`'s delayed retry only fired for `Invalid FS bundle size`, so
+  `PGlite failed to initialize properly` — the other way the engine intermittently
+  loses a boot — fell straight through. On a `memory://` store that is the end of
+  the line: no lock file, so the stale-lock heal above it rethrows on the spot, and
+  there is no recovery path at all. CI paid for it twice, killing one random test
+  out of ~300 in `packages/agents` on two unrelated branches with a byte-identical
+  stack.
+
+  Both signatures now share the one delayed retry. `Aborted()` deliberately does
+  not join them — it means a half-opened data dir and belongs to the stale-lock
+  heal — and only the truncated-bundle case is still reworded into the reinstall
+  message, so a second init failure arrives with its own text after exactly two
+  attempts.
+
+- d533ab8: `VENDO_STORE_TRACE`'s line stops lying about how slow the store is. It printed
+  one number, `ms=`, and folded three things that are not the door's latency into
+  it: the retry's own backoff (250ms to 10s, whatever `Retry-After` asked for),
+  event-loop queueing on a busy container, and the instrument's OWN second full
+  read of the response body — a `clone().arrayBuffer()` awaited inside the timed
+  span, which also charged every traced call for being measured. A 40ms door with
+  one retry behind it reported `ms=1347`; in the field a healthy 54ms read as 2.1s
+  and sent an afternoon after a store that was never slow.
+
+  The line now separates the clocks and says how many attempts it took:
+
+  ```
+  vendo-store-trace op=engine.get path=/engine/get net=44 total=1046 retried=1 bytes=? outcome=ok
+  ```
+
+  `net=` is time on the wire — request start to response headers, summed over
+  attempts — so it is the number to compare against the server's own. `total=` is
+  what the caller waited, backoff included, and the gap between the two IS the
+  wait rather than a mystery. `retried=` names the replay that opened the gap.
+
+  `bytes=` is now the size the server declared in `content-length`, and `?` where
+  it declared none: nothing is read to find out, so the body reaches the caller
+  whole and unread and a slow transfer is no longer billed to the door twice.
+  Losing the size on a chunked answer is the price of that, and the cheaper fix
+  lives on the server — the console could stamp its own processing time on the
+  response and make `net` decomposable — so the trade is temporary.
+
+- Updated dependencies [ea60d95]
+- Updated dependencies [ea60d95]
+  - @vendoai/apps@0.35.0
+  - @vendoai/core@0.35.0
+
+## 0.34.0
+
+### Minor Changes
+
+- f7e0ff4: The upload door's 5 MiB cap is a knob, and there is a bucket to raise it into.
+
+  `createVendo({ uploadMaxBytes })` sets what one browser upload may carry through
+  `POST /files`, defaulting to the `UPLOAD_MAX_BYTES` that used to be the only
+  answer. It is still a DOOR cap and not a storage cap: `vendo.putUserFile` is a
+  trusted server caller, bounded by whatever backs `files:` instead. The knob is
+  checked when you compose rather than when a user uploads: anything that is not a
+  positive integer refuses `createVendo` and names the value, `NaN` and `Infinity`
+  included — both are numbers the types allow, and both would make the doors' size
+  comparison false forever, deleting the cap instead of moving it.
+
+  Raising it is only half a fix, so the refusal now says the other half. Past
+  5 MiB with no `files:` adapter an upload clears the door and dies at the store's
+  own blob cap, so the over-cap error names the knob AND the backing the bytes
+  would have landed in — the store and the cap that really bounds it, or the
+  `FilesAdapter` the host wired.
+
+  `s3Files({ endpoint, bucket, credentials })` is that adapter, ready-made, for
+  any bucket that speaks S3: AWS, Cloudflare R2, Supabase Storage, MinIO. SigV4
+  over WebCrypto via `aws4fetch`, path-style, so it runs on an edge target too;
+  `region` defaults to `"auto"` (what R2 requires, what MinIO ignores) and
+  `prefix` lets one bucket hold several deployments. It reads no environment of
+  its own — which credentials reach it stays the composition seam's question —
+  and resolves nothing until its first call, so `createVendo` stays I/O-free at
+  module init.
+
+### Patch Changes
+
+- Updated dependencies [f7e0ff4]
+- Updated dependencies [f7e0ff4]
+  - @vendoai/apps@0.34.0
+  - @vendoai/core@0.34.0
+
 ## 0.33.0
 
 ### Patch Changes

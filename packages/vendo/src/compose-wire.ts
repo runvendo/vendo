@@ -9,7 +9,9 @@ import { VendoError } from "@vendoai/core";
 import { initTelemetry, type Telemetry } from "@vendoai/telemetry";
 import type { VendoComposition } from "./compose-context.js";
 import { isLoopbackOrigin } from "./door-paths.js";
+import { composeTokenFor } from "./mcp-token.js";
 import type { Vendo } from "./types.js";
+import { uploadCapOf } from "./user-files.js";
 import { VERSION, type WireDeps } from "./wire/shared.js";
 
 const telemetryClient = (enabled: boolean | undefined): Telemetry | undefined => {
@@ -79,6 +81,10 @@ export const wireDepsFor = (composition: VendoComposition): WireDeps => {
     channels: composition.channelDoor,
     channelInboundSecret: composition.channelInboundSecret,
     sandbox: sandbox.venue,
+    // The cap and its backing, resolved where the drawer's law lives so this
+    // door and `vendo_user_files_put` refuse identically; `files` is the same
+    // predicate the boot summary's row prints.
+    ...uploadCapOf(config),
     model: inference.agent.venue,
     doctor,
     get mcp() { return composition.mcpPosture; },
@@ -133,6 +139,7 @@ export const vendoInstance = (
   const { tenantConnectors } = composition;
   return {
     handler,
+    tokenFor: composeTokenFor(composition, handler),
     async usage(query) {
       // Loud, not silent, exactly like `emit` below: a store with no meter
       // recorded nothing and never will, so an empty tally would read as "this

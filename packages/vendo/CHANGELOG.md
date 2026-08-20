@@ -1,5 +1,244 @@
 # @vendoai/vendo
 
+## 0.35.0
+
+### Minor Changes
+
+- ea60d95: An app can be shared again. `AppsRuntime.access` regains `list`, `grant` and
+  `revoke` (viewer-scoped read, owner-scoped writes, each write answering with the
+  resulting list), the wire mounts `GET /apps/:id/grants` and
+  `PUT|DELETE /apps/:id/grants/:principal`, and the client regains
+  `apps.grants/.share/.unshare`. The person picker and `promote` are deliberately
+  not back.
+
+### Patch Changes
+
+- 83f3026: A keyless clerk() host is a state, not an outage. The preset used to THROW
+  when a request carried a session token and neither `CLERK_SECRET_KEY` nor
+  `CLERK_JWT_KEY` was set — 501-ing the entire wire in exactly the state
+  `vendo init --auth clerk` leaves you in, on hosts where Clerk's `__session`
+  cookie rides every request — while a forged token nine lines below resolved
+  to anonymous. A missing key now resolves to anonymous too, named once and
+  loudly in the server log (the v4-cookie-hint pattern). And because nothing
+  fails loud enough to send anyone looking, the gap is named early twice over:
+  init's detection attaches a clerk env advisory (the supabase mechanism,
+  generalized), and doctor grades the same fact statically as **E-AUTH-010**
+  (a warning) from the same shared helpers, so init and doctor can never
+  disagree.
+- 968ab91: Three things measured on real texted turns, two of them time a person spent
+  waiting for nothing.
+
+  **The queue tail.** A texted turn holds its conversation's queue until it
+  returns, and after the reply had already gone out it still had two hosted round
+  trips to make: the link write, and the approval-feed read the grant-set offer
+  needs. Run one after the other they charged the NEXT text 8.3s of bookkeeping
+  before its own turn could start. They have nothing to say to each other — one is
+  this conversation's row, the other is the subject's approval feed — so they now
+  go together. The feed is still read after the turn and never before it: the
+  arming call that mints the rows it looks for runs inside the turn.
+
+  **The delivery-log sweep.** `ChannelEventLog.claim` awaited its own prune, so
+  once an hour, per conversation, whichever person's text happened to come due
+  waited out a page read plus one delete per expired row — 4.95s of serial hosted
+  calls in front of a turn that had not started. It is detached now. Safe on all
+  three counts: it only ever deletes rows older than any retry, so nothing a live
+  delivery reads depends on it; the cadence mark is set before it starts, so the
+  next claim this hour does not begin a second one; and a sweep that fails is
+  simply made again when the interval comes round.
+
+  **Splitting that actually engages.** The divider teaching landed on ONE turn in
+  four, so three times out of four a six-account listing arrived as a wall of
+  text. The teaching stays and stays first — a split the model chooses knows what
+  it is saying and a rule does not — but a reply it split nowhere is now cut for
+  it, once, at the end of the stream where the whole reply is in hand and it is
+  certain the model cut nothing. The boundaries are a blank line, then a line end,
+  then a sentence end, grouped to about one text each and capped at three; there is
+  deliberately no rung below a sentence, so a long unbroken clause comes back
+  whole rather than broken mid-thought. Only the true last piece carries `final`.
+
+  Cutting never reformats: each boundary captures the whitespace it matched, so a
+  bubble that holds two parts together holds the bytes that stood between them, and
+  a listing the model indented itself arrives indented. And the sentence rung knows
+  a period is not a sentence end half the time a bank reply uses one — it fires
+  only where the next sentence visibly starts, and never straight after a title, so
+  "your acc. 1234" and "Dr. Smith" stay whole.
+
+- d187d8c: The catalog report names the file that cures blind tools. A blind tool is a
+  method and a path with no parameters — the agent cannot use what it cannot
+  see — and the single highest-leverage fix, an `openapi.json` at the app root,
+  was named nowhere (field-measured: one file took a host from 0/18 to 18/18
+  declared schemas). When the schema-coverage line reports blind tools, init
+  and sync now follow it with the cure; the API-tools docs page gains the
+  matching "Declare your schemas" section.
+- Updated dependencies [ea60d95]
+- Updated dependencies [8d97a32]
+- Updated dependencies [ea60d95]
+- Updated dependencies [d533ab8]
+  - @vendoai/apps@0.35.0
+  - @vendoai/ui@0.35.0
+  - @vendoai/store@0.35.0
+  - @vendoai/actions@0.35.0
+  - @vendoai/agents@0.35.0
+  - @vendoai/harnesses@0.35.0
+  - @vendoai/mcp@0.35.0
+  - @vendoai/core@0.35.0
+  - @vendoai/guard@0.35.0
+  - @vendoai/automations@0.35.0
+  - @vendoai/knowledge@0.35.0
+
+## 0.34.0
+
+### Minor Changes
+
+- f7e0ff4: Host-declared slots: `createVendo({ slots })` names the places this deployment always has, instead of waiting for a page to report them.
+
+  The slot registry is page-reported and ages out, so an agent-only product — where no page of yours renders a `<VendoSlot>` — had nowhere to pin a generated view. A declared slot never decays and needs no render. Declared and reported slots merge on read, and a declared entry wins over a page report of the same id.
+
+- f7e0ff4: An outside agent can put the user's files at the MCP door, and read them back.
+
+  The door used to withhold `vendo_user_files_list` and `vendo_user_files_read`
+  from every external client. That fence is gone: an outside agent connects AS the
+  user, and reaching the files that user shared is the point of connecting. The
+  isolation that matters was never per-door — it is per-USER, and it is
+  structural, because every hand opens the workspace for the caller's own
+  principal and there is no subject argument to get wrong.
+
+  `vendo_user_files_put` is the third hand: one file, by name, into the caller's
+  own drawer, replacing anything already saved under that name. Text rides in
+  `content` as-is; anything else rides base64 with `encoding: "base64"`, because a
+  tool call is JSON and JSON has no bytes. It honours the SAME
+  `createVendo({ uploadMaxBytes })` cap as the drop door and refuses in the same
+  sentence — one cap, named in one place, so a file refused in chat cannot be
+  admitted by asking over MCP instead.
+
+  Reading back a file that is not text is now an honest answer instead of a blank
+  one. A parquet, a database file or anything else still STORES, and the read says
+  so: that the file is saved, that its contents cannot be read back yet, and
+  exactly which types do come back as text — so an agent can ask the user for a
+  CSV rather than narrate an empty result.
+
+- 3f7740a: Zero-setup MCP over Vendo Cloud, and one method to mint a user's token.
+
+  The mcp seam gains its Cloud rung, in the shape every other Cloud-backed seam
+  already has (`selectConnections`): an explicit `mcp.remoteAs` wins verbatim, the
+  declared `VENDO_MCP_BROKER_URL` / `VENDO_MCP_FEDERATION_SECRET` pair wins next,
+  then `VENDO_API_KEY` lets the console provision the tenant's broker, federation
+  secret and service key, and a keyless deployment stays exactly the local door it
+  was. Provisioning is LAZY — composition still does no I/O, so a console outage
+  cannot stop a deployment booting; the first discovery hit, door hit or
+  `tokenFor` fetches the bundle and the process caches it. A deployment that
+  already sets `VENDO_API_KEY` and `mcp: true` moves from a local door to its
+  Cloud-brokered one on upgrade; declare the env pair (or pass `mcp.serviceAuth`)
+  to keep the door you have.
+
+  `vendo.tokenFor(request | userId)` is the whole new public API: one short-lived
+  MCP access token bound to one of your users, so a backend agent connects to your
+  door as them, under the same guard and audit trail as the in-product agent. Pass
+  the incoming `Request` and the user is read off its session cookie through the
+  same seam the door authenticates with; pass an id to mint headlessly. Where the
+  exchange happens is the deployment's posture, not the caller's problem — Cloud
+  exchanges at the provisioned broker, BYO at the door's own `/token` — so the
+  same agent code works against both. A blank or literal `"undefined"` subject is
+  now refused, at `tokenFor` and again at the door's token endpoint, naming the
+  fix: a token minted for a user nobody is would work perfectly and only fail much
+  later, as a tool call that finds no data.
+
+- f7e0ff4: The upload door's 5 MiB cap is a knob, and there is a bucket to raise it into.
+
+  `createVendo({ uploadMaxBytes })` sets what one browser upload may carry through
+  `POST /files`, defaulting to the `UPLOAD_MAX_BYTES` that used to be the only
+  answer. It is still a DOOR cap and not a storage cap: `vendo.putUserFile` is a
+  trusted server caller, bounded by whatever backs `files:` instead. The knob is
+  checked when you compose rather than when a user uploads: anything that is not a
+  positive integer refuses `createVendo` and names the value, `NaN` and `Infinity`
+  included — both are numbers the types allow, and both would make the doors' size
+  comparison false forever, deleting the cap instead of moving it.
+
+  Raising it is only half a fix, so the refusal now says the other half. Past
+  5 MiB with no `files:` adapter an upload clears the door and dies at the store's
+  own blob cap, so the over-cap error names the knob AND the backing the bytes
+  would have landed in — the store and the cap that really bounds it, or the
+  `FilesAdapter` the host wired.
+
+  `s3Files({ endpoint, bucket, credentials })` is that adapter, ready-made, for
+  any bucket that speaks S3: AWS, Cloudflare R2, Supabase Storage, MinIO. SigV4
+  over WebCrypto via `aws4fetch`, path-style, so it runs on an edge target too;
+  `region` defaults to `"auto"` (what R2 requires, what MinIO ignores) and
+  `prefix` lets one bucket hold several deployments. It reads no environment of
+  its own — which credentials reach it stays the composition seam's question —
+  and resolves nothing until its first call, so `createVendo` stays I/O-free at
+  module init.
+
+### Patch Changes
+
+- f7e0ff4: Docs: the door pages say what the door does.
+
+  Four published statements were false. `custom-tools` claimed a hand-written tool
+  is projected exactly like an extracted one — an authored `surfaces.mcp` menu is
+  an allowlist of exact names, and a tool of yours that is not on it is not at the
+  door, while `vendo_*` tools bypass the menu by prefix. `how-the-door-works` gave
+  the `tools/list` answer unconditionally when that answer is the no-menu default,
+  and enumerated the ride-along `vendo_*` tools without the three user-files ones.
+  `tenant-connectors` handed out a legacy `/sse` URL to paste, twice; the connector
+  POSTs JSON-RPC to one Streamable HTTP URL and speaks no HTTP+SSE at all.
+  `handler-options` described `files:` as somewhere content lives past 5 MiB, which
+  reads as tiering — there is one backing and no spillover.
+
+  PKCE was documented nowhere. The door's authorization endpoint requires it and
+  accepts `S256` only, and a code is claimed the moment it is presented, so a
+  mismatched verifier burns it. Both are now on the HTTP reference.
+
+  New, for what shipped: the three file tools at the MCP door with their risk
+  grades and per-user scoping, the read window, the exact list of extensions that
+  read back and the refusal for everything else, `uploadMaxBytes` as the one cap
+  both doors enforce — `POST /files` and `vendo_user_files_put` alike, which the
+  old wording hid — with its over-cap sentence, and `s3Files` for R2 / S3 /
+  Supabase / MinIO.
+
+  Two more gaps closed. `your-own-agent` says how a client survives a call longer
+  than its 60s default, which takes `onprogress` AND `resetTimeoutOnProgress`:
+  the door's beats extend nobody's deadline unless the caller opted in.
+  `mount-the-surface` says a declared slot is a destination, not a display — the
+  pin lands, but nothing renders it until some page mounts a `<VendoSlot>` with
+  that id, now with the `createVendo({ slots })` call spelled out in full instead
+  of left for the reader to assemble.
+
+  Three passages tightened for the same reason the rest of this changeset exists:
+  `tenant-connectors`' Streamable HTTP warning and `custom-tools`' menu warning
+  now lead with the action (paste this URL; add this name) instead of the wire
+  mechanics.
+
+- f7e0ff4: The screen receipt describes the SCREEN again, not the repair round. A repair
+  round is a conversation with the reviewer: the loop is handed a finding and
+  answers it, so the words it ends on are "Fixed the double count" — about a
+  defect the person never saw. Those were the words the receipt's `say` carried,
+  and `vendo_make`'s caller speaks `say` verbatim, so a screen that took a repair
+  round announced itself to the person with its own repair log.
+
+  `say` is now taken from before the verdict on both routes to a round: the
+  closing save that carries the findings back and repairs inside the same drive,
+  and the run that ended unjudged and gets a repair drive of its own. The screen's
+  title still comes from the repair, because a title is read off the saved
+  document rather than composed by the model.
+
+- Updated dependencies [f7e0ff4]
+- Updated dependencies [f7e0ff4]
+- Updated dependencies [3f7740a]
+- Updated dependencies [f7e0ff4]
+- Updated dependencies [f7e0ff4]
+- Updated dependencies [f7e0ff4]
+  - @vendoai/apps@0.34.0
+  - @vendoai/core@0.34.0
+  - @vendoai/mcp@0.34.0
+  - @vendoai/actions@0.34.0
+  - @vendoai/store@0.34.0
+  - @vendoai/agents@0.34.0
+  - @vendoai/harnesses@0.34.0
+  - @vendoai/ui@0.34.0
+  - @vendoai/automations@0.34.0
+  - @vendoai/guard@0.34.0
+  - @vendoai/knowledge@0.34.0
+
 ## 0.33.0
 
 ### Minor Changes

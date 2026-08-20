@@ -6,7 +6,9 @@
  * implementation lives in client-impl.ts (lane A).
  */
 import {
+  type AccessLevel,
   type AppDocument,
+  type AppGrantRecord,
   type AppId,
   type ApprovalDecision,
   type ApprovalId,
@@ -123,6 +125,19 @@ export interface VendoClient {
     exportApp(id: AppId): Promise<Uint8Array>;
     importApp(bytes: Uint8Array): Promise<AppDocument>;
     fork(id: AppId): Promise<AppDocument>;
+    /**
+     * Build contract §9.2 — the ✦ share toggle's transport. `grants` reads the
+     * app's grant list, the caller's own level, AND the caller's memberships
+     * (projected off the ctx), so ONE round trip tells the menu which tenant to
+     * name and whether the share is already on.
+     */
+    grants(id: AppId): Promise<{
+      level: AccessLevel | null;
+      grants: AppGrantRecord[];
+      orgs: { org: string; display?: string }[];
+    }>;
+    share(id: AppId, principal: string, level: AccessLevel): Promise<{ grants: AppGrantRecord[] }>;
+    unshare(id: AppId, principal: string): Promise<{ grants: AppGrantRecord[] }>;
     /** GET /apps/:id/ship-diff — the reviewable diff vs the captured host baselines (06 §8–§9). */
     shipDiff(id: AppId): Promise<ShipDiff>;
     /** POST /apps/:id/reseed — rebuild the remix against the host's current
@@ -137,6 +152,20 @@ export interface VendoClient {
      * remix's provenance.
      */
     seedFrom(input: { component: string; slot?: string; instruction: string }): Promise<AppDocument>;
+    /**
+     * POST /apps/:id/props — the COURIER. The live serializable props the host's
+     * page is passing the component this remix stands in for, shipped on mount
+     * and again whenever they change.
+     *
+     * A ported screen renders FROM its props, and they exist in no source it
+     * could read, so this call is the only way the page's own state reaches the
+     * remix; without it the server paints the remix on the values `vendo sync`
+     * captured and it shows that number forever. Provenance, not a content edit:
+     * it mints no version, so calling it on every real change is the intent.
+     *
+     * The server keeps only the props the captured baseline declares.
+     */
+    courierProps(id: AppId, props: Record<string, Json>): Promise<AppDocument>;
     /**
      * POST /apps/:id/machine/ping — the embed surface's keepalive:
      * user activity on an embedded served app rides one host-proxied HEAD

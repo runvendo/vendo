@@ -29,7 +29,20 @@ export const vendo = createVendo({ tools: [refundOrder] });
 ```
 
 That is the whole surface. The tool joins the one registry under the name you gave
-it, guarded, audited, and projected exactly like an extracted one.
+it, guarded, audited, and projected like an extracted one.
+
+<Warning>
+  **An authored menu is an allowlist of exact names, and yours has to be in it.**
+  If `.vendo/overrides.json` names a `surfaces.mcp` menu, add `host_refundOrder`
+  to it — otherwise the door won't offer it, and a call to it answers the same
+  not-found an unknown name gets. Vendo's own `vendo_*` tools bypass the menu and
+  always ride along; yours does not.
+
+  Forget to add it, and Vendo warns once per surface per boot, naming the tool
+  you left out — but the warning doesn't add it for you.
+
+  See [Curate the menu](/outside-agents/how-the-door-works#curate-the-menu).
+</Warning>
 
 - `input` is the single statement of the arguments. It becomes the JSON Schema the
   model is shown **and** the parse that runs before `execute`, so the two can never

@@ -2,9 +2,9 @@
 import type { CSSProperties } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
-import { DISPLAY_TAG_NAMES } from "@vendoai/apps/contract";
+import { DISPLAY_TAG_NAMES, flattenTree } from "@vendoai/apps/contract";
 import { VENDO_TREE_FORMAT, type ToolOutcome } from "@vendoai/core";
-import { TreeView, type WalkTree } from "../../src/tree/index.js";
+import { PayloadView, TreeView, type WalkTree } from "../../src/tree/index.js";
 import { DISPLAY_BRICKS, SURFACE_CONTAINMENT, safeStyle } from "../../src/tree/display-bricks.js";
 
 afterEach(cleanup);
@@ -38,6 +38,94 @@ describe("display bricks", () => {
     const box = heading.closest("section")!;
     expect(box.getAttribute("style")).toBe("padding: 8px;");
     expect(box.getAttribute("class")).toBeNull();
+  });
+
+  it("paints the host's own class on a PORTED node, and on no other", () => {
+    // The two sections are identical but for `source`. Only the ported one was
+    // painted from real host source, so only its class survives to the DOM —
+    // the class the model wrote on the other is dropped at the brick, as ever.
+    // This is the RENDERER's own gate and nothing more — the seam test below is
+    // what proves a real paint's class survives the format gate to get here.
+    render(
+      <TreeView
+        tree={tree([
+          { id: "root", component: "div", children: ["port", "wrote"] },
+          { id: "port", component: "section", source: "ported", props: { className: "maple-card" }, children: ["a"] },
+          { id: "a", component: "#text", props: { text: "Ported" } },
+          { id: "wrote", component: "section", props: { className: "maple-card" }, children: ["b"] },
+          { id: "b", component: "#text", props: { text: "Written" } },
+        ])}
+        components={{}}
+        onAction={ok}
+      />,
+    );
+
+    expect(screen.getByText("Ported").closest("section")!.getAttribute("class")).toBe("maple-card");
+    expect(screen.getByText("Written").closest("section")!.getAttribute("class")).toBeNull();
+  });
+
+  it("paints the host's class on a PORTED Kit Button — the <button> rewrite target — and on no other", () => {
+    // The splitter rewrites a host <button className style onClick> to the Kit
+    // Button, and the host's CSS must keep styling it: the class survives on
+    // the ported node exactly as it does on a brick, and on no other source.
+    render(
+      <TreeView
+        tree={tree([
+          { id: "root", component: "div", children: ["port", "wrote"] },
+          { id: "port", component: "Button", source: "ported", props: { className: "range-chip" }, children: ["a"] },
+          { id: "a", component: "#text", props: { text: "1W" } },
+          { id: "wrote", component: "Button", props: { label: "1M", className: "range-chip" } },
+        ])}
+        components={{}}
+        onAction={ok}
+      />,
+    );
+
+    expect(screen.getByText("1W").closest("button")!.getAttribute("class")).toBe("range-chip");
+    expect(screen.getByText("1M").closest("button")!.getAttribute("class")).toBeNull();
+  });
+
+  /**
+   * THE SEAM. Three parties, none of them stubbed: the real producer flattens a
+   * paint and stamps it (`flattenTree`, apps genui/component/flatten.ts), the
+   * real format gate validates it (`validateTree` via convert-payload.ts), and
+   * the renderer paints it. The tests above enter through `TreeView`, which takes
+   * a walk tree directly and so never meets the format gate — they prove the
+   * renderer's own rule and nothing about whether a port survives the wire.
+   *
+   * This one is why the feature shipped dead once already: the gate refused
+   * `"ported"` while the renderer honored it, and no test crossed the fence.
+   */
+  it("carries the host's class from the paint, through the format gate, onto the DOM", () => {
+    const flat = flattenTree(
+      { component: "section", props: { className: "maple-card" }, children: ["Ported"] },
+      "ported",
+    );
+
+    render(
+      <PayloadView
+        payload={{ formatVersion: VENDO_TREE_FORMAT, root: flat.root, nodes: Object.values(flat.nodes) } as never}
+        components={{}}
+        onAction={ok}
+      />,
+    );
+
+    expect(screen.getByText("Ported").closest("section")!.getAttribute("class")).toBe("maple-card");
+  });
+
+  it("drops the class a GENERATED node carries", async () => {
+    // A generated node mounts its own approved source instead of a brick, so the
+    // class it carries reaches no element at all — the ported marker is the only
+    // thing that ever paints one.
+    const granted = {
+      ...tree([{ id: "root", component: "Editor", source: "generated", props: { className: "maple-card" } }]),
+      components: { Editor: "export default function Editor() { return <p>editor</p>; }" },
+      inClient: { granted: true as const, versionHash: "sha256:approved", approvedBy: "host-console", at: "2026-07-15T09:00:00.000Z" },
+    };
+    render(<TreeView tree={granted} components={{}} onAction={ok} />);
+
+    expect(await screen.findByText("editor")).toBeTruthy();
+    expect(document.querySelector(".maple-card")).toBeNull();
   });
 
   it("keeps an allowlisted property whatever its value — no value is inspected", () => {

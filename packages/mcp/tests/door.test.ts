@@ -1733,6 +1733,82 @@ describe("createMcpDoor MCP protocol", () => {
     await connected.client.close();
   });
 
+  it("refuses malformed apps-tool args before the guard can park an approval", async () => {
+    const apps: AppsRideAlong = {
+      async list() { return []; },
+      async open() { return { kind: "tree", payload: { formatVersion: "vendo-genui/v2" } }; },
+      async call() { return { status: "ok", output: { done: true } }; },
+    };
+    // `check` is where an approval is MINTED, so the calls it sees are exactly
+    // the approvals this door could leave parked for a human to resolve.
+    const asked: string[] = [];
+    const harness = makeHarness({
+      apps,
+      check: async (call, descriptor, ctx) => {
+        asked.push(call.tool);
+        return {
+          action: "ask",
+          decidedBy: "rule",
+          approval: {
+            id: `apr_${asked.length}`,
+            call,
+            descriptor,
+            inputPreview: call.tool,
+            ctx: { principal: ctx.principal, venue: ctx.venue, presence: ctx.presence },
+            createdAt: new Date().toISOString(),
+          },
+        };
+      },
+    });
+    const registration = await register(harness.door);
+    const tokens = await issue(harness.door, registration.body.client_id);
+    const connected = await connect(harness.door, tokens.access_token);
+
+    const refused = await connected.client.callTool({ name: "vendo_apps_call", arguments: { appId: "app_1" } });
+    expect(refused).toMatchObject({ isError: true, content: [{ text: "validation: ref is required" }] });
+    expect(asked).toEqual([]);
+    expect(harness.audits.filter((event) => event.kind === "tool-call")).toEqual([]);
+
+    // The same tool, well formed, DOES park — so it is the args that were
+    // refused and not the tool.
+    const parked = await connected.client.callTool({
+      name: "vendo_apps_call",
+      arguments: { appId: "app_1", ref: "host_write", args: {} },
+    });
+    expect(parked).toMatchObject({ isError: true, content: [{ text: expect.stringContaining("apr_1") }] });
+    expect(asked).toEqual(["vendo_apps_call"]);
+    await connected.client.close();
+  });
+
+  it("beats notifications/progress at a client that sent a progressToken", async () => {
+    let beat!: (progress: { progress: number }) => void;
+    const firstBeat = new Promise<{ progress: number }>((resolve) => { beat = resolve; });
+    const apps: AppsRideAlong = {
+      // The call returns only once the beat has landed AT THE CLIENT, so a door
+      // that emits nothing — or emits where `enableJsonResponse` drops it —
+      // hangs here instead of passing.
+      async list() { await firstBeat; return []; },
+      async open() { return { kind: "tree", payload: { formatVersion: "vendo-genui/v2" } }; },
+      async call() { return { status: "ok", output: { done: true } }; },
+    };
+    const harness = makeHarness({ apps });
+    const registration = await register(harness.door);
+    const tokens = await issue(harness.door, registration.body.client_id);
+    const connected = await connect(harness.door, tokens.access_token);
+    // One round trip first, so the SDK's unawaited background GET — the stream
+    // the beat is written to — is registered before the call goes out.
+    await connected.client.listTools();
+
+    const result = await connected.client.callTool(
+      { name: "vendo_apps_list", arguments: {} },
+      undefined,
+      { onprogress: beat, resetTimeoutOnProgress: true },
+    );
+    expect((await firstBeat).progress).toBe(1);
+    expect(result.isError).toBeUndefined();
+    await connected.client.close();
+  });
+
   it("returns the executed apps-tool result even when the audit write fails", async () => {
     const apps: AppsRideAlong = {
       async list() { return []; },
@@ -3018,6 +3094,9 @@ describe("createMcpDoor first-party service auth", () => {
       ["no client_secret", { client_secret: null }, "invalid_request"],
       ["no subject_token", { subject_token: null }, "invalid_request"],
       ["an empty subject_token", { subject_token: "" }, "invalid_request"],
+      ["a whitespace-only subject_token", { subject_token: "   " }, "invalid_request"],
+      // The one a template string leaves behind when the id was not loaded yet.
+      ["a subject_token that is the literal \"undefined\"", { subject_token: "undefined" }, "invalid_request"],
       ["no subject_token_type", { subject_token_type: null }, "invalid_request"],
       ["a subject_token_type this door does not speak", { subject_token_type: "urn:ietf:params:oauth:token-type:jwt" }, "invalid_request"],
       ["another server's resource", { resource: "https://other.example/mcp" }, "invalid_target"],
@@ -3036,6 +3115,12 @@ describe("createMcpDoor first-party service auth", () => {
     // while every assertion above still passed. The BODIES must be identical.
     expect(new Set(refusals).size, refusals.join("\n")).toBe(1);
 
+    // A subject nobody is, on the other hand, MUST be an oracle: it is the
+    // caller's own bug, and only this refusal is positioned to name the fix.
+    const blank = await serviceExchange(harness.door, { subject_token: "undefined" });
+    expect((await blank.json() as { error_description: string }).error_description)
+      .toContain("vendo.tokenFor(user.id)");
+
     const wrongType = await serviceExchange(harness.door, {}, "application/json");
     expect(wrongType.status).toBe(400);
     expect(await wrongType.json()).toMatchObject({ error: "invalid_request" });
@@ -3043,6 +3128,49 @@ describe("createMcpDoor first-party service auth", () => {
     // Nothing was minted and nothing was audited along the way.
     expect(harness.store.rows("vendo_mcp_grants")).toEqual([]);
     expect(harness.audits).toEqual([]);
+  });
+
+  it("refuses a blank subject from `authorize` too, not only from `session`", async () => {
+    // The prebuilt-session posture already dies on it (oauth/server.ts:284).
+    const fromSession = makeHarness({
+      oauth: {
+        async session() { return { subject: "" }; },
+        async principal(subject) { return { kind: "user", subject }; },
+      },
+    });
+    const sessionClient = await register(fromSession.door);
+    const refusedSession = await authorize(fromSession.door, sessionClient.body.client_id);
+    expect(refusedSession.status).toBe(400);
+    expect(await refusedSession.json()).toMatchObject({ error: "invalid_request" });
+
+    // The authorize-only posture hands the SAME blank subject to the SAME
+    // #approve, so it must die the same way rather than mint a code for nobody.
+    const fromAuthorize = makeHarness({ authorizeSubject: () => "" });
+    const authorizeClient = await register(fromAuthorize.door);
+    const refusedAuthorize = await authorize(fromAuthorize.door, authorizeClient.body.client_id);
+    expect(refusedAuthorize.headers.get("location"), "an authorization code was issued to nobody").toBeNull();
+    expect(refusedAuthorize.status).toBe(400);
+    expect(fromAuthorize.store.rows("vendo_mcp_grants")).toEqual([]);
+  });
+
+  it("cannot turn a whitespace-only `authorize` subject into a working session", async () => {
+    // The door refuses a whitespace subject on the service-key exchange, but
+    // not from an adapter — it leans on `principal()` instead for every subject
+    // it does not itself refuse (oauth/server.ts:676-679). A realistic host
+    // resolves principals by lookup, and no user is called "  ".
+    const users = new Set(["user_1"]);
+    for (const nobody of ["  ", "undefined"]) {
+      const harness = makeHarness({
+        authorizeSubject: () => nobody,
+        principal: (subject) => (users.has(subject) ? { kind: "user", subject } : null),
+      });
+      const client = await register(harness.door);
+      const tokens = await issue(harness.door, client.body.client_id);
+
+      // Minted, but dead on arrival: the kill switch is what has to hold here.
+      const used = await harness.door.handler(mcpRequest(tokens.access_token));
+      expect(used.status, `a token minted for ${JSON.stringify(nobody)} opened a live MCP session`).toBe(401);
+    }
   });
 
   it("serves both keys through a rotation, and refuses one the door no longer lists", async () => {

@@ -70,7 +70,7 @@ export const edgePaint = async (
   let instance: ScreenInstance | undefined;
   try {
     instance = bootScreen({ ...input, budget });
-    const tree = flattenTree(instance.tree());
+    const tree = flattenTree(instance.tree(), input.source);
     const misses = instance.misses();
     return { ok: true, tree, misses, inert: misses.length > 0 ? [] : pressControls(tree, () => bootScreen({ ...input, budget })) };
   } catch (error) {

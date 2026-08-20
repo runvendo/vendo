@@ -50,6 +50,19 @@ export const runIdSchema = z.string().regex(/^run_.+$/) satisfies z.ZodType<RunI
 /** 01-core §1 */
 export const threadIdSchema = z.string().regex(/^thr_.+$/) satisfies z.ZodType<ThreadId>;
 
+/**
+ * The prefix a WARM turn's thread id carries — and the whole of the seam between
+ * the warm door and a session-owning adapter.
+ *
+ * `HarnessTurns.warm` mints one id per warm call and drops it the moment its
+ * one-token probe ends, so an adapter that pools per conversation would park a
+ * real machine under a conversation nobody will ever ask for again. The
+ * `Harness` contract is frozen — a warm turn IS an ordinary turn — so the id is
+ * the only thing that can carry the fact, and `claude-code/box.ts` reads it to
+ * park its box as a claimable spare instead.
+ */
+export const WARM_THREAD_PREFIX = "thr_warm";
+
 /** 01-core §1 — unlike its neighbours this pins the WHOLE shape rather than a
  *  prefix: a turn id is minted in exactly one place, so there is no older,
  *  looser spelling to keep parsing. */

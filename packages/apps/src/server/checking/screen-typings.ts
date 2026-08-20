@@ -531,6 +531,15 @@ export interface ComponentScreenTypingsInput {
   readonly tools: readonly HostToolInfo[];
   /** Where the printers announce what they could not model. */
   readonly note?: TypeNote;
+  /** This screen is the splitter's PORT of a host component, so its tags take the
+   *  host's `className`. Unset — every screen a model authored — and there is no
+   *  such prop to write.
+   *
+   *  The boundary is the SCREEN, not the node, and it cannot be otherwise: a
+   *  remix's first act is a model edit of the ported file, so inside a port there
+   *  is no line to draw between ported and written. Do not reach for per-node
+   *  provenance to tighten this — there is none to read. */
+  readonly ported?: boolean;
 }
 
 /** A handler slot, printed for every prop whose schema carries
@@ -573,6 +582,17 @@ ${SAFE_STYLE_PROPERTIES.map((property) => `  ${property}?: string | number;`).jo
  *  only made `key={i}` on `<div>` a hard error while the format skill was
  *  telling the model to write exactly that.
  *
+ *  THE ONE EXCEPTION, and it is a whole DIALECT rather than a prop: a screen the
+ *  splitter PORTED out of real host source carries the host's own classes, and
+ *  without them it cannot look like the component it was ported from. So `ported`
+ *  prints `className` and the model-authored dialect does not print it at all.
+ *  Removal, not prohibition: prose telling a model to avoid a prop is an
+ *  instruction, and a model that ignores it gets the capability anyway. A class
+ *  it cannot write is a class it cannot borrow the host's chrome with — and even
+ *  in the ported dialect the class is inert text that only reaches a DOM node on
+ *  a `source: "ported"` node (`packages/ui` tree/display-bricks.tsx), with every
+ *  style still going through that file's property allowlist.
+ *
  *  `Element` is BRANDED rather than empty. `{}` is the type every value is
  *  assignable to — a closure included — so an empty `Element` made
  *  {@link SLOT_TYPE} admit every function, including the two it must refuse: one
@@ -580,12 +600,12 @@ ${SAFE_STYLE_PROPERTIES.map((property) => `  ${property}?: string | number;`).jo
  *  expression is typed `JSX.Element` by the compiler whatever its shape, so the
  *  brand costs a screen nothing; the name is the VM's own sigil for a serialized
  *  element (`genui/component/vm-program.ts` `emitValue`). */
-const JSX_FRAME = `declare namespace JSX {
+const jsxFrame = (ported: boolean): string => `declare namespace JSX {
   interface Element { readonly $element: true }
   interface ElementChildrenAttribute { children: {} }
   interface IntrinsicAttributes { key?: string | number }
   interface IntrinsicElements {
-${DISPLAY_TAG_NAMES.map((tag) => `    ${tag}: { children?: any; style?: ${SAFE_STYLE_TYPE}; key?: string | number };`).join("\n")}
+${DISPLAY_TAG_NAMES.map((tag) => `    ${tag}: { children?: any; style?: ${SAFE_STYLE_TYPE}${ported ? "; className?: string" : ""}; key?: string | number };`).join("\n")}
   }
 }`;
 
@@ -612,7 +632,17 @@ const REACT_MODULE = `declare module "react" {
   export default React;
 }`;
 
-const componentPropsText = (spec: KitComponentSpec, note?: TypeNote): string => {
+/** The splitter's `<button>` rewrite target, in the PORTED dialect only: a
+ *  ported Button is the host's own button mechanically rewritten, so it carries
+ *  exactly what the host tag carried — its class, and its children in place of
+ *  `label` (`style` is every Kit component's now, through the one allowlist).
+ *  The model-authored dialect keeps Button as the spec wrote it, for the same
+ *  reason display tags keep `className` out of that dialect: a capability a
+ *  model cannot write is one it cannot borrow. */
+const PORTED_BUTTON_EXTRAS = ["className?: string"];
+
+const componentPropsText = (spec: KitComponentSpec, note?: TypeNote, ported = false): string => {
+  const portedButton = ported && spec.name === "Button";
   const slots = KIT_SLOT_PROPS[spec.name];
   const fields = Object.entries(spec.props).map(([name, prop]) => {
     // `style` prints as the paint allowlist, not as its own zod — which still
@@ -631,10 +661,11 @@ const componentPropsText = (spec: KitComponentSpec, note?: TypeNote): string => 
     const typed = slots?.[name]?.rows === undefined
       ? text
       : text.replaceAll(SLOT_TYPE, ROW_SLOT_TYPE).replaceAll(TEXT_TYPE, ROW_TEXT_TYPE);
-    return `${name}${prop.required === true ? "" : "?"}: ${typed}`;
+    const required = prop.required === true && !(portedButton && name === "label");
+    return `${name}${required ? "" : "?"}: ${typed}`;
   });
   const engine = spec.engine === undefined ? [] : [ENGINE_INDEX];
-  return `{ ${[...fields, "children?: any", ...engine].join("; ")} }`;
+  return `{ ${[...fields, ...(portedButton ? PORTED_BUTTON_EXTRAS : []), "children?: any", ...engine].join("; ")} }`;
 };
 
 /** A HOST component's props, from the one schema the composition derived for it.
@@ -673,7 +704,7 @@ export function componentScreenTypings(input: ComponentScreenTypingsInput): stri
   const lines: string[] = [
     "// GENERATED by @vendoai/apps componentScreenTypings — do not edit.",
     SAFE_STYLE_DECLARATION,
-    JSX_FRAME,
+    jsxFrame(input.ported === true),
     SLOT_DECLARATION,
     ROW_SLOT_DECLARATION,
     TEXT_DECLARATION,
@@ -696,7 +727,7 @@ export function componentScreenTypings(input: ComponentScreenTypingsInput): stri
     const spec = kitSpec(name);
     const schema = typeof entry === "string" ? undefined : entry.propsJsonSchema;
     const propsText = spec !== undefined
-      ? componentPropsText(spec, at(note, `<${name}>`))
+      ? componentPropsText(spec, at(note, `<${name}>`), input.ported === true)
       : schema === undefined
         // Schema-less, and legal: the model infers the props and nothing here can
         // check them. The skill's "a guessed prop is a failed app" is true of every

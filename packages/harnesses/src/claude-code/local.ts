@@ -390,7 +390,8 @@ export async function localMachine(options: LocalMachineOptions): Promise<Sessio
       const running = held.session!;
       try {
         const sending = running.send(message.prompt);
-        if (!await withinBudget(sending, options.messageBudgetMs ?? MESSAGE_BUDGET_MS)) {
+        const budgetMs = options.messageBudgetMs ?? MESSAGE_BUDGET_MS;
+        if (!await withinBudget(sending, budgetMs)) {
           // A turn that outran its budget is one nobody can reason about any
           // more — and it is not just this turn at stake. `ClaudeSession` answers
           // pushed messages in order, so a `send()` left pending holds every
@@ -407,9 +408,11 @@ export async function localMachine(options: LocalMachineOptions): Promise<Sessio
           // waiting on the loop we just declared stuck is how one hang becomes
           // two.
           void running.end().catch(() => undefined);
+          // Same honesty the box rung owes (see its twin): nothing about this
+          // machine is unavailable — the TURN ran out of budget.
           throw new VendoError(
-            "sandbox-unavailable",
-            "the local session's message outran its budget",
+            "unavailable",
+            `the turn outran its ${budgetMs}ms message budget`,
           );
         }
       } finally {

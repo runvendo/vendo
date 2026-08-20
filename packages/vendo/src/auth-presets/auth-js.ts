@@ -115,7 +115,18 @@ export function authJs(options: HostAuthPresetOptions = {}): HostAuthPreset {
         undefined,
         MISSING_SECRET_MESSAGE,
       ),
-      secureCookie: isSecureDeployment(),
+      // The deployment's posture AND this request's own protocol. A browser
+      // never sends a `__Secure-` cookie over http, so reading for one on an
+      // http request can only ever miss: an app served over http that declares
+      // an https VENDO_BASE_URL (the posture Cloud forces) had vendo looking
+      // for `__Secure-authjs.session-token` while the wire carried
+      // `authjs.session-token`, and getToken returned null before it attempted
+      // decryption — the name is the JWE salt too, so it could not have
+      // decrypted the other one either. Narrowing rather than widening keeps
+      // the `__Secure-` prefix's browser-enforced guarantee on real https
+      // traffic, where honouring a plain-named cookie would let anything that
+      // can write over http plant a session the https origin then trusts.
+      secureCookie: isSecureDeployment() && new URL(request.url).protocol === "https:",
     });
   };
 

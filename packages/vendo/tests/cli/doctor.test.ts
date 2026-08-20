@@ -1198,6 +1198,52 @@ describe("vendo doctor error codes + fix_refs", () => {
     expect(report.checks.find((check) => check.id === "wiring/supabase-env")).toBeUndefined();
   });
 
+  // The same disease in the third preset (#1338): clerk() verifies with
+  // server-side keys detection never saw, and post-#1338 the keyless wire
+  // resolves signed-in users as ANONYMOUS — so doctor names the gap statically,
+  // the same table row supabase rides.
+  const clerkRoute =
+    'import { clerk } from "@vendoai/vendo/auth/clerk";\n' +
+    'import { createVendo, nextVendoHandler } from "@vendoai/vendo/server";\n' +
+    "const vendo = createVendo({ auth: clerk() });\n" +
+    "export const { GET, POST } = nextVendoHandler(vendo);\n";
+
+  it("warns E-AUTH-010 when clerk() is wired and neither key name is set", async () => {
+    const root = await healthy();
+    await writeFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), clerkRoute);
+    const { report } = await jsonChecks({ targetDir: root, env: {} });
+    expect(report.checks.find((check) => check.id === "wiring/clerk-env")).toMatchObject({
+      status: "warning",
+      error_code: "E-AUTH-010",
+    });
+  });
+
+  it("passes wiring/clerk-env when either key name is present", async () => {
+    const root = await healthy();
+    await writeFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), clerkRoute);
+    const { report } = await jsonChecks({ targetDir: root, env: { CLERK_SECRET_KEY: "sk_test_x" } });
+    expect(report.checks.find((check) => check.id === "wiring/clerk-env")).toMatchObject({ status: "ok" });
+  });
+
+  it("warns E-AUTH-010 on an Express host wiring clerk() — framework-neutral from day one", async () => {
+    const root = await expressHost(true);
+    await writeFile(join(root, "src", "server.ts"),
+      'import { clerk } from "@vendoai/vendo/auth/clerk";\n' +
+      'import { createVendo } from "@vendoai/vendo/server";\n' +
+      "createVendo({ auth: clerk(), models: { default: model }, principal });\n");
+    const { report } = await jsonChecks({ targetDir: root, env: {} });
+    expect(report.checks.find((check) => check.id === "wiring/clerk-env")).toMatchObject({
+      status: "warning",
+      error_code: "E-AUTH-010",
+    });
+  });
+
+  it("says nothing about clerk env on a host that does not wire clerk()", async () => {
+    const root = await healthy();
+    const { report } = await jsonChecks({ targetDir: root, env: {} });
+    expect(report.checks.find((check) => check.id === "wiring/clerk-env")).toBeUndefined();
+  });
+
   // The check is framework-neutral (greptile on #1374): a non-Next host that
   // wires the preset fails its first signed-in turn just the same, so it gets
   // the same warning — discovered by import marker, not by Next's file layout.

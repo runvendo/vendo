@@ -8,6 +8,7 @@ import {
   buildEnv,
   createApps,
   createAppTokens,
+  SCREEN_FILE,
   type AppsConfig,
 } from "@vendoai/apps";
 import { unattendedIrreversibilityCheck } from "@vendoai/automations";
@@ -158,6 +159,7 @@ const machineEnvFor = (
 const appsStoreSeams = (composition: VendoComposition, seams: AppsSeams): Partial<AppsConfig> => {
   const { store, ops, guard, boundTools, inference, catalog, seedBaselines, files } = composition;
   const { access } = seams;
+  const { slots } = composition.config;
   return {
     store,
     // Adapter rule — the SAME ops surface the deployment selected, so app data
@@ -175,6 +177,10 @@ const appsStoreSeams = (composition: VendoComposition, seams: AppsSeams): Partia
     // flagship rates for it.
     reviewModel: inference.seats.review,
     catalog,
+    // The host's ALWAYS-ON slots, merged into the page-reported registry on
+    // every read — the one seam every consumer (the agent tool, GET /slots,
+    // the picker, the pin bar) already reads through.
+    ...(slots === undefined ? {} : { slots }),
     seedBaselines,
     // Contract §3.2 — the SAME `FilesAdapter` the workspace rows spill to (one
     // `selectFiles` answer, above), so an app's source past the inline cap uses the
@@ -227,6 +233,23 @@ const appsScreenSeam = (composition: VendoComposition, seams: AppsSeams): AppsCo
       // The SAME guard-bound registry. There is no second choke point.
       tools: boundTools,
       workspace: screenWorkspace,
+      // A remix starts as the host's PORTED component, already stored on the
+      // row. The agent checks it out before its first edit, so the model edits
+      // that code instead of writing a replacement from nothing.
+      //
+      // A REMIX AND NOTHING ELSE — `seed` is what says the row holds source the
+      // loop did not write. An ordinary app's edit keeps starting from whatever
+      // its workspace already holds, exactly as it did before this slot existed;
+      // widening the checkout to every app is a change to every edit, and this
+      // is not the change that earns it.
+      storedScreen: async (appId, screenCtx) => {
+        const document = await composition.apps.get(appId, screenCtx);
+        return document?.seed === undefined ? undefined : document.source?.[SCREEN_FILE]?.text;
+      },
+      // A RE-SEED's replay starts from the host's NEW port, published by
+      // `reseed` for that replay only and gone once read. An ordinary edit
+      // publishes nothing, so it can never take one.
+      replayFrom: (appId) => composition.apps.takeReplaySource(appId),
       // The SAME seam options the harness turns pass below — every one of them,
       // because a screen assembled here lands on the same store through the same
       // `commit()`. §3.2's source half and §7.1's floor — the gauntlet's own

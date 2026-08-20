@@ -1,0 +1,93 @@
+---
+title: "Tenants"
+sidebarTitle: "Tenants"
+description: "Let Vendo Cloud keep the directory of your customer companies, and sharing, org workspaces and per-company caps all start working without you building a roster."
+---
+
+Vendo has no org chart of its own — [your host answers who this caller works
+with](/users-orgs/orgs-and-memberships), once per request. Building and
+maintaining that answer is real work, so Vendo Cloud will keep it for you.
+
+A **tenant** is one of your customer companies: an id you choose (`acme`) and a
+display name. A **member** is one of your own users, by the id you already
+identify them with.
+
+## The whole setup
+
+<Steps>
+<Step title="Name a tenant when you identify a user">
+
+Your existing identify call gains one field. The first time a project names a
+tenant it does not have, Vendo creates it — the display name starts as the id,
+and you rename it in the console.
+
+```bash
+curl -X PUT https://console.vendo.run/api/v1/users/u_bob \
+  -H "authorization: Bearer $VENDO_API_KEY" \
+  -H "content-type: application/json" \
+  -d '{"traits":{"name":"Bob"},"tenant":"acme"}'
+```
+
+It only ever ADDS. It never removes a membership and never changes a role.
+
+</Step>
+<Step title="Leave `memberships` unset">
+
+With `VENDO_API_KEY` set and no `auth.memberships` of your own, the SDK asks the
+directory and caches the answer for 60 seconds per user. Everything downstream
+is code you already have.
+
+If you DO set `auth.memberships`, your answer wins and the directory is never
+called. That is the whole rule.
+
+</Step>
+<Step title="That's it">
+
+Shared apps, `/orgs/<id>/**` workspaces, org policy and the `org:<id>` limiter
+pool all read the same `memberships` they always did.
+
+</Step>
+</Steps>
+
+## Caps
+
+Each tenant gets messages/day and generations/month, set in the console. Both
+reset on the calendar boundary in UTC — the start of the current UTC day and of
+the current UTC month — not on a rolling lookback, so "for today" is true. Every
+cap carries a **scope**:
+
+| Scope | Counts |
+| --- | --- |
+| `per-member` | one person's own usage |
+| `per-tenant` | the whole company's, against the `org:<id>` pool |
+
+The project sets defaults; a tenant can override them. A cap you set explicitly
+in `createVendo({ limits })` wins over both.
+
+## API reference
+
+Reads take your ordinary runtime key. Writes take an **admin-scoped** key: a
+runtime key ships inside every deployment of your product, and rearranging who
+is in which company from it is the same class of power the admin scope already
+fences.
+
+| Route | Key | What |
+| --- | --- | --- |
+| `GET /api/v1/tenants` | runtime | every tenant, with member counts |
+| `POST /api/v1/tenants` | admin | create — `{ id?, name, limits? }`; blank id mints one |
+| `GET /api/v1/tenants/{id}` | runtime | one tenant and its members |
+| `PATCH /api/v1/tenants/{id}` | admin | rename, or set `limits` (`null` clears the override) |
+| `DELETE /api/v1/tenants/{id}` | admin | delete |
+| `PUT /api/v1/tenants/{id}/members/{externalId}` | admin | add, or set the role |
+| `DELETE /api/v1/tenants/{id}/members/{externalId}` | admin | remove |
+| `GET /api/v1/users/{externalId}/memberships` | runtime | what the SDK reads |
+
+Tenant **writes** need the Teams plan. Reads and identify never do — a
+downgrade freezes the directory, it does not break your product.
+
+## What happens when Cloud is down
+
+The SDK serves the last answer it had, or none. Your product keeps serving; for
+that window a tenant cap is not enforced and tenant-shared apps are briefly
+invisible. Removal is the direction that waits: a member you took off the roster
+keeps matching `org:` grants until Cloud answers again.

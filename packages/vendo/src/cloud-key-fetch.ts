@@ -29,6 +29,13 @@ export interface CloudKeyFetchOptions extends CloudUrlOptions {
   body?: unknown;
   fetchImpl?: typeof fetch;
   signal?: AbortSignal;
+  /** How a non-2xx becomes an error. Unset, it stays the plain status-carrying
+   *  Error the fire-and-forget senders retry on (`batched-uploader` reads
+   *  `.status`). A caller whose failure a DEVELOPER has to read passes
+   *  `raiseCloudError`, which preserves the console's own message and docs link
+   *  as a VendoError — without it an honest 400 reaches the wire as a plain
+   *  Error, fails `isVendoError`, and is answered "Internal Vendo error". */
+  raise?: (response: Response) => Promise<never>;
 }
 
 /** POST/GET a console API path with seam-supplied bearer key auth. The
@@ -54,6 +61,7 @@ export async function cloudKeyFetch<T = unknown>(path: string, options: CloudKey
     ...(options.signal === undefined ? {} : { signal: options.signal }),
   });
   if (!response.ok) {
+    if (options.raise !== undefined) await options.raise(response);
     // The status rides on the error so a caller can tell a verdict it must not
     // repeat (4xx) from a failure that may yet succeed (5xx, transport).
     throw Object.assign(new Error(`Vendo Cloud ${path} answered ${response.status}`), {

@@ -114,11 +114,26 @@ describe("clerk() session resolution (Clerk's own conventions)", () => {
       .resolves.toBeNull();
   });
 
-  it("throws an actionable error naming CLERK_SECRET_KEY when no verification key is configured", async () => {
+  // Reversed pin (#1338): this used to assert a THROW — which 501'd the whole
+  // wire in exactly the state `vendo init --auth clerk` leaves you in, on hosts
+  // where Clerk's __session cookie rides every request. A missing local key
+  // means "no verified session", a state the wire already handles; the key is
+  // named once, loudly, like the v4-cookie hint — never per-request, and a
+  // forged token nine lines below already answers null.
+  it("a missing verification key resolves null and warns ONCE naming CLERK_SECRET_KEY — never an outage", async () => {
     vi.unstubAllEnvs();
-    const preset = clerk();
-    await expect(preset.principal(withSessionCookie(await sessionToken("user_nokey"))))
-      .rejects.toThrow(/CLERK_SECRET_KEY/);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const preset = clerk();
+      await expect(preset.principal(withSessionCookie(await sessionToken("user_nokey"))))
+        .resolves.toBeNull();
+      await expect(preset.principal(withSessionCookie(await sessionToken("user_nokey_again"))))
+        .resolves.toBeNull();
+      const keyWarnings = warn.mock.calls.filter(call => String(call[0]).includes("CLERK_SECRET_KEY"));
+      expect(keyWarnings).toHaveLength(1);
+    } finally {
+      warn.mockRestore();
+    }
   });
 });
 
