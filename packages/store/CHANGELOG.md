@@ -1,5 +1,30 @@
 # @vendoai/store
 
+## 0.36.0
+
+### Patch Changes
+
+- b2b3cac: The PGlite boot retry now knows all four faces of a half-written install.
+  `could not load library "/pglite/lib/postgresql/plpgsql.so"` and initdb's
+  `input file ".../postgres.bki" does not belong to PostgreSQL 18.3` are the same
+  corrupt `@electric-sql/pglite` bundle that already produced `Invalid FS bundle
+size` and `PGlite failed to initialize properly` — a `.so` that dlopen cannot
+  read and a leftover input file from another version, instead of a short read —
+  but neither matched, so they fell through with no recovery path. Between them
+  they killed six CI runs on 2026-08-19, each on a different random test in
+  `packages/agents`.
+
+  All four share the one delayed retry. The library signature is pinned to the
+  bundle's own `/pglite/…` path, so a host extension that fails to load still
+  raises on the first attempt.
+
+- Updated dependencies [f325443]
+- Updated dependencies [0108715]
+- Updated dependencies [0b6bb92]
+- Updated dependencies [2c662ac]
+  - @vendoai/apps@0.36.0
+  - @vendoai/core@0.36.0
+
 ## 0.35.0
 
 ### Patch Changes

@@ -1,5 +1,91 @@
 # @vendoai/core
 
+## 0.36.0
+
+### Minor Changes
+
+- 0108715: A remix follows the page it was forked from. The `<Remixable>` wrapper now
+  couriers its wrapped instance's live serializable props to the server — on mount
+  and again on every change — and the ported screen is painted on them.
+
+  Until now it was painted on the baseline's `sampleProps`, captured the day
+  `vendo sync` ran. Maple's remixed net-worth card read `$54,907.15` — the
+  hardcoded declared example in the host's own registry — while the host's card two
+  inches away read `$142,929.30`, with a visibly different chart series. A port
+  renders FROM its props and a query resolves before the render, so nothing in the
+  screen's source could ever have carried them; the capture was the only value the
+  floor had.
+
+  `AppSeed.props` records them, `POST /apps/:id/props` (`apps.seed.props`,
+  `client.apps.courierProps`) is the door, and the checks floor's props resolver
+  prefers them over the capture — which remains the fallback for a remix whose
+  wrapper has not couriered yet. Writing props is provenance about the call site,
+  not a content edit: it mints no version and replays no wish, so it is safe on
+  every render the props really change on.
+
+  The boundary is the captured baseline's own declared prop names, applied at the
+  door, so a prop the host component never declared is dropped before it is stored.
+  JSON-serializable values only, as before.
+
+  Also removes the client-side splice this replaces. It searched the payload for a
+  node named `seedComponentName(slot)` with `source: "generated"`; a remix is a
+  ported SCREEN whose tree is whatever rendering produced — nodes marked
+  `source: "ported"` — and that name only ever names a seat in
+  `document.components`. The find never matched and the merge never ran, which is
+  why the numbers were stale in the first place.
+
+- 2c662ac: On the sandbox rung, warming the chat now warms the machine the conversation
+  actually runs on. `POST /threads/warm` — the call the panel fires when the chat
+  surface opens — replays a real turn under a throwaway thread id, and the box
+  pool keyed on that id: so every warm call booted a real cloud box the user's
+  first message could never find, paid a full cold boot anyway, and left the warm
+  box idling its whole billed TTL before being destroyed unused. Warming cost a
+  box and bought nothing but the provider's prompt cache.
+
+  A warm turn's box is now parked as a warm SPARE, and the first real
+  conversation claims it: re-keyed to its own thread, liveness-probed on the way
+  in, and handed over exactly as a fresh box is — the workspace is materialized
+  and the session opened for that conversation, so nothing of the probe's turn
+  carries into the user's first message. A spare that died in the meantime falls
+  back to a cold boot, a second warm reuses the live spare instead of booting a
+  second box, and a spare nobody ever claims is reaped on the same idle budget as
+  any other box.
+
+  Each box now says how it was obtained, so the saving is greppable rather than
+  inferred: `harnesses.claude-code-box-ready` reports `thread-reuse`,
+  `spare-claim` or `cold-boot`, with the time it took.
+
+  `WARM_THREAD_PREFIX` is new in `@vendoai/core` — the thread-id prefix a warm
+  turn carries. It is what the pool reads to recognise one, since `Harness` is
+  deliberately unchanged: a warm turn is an ordinary turn, and the id is the
+  whole of the seam.
+
+### Patch Changes
+
+- 0b6bb92: A remix's wish list records what the person GOT, and a follow-up edit changes the
+  port instead of replacing it.
+
+  One follow-up ask on Maple was refused three times and left four entries on
+  `seed.wishes` — a list every Update replays in order, so one ask became four
+  edits the person never made. The front door recorded the ask whether or not the
+  change landed, which is right for `memory.asks` (the next editor wants to read
+  "asked for X, then asked for X again, narrower") and wrong for the replay list
+  beside it. `AppsRuntime.remember` now takes `landed`, and only a change that
+  reached the screen becomes a wish. The ask itself is still recorded either way,
+  the list is still ordered and never trimmed, and an inapplicable wish still lands
+  on `seed.unapplied` and is still said out loud.
+
+  The fourth attempt then abandoned the ported source and rewrote the app out of
+  the host's catalog, losing the first wish's edit. The port reaches the model
+  through `startingSource`, which was filled from the CHECKOUT — and the checkout
+  only ever fills an EMPTY workspace. So once the first edit's save had landed a
+  file, every later edit of that remix arrived with no code at all in front of it
+  (the loop has no file hand and cannot read the workspace itself), and an ask with
+  nothing to change is answered out of the catalog. The stored screen is now read
+  for every edit of a remix, not only the first; it is still never written over a
+  file a save left behind. A port that genuinely cannot take an edit now fails
+  through the one channel there is, rather than succeeding as a different app.
+
 ## 0.35.0
 
 ## 0.34.0

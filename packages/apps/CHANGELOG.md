@@ -1,5 +1,91 @@
 # @vendoai/apps
 
+## 0.36.0
+
+### Minor Changes
+
+- 0108715: A remix follows the page it was forked from. The `<Remixable>` wrapper now
+  couriers its wrapped instance's live serializable props to the server — on mount
+  and again on every change — and the ported screen is painted on them.
+
+  Until now it was painted on the baseline's `sampleProps`, captured the day
+  `vendo sync` ran. Maple's remixed net-worth card read `$54,907.15` — the
+  hardcoded declared example in the host's own registry — while the host's card two
+  inches away read `$142,929.30`, with a visibly different chart series. A port
+  renders FROM its props and a query resolves before the render, so nothing in the
+  screen's source could ever have carried them; the capture was the only value the
+  floor had.
+
+  `AppSeed.props` records them, `POST /apps/:id/props` (`apps.seed.props`,
+  `client.apps.courierProps`) is the door, and the checks floor's props resolver
+  prefers them over the capture — which remains the fallback for a remix whose
+  wrapper has not couriered yet. Writing props is provenance about the call site,
+  not a content edit: it mints no version and replays no wish, so it is safe on
+  every render the props really change on.
+
+  The boundary is the captured baseline's own declared prop names, applied at the
+  door, so a prop the host component never declared is dropped before it is stored.
+  JSON-serializable values only, as before.
+
+  Also removes the client-side splice this replaces. It searched the payload for a
+  node named `seedComponentName(slot)` with `source: "generated"`; a remix is a
+  ported SCREEN whose tree is whatever rendering produced — nodes marked
+  `source: "ported"` — and that name only ever names a seat in
+  `document.components`. The find never matched and the merge never ran, which is
+  why the numbers were stale in the first place.
+
+### Patch Changes
+
+- f325443: The live-props courier waits its turn on the app row, so a ✦ remix stops failing
+  to mint. One tap in three died with `app changed under this save`, at the moment
+  a person first creates a remix.
+
+  A save asserts the row is still byte-identical to the baseline it computed over
+  and refuses otherwise, because a document computed over a stale row would revert
+  the edit that landed there. That assertion cannot tell an edit from a write that
+  is not one — and the courier is not one: it writes `seed.props` whenever the host
+  re-renders, mints no version, and the `<Remixable>` wrapper starts couriering the
+  moment discovery finds the freshly minted row, which is squarely inside the
+  build. Landing inside a save's baseline-read→put window refused that save, and the
+  mint reported the refusal as a failed build.
+
+  The two writers take a turn on the row now, read included, so the courier's write
+  lands strictly before or strictly after a save and never inside one. The save's
+  assertion is untouched and stays strict: a genuine concurrent edit is still
+  refused exactly as before, and a writer that does not come through the door is
+  still caught. The courier's boundary is untouched too — the allowlist is still
+  the captured baseline's own declared prop names, applied before anything is
+  stored.
+
+- 0b6bb92: A remix's wish list records what the person GOT, and a follow-up edit changes the
+  port instead of replacing it.
+
+  One follow-up ask on Maple was refused three times and left four entries on
+  `seed.wishes` — a list every Update replays in order, so one ask became four
+  edits the person never made. The front door recorded the ask whether or not the
+  change landed, which is right for `memory.asks` (the next editor wants to read
+  "asked for X, then asked for X again, narrower") and wrong for the replay list
+  beside it. `AppsRuntime.remember` now takes `landed`, and only a change that
+  reached the screen becomes a wish. The ask itself is still recorded either way,
+  the list is still ordered and never trimmed, and an inapplicable wish still lands
+  on `seed.unapplied` and is still said out loud.
+
+  The fourth attempt then abandoned the ported source and rewrote the app out of
+  the host's catalog, losing the first wish's edit. The port reaches the model
+  through `startingSource`, which was filled from the CHECKOUT — and the checkout
+  only ever fills an EMPTY workspace. So once the first edit's save had landed a
+  file, every later edit of that remix arrived with no code at all in front of it
+  (the loop has no file hand and cannot read the workspace itself), and an ask with
+  nothing to change is answered out of the catalog. The stored screen is now read
+  for every edit of a remix, not only the first; it is still never written over a
+  file a save left behind. A port that genuinely cannot take an edit now fails
+  through the one channel there is, rather than succeeding as a different app.
+
+- Updated dependencies [0108715]
+- Updated dependencies [0b6bb92]
+- Updated dependencies [2c662ac]
+  - @vendoai/core@0.36.0
+
 ## 0.35.0
 
 ### Minor Changes

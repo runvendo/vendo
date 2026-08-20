@@ -1,5 +1,16 @@
 # @vendoai/actions
 
+## 0.36.0
+
+### Patch Changes
+
+- Updated dependencies [f325443]
+- Updated dependencies [0108715]
+- Updated dependencies [0b6bb92]
+- Updated dependencies [2c662ac]
+  - @vendoai/apps@0.36.0
+  - @vendoai/core@0.36.0
+
 ## 0.35.0
 
 ### Patch Changes
