@@ -80,10 +80,29 @@ const POLL_WAIT_MS = 10_000;
  * `box/turn-routes.mjs`) waiting for this host to say the sync landed, and then
  * tells the model it did not. A replay that starts after that window is
  * answering a question nobody is waiting on any more, over a model that has
- * already been told the opposite. It bounds the SECOND attempt only: the first
- * one runs on the adapter's own timeout, which this seam does not own.
+ * already been told the opposite — so the replay is refused past the window, and
+ * cut loose the moment it reaches it. The FIRST attempt still runs on the
+ * adapter's own timeout, which this seam does not own.
+ *
+ * The twin of `SYNC_ACK_WAIT_MS` in `box/turn-routes.mjs`, which cannot import it:
+ * that module ships inside the machine image and stays dependency-free. The two
+ * literals are held equal by `tests/claude-code/box-sync-window.test.ts`, which
+ * reads both files — drift between them is a red test, not a silent race.
  */
 const WORKSPACE_RETRY_WINDOW_MS = 25_000;
+
+/** Rejects when the window closes. The call underneath cannot be CANCELLED from
+ *  here — this seam takes no signal — but it can stop being waited on, and what
+ *  it may still do late is bounded: a materialize chunk is refused by its
+ *  generation or rewrites its own bytes, and a collect is a read nobody reads. */
+const expire = (ms: number, path: string): Promise<never> =>
+  new Promise((_resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new VendoError("sandbox-unavailable", `box ${path} did not answer inside the ${WORKSPACE_RETRY_WINDOW_MS}ms sync window`)),
+      ms,
+    );
+    timer.unref?.();
+  });
 
 /**
  * A fault that carries NO answer — the connection died, so whether the box
@@ -371,14 +390,18 @@ export async function boxMachine(options: BoxMachineOptions): Promise<SessionMac
         // someone is still waiting for it. Replaying everything replayed the
         // answers too — a meter refusal, a rejected key, a machine the provider
         // destroyed — and threw the first error away to say the second one twice.
-        if (!repeatable || !dropped(error) || Date.now() - started >= WORKSPACE_RETRY_WINDOW_MS) throw error;
+        const left = WORKSPACE_RETRY_WINDOW_MS - (Date.now() - started);
+        if (!repeatable || !dropped(error) || left <= 0) throw error;
         log({
           code: "harnesses.claude-code-box-retried",
           level: "warn",
           message: `[vendo] claude-code: box ${path} dropped its connection; sending it again`,
           data: { error },
         });
-        return call();
+        // What is LEFT of the window, not a fresh one: a first attempt that died
+        // at 24s leaves a second one a second, or the pair outlasts the wait the
+        // box has already given up on and holds the turn for the adapter's timeout.
+        return Promise.race([call(), expire(left, path)]);
       })
       // `hello` reads a transport fault as "the box did not answer" and moves on;
       // a call somebody is waiting on has to SAY so, in this file's own voice —

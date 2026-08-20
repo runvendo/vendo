@@ -116,8 +116,13 @@ test("a workspace upload that dies on the transport is sent again", async () => 
       return {
         id: "box_blip",
         async request(req) {
-          // Once, on the leg that carries the files — the shape observed live,
-          // where the box had applied the POST and only the answer died.
+          // Once, on the leg that carries the files, and BEFORE the box sees it:
+          // the upload never applied, which is the half of the live failure that
+          // costs the turn. The other half — applied, and only the answer died —
+          // is where a replay can do damage rather than just cost a round trip,
+          // and it is proved against the real door in
+          // `materialize-generation.test.ts` ("a first chunk sent twice does not
+          // take the chunks that landed behind it").
           if (req.path === "/session/workspace" && dropped === 0) {
             dropped += 1;
             throw fetchFailed();

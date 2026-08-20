@@ -51,6 +51,13 @@ const MAX_POLL_WAIT_MS = 25_000;
  * normally lands in milliseconds. This is the bound for a host that stopped
  * polling ALTOGETHER, where hanging the build forever would be worse than the
  * race it prevents: past it the turn proceeds exactly as it did before.
+ *
+ * The host's replay window (`WORKSPACE_RETRY_WINDOW_MS`, `src/claude-code/box.ts`)
+ * is deliberately this same number: past it the host would be landing a write the
+ * model has already been told did not land. It cannot be imported from here —
+ * this module ships inside the machine image and stays dependency-free — so
+ * `tests/claude-code/box-sync-window.test.ts` reads both files and holds them
+ * equal instead.
  */
 const SYNC_ACK_WAIT_MS = MAX_POLL_WAIT_MS;
 /** Finished messages stay pollable for a little while (a host retrying its last
