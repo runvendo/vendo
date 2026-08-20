@@ -280,9 +280,18 @@ describe("a remix's wish list records what the person got, not what the builder 
     // ── What the loop was TOLD, asserted first: it is the proximate cause of
     // everything below. The follow-up's own prompt carries the screen it must
     // change and the line that forbids replacing it out of the catalog.
-    // The prompt is captured as JSON, so this reads the quote-free heart of the
-    // first wish's edit — a string the port carries only once it has landed.
-    const followUp = walked.prompts[2] ?? "";
+    //
+    // Found by the ask it carries, never by index. A later drive of the FIRST
+    // ask satisfies all three assertions below — it too holds the port with the
+    // first wish applied — so a fixed index would go on passing against the
+    // wrong prompt the day the loop's drive count changes, and this test would
+    // stop pinning the thing it exists for. Only the follow-up's prompts name
+    // the second ask: the memory block is written after the edit, so the first
+    // run has never heard of it.
+    const followUp = walked.prompts.find((prompt) => prompt.includes(SECOND_WISH)) ?? "";
+    // The prompt is captured as JSON, so the third assertion reads the
+    // quote-free heart of the first wish's edit — a string the port carries only
+    // once that wish has landed.
     expect(followUp).toContain(STARTING_SOURCE_MARKER);
     expect(followUp).toContain("never replace it with something built from the");
     expect(followUp).toContain("Net worth at Maple, mine");

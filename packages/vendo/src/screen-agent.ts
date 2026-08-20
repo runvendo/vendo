@@ -1541,6 +1541,15 @@ export function screenAssembler(deps: ScreenAssemblerDeps): ScreenAssembler {
       //
       // Never over a file the workspace already `held`: that one belongs to a
       // save, and a save is newer than the row. Showing it is not writing it.
+      //
+      // So a `held` run is SHOWN the row while its hands edit the workspace, and
+      // §3.2 is what makes that the right way round: a landed save wrote both, so
+      // they agree, and where they do not the ROW is the truth — it is the screen
+      // the person is actually looking at. The way they part is a save the floor
+      // refused, which reaches the workspace (`persistSource`) but never the row.
+      // Showing the workspace there would hand the model bytes the floor has
+      // already rejected; showing the row costs at most a missed `edit_app`, and
+      // a miss is reported (#1535) over a screen that still stands.
       const starting = start !== undefined && start.trim() !== "" ? start : undefined;
       if (starting !== undefined && !held) await base.writeFile(checkout, starting);
       /** The last SETTLED paint of this app, kept as it goes past on its way to the
