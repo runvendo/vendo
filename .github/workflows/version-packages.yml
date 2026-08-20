@@ -70,6 +70,9 @@ jobs:
       # them left 0.x. Downgrade the changeset to `minor` and this goes green.
       - name: Guard the 0.x ceiling
         if: steps.changesets.outputs.hasChangesets == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PAT || secrets.GITHUB_TOKEN }}
+          PR: ${{ steps.changesets.outputs.pullRequestNumber }}
         run: |
           set -euo pipefail
           git fetch origin changeset-release/main
@@ -82,6 +85,13 @@ jobs:
             esac
           done
           if [ -n "$crossed" ]; then
+            # Disarm before failing. Failing this step stops the arming step
+            # below from running, but it cannot un-arm a PR that was already
+            # armed on an earlier, still-0.x push — and that PR would carry
+            # 1.0.0 into main by itself the moment its checks went green.
+            # Disarming an unarmed PR is already a clean no-op, so `|| true` is
+            # here for one reason: nothing gh does may swallow the error below.
+            gh pr merge "$PR" --disable-auto || true
             echo "::error::proposed versions left 0.x —$crossed. Vendo stays below 1.0.0 until Yousef lifts the ceiling; use a minor changeset."
             exit 1
           fi
