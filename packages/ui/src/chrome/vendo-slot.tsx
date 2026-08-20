@@ -190,7 +190,7 @@ function SlotBuildFailed({ appId, slotId, onChanged }: {
   );
 }
 
-function MountedApp({ appId, slotId, onChanged, onParked }: { appId: string; slotId: string; onChanged(): void; onParked?: (parked: ParkedPress) => void }) {
+function MountedApp({ appId, placement, onParked }: { appId: string; placement?: { slotId: string; onChanged(): void }; onParked?: (parked: ParkedPress) => void }) {
   const { client, components } = useVendoProvider();
   const { surface, error, isLoading, refresh } = useApp(appId);
   // The served-surface keepalive: an on-screen embed pings the
@@ -207,8 +207,13 @@ function MountedApp({ appId, slotId, onChanged, onParked }: { appId: string; slo
   // "ready" — build-time truth, honestly reported — so only the open knows, and
   // the card that names the reason and clears the slot has to be reachable from
   // here too, or the slot prints the wire's own vocabulary at the person.
-  if (surface?.kind === "failed") {
-    return <SlotBuildFailed appId={appId} slotId={slotId} onChanged={onChanged} />;
+  //
+  // Only a PLACEMENT gets that card, for the same reason the ✦ below hides
+  // Revert from a host-asserted app: there is no row to clear, and discovery is
+  // stood down, so both of its buttons would write to the wire and leave the
+  // screen exactly as it was. Without one the frame still says the reason.
+  if (surface?.kind === "failed" && placement !== undefined) {
+    return <SlotBuildFailed appId={appId} slotId={placement.slotId} onChanged={placement.onChanged} />;
   }
   if (!surface) {
     if (error && !isLoading) return <SlotLoadFailed reason={error} onRetry={() => void refresh()} />;
@@ -455,7 +460,7 @@ export function VendoSlot({ id, label, description, appId: appIdProp, pin, onAut
   const mounted = appId
     // `reload` remounts the app, so Refresh is a real round trip through
     // get+open — and the wait is the shape-true skeleton, not a frozen view.
-    ? <MountedApp key={reload} appId={appId} slotId={id} onChanged={() => void discovery.refresh()} onParked={parked} />
+    ? <MountedApp key={reload} appId={appId} placement={resolvesItself ? { slotId: id, onChanged: () => void discovery.refresh() } : undefined} onParked={parked} />
     : <AppFrame surface={{ kind: "tree", payload: pin!.payload }} components={components} data={pin!.data} onAction={pin!.onAction} onParked={parked} />;
   const body = (
     <FluidReveal stateKey={appId ? `app:${appId}` : `pin:${id}`} initialExit={children}>
