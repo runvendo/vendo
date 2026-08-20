@@ -226,6 +226,13 @@ describe("AppFrame", () => {
     render(<AppFrame surface={{ kind: "spatial" } as never} />);
     expect(screen.getByRole("note", { name: /unsupported app surface/i }).textContent).toContain("spatial");
   });
+
+  it("says why a failed app will not render, never its discriminant", () => {
+    const reason = "the screen no longer compiles: spending.data is undefined";
+    render(<AppFrame surface={{ kind: "failed", reason }} />);
+    expect(screen.getByRole("note", { name: /app unavailable/i }).textContent).toContain(reason);
+    expect(screen.queryByText(/unsupported app surface/i)).toBeNull();
+  });
 });
 
 describe("PinMount", () => {

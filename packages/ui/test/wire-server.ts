@@ -342,6 +342,11 @@ export async function createWireServer(options: WireServerOptions = {}) {
      *  screen, and "not ready yet" is the build window's pending, never a
      *  failure (persistence/open.ts, wire/apps.ts). */
     pendingScreens: new Map<string, number>(),
+    /** An app whose build LANDED and whose screen no longer opens (app id →
+     *  reason): the placement is honestly "ready" and `open` still answers
+     *  {kind:"failed"} — a stale app whose screen stopped compiling, which is
+     *  the only state that reaches a mounted surface (wire/apps.ts). */
+    deadScreens: new Map<string, string>(),
     /** What `GET /apps/:id/grants` answers, by app id — the ✦ share toggle's
      *  one round trip. An UNSEEDED app answers the empty truth (no level, no
      *  grants, no memberships), so every other suite's ✦ menu stays exactly the
@@ -1320,6 +1325,8 @@ export async function createWireServer(options: WireServerOptions = {}) {
               ? json(response, { kind: "pending" })
               : wireError(response, "not-found", `app ${id} has no screen yet`, 404);
           }
+          const dead = state.deadScreens.get(id);
+          if (dead !== undefined) return json(response, { kind: "failed", reason: dead });
           // A served (rung-4) app answers with its machine url; everything else
           // is a tree. Both must mount in a slot.
           const served = state.httpApps.get(id);
