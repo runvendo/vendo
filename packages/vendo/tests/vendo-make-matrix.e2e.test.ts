@@ -259,7 +259,7 @@ function scripted(options: ScriptOptions): ScriptedModel {
   };
   const textOf = (call_: { prompt?: unknown }): string => JSON.stringify(call_.prompt ?? "");
   const model = {
-    specificationVersion: "v2",
+    specificationVersion: "v3",
     provider: "vendo-matrix",
     modelId: "vendo-matrix-v1",
     supportedUrls: {},
@@ -276,8 +276,8 @@ function scripted(options: ScriptOptions): ScriptedModel {
             toolName: toolCall["toolName"] as string,
             input: toolCall["input"] as string,
           }],
-          finishReason: "tool-calls" as const,
-          usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+          finishReason: { unified: "tool-calls" as const, raw: undefined },
+          usage: ZERO_USAGE,
         };
       }
       return {
@@ -285,8 +285,8 @@ function scripted(options: ScriptOptions): ScriptedModel {
           type: "text" as const,
           text: chunks.filter((chunk) => chunk["type"] === "text-delta").map((chunk) => chunk["delta"] as string).join(""),
         }],
-        finishReason: "stop" as const,
-        usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+        finishReason: { unified: "stop" as const, raw: undefined },
+        usage: ZERO_USAGE,
       };
     },
     async doStream(request: { prompt?: unknown }) {

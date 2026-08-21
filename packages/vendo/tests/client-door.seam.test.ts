@@ -73,13 +73,13 @@ const speak = (text: string): Chunk[] => [
   { type: "finish", usage: ZERO_USAGE, finishReason: { unified: "stop", raw: undefined } },
 ];
 
-/** A deterministic LanguageModelV2 double — the same shape
+/** A deterministic LanguageModelV3 double — the same shape
  *  `placements-seam.e2e.test.ts` uses. The model is the third party here, not
  *  the counterparty: the seam under test is client ↔ door. */
 function scriptedModel(turns: Chunk[][]): LanguageModel {
   const answer = (): Chunk[] => turns.shift() ?? speak("nothing more to do");
   return {
-    specificationVersion: "v2" as const,
+    specificationVersion: "v3" as const,
     provider: "vendo-client-door-seam",
     modelId: "vendo-client-door-seam-v1",
     supportedUrls: {},
@@ -94,8 +94,8 @@ function scriptedModel(turns: Chunk[][]): LanguageModel {
             toolName: toolCall["toolName"] as string,
             input: toolCall["input"] as string,
           }],
-          finishReason: "tool-calls" as const,
-          usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+          finishReason: { unified: "tool-calls" as const, raw: undefined },
+          usage: ZERO_USAGE,
         };
       }
       return {
@@ -103,8 +103,8 @@ function scriptedModel(turns: Chunk[][]): LanguageModel {
           type: "text" as const,
           text: chunks.filter(chunk => chunk["type"] === "text-delta").map(chunk => chunk["delta"] as string).join(""),
         }],
-        finishReason: "stop" as const,
-        usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+        finishReason: { unified: "stop" as const, raw: undefined },
+        usage: ZERO_USAGE,
       };
     },
     async doStream() {

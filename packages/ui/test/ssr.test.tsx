@@ -1,5 +1,5 @@
 // @vitest-environment node
-import type { ApprovalRequest } from "@vendoai/core";
+import type { ApprovalRequest, VendoAppRef, VendoApprovalRef } from "@vendoai/core";
 import { renderToString } from "react-dom/server";
 import type { ReactElement } from "react";
 import { describe, expect, it } from "vitest";
@@ -15,7 +15,10 @@ import {
 } from "../src/chrome/index.js";
 import { AppFrame, PayloadView, TreeView } from "../src/tree/index.js";
 import {
+  VendoAppEmbed,
+  VendoApprovalEmbed,
   VendoProvider,
+  VendoToolResult,
   useActivity,
   useApp,
   useApps,
@@ -101,6 +104,30 @@ describe("every chrome surface server-renders without a DOM", () => {
   for (const [name, element] of surfaces) {
     it(`server-renders <${name}> without touching window`, () => {
       expect(() => renderToString(<VendoProvider>{element}</VendoProvider>)).not.toThrow();
+    });
+  }
+});
+
+/**
+ * An App Router page may drop an embed in bare — the entry's "use client"
+ * prologue makes it a client component, and Next still renders it on the
+ * server first. That pass is where the shared default context is built, so it
+ * has to hold nothing per-request and reach for no window: one module instance
+ * serves every request, and the client inside it is a closure over a URL whose
+ * auth is the browser's own cookie.
+ */
+describe("the embeds server-render with no provider", () => {
+  const appRef: VendoAppRef = { kind: "vendo/app-ref@1", appId: "app_ssr", title: "Invoices", status: "building" };
+  const approvalRef: VendoApprovalRef = { kind: "vendo/approval-ref@1", approvalId: "apr_ssr", summary: "Send the report" };
+  const bare: Array<[string, ReactElement]> = [
+    ["VendoToolResult", <VendoToolResult output={appRef} />],
+    ["VendoAppEmbed", <VendoAppEmbed refValue={appRef} />],
+    ["VendoApprovalEmbed", <VendoApprovalEmbed refValue={approvalRef} />],
+  ];
+
+  for (const [name, element] of bare) {
+    it(`server-renders <${name}> with no provider anywhere`, () => {
+      expect(renderToString(element)).toContain("vendo-root");
     });
   }
 });

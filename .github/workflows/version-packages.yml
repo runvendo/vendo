@@ -145,6 +145,15 @@ jobs:
       - name: Push the release tag
         id: tag
         if: steps.changesets.outputs.hasChangesets == 'false'
+        env:
+          # The built-in token, spelled out, because the checkout above persists
+          # RELEASE_PAT and a plain `git push origin` would inherit it. A real
+          # credential's tag push DOES fire release.yml's `push: tags` trigger,
+          # so the tag and the dispatch below both started a publish and the two
+          # runs collided on npm (2026-08-21: dispatch 32437362971 lost to push
+          # 32437364008). GITHUB_TOKEN's silence is the interlock that makes the
+          # dispatch the single trigger — it is load-bearing, not incidental.
+          TAG_PUSH_URL: https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}
         run: |
           set -euo pipefail
           tag="v$(node -p "require('./packages/vendo/package.json').version")"
@@ -159,7 +168,7 @@ jobs:
             exit 0
           fi
           git tag "$tag"
-          git push origin "refs/tags/$tag"
+          git push "$TAG_PUSH_URL" "refs/tags/$tag"
           echo "pushed $tag -> $(git rev-parse HEAD)"
           echo "tag=$tag" >>"$GITHUB_OUTPUT"
 

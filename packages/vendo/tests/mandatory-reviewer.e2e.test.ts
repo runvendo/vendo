@@ -192,7 +192,7 @@ function scripted(
   };
   const textOf = (request: { prompt?: unknown }): string => JSON.stringify(request.prompt ?? "");
   const seatModel = (seat: string) => ({
-    specificationVersion: "v2",
+    specificationVersion: "v3",
     provider: "vendo-mandatory-reviewer",
     modelId: `vendo-mandatory-reviewer-${seat}`,
     supportedUrls: {},
@@ -201,8 +201,8 @@ function scripted(
       if (!prompt.includes(REVIEWER_MARKER)) {
         return {
           content: [{ type: "text", text: "" }],
-          finishReason: "stop",
-          usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+          finishReason: { unified: "stop", raw: undefined },
+          usage: ZERO_USAGE,
         };
       }
       reviewerPrompts.push(prompt);
@@ -218,8 +218,8 @@ function scripted(
           toolName: "report_findings",
           input: JSON.stringify(verdict),
         }],
-        finishReason: "tool-calls",
-        usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+        finishReason: { unified: "tool-calls", raw: undefined },
+        usage: ZERO_USAGE,
       };
     },
     async doStream(request: { prompt?: unknown }) {

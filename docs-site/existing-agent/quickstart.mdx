@@ -123,29 +123,27 @@ One Mastra definition serves every user, so its pack reads the caller off `Reque
 
 <Step title="Render the embeds">
 
-Vendo calls arrive in your chat as `dynamic-tool` parts. Hand the finished ones to `<VendoToolResult>`, anywhere under one provider.
+Vendo calls arrive in your chat as `dynamic-tool` parts. Hand the finished ones to `<VendoToolResult>`, anywhere in your tree. There is nothing to wrap: it finds the wire at `/api/vendo` and rides your host session cookie.
 
-```tsx app/page.tsx focus={13}
+```tsx app/page.tsx focus={11}
 "use client";
 import { useChat } from "@ai-sdk/react";
-import { VendoProvider, VendoToolResult } from "@vendoai/vendo/react";
+import { VendoToolResult } from "@vendoai/vendo/react";
 
 export default function Chat() {
   const { messages } = useChat();
-  return (
-    <VendoProvider baseUrl="/api/vendo">
-      {messages.map((message) => message.parts.map((part, i) => {
-        const key = `${message.id}-${i}`;
-        if (part.type === "text") return <p key={key}>{part.text}</p>;
-        if (part.type === "dynamic-tool" && part.state === "output-available") {
-          return <VendoToolResult key={key} output={part.output} />;
-        }
-        return null;
-      }))}
-    </VendoProvider>
-  );
+  return messages.map((message) => message.parts.map((part, i) => {
+    const key = `${message.id}-${i}`;
+    if (part.type === "text") return <p key={key}>{part.text}</p>;
+    if (part.type === "dynamic-tool" && part.state === "output-available") {
+      return <VendoToolResult key={key} output={part.output} />;
+    }
+    return null;
+  }));
 }
 ```
+
+Mounted the wire somewhere else, or want your brand on the cards? Wrap the chat in [`VendoProvider`](/existing-agent/embeds#the-provider-when-you-need-it) and say so there.
 
 <CardGroup cols={3}>
 
