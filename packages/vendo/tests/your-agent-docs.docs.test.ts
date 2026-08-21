@@ -333,11 +333,11 @@ describe("the receipt law the docs teach is the real receipt", () => {
 
 describe("every component the docs tell a reader to import is exported", () => {
   it.each([
+    // VendoProvider left both walkthroughs when embeds learned to find the
+    // wire bare (#1583) — the provider is settings now, taught on the embeds page.
     ["VendoSlot", "@vendoai/ui/chrome", "packages/ui/src/chrome/index.ts", SURFACE_PAGE],
     ["VendoToolResult", "@vendoai/vendo/react", "packages/vendo/src/react.tsx", AI_SDK_PAGE],
-    ["VendoProvider", "@vendoai/vendo/react", "packages/vendo/src/react.tsx", AI_SDK_PAGE],
     ["VendoToolResult", "@vendoai/vendo/react", "packages/vendo/src/react.tsx", MASTRA_PAGE],
-    ["VendoProvider", "@vendoai/vendo/react", "packages/vendo/src/react.tsx", MASTRA_PAGE],
   ])("%s is exported from %s", async (component, specifier, entry, page) => {
     const text = await read(page);
     expect(text, `${page} must name ${component}`).toContain(component);

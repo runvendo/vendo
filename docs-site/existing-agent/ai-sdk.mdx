@@ -87,15 +87,15 @@ export async function POST(req: Request) {
 <Step title="Render the embeds">
 
 ```tsx app/page.tsx
-import { VendoProvider, VendoToolResult } from "@vendoai/vendo/react";
+import { VendoToolResult } from "@vendoai/vendo/react";
 
-// in your message-part renderer, anywhere under one <VendoProvider baseUrl="/api/vendo">:
+// in your message-part renderer, for each finished tool part:
 if (part.type === "dynamic-tool" && part.state === "output-available") {
   return <VendoToolResult key={key} output={part.output} />;
 }
 ```
 
-The shim declares every tool with `dynamicTool`, so they stream as `dynamic-tool` parts, and one component covers plain data, app refs, and approval refs. Full contract: [Embeds in your chat](/existing-agent/embeds).
+Nothing to wrap: the embed finds the wire at `/api/vendo` and rides your host session cookie. The shim declares every tool with `dynamicTool`, so they stream as `dynamic-tool` parts, and one component covers plain data, app refs, and approval refs. Full contract: [Embeds in your chat](/existing-agent/embeds).
 
 </Step>
 
