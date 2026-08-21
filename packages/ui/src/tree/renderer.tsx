@@ -239,7 +239,7 @@ function VendoTreeRenderer({ payload, ...props }: PayloadRendererProps) {
 
 /** Dispatch is exclusively by the payload tag. */
 export function PayloadView(props: PayloadRendererProps) {
-  const { payload, appId, slot, components, data, onAction, onParked, onStateChange } = props;
+  const { payload } = props;
   if (payload.formatVersion !== VENDO_TREE_FORMAT) {
     return (
       <ContainedNotice label="Unsupported UI format">
