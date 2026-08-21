@@ -30,9 +30,9 @@ Which credential depends on how you answered init's models question. **Vendo
 Cloud** ran the browser login and put a `VENDO_API_KEY` in `.env.local`.
 **Bring my own key** took your paste and put it in the same file, under
 `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or `GOOGLE_GENERATIVE_AI_API_KEY`.
-**Decide later** wrote no key at all — the steps below still work, and
-`vendo login` (or your own key in `.env.local`) is what makes the first turn
-answer. [Model credentials](/production/model-credentials) covers all three.
+**Decide later** wrote no key at all — `vendo login`, or your own key in
+`.env.local`, is what makes the first turn answer.
+[Model credentials](/production/model-credentials) covers all three.
 
 <Steps>
 
@@ -53,11 +53,6 @@ import theme from "../.vendo/theme.json";
   </VendoProvider>
 </body>
 ```
-
-Leave that props type alone. Next already types `children` for you —
-create-next-app writes `Readonly<{ children: React.ReactNode }>`, and an app on
-typed routes has a generated props type of its own — so annotating it again as
-`{ children: ReactNode }` only throws away what your app already knows.
 
 `baseUrl` is where the route is mounted, path prefix included. An app served
 under `/maple` passes `baseUrl="/maple/api/vendo"`.
@@ -95,8 +90,8 @@ instead of in the panel.
 
 The id and the file are both yours. `spend-breakdown` on a bank's overview page
 is this example's choice: pick any string, and put the slot on whichever page you
-want the surface to appear on. The one rule is that the same string appears in
-both places — on `VendoSlot` here, and on the provider's `pinSlot` below.
+want the surface to appear on. Nothing else has to know it — a mounted slot
+reports itself, which is what makes it somewhere a view can be pinned.
 
 ```tsx app/overview/page.tsx focus={3,9}
 "use client";
@@ -112,17 +107,6 @@ export default function Overview() {
     </section>
   );
 }
-```
-
-Name that slot on the provider. It is where the panel's pin button sends a
-finished view.
-
-```tsx app/layout.tsx focus={4}
-<VendoProvider
-  baseUrl="/api/vendo"
-  theme={theme as VendoTheme}
-  pinSlot="spend-breakdown"
->
 ```
 
 Empty, the slot shows a ghost with prompts that open the panel. Ask for a
@@ -185,7 +169,7 @@ The surface is up. These three are what people change first.
 
     `.vendo/theme.json`
   </Card>
-  <Card title="Generated apps" href="/generated/apps" img="/images/cards/generated-apps.svg">
+  <Card title="Apps in your product" href="/generated/quickstart" img="/images/cards/generated-apps.svg">
     Real screens built from your data, pinned where you want.
 
     `<VendoSlot id="home-hero" />`

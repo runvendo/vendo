@@ -885,6 +885,7 @@ function planServerActionsMap(
 async function planNextComposition(
   root: string,
   options: InitOptions,
+  useCase: InitUseCase,
   confirmAuth?: ConfirmAuth,
   selectAuth?: SelectAuth,
 ): Promise<ScaffoldPlan> {
@@ -925,7 +926,12 @@ async function planNextComposition(
     // Detect + confirm happens only on fresh composition creation.
     const auth = await resolveScaffoldAuth(root, path, options.auth, confirmAuth, selectAuth);
     const render = (model: ScaffoldModel | null): string =>
-      compositionModuleSource({ serverActions: registrations.length > 0, auth: auth.wired, models: model });
+      compositionModuleSource({
+        serverActions: registrations.length > 0,
+        auth: auth.wired,
+        models: model,
+        agentLoop: useCase === "agent-loop",
+      });
     const change = { absolute: composition, path, before: null, after: render(null), diff: diff(path, null, render(null)) };
     scaffold.changes.push(change);
     scaffold.authAdvice = auth.advice;
@@ -942,7 +948,7 @@ async function planNextComposition(
   return scaffold;
 }
 
-async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, selectAuth?: SelectAuth): Promise<{
+async function buildPlan(options: InitOptions, useCase: InitUseCase, confirmAuth?: ConfirmAuth, selectAuth?: SelectAuth): Promise<{
   plan: InitPlan;
   changes: PlannedChange[];
   authAdvice: string | null;
@@ -962,7 +968,7 @@ async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, select
     ? await planCustomComposition(root, options, confirmAuth, selectAuth)
     : framework === "express"
       ? await planExpressComposition(root, options, confirmAuth, selectAuth)
-      : await planNextComposition(root, options, confirmAuth, selectAuth);
+      : await planNextComposition(root, options, useCase, confirmAuth, selectAuth);
   const { changes, authAdvice, authWired, compositionPath, rewriteModels } = scaffold;
 
   const packageJson = join(root, "package.json");
@@ -1834,7 +1840,7 @@ export async function runInit(input: InitOptions): Promise<number> {
     ? undefined
     : (options.selectAuth ?? (pretty === null ? plainSelect : pretty.select));
   const detectStarted = Date.now();
-  const built = await buildPlanOrExplained(options, confirmAuth, selectAuth);
+  const built = await buildPlanOrExplained(options, useCase, confirmAuth, selectAuth);
   if (built === null) return 1;
   const { plan, changes, authAdvice, authWired, compositionPath, rewriteModels } = built;
   const detectMs = Date.now() - detectStarted;

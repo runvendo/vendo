@@ -7,13 +7,7 @@
  */
 import { agentComposition, type AgentComposition } from "@vendoai/agents";
 import { unsupportedRouteParams } from "@vendoai/apps/contract";
-import {
-  SLOTS_REPORT_MAX,
-  SLOT_DESCRIPTION_MAX_CHARS,
-  SLOT_ID_MAX_CHARS,
-  SLOT_LABEL_MAX_CHARS,
-  VendoError,
-} from "@vendoai/core";
+import { VendoError } from "@vendoai/core";
 import { cloudDirectory } from "./cloud-directory.js";
 import type { VendoComposition } from "./compose-context.js";
 import { cloudKeyOptions } from "./compose-selection.js";
@@ -80,31 +74,6 @@ function validateRouteConfig(routes: CreateVendoConfig["routes"]): void {
   }
 }
 
-/** A host-DECLARED slot, against the same core bounds `POST /slots` already
-    enforces on a page's report (`packages/vendo/src/wire/slots.ts`). The
-    registry is ONE merged list, so an entry the wire would refuse must not
-    reach it through config instead — and a config mistake is heard at compose
-    time rather than as a slot the model never offers. */
-function validateSlotsConfig(slots: CreateVendoConfig["slots"]): void {
-  if (slots === undefined) return;
-  if (slots.length > SLOTS_REPORT_MAX) {
-    throw new VendoError(
-      "validation",
-      `createVendo({ slots }): at most ${SLOTS_REPORT_MAX} slots, got ${slots.length}`,
-    );
-  }
-  const bounded = (value: string, field: string, max: number): void => {
-    if (value.length < 1 || value.length > max) {
-      throw new VendoError("validation", `createVendo({ slots }): ${field} must be 1-${max} characters`);
-    }
-  };
-  for (const { id, label, description } of slots) {
-    bounded(id, "slot id", SLOT_ID_MAX_CHARS);
-    bounded(label, "slot label", SLOT_LABEL_MAX_CHARS);
-    if (description !== undefined) bounded(description, "slot description", SLOT_DESCRIPTION_MAX_CHARS);
-  }
-}
-
 /** The upload door's cap, against the only thing a byte count can be. Typed
     config is trusted for TYPES, which does not cover this: `NaN` and `Infinity`
     are numbers, and both make the doors' `bytes > cap` false forever — so a
@@ -162,7 +131,6 @@ export const composeConfig = (input: CreateVendoConfig): Pick<VendoComposition,
   // same reason and in the same place: a wiring mistake the host hears about
   // before anything is constructed, rather than as a dead link months later.
   validateRouteConfig(config.routes);
-  validateSlotsConfig(config.slots);
   validateUploadMaxBytes(config.uploadMaxBytes);
   // 09-vendo §2.1 — one preset or the per-seam trio, never mixed. Checked
   // before anything is constructed so a miswired config leaks no resources.

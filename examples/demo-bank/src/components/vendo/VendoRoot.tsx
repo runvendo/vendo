@@ -42,9 +42,9 @@ export function VendoRoot({
       // Without it the renderer paints `Unknown component "AreaChart"`.
       remixWiring={remixWiring}
       theme={mapleTheme}
-      // "Pin to dashboard" lands here — placement is a first-class Vendo
-      // write, so naming the slot is the whole wiring.
-      pinSlot="home-hero"
+      // No pin wiring: Maple's pages mount their own <VendoSlot>s, and a
+      // mounted slot reports itself — so "Pin to dashboard" already knows
+      // where it lands.
       tools={mapleToolMeta}
       // Maple's own pages, and Maple's own router doing the moving: a generated
       // <Link to="account"> resolves against this map, and `push` adds the

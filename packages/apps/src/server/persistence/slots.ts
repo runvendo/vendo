@@ -64,49 +64,29 @@ const slotOf = (record: VendoRecord): SlotRecord | undefined => {
   return { id, label, lastSeen, ...(typeof description === "string" ? { description } : {}) };
 };
 
-/** `declared` are the slots the host wrote in its own config
- *  (`CreateVendoConfig.slots`) rather than a page reporting them. */
-export const createSlotRegistry = (
-  engine: EngineOps,
-  declared: readonly SlotDescriptor[] = [],
-): SlotRegistry => {
+export const createSlotRegistry = (engine: EngineOps): SlotRegistry => ({
+  async report({ slots }, ctx) {
+    const subject = ctx.principal.subject;
+    const lastSeen = new Date().toISOString();
+    // Plain put, last write wins, no compare-and-swap: two tabs reporting the
+    // same slot are reporting the SAME fact, so there is nothing to
+    // arbitrate — and a renamed label is meant to overwrite the old one.
+    await Promise.all(slots.map(({ id, label, description }) => engine.put(SLOTS_COLLECTION, {
+      id: rowId(subject, id),
+      data: { id, label, lastSeen, ...(description === undefined ? {} : { description }) },
+      refs: { subject },
+    })));
+  },
 
-  return {
-    async report({ slots }, ctx) {
-      const subject = ctx.principal.subject;
-      const lastSeen = new Date().toISOString();
-      // Plain put, last write wins, no compare-and-swap: two tabs reporting the
-      // same slot are reporting the SAME fact, so there is nothing to
-      // arbitrate — and a renamed label is meant to overwrite the old one.
-      await Promise.all(slots.map(({ id, label, description }) => engine.put(SLOTS_COLLECTION, {
-        id: rowId(subject, id),
-        data: { id, label, lastSeen, ...(description === undefined ? {} : { description }) },
-        refs: { subject },
-      })));
-    },
-
-    async list(ctx) {
-      const found = await listAllEngineRecords(engine, SLOTS_COLLECTION, { refs: { subject: ctx.principal.subject } });
-      const floor = Date.now() - SLOT_DECAY_MS;
-      // A DECLARED slot is seen NOW by construction — it exists because the host
-      // said so, which is the only fact the decay filter tests — so it is
-      // stamped fresh on every read and the sort below puts it first with no
-      // special case. A report of the same id is dropped rather than merged:
-      // `POST /slots` is the widest unprivileged write on the wire, and a
-      // slot's description is the sentence the model reads to pick between
-      // slots, so no user's page may rewrite host-authored config.
-      const lastSeen = new Date().toISOString();
-      const declaredIds = new Set(declared.map((slot) => slot.id));
-      // Sorted HERE, not by the store: the generic collection orders by
-      // created_at — when the slot was FIRST seen, which is the opposite of
-      // what this answer is about. ISO-8601 UTC strings compare chronologically.
-      return [
-        ...declared.map((slot) => ({ ...slot, lastSeen })),
-        ...found
-          .map(slotOf)
-          .filter((slot): slot is SlotRecord =>
-            slot !== undefined && Date.parse(slot.lastSeen) >= floor && !declaredIds.has(slot.id)),
-      ].sort((left, right) => right.lastSeen.localeCompare(left.lastSeen));
-    },
-  };
-};
+  async list(ctx) {
+    const found = await listAllEngineRecords(engine, SLOTS_COLLECTION, { refs: { subject: ctx.principal.subject } });
+    const floor = Date.now() - SLOT_DECAY_MS;
+    // Sorted HERE, not by the store: the generic collection orders by
+    // created_at — when the slot was FIRST seen, which is the opposite of
+    // what this answer is about. ISO-8601 UTC strings compare chronologically.
+    return found
+      .map(slotOf)
+      .filter((slot): slot is SlotRecord => slot !== undefined && Date.parse(slot.lastSeen) >= floor)
+      .sort((left, right) => right.lastSeen.localeCompare(left.lastSeen));
+  },
+});

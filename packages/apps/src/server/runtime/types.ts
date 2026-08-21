@@ -59,7 +59,7 @@ import type { SeedBaseline, SeedDrift } from "../../contract/index.js";
 import type { RemixRejection, ReviewQueueEntry } from "../remix/review.js";
 import type { SandboxAdapter } from "../escalation/sandbox.js";
 import type { ShipDiff } from "../remix/ship-diff.js";
-import type { SlotDescriptor, SlotRegistry } from "../persistence/slots.js";
+import type { SlotRegistry } from "../persistence/slots.js";
 
 /**
  * What this block may ask of the automations engine — four verbs, no more.
@@ -212,9 +212,6 @@ export interface AppsConfig {
    *  umbrella can back it with a first-request cloud read without doing I/O at
    *  compose time. */
   catalog: NormalizedCatalog;
-  /** Slots the host declared in its own config (`CreateVendoConfig.slots`),
-   *  merged into the page-reported registry on every read (slots.ts). */
-  slots?: readonly SlotDescriptor[];
   /** The pages a generated `<Link to>` may name (`CreateVendoConfig.routes`),
    *  for the FLOOR: a screen naming a route the host never registered is refused
    *  at generation, not left to render as dead text. What a WRITER is told about

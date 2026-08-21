@@ -47,9 +47,7 @@ export const support = agent({
 
 `description` is required, and it is the only thing the model reads when it
 decides whether to call the tool. `risk` is `read`, `write`, or `destructive`,
-and your label is final. Grade it: leave `risk` off and the tool is ungraded,
-which the guard asks a person about every time — so the very first `chat()`
-comes back `interrupted` with nothing run.
+and your label is final. Grade every tool.
 
 Nothing else is configured. Left unset, the agent thinks in this process, and
 threads and audit rows are persisted automatically, with zero setup.
@@ -214,9 +212,8 @@ export async function POST(req: Request) {
 
 Away, the menu is already narrower: destructive and ungraded tools are never
 offered, and a read or write call still needs authority a person captured while
-they were present — a grant. Without one the call parks, and the run comes back
-`interrupted` carrying the cards for someone to answer. [Run](/backend/run)
-covers what an unattended run may touch.
+they were present — a grant. [Run](/backend/run) covers what an unattended run
+may touch.
 
 </Step>
 
@@ -294,7 +291,9 @@ right.
 
 ## Where to go next
 
-Every verb in depth, and the surface you build around them.
+Every verb in depth, and the surface you build around them. For apps your
+agent builds, and where they land in your own pages, there is one more
+quickstart: [Apps in your product](/generated/quickstart).
 
 <CardGroup cols={3}>
   <Card title="Converse" href="/backend/converse">

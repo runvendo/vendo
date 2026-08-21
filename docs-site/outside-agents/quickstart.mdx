@@ -44,15 +44,6 @@ key comes from.
 Then *Where does this app run in dev?* — the origin your dev server actually
 prints, `http://localhost:3000` or whatever port it names.
 
-<Warning>
-**This answer decides which sign-in postures are open to you.** Vendo Cloud
-registers this origin as your tenant's forwarding address and refuses one that
-is not `https`, so a `localhost` answer and the Cloud broker cannot go together
-— init refuses the pair rather than writing a door that dies on its first
-request. On `localhost`, take **Local** at the posture question below. To run
-the Cloud broker in dev, give an https tunnel's origin here instead.
-</Warning>
-
 After the posture question below, init asks a few more that are not this page's
 business — the AI judgment pass, and any theme slots it could not read
 confidently. Their defaults are fine; press Enter through them.
@@ -75,14 +66,12 @@ export const vendo = createVendo({
 ```
 
 `auth` has to be a preset that carries the oauth half — `clerk()`, `authJs()`,
-`supabase()` or `auth0()`. Plain `jwt()` does not, and init refuses to write the
-door without one. [Auth](/production/auth) lists them.
+`supabase()` or `auth0()`. [Auth](/production/auth) lists them.
 
 <Note>
 **Checkpoint.** `lib/vendo.ts` says `mcp: true`,
 `app/.well-known/[...vendo]/route.ts` exists, and `.env.local` has a
-`VENDO_BASE_URL` line. If init refused instead, the message names the reason and
-the way out — a missing auth preset, or the http-origin-with-Cloud pair above.
+`VENDO_BASE_URL` line.
 </Note>
 
 </Step>
@@ -107,14 +96,6 @@ client discovers your sign-in without being told about it.
 
 <Note>
 **Checkpoint.** A `401` with a `www-authenticate` header naming your own origin.
-A `404` means the app is not serving `/api/vendo/mcp` — check that init's wire
-route landed. A `200` means something else is answering that path.
-
-If you are on the Cloud posture, two more answers are worth knowing. A `400`
-with `"code":"validation"` is Vendo Cloud refusing to provision your tenant, and
-it repeats the console's own reason and docs link — read the message, it names
-the fix. A `503` with `"code":"unavailable"` is Cloud itself failing, not your
-wiring.
 </Note>
 
 </Step>
@@ -145,11 +126,6 @@ correct on a fresh install. The policy init writes to `.vendo/policy.json` asks
 on one thing only, `risk: destructive`, and a young app often has no tool graded
 that way. Approvals are a policy you opt into, not a default the door imposes:
 edit that file when you want a call to wait for a person.
-
-If a tool answers `not-implemented`, that means a missing `actAs` — the door has
-no auth material to call your API with. A Cloud problem never looks like this;
-it answers `400` or `503` with its own reason, per Step 2.
-[How the door works](/outside-agents/how-the-door-works) explains `actAs`.
 </Note>
 
 </Step>
@@ -163,7 +139,6 @@ It exchanges a service key to do that. On Vendo Cloud the key is provisioned
 with your tenant and there is nothing to do. On the zero-key posture you declare
 one — `npx vendo init --service-key` writes it, and
 [Service keys](/outside-agents/service-keys-and-broker) is the whole story.
-Without one, `tokenFor` says so and names the variable to set.
 
 Inside a request, pass the request — `tokenFor` reads who is signed in from the
 session cookie, the same way your own pages do:
@@ -192,10 +167,6 @@ path. Every call made with it runs *as that user*, through the same guard,
 policy and audit your own UI answers to. Under the hood it is an RFC 8693
 `urn:ietf:params:oauth:grant-type:token-exchange`, which you never have to spell
 yourself.
-
-A subject that is not a real id — blank, `null`, `undefined`, or not a string at
-all — is refused at mint rather than handing you a token that dies on the first
-tool call.
 
 <Note>
 **Checkpoint.** `tokenFor` returns a token string. Its shape tells you which
@@ -242,7 +213,7 @@ one more question — *How should outside agents sign in?* — and answering **V
 Cloud broker** moves the OAuth surface off your domain to a stable
 `yourcompany.mcp.vendo.run` tenant that Vendo provisions on first use. There is
 nothing to copy: no console visit, no environment values, no keys. It needs an
-https `VENDO_BASE_URL`, per the warning in Step 1.
+https `VENDO_BASE_URL`.
 
 To front the door with a broker you run yourself, set both values where you
 deploy. An explicit override always wins over the Cloud default.
@@ -263,6 +234,9 @@ Discovery, issuer and token audience all derive from it, and a door pointed at
 the wrong origin surfaces hours later as *"Claude can't find my server"*.
 
 ## Where to go next
+
+An app an outside agent builds lands in the person's own list of views until
+you give it a place: [Apps in your product](/generated/quickstart).
 
 <CardGroup cols={3}>
   <Card title="How the door works" href="/outside-agents/how-the-door-works">

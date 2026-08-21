@@ -1,20 +1,69 @@
 ---
 title: "AI SDK"
-sidebarTitle: "AI SDK"
-description: "What the quickstart left out for a Vercel AI SDK loop: per-request pack builds, dynamic-tool message parts, and the one Next.js config line."
+sidebarTitle: "Quickstart: AI SDK"
+description: "Spread Vendo's guarded tool pack into a Vercel AI SDK loop you already run, and render what it returns in your own chat."
 icon: "/images/logos/vercel.svg"
 ---
 
-The [quickstart](/existing-agent/quickstart) wires an AI SDK loop end to end. This page is the rest.
+Keep your loop. Vendo adds the guarded tools and renders what they return.
 
-## Build the pack per request
+<Steps>
 
-`vendoTools` takes the caller and returns a Promise, so it belongs inside the handler rather than at module scope.
+<Step title="Install and run init">
 
-```ts app/api/chat/route.ts focus={8,13-14}
+<CodeGroup>
+
+```bash npm
+npm install @vendoai/vendo
+npx vendo init
+```
+
+```bash pnpm
+pnpm add @vendoai/vendo
+pnpm exec vendo init
+```
+
+</CodeGroup>
+
+Answer the first question with **Through my own agent loop (AI SDK / Mastra)**, and take **Vendo Cloud** on the model one. Init reads your repo, writes the wire route, lands a `VENDO_API_KEY` in `.env.local`, and adds Vendo's `serverExternalPackages` entries to your Next config.
+
+Init wrote `lib/vendo.ts` for you (`src/lib/vendo.ts` when your app lives under `src/`) — the `createVendo` call, and the caller resolver beside it, so your chat route, your wire route, and the pack all share one instance.
+
+```ts lib/vendo.ts focus={6}
+import { authJs } from "@vendoai/vendo/auth/auth-js";
+import { createVendo } from "@vendoai/vendo/server";
+
+const auth = authJs();
+export const vendo = createVendo({ auth });
+export const resolvePrincipal = (req: Request) => auth.principal(req);
+```
+
+Init wires whichever provider it detects — swap `authJs()` for another preset any time ([Auth](/production/auth) lists all five).
+
+With no provider yet, init wrote a demo principal in place of a preset, and the resolver beside it hands your chat route that same subject:
+
+```ts lib/vendo.ts
+import { createVendo } from "@vendoai/vendo/server";
+
+// init writes both — swap them for
+// your real session lookup.
+const principal = async () => ({
+  kind: "user" as const,
+  subject: "demo-user",
+});
+export const vendo = createVendo({ principal });
+export const resolvePrincipal = (_req: Request) => principal();
+```
+
+Either way, your loop and your wire route have to resolve the same subject — a mismatch has no error; the embed just polls a screen it will never be shown ([Auth](/production/auth)).
+
+</Step>
+
+<Step title="Spread the tools in">
+
+```ts app/api/chat/route.ts
 import { convertToModelMessages, stepCountIs, streamText } from "ai";
 import { vendoTools } from "@vendoai/vendo/ai-sdk";
-import { vendoModel } from "@vendoai/vendo/server";
 import { resolvePrincipal, vendo } from "@/lib/vendo";
 
 export async function POST(req: Request) {
@@ -22,49 +71,39 @@ export async function POST(req: Request) {
   const caller = await resolvePrincipal(req);
   if (!caller) return new Response("Unauthorized", { status: 401 });
   return streamText({
-    model: vendoModel(),
+    model: yourModel,            // your model, unchanged
     messages: await convertToModelMessages(messages),
-    stopWhen: stepCountIs(5),
-    tools: { ...(await vendoTools(vendo, { principal: caller })) },
+    stopWhen: stepCountIs(5),    // the AI SDK stops after one step by default
+    system: "…your system prompt as it is",
+    tools: { ...yourTools, ...(await vendoTools(vendo, { principal: caller })) },
   }).toUIMessageStreamResponse();
 }
 ```
 
-`stopWhen` is not optional in practice. The AI SDK stops after one step by
-default, so without it the turn calls a Vendo tool and ends there — the person
-sees the tool fire and never gets an answer.
+`vendoTools` returns a Promise, so the pack is built per request, inside the handler. Every tool lands under a `vendo_` prefix — one per registered host action, plus `vendo_make` (a live view) and `vendo_delegate` (a whole task for Vendo's own agent); trim the pack with `include` or `exclude` by final tool name.
 
-`principal` is not nullable, and an auth preset's resolver returns `Principal | null`. Drop the 401 and the call stops typechecking. Both imports come from the `lib/vendo.ts` in the [quickstart](/existing-agent/quickstart).
+</Step>
 
-Pass `sessionId` alongside `principal` to carry your own session id into Vendo's audit trail. Leave it out and the shim mints one per pack build.
+<Step title="Render the embeds">
 
-<Warning>
-The principal your loop passes has to be the one your wire route resolves. If they disagree, the agent reports success while the embed polls forever, because the person looking at the chat owns none of what the agent made.
-
-Resolve both from the same session, and never take a principal from the client. See [Auth](/production/auth).
-</Warning>
-
-## Render the parts
-
-The shim builds every tool with the AI SDK's `dynamicTool`, so `useChat` streams them as `dynamic-tool` parts rather than `tool-<name>`. Match on that.
-
-Where that match lives is yours. The path below is a name, not a contract — only your own chat imports it, so a `components/` directory you do not have is a directory you do not need. [`examples/ai-sdk-agent`](https://github.com/runvendo/vendo/tree/main/examples/ai-sdk-agent) inlines the same branch in `app/page.tsx` instead.
-
-```tsx components/vendo-part.tsx focus={5-8}
-import type { UIMessage } from "ai";
+```tsx app/page.tsx
 import { VendoToolResult } from "@vendoai/vendo/react";
 
-export function VendoPart({ part }: { part: UIMessage["parts"][number] }) {
-  if (part.type !== "dynamic-tool") return null;
-  return part.state === "output-available"
-    ? <VendoToolResult output={part.output} />
-    : <div>Running {part.toolName}…</div>;
+// in your message-part renderer, for each finished tool part:
+if (part.type === "dynamic-tool" && part.state === "output-available") {
+  return <VendoToolResult key={key} output={part.output} />;
 }
 ```
 
-Render that part outside any `<p>`. The embeds root in a `<div>`, so a chat that wraps every message part in a paragraph puts block markup inside one — the browser reparses it, and React throws a hydration error on the message that held the screen. Use a `<div>`, or no wrapper at all.
+Nothing to wrap: the embed finds the wire at `/api/vendo` and rides your host session cookie. The shim declares every tool with `dynamicTool`, so they stream as `dynamic-tool` parts, and one component covers plain data, app refs, and approval refs. Full contract: [Embeds in your chat](/existing-agent/embeds).
 
-`<VendoToolResult>` handles plain data, app refs, and approval refs, so you never branch on the envelope yourself. Full contract: [Embeds in your chat](/existing-agent/embeds).
+</Step>
+
+<Step title="See it live">
+
+Run your own chat and ask for something behind your API. The answer comes back as a working card, inside your own bubble.
+
+Init wrote `VENDO_BASE_URL` into `.env.local`; deployments set the same variable to the public URL, path prefix included ([environment variables](/reference/environment-variables)).
 
 <Frame>
   <img
@@ -75,29 +114,13 @@ Render that part outside any `<p>`. The embeds root in a `<div>`, so a chat that
   />
 </Frame>
 
-## One Next.js line
+</Step>
 
-`serverExternalPackages` keeps Vendo's app checker and its native and wasm dependencies out of the bundler.
+</Steps>
 
-```ts next.config.ts focus={2}
-const nextConfig = {
-  serverExternalPackages: ["@vendoai/apps", "esbuild", "@electric-sql/pglite", "@vendoai/store"],
-};
+## Apps in your product
 
-export default nextConfig;
-```
-
-On Next 14 the key is `experimental.serverComponentsExternalPackages` — same list, old name and location (renamed in Next 15).
-
-`@vendoai/apps` syntax-checks generated apps with `esbuild`, and PGlite — loaded by `@vendoai/store` — backs persistence. `@vendoai/apps` is the entry that matters: it reaches esbuild through a variable specifier the bundler cannot see, so an `"esbuild"` entry on its own is inert. Paste all four — `vendo doctor` fails [`E-CFG-004`](/production/troubleshooting/e-cfg-004) on any one that is missing. The wire route needs no `runtime` or `dynamic` export, since Node is the default runtime and route handlers are already dynamic.
-
-## Two models, one key
-
-Your loop and Vendo's own turns each call a model. `vendoModel()` resolves through the Cloud gateway on your `VENDO_API_KEY`, and the builds behind `vendo_make` resolve the same way while `createVendo`'s `models` block is unset.
-
-A name you pass reaches the gateway verbatim, since there is no client-side translation of model ids. Which seat takes which name is on [Model credentials](/production/model-credentials).
-
-`vendo doctor` cannot see your loop's model, so an install is not done until a chat turn renders a Vendo tool output.
+Your agent can build apps now. Where they land in your product, and how to teach your model when to build one, is one more quickstart: [Apps in your product](/generated/quickstart).
 
 ## The full example
 

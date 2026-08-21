@@ -307,10 +307,6 @@ export function playPinCeremony({ appId, slot, confirmed, dismiss = () => {} }: 
   });
 }
 
-/** Every pin affordance's one path: ceremony, then the host's write, then the
- *  announcement that lets the slot show the result without waiting for a poll.
- *  Returns undefined when the host wired no `onPin` — which is what hides the
- *  affordances in the first place. */
 /**
  * The pin affordance's nudge state (mockup 2026-08-04): a settled build whose
  * pin has not been taken INVITES it with a quiet infinite pulse, and the moment
@@ -345,15 +341,21 @@ export function usePinNudge(appId: string, invited: boolean): "invite" | "pinned
  * The write is Vendo's now (2026-08-05): a pin is `apps.place`, awaited, so
  * "the app is in the slot" is true before anything is announced. `onPin`
  * survives as a side-effect seam for hosts that mirror the pin into their own
- * product state — it is no longer what makes a pin happen, and a host that
- * wires only `pinSlot` gets the whole feature with no server code at all.
+ * product state — it is no longer what makes a pin happen.
  *
- * Returns undefined when the host wired NEITHER — which is what hides the
- * affordances in the first place.
+ * `slot` is the CALLER's, and it comes from the slot registry rather than any
+ * provider config (2026-08-20): a mounted `<VendoSlot>` is the only thing that
+ * knows a slot exists, so the affordance that reads the registry is the one
+ * that can name the destination (`PlacementAction`, add-to-picker.tsx). A host
+ * that mounts one slot gets the whole feature with no server code and no props
+ * at all.
+ *
+ * Returns undefined when there is NEITHER a destination nor an `onPin` — which
+ * is what hides the affordances in the first place.
  */
-export function usePinAction(): ((app: { appId: string; payload: unknown }) => void) | undefined {
+export function usePinAction(slot?: string): ((app: { appId: string; payload: unknown }) => void) | undefined {
   // `useVendoProvider` since #852 — the file already imports it under that name.
-  const { client, onPin, pinSlot } = useVendoProvider();
+  const { client, onPin } = useVendoProvider();
   const pin = useCallback(
     (app: { appId: string; payload: unknown }) => {
       // SOMETHING has to confirm the pin in every config, because the ring claims
@@ -362,10 +364,10 @@ export function usePinAction(): ((app: { appId: string; payload: unknown }) => v
       // an unresolved promise draws no ring — a pin the host silently dropped
       // gets the flight and no claim that it landed.
       let confirm = () => {};
-      const written = pinSlot === undefined ? undefined : client.apps.place(app.appId, pinSlot);
+      const written = slot === undefined ? undefined : client.apps.place(app.appId, slot);
       playPinCeremony({
         appId: app.appId,
-        ...(pinSlot === undefined ? {} : { slot: pinSlot }),
+        ...(slot === undefined ? {} : { slot }),
         confirmed: new Promise<void>(resolve => { confirm = () => resolve(); }),
         dismiss: () => void openVendoConversation({ close: true }),
       });
@@ -388,7 +390,7 @@ export function usePinAction(): ((app: { appId: string; payload: unknown }) => v
               log({
                 code: "ui.pin-ceremony-place-failed",
                 level: "warn",
-                message: `[vendo] pin: placing ${app.appId} in "${pinSlot}" failed — ${String(reason)}`,
+                message: `[vendo] pin: placing ${app.appId} in "${slot}" failed — ${String(reason)}`,
               });
             }
             vendoToast({ text: "That didn’t go through — try again.", state: "error" });
@@ -419,7 +421,7 @@ export function usePinAction(): ((app: { appId: string; payload: unknown }) => v
         }
       })();
     },
-    [client, onPin, pinSlot],
+    [client, onPin, slot],
   );
-  return pinSlot === undefined && onPin === undefined ? undefined : pin;
+  return slot === undefined && onPin === undefined ? undefined : pin;
 }
