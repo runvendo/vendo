@@ -546,6 +546,7 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
               ? {}
               : { toolSurface: input.harness.toolSurface }),
             ...(deps.approvalWaitMs === undefined ? {} : { approvalWaitMs: deps.approvalWaitMs }),
+            signal,
           });
 
           // The injected workspace wrap — composition wires the render seam in
