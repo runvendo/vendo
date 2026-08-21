@@ -197,23 +197,33 @@ describe("vendo.agentTools", () => {
     expect(late[0]?.content[0]?.text).toBe('{"name":"Ada"}');
   });
 
-  it("names the fix when the deployment has never been told its own URL", async () => {
-    const store = await tempStore();
-    const vendo = createVendo({
-      models: { default: {} as LanguageModel },
-      principal: async () => principal,
-      store,
-      mcp: { serviceAuth: { keys: [KEY] } },
-      oauth: {
-        async authorize() {
-          return { subject: SUBJECT };
+  it("names the fix a misconfigured deployment actually needs", async () => {
+    const bare = async (mcp: unknown): Promise<Vendo> => {
+      const store = await tempStore();
+      const vendo = createVendo({
+        models: { default: {} as LanguageModel },
+        principal: async () => principal,
+        store,
+        ...(mcp === undefined ? {} : { mcp }),
+        oauth: {
+          async authorize() {
+            return { subject: SUBJECT };
+          },
+          async principal(subject: string) {
+            return { kind: "user", subject };
+          },
         },
-        async principal(subject: string) {
-          return { kind: "user", subject };
-        },
-      },
-    } as Parameters<typeof createVendo>[0]);
-    await store.ensureSchema();
-    await expect(vendo.agentTools(SUBJECT)).rejects.toThrow(/VENDO_BASE_URL/);
+      } as Parameters<typeof createVendo>[0]);
+      await store.ensureSchema();
+      return vendo;
+    };
+
+    // No door at all is the likelier mistake, and it must not be answered with
+    // the base-URL fix — which is what asking the questions the other way round
+    // would say.
+    await expect((await bare(undefined)).agentTools(SUBJECT)).rejects.toThrow(/no door is open/);
+    // A door, but nothing has ever told this deployment its own public URL.
+    await expect((await bare({ serviceAuth: { keys: [KEY] } })).agentTools(SUBJECT))
+      .rejects.toThrow(/VENDO_BASE_URL/);
   });
 });

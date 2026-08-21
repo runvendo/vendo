@@ -102,6 +102,15 @@ export function composeAgentTools(
   tokenFor: (who: Request | string) => Promise<string>,
 ): (who: Request | string) => Promise<VendoAgentTools> {
   return async (who) => {
+    // Asked FIRST, because "no door" is the likelier mistake and the URL
+    // refusal below would answer it with the wrong fix.
+    if (composition.mcpOptions === undefined) {
+      throw new VendoError(
+        "not-implemented",
+        "vendo.agentTools serves THIS deployment's MCP door, and no door is open: compose "
+        + `createVendo({ mcp: true }). ${DOCS}`,
+      );
+    }
     const origin = doorOrigin(composition, who);
     if (origin === undefined) {
       throw new VendoError(
