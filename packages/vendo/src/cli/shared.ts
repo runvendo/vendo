@@ -6,7 +6,7 @@ import { stdin, stdout } from "node:process";
 import { initTelemetry, repoHost, type Telemetry } from "@vendoai/telemetry";
 import { walk } from "./theme/walk.js";
 
-export const CLI_VERSION = "0.36.2";
+export const CLI_VERSION = "0.36.3";
 
 export interface Output {
   log(message: string): void;
