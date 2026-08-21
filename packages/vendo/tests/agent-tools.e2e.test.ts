@@ -125,10 +125,16 @@ describe("vendo.agentTools", () => {
     const read = door.tools.find((tool) => tool.name === READ);
     expect(read?.description).toBe("Look up a client");
     expect(read?.input_schema.type).toBe("object");
-    // The list goes straight into `messages.create({ tools })` — Anthropic's
-    // own type is the assertion.
-    const tools: Anthropic.ToolUnion[] = [...door.tools];
-    expect(tools.length).toBeGreaterThan(1);
+    // STRAIGHT into `messages.create({ tools })` — no spread, no cast, no
+    // annotation. Anthropic's own type is the assertion, and the missing
+    // `[...]` is the point: a `readonly` list would not have compiled here.
+    const params: Anthropic.MessageCreateParamsNonStreaming = {
+      model: "claude-sonnet-4-6",
+      max_tokens: 1024,
+      tools: door.tools,
+      messages: [{ role: "user", content: "what is my balance?" }],
+    };
+    expect(params.tools).toHaveLength(door.tools.length);
 
     const results = await door.results(assistant({ id: "toolu_read", name: READ, input: { clientId: "c_1" } }));
     expect(results).toEqual([{

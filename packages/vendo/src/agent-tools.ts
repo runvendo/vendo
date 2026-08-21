@@ -59,8 +59,14 @@ export interface VendoAgentToolResult {
 export interface VendoAgentTools {
   /** What this user may call, as the model wants to read it. A snapshot taken
    *  when the door opened — the conversation's tool list is the one its history
-   *  refers to. */
-  readonly tools: readonly VendoAgentTool[];
+   *  refers to.
+   *
+   *  A mutable array, not a `readonly` one, so it goes STRAIGHT into
+   *  `messages.create({ tools })`: the Messages API asks for `Tool[]`, and a
+   *  `readonly Tool[]` does not satisfy it, so the reader-friendly modifier
+   *  would cost every caller a `[...door.tools]` at the one call site this
+   *  whole method exists to shorten. */
+  readonly tools: VendoAgentTool[];
   /**
    * Run every `tool_use` block in an assistant message through the door and
    * answer the `tool_result` blocks that go back.
