@@ -133,7 +133,9 @@ export type RemixWiringInput = Record<string, {
  * two slots rendering the same hole are one entry rather than a collision. */
 function remixHoles(wiring: RemixWiringInput | undefined): Record<string, ComponentType> {
   return Object.fromEntries(
-    Object.values(wiring ?? {}).flatMap((slot) => Object.entries(slot.holes ?? {})),
+    Object.entries(wiring ?? {}).flatMap(([slotName, slot]) => 
+      Object.entries(slot.holes ?? {}).map(([holeName, component]) => [`${slotName}:${holeName}`, component] as const)
+    ),
   ) as Record<string, ComponentType>;
 }
 
