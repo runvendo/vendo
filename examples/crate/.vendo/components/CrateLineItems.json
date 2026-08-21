@@ -1,0 +1,35 @@
+{
+  "name": "CrateLineItems",
+  "hash": "sha256:3e4745c3672e2a96bfd34bb0f4af758562f506ddd9fd2c5ebd5ab2415da0c8b7",
+  "capturedAt": "2026-08-20T01:14:54.708Z",
+  "module": "src/vendo/registry.tsx",
+  "export": "CrateLineItems",
+  "entry": "2173eee5b9f6c15934abe7618a57f61e93611c9b379bd1fc6f7a9eef3de68328",
+  "modules": {
+    "src/components/ui.tsx": "f9877148c3fa15fd5fb6d9cd843266930b2e946e8e262d842b29c4ce719f3e38",
+    "src/lib/format.ts": "0fbb97afbec05238b9759edbe5a93d13a0c84290ec3234033005b1a1c6968b8f"
+  },
+  "styles": [
+    {
+      "path": "src/app/globals.css",
+      "ref": "b93c91e7456eece6ad27d5230e2d5187851d9cba9265d7ce79f78f8e3cb45372"
+    }
+  ],
+  "bytes": 10899,
+  "requires": [
+    "clsx",
+    "zod"
+  ],
+  "sampleProps": {
+    "lines": [
+      {
+        "sku": "CRT-ESP-01",
+        "title": "Lumen Espresso Machine",
+        "quantity": 1,
+        "lineTotalCents": 129900
+      }
+    ],
+    "totalCents": 129900
+  },
+  "sampleOrigin": "declared"
+}

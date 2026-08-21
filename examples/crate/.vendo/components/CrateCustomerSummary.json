@@ -1,0 +1,30 @@
+{
+  "name": "CrateCustomerSummary",
+  "hash": "sha256:edce8d982a06cdfb2564bbc2c51e301357f608ce193ce9de26ccb5b123bfb34e",
+  "capturedAt": "2026-08-20T01:14:54.692Z",
+  "module": "src/vendo/registry.tsx",
+  "export": "CrateCustomerSummary",
+  "entry": "2173eee5b9f6c15934abe7618a57f61e93611c9b379bd1fc6f7a9eef3de68328",
+  "modules": {
+    "src/components/ui.tsx": "f9877148c3fa15fd5fb6d9cd843266930b2e946e8e262d842b29c4ce719f3e38",
+    "src/lib/format.ts": "0fbb97afbec05238b9759edbe5a93d13a0c84290ec3234033005b1a1c6968b8f"
+  },
+  "styles": [
+    {
+      "path": "src/app/globals.css",
+      "ref": "b93c91e7456eece6ad27d5230e2d5187851d9cba9265d7ce79f78f8e3cb45372"
+    }
+  ],
+  "bytes": 10899,
+  "requires": [
+    "clsx",
+    "zod"
+  ],
+  "sampleProps": {
+    "name": "Dana Whitfield",
+    "email": "dana.whitfield@example.com",
+    "lifetimeValueCents": 284700,
+    "orderCount": 6
+  },
+  "sampleOrigin": "declared"
+}

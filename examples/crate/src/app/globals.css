@@ -1,0 +1,39 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bg: #FAF9F7;
+  --color-surface: #FFFFFF;
+  --color-ink: #14110E;
+  --color-ink-soft: #4A443C;
+  --color-muted: #8C857A;
+  --color-border: #ECE9E3;
+  --color-border-strong: #DCD7CE;
+  --color-hover: #F4F2ED;
+  --color-accent: #B4531F;
+  --color-accent-bg: #FBEFE6;
+  --color-pos: #1E7F53;
+  --color-pos-bg: #E7F4EE;
+  --color-warn: #8A6100;
+  --color-warn-bg: #FBF2DC;
+  --color-neg: #B0473A;
+  --color-neg-bg: #FBEDE9;
+  --radius-card: 12px;
+}
+
+* {
+  border-color: var(--color-border);
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-ink);
+  /* System stack on purpose: no build-time font fetch, so a clean clone builds
+     on a flaky connection or none at all. */
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Tabular figures everywhere money or counts line up in a column. */
+.nums {
+  font-variant-numeric: tabular-nums;
+}

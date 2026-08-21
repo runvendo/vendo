@@ -19,6 +19,11 @@ allowBuilds:
   # dropped because the packages remain in the install graph and strictDepBuilds
   # fails a cold install that merely ignores them. Flip to true the day a
   # bash-native harness needs `tar -z`.
+  # @clerk/shared's postinstall only prints Clerk's telemetry notice and drops a
+  # "notice shown" marker in the user's config dir — it builds nothing the SDK
+  # needs. Denied: crate (the Clerk host example) runs fine without it, and the
+  # notice is in Clerk's docs either way.
+  '@clerk/shared': false
   '@mongodb-js/zstd': false
   cbor-extract: true
   esbuild: true
