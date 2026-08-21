@@ -143,7 +143,7 @@ function scripted(steps: Array<(prompt: string) => Chunk[]>): Scripted {
   };
   const textOf = (request: { prompt?: unknown }): string => JSON.stringify(request.prompt ?? "");
   const model = {
-    specificationVersion: "v2",
+    specificationVersion: "v3",
     provider: "vendo-remix-wish",
     modelId: "vendo-remix-wish-v1",
     supportedUrls: {},

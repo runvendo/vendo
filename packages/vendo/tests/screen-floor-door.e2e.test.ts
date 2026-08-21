@@ -132,7 +132,7 @@ function scripted(steps: Array<(prompt: string) => Chunk[]>): Scripted {
   };
   const textOf = (request: { prompt?: unknown }): string => JSON.stringify(request.prompt ?? "");
   const model = {
-    specificationVersion: "v2",
+    specificationVersion: "v3",
     provider: "vendo-floor-door",
     modelId: "vendo-floor-door-v1",
     supportedUrls: {},
