@@ -1804,7 +1804,7 @@ describe("app design rules (spec 2026-07-20)", () => {
       ? { say: "done" }
       : { tool: "save_app", input: { content: APP_SCREEN } };
     return {
-      specificationVersion: "v2" as const,
+      specificationVersion: "v3" as const,
       provider: "vendo-test",
       modelId: "vendo-test-appgen",
       supportedUrls: {},
@@ -1814,8 +1814,8 @@ describe("app design rules (spec 2026-07-20)", () => {
         if ("say" in turn) {
           return {
             content: [{ type: "text" as const, text: turn.say }],
-            finishReason: "stop" as const,
-            usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+            finishReason: { unified: "stop" as const, raw: undefined },
+            usage: ZERO_USAGE,
           };
         }
         return {
@@ -1825,8 +1825,8 @@ describe("app design rules (spec 2026-07-20)", () => {
             toolName: turn.tool,
             input: JSON.stringify(turn.input),
           }],
-          finishReason: "tool-calls" as const,
-          usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+          finishReason: { unified: "tool-calls" as const, raw: undefined },
+          usage: ZERO_USAGE,
         };
       },
       async doStream(call: { prompt: Array<{ content: string | Array<{ text?: string }> }> }) {
@@ -2033,7 +2033,7 @@ export default function Ledger() {
         return turnFor(call.prompt);
       };
       return {
-        specificationVersion: "v2" as const,
+        specificationVersion: "v3" as const,
         provider: "vendo-test",
         modelId: "vendo-test-plan",
         supportedUrls: {},
@@ -2042,8 +2042,8 @@ export default function Ledger() {
           if ("say" in turn) {
             return {
               content: [{ type: "text" as const, text: turn.say }],
-              finishReason: "stop" as const,
-              usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+              finishReason: { unified: "stop" as const, raw: undefined },
+              usage: ZERO_USAGE,
             };
           }
           return {
@@ -2053,8 +2053,8 @@ export default function Ledger() {
               toolName: turn.tool,
               input: JSON.stringify(turn.input),
             }],
-            finishReason: "tool-calls" as const,
-            usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+            finishReason: { unified: "tool-calls" as const, raw: undefined },
+            usage: ZERO_USAGE,
           };
         },
         async doStream(call: { prompt: Array<{ content: string | Array<{ text?: string }> }> }) {

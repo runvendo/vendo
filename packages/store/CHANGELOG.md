@@ -1,5 +1,13 @@
 # @vendoai/store
 
+## 0.36.2
+
+### Patch Changes
+
+- Updated dependencies [91595d2]
+  - @vendoai/apps@0.36.2
+  - @vendoai/core@0.36.2
+
 ## 0.36.1
 
 ### Patch Changes
