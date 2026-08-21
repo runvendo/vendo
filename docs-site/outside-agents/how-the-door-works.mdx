@@ -152,6 +152,19 @@ An agent relays it close to verbatim and reports nothing else.
 | `partial` | the screen is up, and the server-side work its plan called for is not |
 | `failed` | nothing painted. One narrower retry on the same `app`, then stop |
 
+`vendo_make` is bounded to one screen assembled from your product's own
+components. It has no door out to a bigger build: an ask that needs real code,
+its own server, an uploaded file, or a scheduled job comes back as `failed`
+with a `say` line naming what assembly could not do. Nothing is painted, no
+sandbox is provisioned even when one is configured, and the retry rule above
+is the same one: one narrower try on the same `app`, then stop.
+
+The builder is behind a different door. A host reaches it by calling
+`vendo.apps.create({ prompt, why })` on its own server — `prompt` is the
+person's ask verbatim, and `why` is one plain sentence naming what assembly
+cannot serve. `vendo.apps.edit` takes no `why` and never reaches the builder,
+so an existing app cannot be promoted through it.
+
 ## Rendering the app in your own chat
 
 React only — there is no web component and no MCP Apps UI resource. If the chat
