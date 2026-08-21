@@ -3,8 +3,8 @@ import type { VendoAppRef, VendoApprovalRef } from "@vendoai/core";
 /**
  * Existing-agents contract — prop shapes for the three embeds a BYO chat
  * surface renders from `vendo_*` tool outputs. The components behind them are
- * built on the existing slot / build-beat / approval-card machinery, inside the
- * same `VendoProvider`.
+ * built on the existing slot / build-beat / approval-card machinery, on the
+ * defaults a `VendoProvider` overrides when the host mounts one.
  * Frozen in `docs/superpowers/specs/2026-07-20-existing-agents-contracts.md`.
  */
 

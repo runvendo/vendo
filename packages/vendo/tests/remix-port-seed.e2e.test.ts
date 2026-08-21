@@ -119,7 +119,7 @@ function scripted(steps: Array<(prompt: string) => Chunk[]>): Scripted {
     return step === undefined ? speak("nothing more to do") : step(prompt);
   };
   const model = {
-    specificationVersion: "v2",
+    specificationVersion: "v3",
     provider: "vendo-remix-port",
     modelId: "vendo-remix-port-v1",
     supportedUrls: {},
