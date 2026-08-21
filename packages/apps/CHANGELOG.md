@@ -1,5 +1,11 @@
 # @vendoai/apps
 
+## 0.36.5
+
+### Patch Changes
+
+- @vendoai/core@0.36.5
+
 ## 0.36.4
 
 ### Patch Changes
