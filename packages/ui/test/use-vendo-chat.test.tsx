@@ -42,6 +42,9 @@ interface Mount {
   sent: Array<Record<string, unknown>>;
   /** Every approval decision the browser posted to the permission wire. */
   decided: Array<Record<string, unknown>>;
+  /** What every route actually SAW, so a host-supplied fetch can be checked
+   *  where it matters: on the wire, not at the call site. */
+  seen: Array<{ path: string; authorization: string | undefined }>;
   /** Make the permission wire refuse from here on — a 409, which is what the
    *  wire answers for an approval already decided or long expired. */
   refuse(): void;
@@ -54,11 +57,13 @@ interface Mount {
 async function serveMount(): Promise<Mount> {
   const sent: Array<Record<string, unknown>> = [];
   const decided: Array<Record<string, unknown>> = [];
+  const seen: Array<{ path: string; authorization: string | undefined }> = [];
   const thread: UIMessage[] = [];
   let refusing = false;
   const server: Server = createServer((incoming, outgoing) => {
     void (async () => {
       const url = new URL(incoming.url ?? "/", "http://127.0.0.1");
+      seen.push({ path: url.pathname, authorization: incoming.headers.authorization });
       if (incoming.method === "GET" && url.pathname.startsWith("/threads/")) {
         outgoing.writeHead(200, { "content-type": "application/json" });
         outgoing.end(JSON.stringify({ id: THREAD_ID, messages: thread }));
@@ -95,6 +100,7 @@ async function serveMount(): Promise<Mount> {
     url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
     sent,
     decided,
+    seen,
     refuse: () => {
       refusing = true;
     },
@@ -196,6 +202,45 @@ describe("useVendoChat", () => {
     // expired. Resolved as success it reads as "the approval landed" while the
     // turn is still parked, waiting for a decision that never arrives.
     await expect(result.current.resume({ apr_1: "approve" })).rejects.toThrow(/409/);
+  });
+
+  it("sends every route through a host-supplied fetch", async () => {
+    mount.thread.push(...parked);
+    // A header-authenticated host: the token cannot ride along on its own the
+    // way a cookie does, so this is the only way its session reaches the mount.
+    const authorized: typeof globalThis.fetch = (input, init) =>
+      globalThis.fetch(input, {
+        ...init,
+        headers: { ...Object.fromEntries(new Headers(init?.headers)), authorization: "Bearer t0ken" },
+      });
+
+    const { result } = renderHook(() =>
+      useVendoChat({ api: mount.url, threadId: THREAD_ID, fetch: authorized }));
+
+    // The transcript read-back a reload does.
+    await waitFor(() => expect(result.current.interruptions).toHaveLength(1));
+    // The turn.
+    result.current.sendMessage({ text: "hello" });
+    await waitFor(() => expect(mount.sent).toHaveLength(1));
+    // The approval decision, on the permission wire.
+    await result.current.resume({ apr_1: "approve" });
+    await waitFor(() => expect(mount.decided).toHaveLength(1));
+
+    // All three, not just the send — a host whose read-back or approval went
+    // out unauthenticated has a conversation that silently half-works.
+    expect(mount.seen.map((request) => request.path)).toEqual(
+      expect.arrayContaining([`/threads/${THREAD_ID}`, "/threads", "/approvals/decide"]),
+    );
+    expect(mount.seen.every((request) => request.authorization === "Bearer t0ken")).toBe(true);
+  });
+
+  it("falls back to the global fetch when the host supplies none", async () => {
+    const { result } = renderHook(() => useVendoChat({ api: mount.url }));
+
+    result.current.sendMessage({ text: "hello" });
+
+    await waitFor(() => expect(mount.sent).toHaveLength(1));
+    expect(mount.seen.every((request) => request.authorization === undefined)).toBe(true);
   });
 
   it("points the next turn at the thread it was switched to", async () => {

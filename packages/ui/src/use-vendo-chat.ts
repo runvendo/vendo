@@ -12,7 +12,7 @@
  * is read back from the server, which is what makes `interruptions` survive a
  * reload without this hook owning a byte of browser storage.
  */
-import type { Decisions, Interruption, Json } from "@vendoai/core";
+import { defaultFetch, type Decisions, type Interruption, type Json } from "@vendoai/core";
 import { useChat } from "@ai-sdk/react";
 import {
   DefaultChatTransport,
@@ -36,10 +36,26 @@ export interface UseVendoChatOptions {
   /** The id the server minted, the moment it lands. Keep it where your app
    *  already keeps route state — this hook keeps nothing. */
   onThreadId?: (threadId: string) => void;
+  /** What every request this hook makes goes through; defaults to the global.
+   *  The seam a host whose session is a HEADER rather than a cookie needs —
+   *  a bearer token cannot ride along on its own, and all three of this hook's
+   *  routes (the turn, the transcript read-back, the approval decision) are
+   *  equally authenticated, so one fetch covers the conversation rather than
+   *  the send alone. */
+  fetch?: typeof fetch;
 }
 
-export function useVendoChat({ api, threadId, onThreadId }: UseVendoChatOptions) {
+export function useVendoChat({ api, threadId, onThreadId, fetch: hostFetch }: UseVendoChatOptions) {
   const base = api.replace(/\/$/, "");
+  // Read through a ref for the reason `onThreadId` is: the transport is built
+  // once per `base`, so a fetch captured in that closure would pin the first
+  // render's token forever.
+  const doFetch = useRef(hostFetch);
+  doFetch.current = hostFetch;
+  const request: typeof fetch = useCallback(
+    (input, init) => (doFetch.current ?? defaultFetch)(input, init),
+    [],
+  );
   // The live id: a ref because the transport closure reads it per request, and
   // state because the caller renders it.
   const activeThreadId = useRef(threadId);
@@ -52,7 +68,7 @@ export function useVendoChat({ api, threadId, onThreadId }: UseVendoChatOptions)
       new DefaultChatTransport<UIMessage>({
         api: `${base}/threads`,
         fetch: async (input, init) => {
-          const response = await globalThis.fetch(input, init);
+          const response = await request(input, init);
           const returned = response.headers.get(THREAD_ID_HEADER);
           if (returned !== null && returned !== activeThreadId.current) {
             activeThreadId.current = returned;
@@ -68,7 +84,7 @@ export function useVendoChat({ api, threadId, onThreadId }: UseVendoChatOptions)
           return { body: { ...(id === undefined ? {} : { threadId: id }), message } };
         },
       }),
-    [base],
+    [base, request],
   );
 
   const chat = useChat<UIMessage>({
@@ -89,8 +105,7 @@ export function useVendoChat({ api, threadId, onThreadId }: UseVendoChatOptions)
     activeThreadId.current = threadId;
     setEffectiveThreadId(threadId);
     let active = true;
-    void globalThis
-      .fetch(`${base}/threads/${encodeURIComponent(threadId)}`)
+    void request(`${base}/threads/${encodeURIComponent(threadId)}`)
       .then(response => (response.ok ? response.json() as Promise<{ messages: UIMessage[] }> : undefined))
       .then(thread => {
         if (active && thread !== undefined) setMessages(thread.messages);
@@ -99,7 +114,7 @@ export function useVendoChat({ api, threadId, onThreadId }: UseVendoChatOptions)
     return () => {
       active = false;
     };
-  }, [base, threadId, setMessages]);
+  }, [base, threadId, setMessages, request]);
 
   /** What this conversation is waiting on a person for, in the vocabulary the
    *  server speaks (`Interruption`) rather than the SDK's part shape. */
@@ -143,7 +158,7 @@ export function useVendoChat({ api, threadId, onThreadId }: UseVendoChatOptions)
         // no interruption here to answer.
         const ids = Object.entries(decisions).filter(([, decision]) => decision === verdict).map(([id]) => id);
         if (ids.length === 0) continue;
-        const response = await globalThis.fetch(`${base}/approvals/decide`, {
+        const response = await request(`${base}/approvals/decide`, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ ids, decision: { approve } }),
@@ -155,7 +170,7 @@ export function useVendoChat({ api, threadId, onThreadId }: UseVendoChatOptions)
         if (!response.ok) throw new Error(`Vendo could not record the ${verdict} decision (${response.status}).`);
       }
     },
-    [base],
+    [base, request],
   );
 
   return {
