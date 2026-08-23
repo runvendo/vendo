@@ -22,6 +22,8 @@ on:
     # today, rather than one nobody can install yet.
     - cron: "0 8 * * *"
   workflow_dispatch:
+  # SCRATCH ONLY — proving the float path pre-merge. Do not merge.
+  pull_request:
 
 permissions:
   contents: read
