@@ -53,12 +53,13 @@ const VALUE_EXPORTS = [
   // and the invitation are two halves of one affordance: a host that ejects the
   // template and keeps the pin needs both or its pin goes quiet.
   "usePinNudge",
-  // ⚠️ TEST EDIT — the "Add to…" picker is public for the SAME reason
-  // `usePinNudge` is: the thread card renders it in place of the fixed pin once
-  // the registry knows more than one slot, and every import in
-  // `thread/parts.tsx` is public API by construction. (Its destinations come
-  // from `useSlots`, which the root surface exports.)
+  // ⚠️ TEST EDIT — placement is public for the SAME reason `usePinNudge` is:
+  // the thread card's bar renders `PlacementAction`, and every import in
+  // `thread/parts.tsx` is public API by construction. `AddToPicker` is the menu
+  // half on its own, for a surface that only ever wants the choice. (Their
+  // destinations come from `useSlots`, which the root surface exports.)
   "AddToPicker",
+  "PlacementAction",
   // ⚠️ TEST EDIT — `useApprovalModal` joins them DELIBERATELY, for the same
   // reason as the two above: `thread/parts.tsx` now mounts the approval modal
   // per app card (a parked press must be able to ask its question in the chat),

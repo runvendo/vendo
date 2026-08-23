@@ -51,6 +51,13 @@ const MAX_POLL_WAIT_MS = 25_000;
  * normally lands in milliseconds. This is the bound for a host that stopped
  * polling ALTOGETHER, where hanging the build forever would be worse than the
  * race it prevents: past it the turn proceeds exactly as it did before.
+ *
+ * The host's replay window (`WORKSPACE_RETRY_WINDOW_MS`, `src/claude-code/box.ts`)
+ * is deliberately this same number: past it the host would be landing a write the
+ * model has already been told did not land. It cannot be imported from here —
+ * this module ships inside the machine image and stays dependency-free — so
+ * `tests/claude-code/box-sync-window.test.ts` reads both files and holds them
+ * equal instead.
  */
 const SYNC_ACK_WAIT_MS = MAX_POLL_WAIT_MS;
 /** Finished messages stay pollable for a little while (a host retrying its last
@@ -136,6 +143,23 @@ export const createSessionRoutes = (options = {}) => {
   // "Not logged in"), so the credential arrives with the first message.
   let sdkEnv = { ...(options.env ?? process.env) };
 
+  /**
+   * The materialize GENERATION this disk holds. The host mints one per
+   * materialize and carries it on every chunk; the box refuses anything from a
+   * generation it has already moved past, and echoes what it holds on `hello`
+   * and `collect` so the host can tell that the disk it is reading is the disk
+   * it wrote.
+   *
+   * A host leg that times out does NOT cancel the console→box hop behind it, so
+   * chunk 0 of a dead attempt can still be travelling while its replay and every
+   * chunk after it have landed. Without a generation that late arrival resets the
+   * root and the turn reads a truncated disk — which the host's sync-back then
+   * commits as deletions.
+   *
+   * Zero is a box that has been given nothing, which is also what a RESTARTED
+   * supervisor reports: same box, same token, empty disk.
+   */
+  let epoch = 0;
   /** The live session, the id to resume on reopen, and the brief it was OPENED
    *  with — the SDK fixes `systemPrompt` at open, so this is the only record of
    *  what the session is actually thinking with. */
@@ -370,7 +394,7 @@ export const createSessionRoutes = (options = {}) => {
           }
           sdkEnv = { ...sdkEnv, ...next };
         }
-        return { status: 200, body: { ok: true } };
+        return { status: 200, body: { ok: true, epoch } };
       }
 
       // Every other route needs the CURRENT token, always.
@@ -379,7 +403,16 @@ export const createSessionRoutes = (options = {}) => {
       }
 
       if (pathname === "/session/workspace") {
-        if (payload?.reset === true) {
+        const at = typeof payload?.epoch === "number" ? payload.epoch : undefined;
+        if (at !== undefined && at < epoch) {
+          return { status: 409, body: { error: `workspace generation ${at} is stale; this box holds ${epoch}` } };
+        }
+        // The reset belongs to the GENERATION, not to the request. Chunk 0 is the
+        // one call the host may send twice — a dropped transport carries no
+        // answer — and a second wipe would take the chunks that landed between
+        // the two attempts. A caller that names no generation gets the old
+        // behaviour: every reset empties the root.
+        if (payload?.reset === true && at !== epoch) {
           // Empty the root's CONTENTS, never the root itself: the sandbox runs
           // as a non-root user and cannot recreate a directory directly under
           // `/` (measured 2026-08-01 — every materialize answered 500).
@@ -388,6 +421,7 @@ export const createSessionRoutes = (options = {}) => {
             rmSync(path.join(root, entry), { recursive: true, force: true });
           }
         }
+        if (at !== undefined) epoch = at;
         for (const file of Array.isArray(payload?.files) ? payload.files : []) {
           if (typeof file?.path !== "string" || typeof file?.base64 !== "string") continue;
           const target = toDisk(root, file.path);
@@ -441,7 +475,10 @@ export const createSessionRoutes = (options = {}) => {
             }
           }
         }
-        return { status: 200, body: { files } };
+        // The generation goes home with the files: an empty read from a box that
+        // holds nothing is only news about the store if it is the same disk the
+        // host materialized.
+        return { status: 200, body: { files, epoch } };
       }
 
       if (pathname === "/session/message") {

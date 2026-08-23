@@ -1,5 +1,145 @@
 # @vendoai/harnesses
 
+## 0.37.0
+
+### Patch Changes
+
+- Updated dependencies [853c591]
+  - @vendoai/apps@0.37.0
+  - @vendoai/core@0.37.0
+  - @vendoai/guard@0.37.0
+
+## 0.36.5
+
+### Patch Changes
+
+- @vendoai/core@0.36.5
+- @vendoai/guard@0.36.5
+- @vendoai/apps@0.36.5
+
+## 0.36.4
+
+### Patch Changes
+
+- Updated dependencies [833fec6]
+  - @vendoai/core@0.36.4
+  - @vendoai/apps@0.36.4
+  - @vendoai/guard@0.36.4
+
+## 0.36.3
+
+### Patch Changes
+
+- @vendoai/core@0.36.3
+- @vendoai/guard@0.36.3
+- @vendoai/apps@0.36.3
+
+## 0.36.2
+
+### Patch Changes
+
+- 66cf10a: A workspace upload the box never received no longer reads as the user deleting
+  everything.
+
+  The `claudeCode()` turn puts the workspace on the box before the model runs, and
+  that upload was the one unguarded network call in the turn. When it died before
+  the box applied it — a refused connect, a dead socket, a first chunk that never
+  landed — the turn's `finally` still read the box's disk back, the box answered
+  honestly that it held nothing, and the sync-back read "nothing here" as "the user
+  deleted everything" and erased the whole workspace from the store. The failed
+  READ was already guarded ("an EMPTY read is not the same fact as the user deleted
+  everything"); this was the same fact from the other end, and it had no guard.
+
+  Now the turn tracks whether the box actually holds the checkout, and syncs back
+  only if it does. A machine that never received the workspace makes no statement
+  about it: the store keeps what it had and the next turn recovers on a fresh box,
+  exactly as a machine that died mid-turn already did.
+
+  Two things that made it hard to survive and hard to diagnose are fixed with it.
+  The workspace calls — the upload and the turn-end read, both of which are the
+  same twice — are now sent again once if the transport drops, so a blip no longer
+  costs the turn. And a Cloud sandbox that cannot be reached now says so: the
+  adapter turns the transport fault into a named `sandbox-unavailable` failure
+  carrying the cause, and the runtime's operator log prints the ROOT of that cause
+  chain alongside the message. The observed failure used to reach the log as
+  undici's bare `fetch failed` — three words naming neither Vendo nor the call.
+
+  The retry is what made the rest necessary. Aborting a request cancels this host's
+  leg of it and nothing else, so a chunk this host gave up on can still land after
+  its own replay — and the first chunk of an upload carries the reset that empties
+  the box's root. Every materialize now mints a GENERATION and carries it on each
+  chunk: the box refuses a generation it has already moved past, empties the root
+  once per generation instead of once per request, and reports the generation it
+  holds. That report is also how a box whose supervisor RESTARTED — same machine,
+  same token, empty disk — stops passing as the box that holds the conversation:
+  the host reads its own generation back before it treats an empty disk as news.
+
+  **The box image must be rebaked for the generation to take effect** — half of it
+  lives in the machine image, beside the supervisor. A host on this version against
+  an older image is safe but unprotected: the box ignores the generation it is sent
+  and reports none, and an absent report is tolerated on purpose, so the seam
+  behaves exactly as it did before rather than refusing every sync-back until the
+  rebake lands. Such a turn now logs `harnesses.claude-code-box-no-generation`, so
+  the unprotected window is visible while it is open.
+
+  And the retry itself now knows what a retry is for. It replayed everything,
+  including answers — a meter refusal, a rejected key, a machine the provider had
+  destroyed — and threw the first error away to say the second one twice. Only a
+  call that DROPPED may be sent again, only while the box is still waiting for it,
+  and the attempt that failed is logged rather than discarded.
+
+- Updated dependencies [91595d2]
+  - @vendoai/apps@0.36.2
+  - @vendoai/core@0.36.2
+  - @vendoai/guard@0.36.2
+
+## 0.36.1
+
+### Patch Changes
+
+- Updated dependencies [a9fca38]
+  - @vendoai/apps@0.36.1
+  - @vendoai/core@0.36.1
+  - @vendoai/guard@0.36.1
+
+## 0.36.0
+
+### Patch Changes
+
+- 2c662ac: On the sandbox rung, warming the chat now warms the machine the conversation
+  actually runs on. `POST /threads/warm` — the call the panel fires when the chat
+  surface opens — replays a real turn under a throwaway thread id, and the box
+  pool keyed on that id: so every warm call booted a real cloud box the user's
+  first message could never find, paid a full cold boot anyway, and left the warm
+  box idling its whole billed TTL before being destroyed unused. Warming cost a
+  box and bought nothing but the provider's prompt cache.
+
+  A warm turn's box is now parked as a warm SPARE, and the first real
+  conversation claims it: re-keyed to its own thread, liveness-probed on the way
+  in, and handed over exactly as a fresh box is — the workspace is materialized
+  and the session opened for that conversation, so nothing of the probe's turn
+  carries into the user's first message. A spare that died in the meantime falls
+  back to a cold boot, a second warm reuses the live spare instead of booting a
+  second box, and a spare nobody ever claims is reaped on the same idle budget as
+  any other box.
+
+  Each box now says how it was obtained, so the saving is greppable rather than
+  inferred: `harnesses.claude-code-box-ready` reports `thread-reuse`,
+  `spare-claim` or `cold-boot`, with the time it took.
+
+  `WARM_THREAD_PREFIX` is new in `@vendoai/core` — the thread-id prefix a warm
+  turn carries. It is what the pool reads to recognise one, since `Harness` is
+  deliberately unchanged: a warm turn is an ordinary turn, and the id is the
+  whole of the seam.
+
+- Updated dependencies [f325443]
+- Updated dependencies [0108715]
+- Updated dependencies [0b6bb92]
+- Updated dependencies [2c662ac]
+  - @vendoai/apps@0.36.0
+  - @vendoai/core@0.36.0
+  - @vendoai/guard@0.36.0
+
 ## 0.35.0
 
 ### Patch Changes

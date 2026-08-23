@@ -16,10 +16,12 @@ export { defaultVendoGreeting, hasSeen, markSeen, type VendoDiscoverability, typ
 export { openVendoConversation, type OpenConversationOptions } from "./overlay-registry.js";
 export { Remixable, type RemixableProps } from "./remixable.js";
 export { playPinCeremony, usePinAction, usePinNudge, type PinCeremonyOptions } from "./pin-ceremony.js";
-// The "Add to…" destination picker — public because the in-thread card (an
-// eject template) is built out of it. Its destinations come from `useSlots` on
+// Placement — public because the in-thread card (an eject template) is built
+// out of it. `PlacementAction` is the whole affordance (the registry decides
+// whether that is the verb or the menu); `AddToPicker` is the menu alone, for a
+// surface that only ever wants the choice. Destinations come from `useSlots` on
 // the root surface.
-export { AddToPicker } from "./add-to-picker.js";
+export { AddToPicker, PlacementAction } from "./add-to-picker.js";
 export { VendoTrigger, type VendoTriggerProps } from "./vendo-trigger.js";
 export { VendoPalette, type VendoCommand } from "./vendo-palette.js";
 export { type HotkeyChord, type PaletteHotkey } from "./palette-hotkey.js";

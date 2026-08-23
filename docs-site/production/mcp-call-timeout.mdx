@@ -1,0 +1,73 @@
+---
+title: "MCP call times out at 60 seconds"
+sidebarTitle: "MCP call times out"
+description: "A tools/call from a stock MCP client hangs or dies around 60 seconds, most often on vendo_make."
+---
+
+# MCP call times out at 60 seconds
+
+```text what you're seeing
+McpError: MCP error -32001: Request timed out
+```
+
+Or no error at all — the call simply never resolves and your agent gives up.
+Short tools answer fine; the long one, usually `vendo_make`, is the one that
+dies.
+
+`not a doctor check` · `no error code` · doctor reads what is on disk and cannot
+see this
+
+## What you're seeing
+
+A `tools/call` that takes longer than a minute is abandoned by your own MCP
+client. Nothing on Vendo's side failed: the door is still working on the call
+when the client stops listening.
+
+## Why
+
+The MCP SDK abandons a `tools/call` after 60 seconds by default, and generating
+a screen with `vendo_make` routinely runs longer.
+
+The door beats `notifications/progress` every 15 seconds for any call that
+carries a progress token, but the SDK extends the deadline only when you asked
+it to — `resetTimeoutOnProgress` defaults to `false`. So a client that receives
+every frame still gives up at 60 seconds. Frames arriving on their own do not
+save you.
+
+## The fix
+
+Ask for both. `onprogress` is what puts the progress token on the request — the
+door stays silent without one — and `resetTimeoutOnProgress` is what makes the
+frames count.
+
+```ts agent.ts focus={13}
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+
+const client = new Client({ name: "acme-agent", version: "1.0.0" });
+await client.connect(new StreamableHTTPClientTransport(
+  new URL(`${process.env.VENDO_BASE_URL}/api/vendo/mcp`),
+  { requestInit: { headers: { authorization: `Bearer ${accessToken}` } } },
+));
+
+const result = await client.callTool(
+  { name: "vendo_make", arguments: args },
+  undefined,
+  { onprogress: () => {}, resetTimeoutOnProgress: true },
+);
+```
+
+The empty `onprogress` is deliberate — you do not have to do anything with a
+frame for it to reset the clock. Pass the same third argument on every call and
+short tools are unaffected.
+
+Using a client you did not write, like Claude, ChatGPT, or Cursor? Then the
+opt-in is theirs to make, not yours, and there is nothing to set in your own
+code. This page is for an agent whose `callTool` you own.
+
+## Related errors
+
+<CardGroup cols={2}>
+  <Card title="Your own agent" href="/outside-agents/your-own-agent">The whole loop: token, connect, call</Card>
+  <Card title="E-MCP-009" href="/production/troubleshooting/e-mcp-009">The door is wired but VENDO_BASE_URL is not set</Card>
+</CardGroup>

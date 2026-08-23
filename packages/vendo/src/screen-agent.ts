@@ -642,6 +642,11 @@ const judgeScreen = async (
  * guessing a host component's props, which the checks floor then refused. The
  * ask alone could never have produced anything else.
  *
+ * EVERY edit of a remix, not only the first. This was once filled from the
+ * CHECKOUT, which fills an empty workspace and so had nothing to say once the
+ * first edit's save had landed a file — leaving the second ask in exactly the
+ * position the first was rescued from, and answered the same way.
+ *
  * A message rather than a section of the brief: the brief heads a cached prefix
  * shared by every assembly, and this is one app's file.
  *
@@ -650,7 +655,8 @@ const judgeScreen = async (
  * still the ask, byte for byte.
  */
 const startingSource = (source: string | undefined): string =>
-  source === undefined ? "" : `This app already has a screen: the host's own component, ported into this dialect.
+  source === undefined ? "" : `This app already has a screen: the host's own component, ported into this
+dialect, and every change already made to it.
 It is below, and it is what the ask under it changes — edit THIS code, keep every
 part the ask does not name, and never replace it with something built from the
 catalog.
@@ -1501,11 +1507,17 @@ export function screenAssembler(deps: ScreenAssemblerDeps): ScreenAssembler {
       // save is the single landing, so a replay that never saves leaves the
       // stored screen untouched. Only a re-seed publishes one.
       let start = deps.replayFrom?.(request.appId);
-      // Otherwise the ordinary checkout, which only ever FILLS an empty
-      // workspace and can never overwrite a save.
-      if (start === undefined && !(await base.exists(checkout))) {
-        start = await deps.storedScreen?.(request.appId, ctx);
-      }
+      // Otherwise the app's own stored screen — a REMIX's and nothing else
+      // (`storedScreen`, compose-apps.ts). Read whether or not the workspace
+      // already holds a copy, because this is ALSO what goes in front of the
+      // model ({@link startingSource}) and the loop cannot read the workspace
+      // itself. Asking only when the workspace was empty meant a remix's SECOND
+      // edit arrived with no code at all in front of it, and an ask with nothing
+      // to change is answered out of the catalog — the one thing a fork exists
+      // not to do, and what a live session's fourth attempt did (2026-08-18),
+      // taking the first wish's edit with it.
+      const held = start === undefined && await base.exists(checkout);
+      start ??= await deps.storedScreen?.(request.appId, ctx);
       // Blank is not a screen — `open()` reads it the same way — and an empty
       // file would leave `edit_app` editing nothing, which is worse than none.
       //
@@ -1526,8 +1538,20 @@ export function screenAssembler(deps: ScreenAssemblerDeps): ScreenAssembler {
       // the loss happens a turn later. Proven: re-add the commit and
       // `remix-port-seed.e2e.test.ts`'s re-seed guarantee goes red on the
       // workspace half.
-      const staged = start !== undefined && start.trim() !== "" ? start : undefined;
-      if (staged !== undefined) await base.writeFile(checkout, staged);
+      //
+      // Never over a file the workspace already `held`: that one belongs to a
+      // save, and a save is newer than the row. Showing it is not writing it.
+      //
+      // So a `held` run is SHOWN the row while its hands edit the workspace, and
+      // §3.2 is what makes that the right way round: a landed save wrote both, so
+      // they agree, and where they do not the ROW is the truth — it is the screen
+      // the person is actually looking at. The way they part is a save the floor
+      // refused, which reaches the workspace (`persistSource`) but never the row.
+      // Showing the workspace there would hand the model bytes the floor has
+      // already rejected; showing the row costs at most a missed `edit_app`, and
+      // a miss is reported (#1535) over a screen that still stands.
+      const starting = start !== undefined && start.trim() !== "" ? start : undefined;
+      if (starting !== undefined && !held) await base.writeFile(checkout, starting);
       /** The last SETTLED paint of this app, kept as it goes past on its way to the
        *  person's screen. It is the only place the resolved query answers exist —
        *  the seam spreads them beside the description on the final paint — so the
@@ -1580,7 +1604,7 @@ export function screenAssembler(deps: ScreenAssemblerDeps): ScreenAssembler {
           request: request.request,
           ...(request.viewport === undefined ? {} : { viewport: request.viewport }),
           ...(pack === undefined ? {} : { briefing: renderBriefingPack(pack) }),
-          ...(staged === undefined ? {} : { source: staged }),
+          ...(starting === undefined ? {} : { source: starting }),
         },
       );
       if (result.kind !== "assembled") return result;

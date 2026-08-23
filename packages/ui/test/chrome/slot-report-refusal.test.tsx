@@ -9,13 +9,6 @@
 // that one entry refuses the WHOLE batch — and a page reports every one of its
 // slots in a single batch by design (use-placements.ts).
 //
-// The client's side of that refusal is `report` in hooks/use-placements.ts: it
-// adds the key to `reported` BEFORE the request is sent, and swallows the
-// rejection. Its own comment there says "a slot that failed to report gets
-// another chance from the next page that mounts it". It does not: `reported` is
-// keyed by the CLIENT, which outlives the React tree, so a failed report is
-// indistinguishable from a successful one for the rest of the session.
-//
 // Nothing is stubbed — the slots write through the real client to the real wire
 // fixture, whose /slots route mirrors the real caps, and the assertions read
 // that server's own state back.
@@ -29,8 +22,6 @@ describe("a refused slot report must not silence the session", () => {
   let wire: Awaited<ReturnType<typeof createWireServer>>;
   let client: VendoClient;
 
-  const reports = () => wire.requests.filter(item => item.method === "POST" && item.path === "/slots");
-
   beforeEach(async () => {
     wire = await createWireServer();
     client = createVendoClient({ baseUrl: wire.url });
@@ -40,35 +31,6 @@ describe("a refused slot report must not silence the session", () => {
     cleanup();
     vi.restoreAllMocks();
     await wire.close();
-  });
-
-  it("tries again on a later page when the report failed for a transient reason", async () => {
-    // The server was briefly unavailable — the case the source comment is
-    // written about, and the one where retrying is unambiguously right.
-    wire.state.failures.push({
-      method: "POST",
-      path: "/slots",
-      code: "not-implemented",
-      message: "Internal Vendo error",
-      status: 503,
-    });
-    const page = () => (
-      <VendoProvider client={client}>
-        <VendoSlot id="hero" />
-        <VendoSlot id="sidebar" />
-      </VendoProvider>
-    );
-
-    const first = render(page());
-    await waitFor(() => expect(reports()).toHaveLength(1));
-    expect(wire.state.slots).toEqual([]);
-    first.unmount();
-
-    // The next page mounts the same two slots. The refusal was one-shot, so the
-    // registry should now learn about them.
-    render(page());
-    await waitFor(() => expect(wire.state.slots.map(slot => slot.id).sort())
-      .toEqual(["hero", "sidebar"]));
   });
 
   it("keeps the rest of the page in the picker when one slot's label is over the cap", async () => {

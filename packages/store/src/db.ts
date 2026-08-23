@@ -271,8 +271,17 @@ async function releaseSharedPglite(dataDir: string, entry: SharedPglite): Promis
     ~300 in `packages/agents` on two unrelated branches). Both are signatures of a
     boot that never started, so a second attempt is free of side effects — unlike
     `Aborted()`, which means a half-opened data dir and belongs to the stale-lock
-    heal below, not here. */
-const TRANSIENT_BOOT = /Invalid FS bundle size|failed to initialize properly/;
+    heal below, not here.
+
+    Two more faces of the same half-written install (CI 2026-08-19, three runs
+    each): a `.so` inside the bundle that dlopen cannot read
+    (`could not load library "/pglite/lib/postgresql/plpgsql.so"`), and an initdb
+    input file left behind from another version
+    (`postgres.bki` … `does not belong to PostgreSQL 18.3`). Both are the bundle
+    reading back wrong rather than a data dir half-opened, so they belong here
+    with the other two. */
+const TRANSIENT_BOOT =
+  /Invalid FS bundle size|failed to initialize properly|could not load library "\/pglite\/[^"]*\.so"|does not belong to PostgreSQL/;
 
 async function createPgliteRetryingTransientBoot(dataDir: string): Promise<PGlite> {
   try {

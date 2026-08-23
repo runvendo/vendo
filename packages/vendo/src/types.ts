@@ -14,7 +14,7 @@ import type {
   OverridesFile,
   ServerActionHandler,
 } from "@vendoai/actions";
-import type { AppsConfig, SandboxAdapter, AppsRuntime, SlotDescriptor } from "@vendoai/apps";
+import type { AppsConfig, SandboxAdapter, AppsRuntime } from "@vendoai/apps";
 import type { VendoAgent as ComposedAgent } from "@vendoai/agents";
 import type { AutomationsEngine } from "@vendoai/automations";
 import type {
@@ -45,6 +45,7 @@ import type {
 import type { GuardRules, PolicyFile, VendoGuard } from "@vendoai/guard";
 import type { HostOAuthAdapter } from "@vendoai/mcp";
 import type { VendoStore } from "@vendoai/store";
+import type { VendoAgentTools } from "./agent-tools.js";
 import type { HostAuthPreset } from "./auth-presets/index.js";
 import type { ConnectionsService } from "./connections.js";
 import type { HarnessTurns, UploadedFile } from "./harness-turn.js";
@@ -68,6 +69,23 @@ export interface Vendo {
       BYO one at its own door (`mcp.serviceAuth`). The same agent code works
       against both. */
   tokenFor(who: Request | string): Promise<string>;
+  /** The door, already wired, for an agent loop the host writes by hand — a
+      raw `messages.create` loop rather than the AI SDK or Mastra, which take
+      `vendoTools(vendo)` instead.
+
+      Same duality as `tokenFor`: pass the incoming `Request` and it acts as
+      whoever is signed in, pass a user id and it acts as them headlessly.
+
+      What comes back is one CONVERSATION's connection: `tools` in the shape
+      the Messages API takes, `results(message)` to run what the model picked
+      and hand back `tool_result` blocks, and `embeds` — the typed envelopes
+      those calls produced, for the page to render. Hold it for the whole
+      conversation; the session it opens is what a parked approval resumes on,
+      and a ten-minute badge that runs out is re-established underneath.
+
+      In-process, like `tokenFor`: every call rides `handler`, so a deployment
+      never has to be able to reach itself over the network. */
+  agentTools(who: Request | string): Promise<VendoAgentTools>;
   emit(event: string, payload: Json, principal: Principal): Promise<RunId[]>;
   /** Push a file into one user's own drawer from host code — the programmatic
       half of the chat drop, through the SAME server-side write, so the agent
@@ -195,12 +213,6 @@ export interface CreateVendoConfig {
       and loads on demand. Names are global as authored and a collision with
       another contributor fails at boot naming both. */
   skills?: readonly Skill[];
-  /** Slots this deployment ALWAYS has, declared here instead of reported by a
-      page render. The registry is otherwise page-reported and ages out
-      (`SLOT_DECAY_MS`), which leaves an agent-only product — no page of ours
-      renders a <VendoSlot> — with nowhere to pin. A declared slot never
-      decays and needs no render. */
-  slots?: readonly SlotDescriptor[];
   /** Host components available to generated apps: the name-keyed registry
       object (01 §14 — the same object serves <VendoProvider>; the server ignores
       each entry's `component` reference) or the array form. Entry names must

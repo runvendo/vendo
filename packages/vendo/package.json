@@ -1,6 +1,6 @@
 {
   "name": "@vendoai/vendo",
-  "version": "0.35.0",
+  "version": "0.37.0",
   "description": "The Vendo umbrella: default composition, public wire routes, React provider, and the vendo CLI.",
   "keywords": [
     "ai",
@@ -134,6 +134,7 @@
     }
   },
   "devDependencies": {
+    "@anthropic-ai/sdk": "^0.112.3",
     "@auth/core": "^0.41.3",
     "@clerk/backend": "^3.11.7",
     "@mastra/core": "1.51.0",

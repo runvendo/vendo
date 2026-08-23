@@ -6,6 +6,7 @@ import { useMobileTakeover } from "../hooks/use-mobile-takeover.js";
 import { useSignedOut } from "../hooks/identity-state.js";
 import { themeCssVariables } from "../theme.js";
 import { PayloadView } from "../tree/renderer.js";
+import { PlacementAction } from "./add-to-picker.js";
 import { useApprovalModal } from "./approval-modal.js";
 import { BeatRail } from "./build-beat.js";
 import { ChromeRoot } from "./chrome-root.js";
@@ -15,7 +16,7 @@ import { inertBehind } from "./inert-behind.js";
 import { forgetThread, lastThreadId, rememberThread } from "./last-thread.js";
 import { LauncherFace, LauncherToast, useLauncherStatus } from "./launcher-status.js";
 import { deliverPrefill, PrefillScopeContext, registerOverlayOpener } from "./overlay-registry.js";
-import { usePinAction, usePinNudge } from "./pin-ceremony.js";
+import { usePinNudge } from "./pin-ceremony.js";
 import { IDLE_RUN_ACTIVITY, runActivity, subscribeRunActivity, type VendoBeat } from "./run-activity.js";
 import {
   escapeIntent,
@@ -489,15 +490,13 @@ function embedFlight(
     own beat rail under it. Stays mounted through expanded → collapsing →
     collapsed (`mounted`) so the featured app does not blink out before the panes
     finish sliding. */
-function WorkspaceStage({ mounted, expanded, featured, beats, pinNudge, pin, onPinned }: {
+function WorkspaceStage({ mounted, expanded, featured, beats, pinNudge, onPinned }: {
   mounted: boolean;
   expanded: boolean;
   featured: SplitEmbed | undefined;
   beats: readonly VendoBeat[];
   /** The stage pin's one-time invite (§10.1 — the user pins, never the agent). */
   pinNudge: string | undefined;
-  /** The host's pin seam; absent when the host wires none. */
-  pin: ((app: { appId: string; payload: unknown }) => void) | undefined;
   /** Run after a pin from the stage: it CLOSES the whole overlay, so the user
       lands back in the product with the app pinned. */
   onPinned: () => void;
@@ -516,24 +515,16 @@ function WorkspaceStage({ mounted, expanded, featured, beats, pinNudge, pin, onP
               <div className="fl-stage-bar">
                 <span className="fl-appcard-dot" aria-hidden="true" />
                 <span className="fl-stage-name">{appTitle(featured.payload) ?? "Your app"}</span>
-                {/* Pin from fullscreen (2026-07 demo feedback): the same host
-                    onPin seam the in-thread card bar uses. */}
-                {pin ? (
-                  <button
-                    type="button"
-                    className="fl-barpin fl-stage-pin"
-                    {...(pinNudge === undefined ? {} : { "data-vendo-pin": pinNudge })}
-                    onClick={() => {
-                      pin({ appId: featured.appId, payload: featured.payload });
-                      onPinned();
-                    }}
-                  >
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                      <path d="M12 17v5M9 3h6l-1 7 3 3H7l3-3-1-7Z" />
-                    </svg>
-                    Pin to dashboard
-                  </button>
-                ) : null}
+                {/* Pin from fullscreen (2026-07 demo feedback): the same
+                    placement affordance the in-thread card bar carries, so the
+                    slot registry answers here exactly as it does there. */}
+                <PlacementAction
+                  appId={featured.appId}
+                  payload={featured.payload}
+                  nudge={pinNudge}
+                  className="fl-stage-pin"
+                  onPlaced={onPinned}
+                />
               </div>
               <div className="fl-stage-body">
                 <PayloadView
@@ -663,7 +654,6 @@ export function VendoOverlay({
   const signedOut = useSignedOut(client);
   const takeover = useMobileTakeover();
   const { docked, dockedOpen } = dockPosture(placement, takeover.active, open);
-  const pin = usePinAction();
 
   // 2026-07 demo feedback — the expandable split-view workspace (split-view.tsx
   // owns the pure state machine). Expanded, the featured microapp renders
@@ -1120,7 +1110,6 @@ export function VendoOverlay({
               featured={featured}
               beats={beats}
               pinNudge={stageNudge}
-              pin={pin}
               onPinned={() => {
                 dispatchSplit({ type: "collapse" });
                 setOpen(false);

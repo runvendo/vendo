@@ -2014,6 +2014,22 @@ function ByoEmbedScenario({ appId, title }: { appId: string; title: string }) {
   );
 }
 
+/** The same page with NO provider anywhere: the embeds boot from the universal
+ *  defaults — the wire at `/api/vendo` (the harness proxies that mount), auth
+ *  riding whatever cookie the browser already sends, and Vendo's own tokens.
+ *  Two of them, so the one shared default client is what both reach the wire
+ *  through. */
+function BareEmbedScenario() {
+  return (
+    <div style={{ maxWidth: 640, margin: "0 auto", fontFamily: "Georgia, serif", display: "grid", gap: 12 }}>
+      <p style={{ margin: 0 }}>User: show me my invoices, then email the report</p>
+      <VendoToolResult output={{ kind: "vendo/app-ref@1", appId: "app_1", title: "Invoices", status: "building" }} />
+      <VendoToolResult output={{ kind: "vendo/approval-ref@1", approvalId: "apr_1", summary: "Email the report to a client" }} />
+      <p style={{ margin: 0 }} data-testid="after-embed">AI: let me know if you want anything else.</p>
+    </div>
+  );
+}
+
 /** A placement written at mint time, narrating itself: the skeleton while the
  *  build streams, then the app in place. ALONE on its page — every mounted slot
  *  shares one poller, so a page of five would burn the fixture's build window
@@ -2168,6 +2184,7 @@ function scenario(pathname: string): { title: string; theme?: Partial<VendoTheme
     // sentence, seeded in vite.config.ts), so the browser proof is about what
     // the person actually reads, not about a tidy fixture string.
     case "/byo-embed-failed": return { title: "BYO chat — build failed", content: <ByoEmbedScenario appId="app_build_failed" title="Spending board" />, ownProvider: true };
+    case "/byo-embed-bare": return { title: "BYO chat — no provider at all", content: <BareEmbedScenario />, ownProvider: true };
     case "/affordances": return { title: "Affordances (Maple) — copy, attach, connect dock", content: <AffordancesScenario theme={mapleTheme} />, ownProvider: true };
     case "/affordances-dark": return { title: "Affordances — dark", content: <AffordancesScenario theme={darkTheme} />, ownProvider: true };
     case "/toasts": return { title: "Toasts", content: <ToastsScenario />, ownProvider: true };

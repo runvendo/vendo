@@ -36,7 +36,7 @@ import {
   type SeedDrift,
   type SeedPort,
 } from "../../contract/index.js";
-import { APPS_COLLECTION, appRecordInput } from "../persistence/persistence.js";
+import { APPS_COLLECTION, appRecordInput, onAppRow } from "../persistence/persistence.js";
 import type { AppsRuntimeContext } from "../runtime/runtime-context.js";
 import type { AppsRuntime, SeedFromInput, VersionEntry } from "../runtime/types.js";
 
@@ -200,13 +200,20 @@ const seedFrom = async (
     // act and nothing asked for a new name, so the mint's name goes back before
     // the instruction runs. Skipped when they already agree, for the reason
     // `authoredScreen` skips an unchanged save: a write that changes nothing.
-    const painted = await deps.requireOwned(minted.id, ctx);
-    if (painted.name !== minted.name) {
-      await deps.engine.put(
-        APPS_COLLECTION,
-        appRecordInput({ ...painted, name: minted.name }, ctx.principal.subject, false, "seed"),
-      );
-    }
+    //
+    // READ AND WRITE TAKE A TURN ON THE ROW (`onAppRow`), because this put
+    // carries the WHOLE document it read: a courier landing in the window
+    // between them was carried straight back off, and the remix silently stopped
+    // following the host page — nothing refused, nothing logged.
+    await onAppRow(minted.id, async () => {
+      const painted = await deps.requireOwned(minted.id, ctx);
+      if (painted.name !== minted.name) {
+        await deps.engine.put(
+          APPS_COLLECTION,
+          appRecordInput({ ...painted, name: minted.name }, ctx.principal.subject, false, "seed"),
+        );
+      }
+    });
     // A concurrent write to this row — the ✦ door landing a RACING gesture's
     // wish is the common one, and seeding the port first widened that window —
     // is not a failed build: the row moved, so run the instruction once more
@@ -241,12 +248,16 @@ const seedFrom = async (
   // Over the row as it stands NOW, never over the pre-seed copy above: the port
   // painted through the floor and the floor STORED it, so marking the failure on
   // the older document would quietly revert the app's screen back out of it.
-  const failed: AppDocument = {
-    ...await deps.requireOwned(minted.id, ctx),
-    buildFailed: { reason, retryable: true, at: new Date().toISOString(), prompt: input.instruction },
-  };
-  await deps.engine.put(APPS_COLLECTION, appRecordInput(failed, ctx.principal.subject, false, "seed"));
-  return failed;
+  // Reading it inside a turn (`onAppRow`) is the same "NOW" one step finer — a
+  // courier landing between this read and its put would be reverted by it.
+  return onAppRow(minted.id, async () => {
+    const failed: AppDocument = {
+      ...await deps.requireOwned(minted.id, ctx),
+      buildFailed: { reason, retryable: true, at: new Date().toISOString(), prompt: input.instruction },
+    };
+    await deps.engine.put(APPS_COLLECTION, appRecordInput(failed, ctx.principal.subject, false, "seed"));
+    return failed;
+  });
 };
 
 /**
@@ -348,12 +359,18 @@ const reseed = async (
  * HERE, before it is stored, rather than being filtered at each of the places
  * that later read the seed. A baseline that captured no props declares none and
  * so admits none: never invented, exactly like the paint it feeds.
+ *
+ * READ AND WRITE TAKE A TURN ON THE ROW (`onAppRow`). Being provenance rather
+ * than an edit is exactly what makes this dangerous: it writes whenever the host
+ * re-renders, including all the way through a ✦ mint's build, and a save cannot
+ * tell this write from an edit that would revert it — so landing inside one's
+ * window refused it as `app changed under this save`, one mint in three.
  */
 const courierProps = async (
   deps: SeedSurfaceDeps,
   input: { appId: AppId; props: Record<string, Json> },
   ctx: RunContext,
-): Promise<AppDocument> => {
+): Promise<AppDocument> => onAppRow(input.appId, async () => {
   const app = await deps.requireOwned(input.appId, ctx);
   const seed = app.seed;
   if (seed === undefined) {
@@ -370,7 +387,7 @@ const courierProps = async (
   const next: AppDocument = { ...app, seed: { ...seed, props } };
   await deps.engine.put(APPS_COLLECTION, appRecordInput(next, ctx.principal.subject, false, "seed"));
   return next;
-};
+});
 
 export const createSeedSurface = (deps: SeedSurfaceDeps): AppsRuntime["seed"] => ({
   async drift(appId, ctx): Promise<SeedDrift | null> {

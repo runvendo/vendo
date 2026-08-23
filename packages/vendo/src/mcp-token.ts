@@ -65,6 +65,24 @@ const sessionSubject = async (
   return session.subject;
 };
 
+/** The ORIGIN this deployment's own door answers at: the configured public base
+    (`mcp.baseUrl`, else `VENDO_BASE_URL`), or the origin of the request the
+    caller brought. `undefined` when the deployment has never been told its own
+    public URL and no request carried one — each caller names that fix in its own
+    words, which is why this answers rather than throws.
+
+    Shared with `vendo.agentTools`, which dials the same door: two spellings of
+    "where am I" would mint a token bound to one resource and spend it at
+    another. */
+export function doorOrigin(
+  { mcpOptions, configuredBaseUrl }: Pick<VendoComposition, "mcpOptions" | "configuredBaseUrl">,
+  who: Request | string,
+): string | undefined {
+  const base = mcpOptions?.baseUrl ?? configuredBaseUrl
+    ?? (who instanceof Request ? new URL(who.url).origin : undefined);
+  return base === undefined ? undefined : new URL(base).origin;
+}
+
 const exchangeForm = (subject: string, serviceKey: string, resource?: string): URLSearchParams =>
   new URLSearchParams({
     grant_type: "urn:ietf:params:oauth:grant-type:token-exchange",
@@ -94,7 +112,7 @@ export function composeTokenFor(
   composition: VendoComposition,
   handler: (request: Request) => Promise<Response>,
 ): (who: Request | string) => Promise<string> {
-  const { mcpOptions, mcpBundle, oauthSeam, configuredBaseUrl } = composition;
+  const { mcpOptions, mcpBundle, oauthSeam } = composition;
   return async (who) => {
     if (mcpOptions === undefined) {
       throw new VendoError(
@@ -127,9 +145,8 @@ export function composeTokenFor(
     // The token binds to the door's canonical resource URI, which the door
     // derives from the request's own origin — so a token minted against a
     // guessed origin would be refused at the door it was minted for.
-    const base = mcpOptions.baseUrl ?? configuredBaseUrl
-      ?? (who instanceof Request ? new URL(who.url).origin : undefined);
-    if (base === undefined) {
+    const origin = doorOrigin(composition, who);
+    if (origin === undefined) {
       throw new VendoError(
         "validation",
         "vendo.tokenFor needs this deployment's public URL to bind the token to its MCP door, and none is "
@@ -143,7 +160,7 @@ export function composeTokenFor(
     // URI, so the minted token still binds to the public `…/maple/api/vendo/mcp`
     // a real MCP client connects to. Sending the public spelling would 404
     // before the door was ever reached.
-    const at = `${new URL(base).origin}${MCP_MOUNT}/token`;
+    const at = `${origin}${MCP_MOUNT}/token`;
     return accessToken(await handler(new Request(at, {
       method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded" },

@@ -68,6 +68,11 @@ const runtimeWith = (
         return authored;
       },
     },
+    // The compound arm reads the row back to see whether it landed on a REMIX
+    // (#1568 — a remix reaches no automation door). These cases are all plain
+    // apps, so there is no seed to find; the remix half is proven for real, on a
+    // real runtime, in `remix-loadout.test.ts`.
+    async get() { return null; },
     async remember() {},
   };
   return { runtime: partial as unknown as AppsRuntime, asked };

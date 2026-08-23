@@ -1,5 +1,59 @@
 # vendoai
 
+## 0.37.0
+
+### Patch Changes
+
+- Updated dependencies [853c591]
+- Updated dependencies [853c591]
+  - @vendoai/vendo@0.37.0
+
+## 0.36.5
+
+### Patch Changes
+
+- Updated dependencies [718c39a]
+  - @vendoai/vendo@0.36.5
+
+## 0.36.4
+
+### Patch Changes
+
+- Updated dependencies [833fec6]
+  - @vendoai/vendo@0.36.4
+
+## 0.36.3
+
+### Patch Changes
+
+- @vendoai/vendo@0.36.3
+
+## 0.36.2
+
+### Patch Changes
+
+- Updated dependencies [66cf10a]
+  - @vendoai/vendo@0.36.2
+
+## 0.36.1
+
+### Patch Changes
+
+- @vendoai/vendo@0.36.1
+
+## 0.36.0
+
+### Patch Changes
+
+- Updated dependencies [a34009b]
+- Updated dependencies [6c7b76a]
+- Updated dependencies [b1493c6]
+- Updated dependencies [0108715]
+- Updated dependencies [0b6bb92]
+- Updated dependencies [7ba5ac7]
+- Updated dependencies [2c662ac]
+  - @vendoai/vendo@0.36.0
+
 ## 0.35.0
 
 ### Patch Changes

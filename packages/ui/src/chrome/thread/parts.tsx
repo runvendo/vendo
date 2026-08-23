@@ -5,8 +5,7 @@ import { useVendoProvider } from "../../context.js";
 import { useSplitView } from "../split-view.js";
 import { useApprovalSheetPresentation } from "../../hooks/use-mobile-takeover.js";
 import { PayloadView } from "../../tree/renderer.js";
-import { useSlots } from "../../hooks/use-slots.js";
-import { AddToPicker } from "../add-to-picker.js";
+import { PlacementAction } from "../add-to-picker.js";
 import { ApprovalCard } from "../approval-card.js";
 import { useApprovalModal } from "../approval-modal.js";
 import { ApprovalSheet } from "../approval-sheet.js";
@@ -17,7 +16,7 @@ import { GrantSetCard, type GrantSetPermission } from "../grant-set-card.js";
 import { toolkitDisplayName, toolTitle } from "../humanize.js";
 import { Markdown } from "../markdown.js";
 import type { MorphToastProps } from "../morph-toast.js";
-import { usePinAction, usePinNudge } from "../pin-ceremony.js";
+import { usePinNudge } from "../pin-ceremony.js";
 import { LONG_TEXT_CAP, truncateHead } from "../truncate.js";
 import { SentAttachment } from "./attachments.js";
 import { buildApprovalRequest } from "./approval-wire.js";
@@ -639,15 +638,10 @@ function AppCardBody({ compact, shellRef, canvasRef, previewHeight, previewScale
     features this app on the big stage. */
 function ThreadAppCard({ appId, payload, restored, buildKey }: { appId: string; payload: UIPayload; restored: boolean; buildKey: string }) {
   const { client, components } = useVendoProvider();
-  const pin = usePinAction();
   // A press inside the card's view that parks on the guard asks its question
   // over the conversation, where the person pressed it (the VendoSlot seam).
   // One per card mount: the stage renders its own view, and its own modal.
   const approval = useApprovalModal();
-  // The destinations the registry knows — a mounted VendoSlot is the only thing
-  // that can say a slot exists (hooks/use-slots.ts). More than one, and the
-  // bar's placement affordance is a picker rather than a single fixed pin.
-  const { slots } = useSlots();
   const split = useSplitView();
   const streaming = (payload as { streaming?: boolean }).streaming === true;
   // The nudge belongs to the build that just LANDED (§10.1: the user pins, the
@@ -825,27 +819,13 @@ function ThreadAppCard({ appId, payload, restored, buildKey }: { appId: string; 
               data-state/label/hairline markup above is the shared contract and
               stays untouched.
 
-              ONE destination is a verb ("Pin to dashboard") — naming the only
-              place it could go would be a menu of one. Several, and the same
-              affordance becomes the picker: this card is the surface a real user
-              actually reaches a generated view from, so it is where the choice
-              has to live (the embed-only picker was unreachable in every host
-              that renders its conversation through the overlay). */}
-          {!streaming && pin ? (
-            slots.length > 1 ? <AddToPicker appId={appId} /> : (
-              <button
-                type="button"
-                className="fl-barpin"
-                {...(nudge === undefined ? {} : { "data-vendo-pin": nudge })}
-                onClick={() => pin({ appId, payload })}
-              >
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                  <path d="M12 17v5M9 3h6l-1 7 3 3H7l3-3-1-7Z" />
-                </svg>
-                Pin to dashboard
-              </button>
-            )
-          ) : null}
+              Which affordance it is, the slot registry decides (add-to-picker
+              .tsx): one destination is the verb, several are the picker, none
+              is nothing at all. This card is the surface a real user actually
+              reaches a generated view from, so it carries the whole rule — the
+              embed-only picker was unreachable in every host that renders its
+              conversation through the overlay. */}
+          {!streaming ? <PlacementAction appId={appId} payload={payload} nudge={nudge} /> : null}
           <span className="fl-boot-hairline" aria-hidden="true" />
         </div>
         <AppCardBody

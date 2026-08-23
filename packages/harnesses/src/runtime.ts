@@ -282,6 +282,28 @@ export function addUsage(totals: UsageTotals | undefined, event: Extract<Harness
  */
 const HARNESS_FAILED = "Something went wrong on my side, so I stopped.";
 
+/** One hop down a failure: a VendoError carries its reason on `detail` (the
+ *  class takes no ErrorOptions), everything else on `cause`. */
+const causeOf = (error: unknown): unknown =>
+  isVendoError(error)
+    ? (error.detail as { cause?: unknown } | undefined)?.cause
+    : (error as { cause?: unknown } | undefined)?.cause;
+
+/**
+ * The BOTTOM of that chain — the only link that says anything.
+ *
+ * A dead socket reaches the operator wrapped twice over: the box names the route
+ * it died on, the adapter names the console, and undici's `fetch failed` sits on
+ * top of the one word (ECONNREFUSED, ECONNRESET) that tells them apart. One hop
+ * down printed the wrapper again. Bounded because a cause chain is other
+ * people's data and may point back at itself.
+ */
+const rootCause = (error: unknown): unknown => {
+  let deepest = causeOf(error);
+  for (let hop = 0; hop < 8 && causeOf(deepest) !== undefined; hop += 1) deepest = causeOf(deepest);
+  return deepest;
+};
+
 export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
   const harnessState = deps.harnessState ?? memoryHarnessStateStore();
 
@@ -673,6 +695,11 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
             // A harness that throws is a bug in the thinker, not in the user's
             // day. The real error goes to the operator's terminal; the user gets
             // a plain sentence, and NOTHING of the internals travels.
+            // …and the cause with it. A transport fault's whole message is
+            // "fetch failed"; everything that tells a refused connect from a
+            // dropped socket is underneath. Kept as TEXT, because this detail is
+            // structured and a host's own sink may serialize it.
+            const under = rootCause(error);
             log({
               code: "harnesses.runtime-run-failed",
               level: "error",
@@ -682,6 +709,7 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
                   harness: input.harness.name,
                   threadId: input.threadId,
                   error: error instanceof Error ? error.message : String(error),
+                  ...(under === undefined ? {} : { cause: String(under) }),
                 },
               },
             });

@@ -52,7 +52,7 @@ Readers tolerate unknown extra fields. Anything additive stays inside `@1`, and 
 
 ## The three embeds
 
-Import all three from `@vendoai/vendo/react`, which re-exports them so you need no second package. Each reads the wire through the surrounding provider and polls on its own until it reaches a terminal state.
+Import all three from `@vendoai/vendo/react`, which re-exports them so you need no second package. Each finds the wire on its own and polls until it reaches a terminal state.
 
 | Component | Renders | Reaches |
 | --- | --- | --- |
@@ -60,20 +60,33 @@ Import all three from `@vendoai/vendo/react`, which re-exports them so you need 
 | `<VendoAppEmbed refValue>` | the build beat while the build streams, then the live app | a mounted app, or the build's own failure with a retry |
 | `<VendoApprovalEmbed refValue>` | the approve or deny card, resolving in place | `"pending"`, `"executed"`, `"declined"`, `"expired"` |
 
-None of the three takes config props beyond the one shown. Theme and behavior come from the provider, and a failure speaks the failed or expired vocabulary rather than a silent blank.
+None of the three takes config props beyond the one shown. Wire, auth and theme are settings they read from around them, and a failure speaks the failed or expired vocabulary rather than a silent blank.
 
 Default to `<VendoToolResult>` wherever you render a finished tool part. Reach for the other two only when you hold a ref that did not come from a live tool call, such as one you stored and want to re-render later.
 
-## Set up the provider
+## No setup
 
-Wrap your chat once in `VendoProvider`, pointed at the wire route. Auth rides your host session cookie and theme rides the `--vendo-*` tokens, so the embeds render on-brand.
+Drop an embed in and it works. With no provider around it, it reads the wire at `/api/vendo`, sends your host session cookie the way the browser already would, and paints on the `--vendo-*` tokens. Every embed on the page shares one client, so ten of them are still one connection.
 
-```tsx app/page.tsx focus={5-7}
+```tsx app/page.tsx focus={4}
+import { VendoToolResult } from "@vendoai/vendo/react";
+
+export default function Chat() {
+  // your chat, and for each finished tool part:
+  return <VendoToolResult output={part.output} />;
+}
+```
+
+## The provider, when you need it
+
+`VendoProvider` is settings for everything inside it, and it wins over the defaults. Wrap your chat once when any of them is wrong for you: a wire mounted under a base path, a client of your own, brand tokens, your host components.
+
+```tsx app/page.tsx focus={5}
 import { VendoProvider, VendoToolResult } from "@vendoai/vendo/react";
 
 export default function Chat() {
   return (
-    <VendoProvider>
+    <VendoProvider baseUrl="/maple/api/vendo" theme={{ colors: { accent: "#c2410c" } }}>
       {/* your chat, and for each finished tool part: */}
       <VendoToolResult output={part.output} />
     </VendoProvider>
@@ -81,7 +94,7 @@ export default function Chat() {
 }
 ```
 
-`baseUrl` defaults to `/api/vendo`, so pass it only when your wire route is mounted somewhere else. The [headless hooks](/reference/hooks) need the same wrapper, so this step covers both.
+The [headless hooks](/reference/hooks) read the same settings, bare or wrapped, so one provider covers both.
 
 ## Approvals never block the loop
 

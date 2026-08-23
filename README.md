@@ -57,25 +57,29 @@ npx vendo init
 
 Paste this inside your app's repo:
 
-<!-- Canonical prompt text: vendo-web lib/prompts.ts (mirrored by the docs
-     AgentPrompt cards). Change it there first. -->
+<!-- Canonical prompt text: packages/vendo/src/agent-prompt.ts (mirrored by the
+     docs AgentPrompt card). Change it there first. -->
 
 ```text
 Install Vendo in this repo. Read https://vendo.run/agents.md and follow
 it exactly. Relay Vendo's setup questions to me and use my answers. Ask me
-before creating any account or key. You're done when
-`vendo doctor --json` reports all green. Then ask me whether I'd like to
-star it via https://vendo.run/star?src=readme to support the project.
+before creating any account or key — Vendo Cloud is the recommended option.
+You're done when my app runs and the agent answers from my own API.
+Then ask me whether I'd like to star it via
+https://vendo.run/star?src=readme to support the project.
 ```
 
-`vendo doctor` gates done; every error code links to its exact fix. Full
+Done is your app running and the agent answering from your own API. `vendo
+doctor` is the optional checkup, and every code it prints links to its exact
+fix. Full
 playbook: [docs.vendo.run/install](https://docs.vendo.run/install) ·
 Agent-readable: [vendo.run/agents.md](https://vendo.run/agents.md)
 
 **Which one are you?**<br>
 [**You already have an agent**](https://docs.vendo.run/existing-agent/quickstart) — one tool pack for your AI SDK, Mastra, or homegrown loop.<br>
 [**Your product has no agent**](https://docs.vendo.run/quickstart) — one command brings the loop, the chat UI, and the approvals.<br>
-[**Expose your product over MCP**](https://docs.vendo.run/outside-agents/how-the-door-works) — Claude, ChatGPT, Cursor, and Claude Code act as the signed-in user.
+[**Expose your product over MCP**](https://docs.vendo.run/outside-agents/how-the-door-works) — Claude, ChatGPT, Cursor, and Claude Code act as the signed-in user.<br>
+[**Your agent lives in your backend**](https://docs.vendo.run/backend/quickstart) — one package, `agent()` and `chat()`, no CLI and no UI of ours to mount.
 
 <img src="assets/kicker-03-how-it-works.svg" alt="03 · How it works">
 

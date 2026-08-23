@@ -59,7 +59,7 @@ import type { SeedBaseline, SeedDrift } from "../../contract/index.js";
 import type { RemixRejection, ReviewQueueEntry } from "../remix/review.js";
 import type { SandboxAdapter } from "../escalation/sandbox.js";
 import type { ShipDiff } from "../remix/ship-diff.js";
-import type { SlotDescriptor, SlotRegistry } from "../persistence/slots.js";
+import type { SlotRegistry } from "../persistence/slots.js";
 
 /**
  * What this block may ask of the automations engine — four verbs, no more.
@@ -212,9 +212,6 @@ export interface AppsConfig {
    *  umbrella can back it with a first-request cloud read without doing I/O at
    *  compose time. */
   catalog: NormalizedCatalog;
-  /** Slots the host declared in its own config (`CreateVendoConfig.slots`),
-   *  merged into the page-reported registry on every read (slots.ts). */
-  slots?: readonly SlotDescriptor[];
   /** The pages a generated `<Link to>` may name (`CreateVendoConfig.routes`),
    *  for the FLOOR: a screen naming a route the host never registered is refused
    *  at generation, not left to render as dead text. What a WRITER is told about
@@ -695,13 +692,20 @@ export interface AppsRuntime {
    * one reads as a current constraint. Both are capped here (`app-memory.ts`)
    * rather than in the schema, so a stored row survives a cap that changes.
    *
+   * `landed` is the other half of an `ask` on a REMIX, and only there: the wish
+   * list replays on every Update, so only a change that reached the screen
+   * belongs on it. The ask itself is recorded either way.
+   *
    * There is deliberately no second row-write door for this. Every caller —
    * `vendo_make`'s create arms, its edit arm, the screen assembler's decisions —
    * comes through here, which is also the one place the `editor` level is
    * checked. A caller treats a rejection as a non-event: memory is never worth
    * failing a make over.
    */
-  remember(input: { appId: AppId; ask?: string; decisions?: string }, ctx: RunContext): Promise<void>;
+  remember(
+    input: { appId: AppId; ask?: string; decisions?: string; landed?: boolean },
+    ctx: RunContext,
+  ): Promise<void>;
   /**
    * The capped version log.
    *

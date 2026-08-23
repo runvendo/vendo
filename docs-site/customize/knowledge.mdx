@@ -107,11 +107,9 @@ where the docs landed:
 Synced: 3 upserted, 1 removed, 128 unchanged → Vendo Cloud (console.vendo.run).
 ```
 
-The manifest is regenerable and safe to gitignore. A runner without it sees
-every document as changed and upserts all of them, which is the same corpus
-and more work.
-
-Commit it to keep CI runs incremental.
+Commit the manifest, to keep CI runs incremental. It is regenerable and safe to
+gitignore, but a runner without it sees every document as changed and upserts
+all of them — the same corpus, more work.
 
 Full verb and flag list: [the CLI reference](/reference/cli).
 

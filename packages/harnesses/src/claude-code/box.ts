@@ -35,7 +35,7 @@
  * resumes on the same session) and worse for cost (a parked write holds a
  * sandbox for up to 90s). Recorded in the lane's close note as a deviation.
  */
-import { log, VENDO_DEV_PORT, VENDO_DEV_PORT_ENV, VendoError, WARM_THREAD_PREFIX } from "@vendoai/core";
+import { isVendoError, log, VENDO_DEV_PORT, VENDO_DEV_PORT_ENV, VendoError, WARM_THREAD_PREFIX } from "@vendoai/core";
 import type { CheckoutFile, SyncFile, TreeState } from "../materialize.js";
 import { emptyTree } from "../materialize.js";
 import { MESSAGE_BUDGET_MS, type SessionMachine, type SessionMessage } from "./machine.js";
@@ -73,6 +73,48 @@ const CONTROL_PORT = 8811;
 export const BOX_IDLE_TTL_MS = 5 * 60_000;
 /** The box holds each poll open this long before answering empty. */
 const POLL_WAIT_MS = 10_000;
+/**
+ * How long the workspace seam may still be trying.
+ *
+ * The box parks the model behind its own write for `SYNC_ACK_WAIT_MS` (25s,
+ * `box/turn-routes.mjs`) waiting for this host to say the sync landed, and then
+ * tells the model it did not. A replay that starts after that window is
+ * answering a question nobody is waiting on any more, over a model that has
+ * already been told the opposite — so the replay is refused past the window, and
+ * cut loose the moment it reaches it. The FIRST attempt still runs on the
+ * adapter's own timeout, which this seam does not own.
+ *
+ * The twin of `SYNC_ACK_WAIT_MS` in `box/turn-routes.mjs`, which cannot import it:
+ * that module ships inside the machine image and stays dependency-free. The two
+ * literals are held equal by `tests/claude-code/box-sync-window.test.ts`, which
+ * reads both files — drift between them is a red test, not a silent race.
+ */
+const WORKSPACE_RETRY_WINDOW_MS = 25_000;
+
+/** Rejects when the window closes. The call underneath cannot be CANCELLED from
+ *  here — this seam takes no signal — but it can stop being waited on, and what
+ *  it may still do late is bounded: a materialize chunk is refused by its
+ *  generation or rewrites its own bytes, and a collect is a read nobody reads. */
+const expire = (ms: number, path: string): Promise<never> =>
+  new Promise((_resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new VendoError("sandbox-unavailable", `box ${path} did not answer inside the ${WORKSPACE_RETRY_WINDOW_MS}ms sync window`)),
+      ms,
+    );
+    timer.unref?.();
+  });
+
+/**
+ * A fault that carries NO answer — the connection died, so whether the box
+ * applied the call is exactly what we do not know, which is the only state a
+ * replay can improve. The adapters mark it by hanging the reason on
+ * `detail.cause` (`cloudSandbox`'s `send`); an answer they merely disliked —
+ * 401, 402, 429, a destroyed machine — carries none. An unclassified throw from
+ * a BYO adapter is transport by default: raw is what a dead socket looks like.
+ */
+const dropped = (error: unknown): boolean =>
+  !isVendoError(error)
+  || (error.code === "sandbox-unavailable" && (error.detail as { cause?: unknown } | undefined)?.cause !== undefined);
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -89,6 +131,11 @@ interface BoxEntry {
   reopen: boolean;
   /** What this box's disk holds — the sync-back baseline, per conversation. */
   tree: TreeState;
+  /** The materialize GENERATION this host has minted for this box, counted up
+   *  before each upload so a replay always outranks the attempt it replaces.
+   *  The box reports what it holds (`hello`, `collect`); a box reporting less
+   *  than this is not holding the disk this host wrote. */
+  epoch: number;
   idle?: ReturnType<typeof setTimeout>;
 }
 
@@ -200,13 +247,30 @@ export async function boxMachine(options: BoxMachineOptions): Promise<SessionMac
    * CLAUDE_CONFIG_DIR is deliberately unset: the SDK's default lives under $HOME,
    * and `/workspace` is the materialized copy — parking the native session there
    * would put machine state inside the user's files.
+   *
+   * The answer carries the box's own materialize generation, which is how a
+   * RESTARTED supervisor is told from the box it is wearing the name of: same
+   * machine, same token, empty disk, generation back at zero. `undefined` is a
+   * box that did not answer at all; an answer with no generation is a box image
+   * that predates it and can therefore say nothing wrong about it.
    */
-  const hello = async (machine: SandboxMachineLike, token: string): Promise<boolean> => {
-    const { status } = await control(machine, token, "/session/hello", {
+  const hello = async (machine: SandboxMachineLike, token: string): Promise<{ epoch?: number } | undefined> => {
+    const { status, json } = await control(machine, token, "/session/hello", {
       token,
       env: options.env,
     }).catch(() => ({ status: 0, json: undefined }));
-    return status === 200;
+    if (status !== 200) return undefined;
+    const epoch = (json as { epoch?: unknown } | undefined)?.epoch;
+    if (typeof epoch === "number") return { epoch };
+    // Tolerated, and therefore said out loud: for the length of the rollout every
+    // guard below reads "no generation" as "nothing to disagree with" and passes,
+    // so an unprotected turn is otherwise indistinguishable from a protected one.
+    log({
+      code: "harnesses.claude-code-box-no-generation",
+      level: "warn",
+      message: "[vendo] claude-code: the box reports no workspace generation — its image predates the guard, so nothing this turn reads back is checked against what it wrote. Rebake the box image.",
+    });
+    return {};
   };
 
   const bootBox = async (): Promise<BoxEntry> => {
@@ -225,14 +289,14 @@ export async function boxMachine(options: BoxMachineOptions): Promise<SessionMac
       },
       allowedDomains: [...options.allowedDomains],
     });
-    if (!await hello(machine, token)) {
+    if (await hello(machine, token) === undefined) {
       await machine.destroy().catch(() => undefined);
       throw new VendoError(
         "sandbox-unavailable",
         "the workspace machine refused the session handshake",
       );
     }
-    const fresh: BoxEntry = { machine, token, warm: false, reopen: false, tree: emptyTree() };
+    const fresh: BoxEntry = { machine, token, warm: false, reopen: false, tree: emptyTree(), epoch: 0 };
     boxes.set(key, fresh);
     return fresh;
   };
@@ -255,11 +319,16 @@ export async function boxMachine(options: BoxMachineOptions): Promise<SessionMac
     if (held === undefined) return undefined;
     if (exclusive) boxes.delete(at);
     disarmIdle(held);
-    if (await hello(held.machine, held.token)) return held;
+    // A box that answers is not yet a box that still HOLDS what we put on it: a
+    // restarted supervisor answers every route with an empty disk, and `warm` is
+    // our memory of it rather than its state. The generation it reports is the
+    // one thing it cannot be wrong about.
+    const greeted = await hello(held.machine, held.token);
+    if (greeted !== undefined && (greeted.epoch ?? held.epoch) >= held.epoch) return held;
     log({
       code: "harnesses.claude-code-box-stale",
       level: "error",
-      message: "[vendo] claude-code: the box stopped answering; starting fresh",
+      message: `[vendo] claude-code: the box ${greeted === undefined ? "stopped answering" : "no longer holds the workspace"}; starting fresh`,
     });
     boxes.delete(at);
     await held.machine.destroy().catch(() => undefined);
@@ -300,8 +369,50 @@ export async function boxMachine(options: BoxMachineOptions): Promise<SessionMac
     message: `[vendo] claude-code: box ready by ${served} in ${Date.now() - startedAt}ms`,
   });
 
-  const request = async (path: string, body?: unknown): Promise<Record<string, unknown>> => {
-    const { status, json } = await control(box.machine, box.token, path, body);
+  /**
+   * `repeatable` is the caller's promise that this call is the same twice — the
+   * workspace seam is (the same bytes to the same path; a read), a call that
+   * starts work is not. Only those may be replayed, because a transport fault
+   * carries no answer: whether the box applied the call is exactly what we do
+   * not know. The replay is instant — what died was a connection, not a quota.
+   */
+  const request = async (
+    path: string,
+    body?: unknown,
+    repeatable = false,
+  ): Promise<Record<string, unknown>> => {
+    const call = (): Promise<{ status: number; json: unknown }> =>
+      control(box.machine, box.token, path, body);
+    const started = Date.now();
+    const { status, json } = await call()
+      .catch((error: unknown) => {
+        // A DROPPED call is the only one worth sending again, and only while
+        // someone is still waiting for it. Replaying everything replayed the
+        // answers too — a meter refusal, a rejected key, a machine the provider
+        // destroyed — and threw the first error away to say the second one twice.
+        const left = WORKSPACE_RETRY_WINDOW_MS - (Date.now() - started);
+        if (!repeatable || !dropped(error) || left <= 0) throw error;
+        log({
+          code: "harnesses.claude-code-box-retried",
+          level: "warn",
+          message: `[vendo] claude-code: box ${path} dropped its connection; sending it again`,
+          data: { error },
+        });
+        // What is LEFT of the window, not a fresh one: a first attempt that died
+        // at 24s leaves a second one a second, or the pair outlasts the wait the
+        // box has already given up on and holds the turn for the adapter's timeout.
+        return Promise.race([call(), expire(left, path)]);
+      })
+      // `hello` reads a transport fault as "the box did not answer" and moves on;
+      // a call somebody is waiting on has to SAY so, in this file's own voice —
+      // undici's bare `TypeError: fetch failed` names neither the box nor Vendo.
+      // An adapter that already named its own failure keeps its SENTENCE (the
+      // wire gate shows some of them to a user verbatim) and gains the route it
+      // died on, which the bare rethrow dropped.
+      .catch((cause: unknown) => {
+        if (isVendoError(cause)) throw new VendoError(cause.code, cause.message, { path, cause });
+        throw new VendoError("sandbox-unavailable", `box ${path} could not be reached`, { cause });
+      });
     if (status !== 200 && status !== 202) {
       // Carry the box's own sentence: a bare status turns every box problem
       // into a guessing game on the host side.
@@ -332,25 +443,46 @@ export async function boxMachine(options: BoxMachineOptions): Promise<SessionMac
     },
 
     async materialize(files: readonly CheckoutFile[]) {
+      // Minted BEFORE the first chunk and carried on every one of them, because
+      // a host leg that timed out does not cancel the console→box hop behind it:
+      // a dead attempt's chunk 0 can land after its replay and after the chunks
+      // that followed. The box refuses a generation it has moved past and resets
+      // once per generation rather than once per request, so the replay rewrites
+      // its own bytes instead of wiping the ones behind it. Counted up even when
+      // the upload fails, so the next attempt always outranks the stalled one.
+      const epoch = (box.epoch += 1);
       // Chunked by COUNT, which bounds the typical upload body — not a hard
       // byte bound: one large file still travels alone in its chunk, and a
       // BYO files adapter can hold files the proxy may refuse.
       const CHUNK = 24;
       for (let at = 0; at < files.length; at += CHUNK) {
         await request("/session/workspace", {
+          epoch,
           reset: at === 0,
           files: files.slice(at, at + CHUNK).map((file) => ({
             path: file.path,
             readOnly: file.readOnly,
             base64: Buffer.from(file.bytes).toString("base64"),
           })),
-        });
+        }, true);
       }
-      if (files.length === 0) await request("/session/workspace", { reset: true, files: [] });
+      if (files.length === 0) await request("/session/workspace", { epoch, reset: true, files: [] }, true);
     },
 
     async collect(paths) {
-      const answer = await request("/session/collect", paths === undefined ? {} : { paths });
+      const answer = await request("/session/collect", paths === undefined ? {} : { paths }, true);
+      // The disk this reads has to be the disk this host wrote. A supervisor that
+      // restarted under the same name answers every route holding nothing, and an
+      // empty read is what the sync-back turns into deleting the workspace. A box
+      // image that predates the generation reports none — it can say nothing about
+      // it, and nothing wrong about it either.
+      const held = answer["epoch"];
+      if (typeof held === "number" && held !== box.epoch) {
+        throw new VendoError(
+          "sandbox-unavailable",
+          `box holds workspace generation ${held}, not the ${box.epoch} this turn put there`,
+        );
+      }
       const files = Array.isArray(answer["files"]) ? answer["files"] : [];
       return files.flatMap((raw): SyncFile[] => {
         const entryFile = raw as { path?: unknown; base64?: unknown };

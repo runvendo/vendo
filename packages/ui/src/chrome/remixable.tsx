@@ -101,6 +101,14 @@ function serializableProps(children: ReactNode): Record<string, Json> {
 
 const NO_APPS: AppDocument[] = [];
 
+/** What a BUILD writing this app leaves on its document: the code it saved, and
+ *  whether it is still saving (`AppDocument.source` / `.building`). Nothing else
+ *  on the document moves per read, so a mark that changes means a build landed —
+ *  and a settled mark means there is nothing to re-read. */
+function buildMark(app: AppDocument | undefined): string {
+  return `${app?.building ?? ""}|${Object.values(app?.source ?? {}).map(file => file.hash).join()}`;
+}
+
 /** Remix discovery: the user's remix for this component is the app whose `seed`
  *  names it (provenance — the 2026-08-02 provenance/placement split). An
  *  in-place remix needs no placement: its location IS the wrapper it replaced,
@@ -118,14 +126,15 @@ function useRemixFork(slot: string | null) {
     [client, slot],
   );
   const { data, refresh } = useResource(list, NO_APPS, { pollMs: slot === null ? 0 : DISCOVERY_POLL_MS });
-  const appId = data.filter(app => app.seed?.component === slot).at(-1)?.id;
-  return { appId, refresh };
+  const fork = data.filter(app => app.seed?.component === slot).at(-1);
+  return { appId: fork?.id, build: buildMark(fork), refresh };
 }
 
-function RemixedFork({ appId, slot, review, liveProps, original, onReverted }: {
+function RemixedFork({ appId, slot, review, build, liveProps, original, onReverted }: {
   appId: string;
   slot: string;
   review: boolean;
+  build: string;
   liveProps: Record<string, Json>;
   original: ReactNode;
   onReverted(): Promise<void>;
@@ -137,6 +146,20 @@ function RemixedFork({ appId, slot, review, liveProps, original, onReverted }: {
   // below rather than the fork's own boundary: it must outlive a fork that
   // unmounts (a revert) while a decision is still in flight.
   const approval = useApprovalModal();
+
+  // THE BUILD THAT LANDS LATE. A remix's screen is rebuilt long after its row
+  // exists: the seed paints the ported original first and turns it into the
+  // wish seconds later, and every edit the chat runs does the same again.
+  // `useApp` re-reads only while the answer is still pending, so a surface that
+  // settled on the port kept painting it until the person reloaded the page.
+  // The mark rides the discovery poll the wrapper already runs — no request of
+  // its own, and nothing to re-read once the app stops being built.
+  const built = useRef(build);
+  useEffect(() => {
+    if (build === built.current) return;
+    built.current = build;
+    void refresh();
+  }, [build, refresh]);
 
   useEffect(() => {
     if (!isLoading && error !== undefined && developmentMode()) {
@@ -280,7 +303,7 @@ export function Remixable({ review = false, children }: RemixableProps) {
   useEffect(() => () => window.clearTimeout(grace.current), []);
 
   const slot = slotOf(children);
-  const { appId, refresh } = useRemixFork(slot);
+  const { appId, build, refresh } = useRemixFork(slot);
 
   useEffect(() => {
     if (slot === null && developmentMode()) {
@@ -347,6 +370,7 @@ export function Remixable({ review = false, children }: RemixableProps) {
           appId={appId}
           slot={slot}
           review={review}
+          build={build}
           liveProps={serializableProps(children)}
           original={children}
           onReverted={refresh}
