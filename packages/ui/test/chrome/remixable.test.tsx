@@ -301,6 +301,44 @@ describe("Remixable — one door into the chat, one ✦ menu on the remix", () =
     await waitFor(() => expect(opens().length).toBeGreaterThan(before));
   });
 
+  // A BUILD THAT LANDS AFTER THE MOUNT SETTLED. The seed paints the ported
+  // original first and rebuilds it into the wish seconds later, and every later
+  // edit the chat runs does the same — so the screen this surface first opened
+  // is routinely not the screen the person asked for. `useApp` re-reads only
+  // while the answer is pending, so the settled surface kept painting the
+  // pre-edit port and the person had to press F5 (2026-08-20 cold walk). The
+  // wrapper watches what a build writes onto the document — the code it saved,
+  // and whether it is still saving — off the discovery poll it already runs.
+  it("repaints when a build lands after the surface settled, with no reload", async () => {
+    const forked = await seedRemix();
+    // A plain tree, because what the surface PAINTS is the assertion here: a
+    // real remix's jailed island renders as the containment notice in jsdom.
+    const screenOf = (text: string) => ({
+      formatVersion: "vendo-genui/v2",
+      root: "root",
+      nodes: [{ id: "root", component: "Text", props: { text } }],
+    });
+    wire.state.surfaces.set(forked.id, screenOf("The ported original"));
+    mount();
+    await waitFor(() => expect(screen.getByText("The ported original")).toBeTruthy());
+
+    // The chat's edit lands: the build saved a new screen onto the same app.
+    wire.state.surfaces.set(forked.id, screenOf("The remix the wish asked for"));
+    wire.state.apps.find(app => app.id === forked.id)!.source = {
+      "app.tsx": { hash: `sha256:${"b".repeat(64)}`, bytes: 12 },
+    };
+    await waitFor(
+      () => expect(screen.getByText("The remix the wish asked for")).toBeTruthy(),
+      { timeout: 20_000 },
+    );
+
+    // And then it STOPS. A surface that re-reads on a cadence of its own would
+    // cost every host page a request forever; this one re-reads on a build.
+    const settled = opens().length;
+    await new Promise(resolve => setTimeout(resolve, 12_000));
+    expect(opens().length).toBe(settled);
+  }, 45_000);
+
   // The point of the wish list: the host ships a new version, and "Update"
   // replays every wish onto it. The menu item read "Update" while doing nothing
   // but re-read the same screen, and `client.apps.reseed` had no caller at all —

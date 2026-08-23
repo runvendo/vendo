@@ -171,7 +171,7 @@ function scripted(steps: Chunk[][], onReview: () => Promise<void>): {
   const state = { reviews: 0 };
   const textOf = (request: { prompt?: unknown }): string => JSON.stringify(request.prompt ?? "");
   const model = {
-    specificationVersion: "v2",
+    specificationVersion: "v3",
     provider: "vendo-build-terminal",
     modelId: "vendo-build-terminal",
     supportedUrls: {},
@@ -179,8 +179,8 @@ function scripted(steps: Chunk[][], onReview: () => Promise<void>): {
       if (!textOf(request).includes(REVIEWER_MARKER)) {
         return {
           content: [{ type: "text", text: "" }],
-          finishReason: "stop",
-          usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+          finishReason: { unified: "stop", raw: undefined },
+          usage: ZERO_USAGE,
         };
       }
       state.reviews += 1;
@@ -194,8 +194,8 @@ function scripted(steps: Chunk[][], onReview: () => Promise<void>): {
             findings: [{ severity: "block", where: '<Stat> labeled "Due this month"', message: FINDING }],
           }),
         }],
-        finishReason: "tool-calls",
-        usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+        finishReason: { unified: "tool-calls", raw: undefined },
+        usage: ZERO_USAGE,
       };
     },
     async doStream(request: { prompt?: unknown }) {

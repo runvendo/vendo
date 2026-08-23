@@ -1,10 +1,9 @@
 import {
-  VENDO_APPROVAL_REF_KIND,
   VENDO_APP_REF_KIND,
+  vendoApprovalRef,
   VENDO_MAKE_TOOL,
   VENDO_VIEW_STREAM,
   isVendoError,
-  canonicalJson,
   log,
   type AgentRunner,
   type Json,
@@ -13,7 +12,6 @@ import {
   type ToolOutcome,
   type ToolRegistry,
   type VendoAppRef,
-  type VendoApprovalRef,
   type VendoToolEnvelope,
   type VendoViewStreamingToolCall,
 } from "@vendoai/core";
@@ -37,7 +35,6 @@ import {
  */
 
 const DRAFT_2020_12 = "https://json-schema.org/draft/2020-12/schema";
-const SUMMARY_CAP = 500;
 
 export interface VendoToolPackCoreOptions extends VendoToolPackFilter {
   /** The guard-bound registry (guard.bind(actions)) — the pack never wraps an
@@ -121,31 +118,6 @@ function executionError(): ToolOutcome {
   };
 }
 
-/** One human-readable line describing WHAT is waiting — the tool descriptor
- *  plus the guard's inputPreview vocabulary (`<tool> <canonical args>`).
- *
- *  State-free on purpose. This line is minted ONCE, and `<VendoApprovalEmbed>`
- *  titles the card with it for the rest of the request's life — so a lifecycle
- *  claim baked in here outlives the lifecycle: it read "Awaiting user approval:
- *  …" over "Approved — ran" on every settled receipt. The state belongs to
- *  whoever knows it at render time (the embed's own resolution line). */
-function approvalSummary(descriptor: ToolDescriptor, args: unknown): string {
-  let preview: string;
-  try {
-    preview = canonicalJson(args);
-  } catch {
-    preview = "";
-  }
-  const summary = `${descriptor.description || descriptor.name} — ${descriptor.name} ${preview}`
-    .replace(/\s+/g, " ")
-    .trim();
-  return summary.length > SUMMARY_CAP ? `${summary.slice(0, SUMMARY_CAP - 1)}…` : summary;
-}
-
-function approvalRef(approvalId: string, descriptor: ToolDescriptor, args: unknown): VendoApprovalRef {
-  return { kind: VENDO_APPROVAL_REF_KIND, approvalId, summary: approvalSummary(descriptor, args) };
-}
-
 async function guardedExecute(
   registry: ToolRegistry,
   call: VendoViewStreamingToolCall,
@@ -174,7 +146,7 @@ async function guardedExecute(
  *  the way any tool output reads; error/blocked outcomes pass through as plain
  *  data the model can act on. */
 function mapOutcome(outcome: ToolOutcome, descriptor: ToolDescriptor, args: unknown): unknown {
-  if (outcome.status === "pending-approval") return approvalRef(outcome.approvalId, descriptor, args);
+  if (outcome.status === "pending-approval") return vendoApprovalRef(outcome.approvalId, descriptor, args);
   if (outcome.status === "ok") return outcome.output;
   return outcome;
 }
@@ -298,7 +270,7 @@ function delegateTool(registry: ToolRegistry, runner: AgentRunner): VendoPackToo
           } else if (outcome.status === "pending-approval") {
             const descriptor = (await descriptorsByName.catch(() => undefined))?.get(call.tool)
               ?? { name: call.tool, description: "", inputSchema: {}, risk: "write" as const };
-            refs.push(approvalRef(outcome.approvalId, descriptor, call.args));
+            refs.push(vendoApprovalRef(outcome.approvalId, descriptor, call.args));
           }
           return outcome;
         },

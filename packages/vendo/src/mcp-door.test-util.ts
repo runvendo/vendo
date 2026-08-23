@@ -463,7 +463,14 @@ export async function bearer(vendo: Vendo): Promise<string> {
 
 export interface DoorSession {
   listTools(): Promise<Array<{ name: string; description?: string; annotations?: unknown; inputSchema?: unknown; outputSchema?: unknown }>>;
-  callTool(name: string, args: Record<string, unknown>): Promise<{ isError?: boolean; text: string }>;
+  callTool(name: string, args: Record<string, unknown>): Promise<{
+    isError?: boolean;
+    text: string;
+    /** The typed half of the answer, verbatim off the wire — the parked-call
+     *  `vendo/approval-ref@1` an outside loop collects instead of regexing the
+     *  prose, and the ok output's own record. */
+    structuredContent?: Record<string, unknown>;
+  }>;
 }
 
 /** A minimal streamable-HTTP MCP client: initialize, then tools/list or tools/call. */
@@ -519,9 +526,11 @@ export async function openDoor(vendo: Vendo, token: string): Promise<DoorSession
     async callTool(name, args) {
       const result = await rpc("tools/call", { name, arguments: args });
       const content = (result["content"] as Array<{ text?: string }> | undefined) ?? [];
+      const structured = result["structuredContent"] as Record<string, unknown> | undefined;
       return {
         ...(result["isError"] === true ? { isError: true } : {}),
         text: content.map((part) => part.text ?? "").join(""),
+        ...(structured === undefined ? {} : { structuredContent: structured }),
       };
     },
   };

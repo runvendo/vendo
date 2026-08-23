@@ -15,6 +15,14 @@ const { createDb } = await import("../src/db.js");
 
 const truncatedBundle = () => new Error("Invalid FS bundle size: 3030528 !== 6293225");
 const initFailure = () => new Error("PGlite failed to initialize properly");
+const unloadableLibrary = () =>
+  new Error(
+    'error: could not load library "/pglite/lib/postgresql/plpgsql.so": Could not load dynamic lib: /pglite/lib/postgresql/plpgsql.so',
+  );
+const mixedVersionBundle = () =>
+  new Error(
+    'INITDB failed to initialize: initdb: error: input file "/pglite/share/postgresql/postgres.bki" does not belong to PostgreSQL 18.3initdb: hint: Specify the correct path using the option -L.',
+  );
 const fakePglite = () => ({
   query: vi.fn(async () => ({ rows: [{ ok: 1 }] })),
   close: vi.fn(async () => {}),
@@ -79,11 +87,48 @@ describe("PGlite transient boot retry", () => {
     await db.close();
   });
 
+  // The same half-written install wearing two other faces (CI 2026-08-19): a
+  // `.so` in the bundle that dlopen cannot read, and an initdb input file left
+  // over from another version. Both hit `packages/agents` on a random test.
+  it("heals a bundle library that fails to load, with one retry", async () => {
+    pgliteCreate.mockRejectedValueOnce(unloadableLibrary()).mockResolvedValueOnce(fakePglite());
+
+    const db = createDb({ dataDir: "memory://boot-library-heals" });
+    await expect(db.query("select 1")).resolves.toEqual({ rows: [{ ok: 1 }] });
+
+    expect(pgliteCreate).toHaveBeenCalledTimes(2);
+    await db.close();
+  });
+
+  it("heals a version-mixed initdb input file, with one retry", async () => {
+    pgliteCreate.mockRejectedValueOnce(mixedVersionBundle()).mockResolvedValueOnce(fakePglite());
+
+    const db = createDb({ dataDir: "memory://boot-bki-heals" });
+    await expect(db.query("select 1")).resolves.toEqual({ rows: [{ ok: 1 }] });
+
+    expect(pgliteCreate).toHaveBeenCalledTimes(2);
+    await db.close();
+  });
+
   it("propagates an unrelated boot failure unchanged, without retrying", async () => {
     pgliteCreate.mockRejectedValue(new Error("boot blip"));
 
     const db = createDb({ dataDir: "memory://fs-bundle-unrelated" });
     await expect(db.query("select 1")).rejects.toThrow("boot blip");
+
+    expect(pgliteCreate).toHaveBeenCalledTimes(1);
+    await db.close();
+  });
+
+  // The library signature is pinned to the bundle's own path: a host extension
+  // that fails to load is the host's problem, and retrying it just doubles it.
+  it("propagates a failed load of a library outside the bundle, without retrying", async () => {
+    pgliteCreate.mockRejectedValue(
+      new Error('could not load library "/usr/lib/postgresql/vector.so"'),
+    );
+
+    const db = createDb({ dataDir: "memory://boot-host-library" });
+    await expect(db.query("select 1")).rejects.toThrow("/usr/lib/postgresql/vector.so");
 
     expect(pgliteCreate).toHaveBeenCalledTimes(1);
     await db.close();

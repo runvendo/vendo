@@ -1,149 +1,112 @@
 ---
 title: "Your own agent"
-description: "Wire the door into an agent you already run: one stock MCP client, one token from tokenFor, one session per conversation."
+description: "Wire the door into an agent loop you wrote yourself: one call for the tool list, one call to run what the model picked."
 sidebarTitle: "Your own agent"
 ---
 
-Your agent imports nothing from Vendo. The door speaks MCP over streamable
-HTTP, so the client SDK you already have reaches it. The only Vendo-shaped part
-is the bearer, and that is one method call.
+If your loop is the AI SDK or Mastra, use [the tool pack](/existing-agent/quickstart).
+This page is for the other loop: you call `messages.create` yourself and you
+handle the tool turns yourself.
 
-## Get the token
+One method gives you that loop's half of the door.
 
-Ask your composition. Pass a request and it reads who is signed in from the
-session cookie; pass a user id and it acts as that person.
-
-```ts agent.ts focus={4}
+```ts agent.ts
+import Anthropic from "@anthropic-ai/sdk";
 import { vendo } from "@/lib/vendo";
 
-export async function runForRequest(request: Request) {
-  const accessToken = await vendo.tokenFor(request);
-  // …
+const anthropic = new Anthropic();
+
+export async function run(request: Request, task: string) {
+  const door = await vendo.agentTools(request);
+  const messages: Anthropic.MessageParam[] = [{ role: "user", content: task }];
+
+  while (true) {
+    const reply = await anthropic.messages.create({
+      model: "claude-sonnet-4-6",
+      max_tokens: 4096,
+      tools: door.tools,
+      messages,
+    });
+    messages.push({ role: "assistant", content: reply.content });
+
+    const results = await door.results(reply);
+    if (results.length === 0) return { reply, embeds: door.embeds };
+    messages.push({ role: "user", content: results });
+  }
 }
 ```
 
-```ts jobs/nightly.ts focus={3}
-import { vendo } from "@/lib/vendo";
+That is the whole integration. Vendo imports nothing from Anthropic and
+Anthropic imports nothing from Vendo — `door.tools` is already the shape
+`messages.create` takes, and `door.results` already returns the shape you push
+back.
 
-const accessToken = await vendo.tokenFor("user_1904");
+## Who the agent acts as
+
+Pass the incoming request and Vendo reads the signed-in user off its session
+cookie, through the same seam the door authenticates with. Pass a user id
+instead — one of *your* ids, spelled the way your product spells it — and the
+agent acts as that person from a cron or a queue worker.
+
+```ts jobs/nightly.ts
+const door = await vendo.agentTools("user_1904");
 ```
 
-The id is one of *your* user ids, spelled the way your product spells it —
-whatever your own `principal()` resolves for that person. Everything the agent
-does with the token is attributed to them.
+Everything the agent does is attributed to them: the same guard, the same audit
+trail, the same approvals queue as the in-product agent. A subject that is not a
+real id — blank, `null`, `undefined` — is refused here rather than acting as a
+user nobody is.
 
-A subject that is not a real id — blank, `null`, `undefined`, or not a string at
-all — is refused here rather than minting a token that dies on the first tool
-call.
+## One door per conversation
 
-## Connect
+Open it once and keep it for the whole conversation. The session it holds is
+what a parked approval resumes on, so an agent that opens a new door per tool
+call parks forever.
 
-The client is the stock MCP SDK, which is your install, not Vendo's:
+Inside that conversation, nothing else is yours to manage. A ten-minute badge
+that runs out, or a session the door has forgotten, is re-established on the
+next call and the call goes through.
 
-<CodeGroup>
+## Approvals
 
-```bash npm
-npm install @modelcontextprotocol/sdk
+`door.results` never throws for a guarded call. If your policy parks one, the
+result block carries the sentence the model should read —
+
+> This action needs approval. Approval `apr_…` is waiting in Maple's Vendo
+> approvals queue — resolve it there, then retry.
+
+— and `door.embeds` grows a typed `vendo/approval-ref@1` for your own code:
+
+```ts
+{ kind: "vendo/approval-ref@1", approvalId: "apr_…", summary: "Send a payment — host_pay {\"amount\":1400}" }
 ```
 
-```bash pnpm
-pnpm add @modelcontextprotocol/sdk
-```
+Render it with [`<VendoToolResult>`](/existing-agent/embeds) and the person
+approves in place. When they do, the model's retry of the same call on the same
+door executes it.
 
-</CodeGroup>
+## Long calls
 
-One URL and one header.
+Generating a screen with `vendo_make` runs longer than a stock 60-second tool
+call, and `door.results` waits for it — the door beats progress frames and this
+client has no deadline of its own to give up on.
 
-```ts agent.ts focus={9}
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+## Under the hood
 
-export async function connect(accessToken: string): Promise<Client> {
-  const client = new Client({ name: "acme-agent", version: "1.0.0" });
-  await client.connect(new StreamableHTTPClientTransport(
-    new URL(`${process.env.VENDO_BASE_URL}/api/vendo/mcp`),
-    { requestInit: { headers: { authorization: `Bearer ${accessToken}` } } },
-  ));
-  return client;
-}
-```
+The door is a stock MCP server over streamable HTTP, and `agentTools` is a
+client for it: it mints a short-lived user-bound token with
+[`vendo.tokenFor`](/reference/server-api), opens one MCP session at
+`/api/vendo/mcp`, lists tools, and calls them. If you would rather hold that
+client yourself — your own MCP SDK, your own session policy, a language that is
+not TypeScript — `tokenFor` is the only Vendo-shaped part and the rest is the
+protocol:
 
-The path is fixed at `/api/vendo/mcp` under your own origin. It never points at
-a broker, so switching sign-in posture later invalidates nothing here.
-
-## One session per conversation
-
-Connect once and keep the client for the whole conversation. The door pins each
-MCP session to the subject and client id that opened it, and answers
-`404 Session not found` if either moves.
-
-This matters most for approvals. A parked call resumes only when the retry lands
-on the same session, so an agent that reconnects per call parks forever.
-
-## Read the result
-
-The door never fails a tool call as a protocol error — a retry on a protocol
-error would re-execute a write that already happened. Everything arrives
-in-band.
-
-```ts focus={3-6}
-const result = await client.callTool({ name: "host_setCardLimit", arguments: args });
-
-if (result.isError) {
-  // "This action needs approval. Approval apr_… is waiting in Maple's
-  // Vendo approvals queue — resolve it there, then retry."
-  return result.content[0].text;
-}
-return result.structuredContent;
-```
-
-Hand that text back to your model as the tool result. It already says what
-happened and what the next move is, which is enough for the model to retry or to
-tell the person.
-
-Successful calls carry the output twice: as text for the model, and as
-`structuredContent` for your own code.
-
-## Long calls need your opt-in
-
-Your client abandons a `tools/call` after 60 seconds by default, and generating
-a screen with `vendo_make` routinely runs longer. The door beats
-`notifications/progress` every 15 seconds for any call that carries a progress
-token, but the SDK extends the deadline only when you asked it to — so a client
-that receives every frame still gives up at 60 seconds.
-
-Ask for both. `onprogress` is what puts the progress token on the request, and
-`resetTimeoutOnProgress` is what makes the frames count.
-
-```js focus={4}
-const result = await client.callTool(
-  { name: "vendo_make", arguments: args },
-  undefined,
-  { onprogress: () => {}, resetTimeoutOnProgress: true },
-);
-```
-
-## When ten minutes runs out
-
-A token lasts ten minutes and has no refresh path. An expired one answers `401`
-with a `WWW-Authenticate` challenge on the next request. Call `tokenFor` again
-and reconnect — for work that runs longer than one token, mint per unit of work
-rather than holding one open.
-
-## The whole loop
-
-```ts agent.ts focus={1}
-const accessToken = await vendo.tokenFor("user_1904");
-const client = await connect(accessToken);
-
-const { tools } = await client.listTools();
-const step = await model.decide({ task, tools });
-
-const result = await client.callTool({
-  name: step.name,
-  arguments: step.arguments,
-});
-task.push(result.isError ? result.content[0].text : result.structuredContent);
+```ts
+const accessToken = await vendo.tokenFor(request);
+// then any MCP client, at `${VENDO_BASE_URL}/api/vendo/mcp`, with
+// `authorization: Bearer ${accessToken}` — one session for the conversation,
+// re-mint when the ten minutes are up, and read `structuredContent` for the
+// typed envelopes.
 ```
 
 What the agent may call, and what happens to a call on the way to your API, is

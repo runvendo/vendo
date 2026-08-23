@@ -56,7 +56,6 @@ carry your brand font wherever your own stylesheet does not reach.
 | `baseUrl` | The wire mount, path prefix included. Default `/api/vendo`. |
 | `theme` | Your brand tokens, merged over Vendo's defaults. |
 | `components` | Your own React components the agent may render. See [host components](/generated/host-components). |
-| `pinSlot` | Which slot a pin lands in. Set it and the panel's pin button writes the placement for you. |
 | `tools` | Friendly labels and field formatting for tool chips and approval cards. |
 | `routes` · `onNavigate` | Your pages by name, and your router doing the moving when a generated link is pressed. |
 | `intl` | Display currency and locale for every formatter. Defaults to USD and `en-US`. |
@@ -192,6 +191,7 @@ import { VendoSlot } from "@vendoai/vendo/react";
 
 <VendoSlot
   id="spend-breakdown"
+  description="Where this month's spending broke down by category"
   emptyState={{
     suggestions: [
       "Show my spending by category",
@@ -227,39 +227,16 @@ invite has none.
 </Columns>
 
 Every mounted slot reports itself to the server, which is how the panel knows
-which places exist. `label` is what a person reads when they pick one, and it
-defaults to the id read as words.
+which places exist — and a slot that stops rendering ages out on its own, so the
+list is always the places your product really has. `label` is what a person
+reads when they pick one, and it defaults to the id read as words.
+`description` is optional, and it's the sentence an agent reads to pick between
+two slots a label alone can't separate.
 
-A report ages out, though, and a product whose agent is the whole surface never
-renders a `<VendoSlot>` to make one. Declare those instead:
-
-```ts
-import { createVendo } from "@vendoai/vendo/server";
-
-createVendo({
-  slots: [
-    {
-      id: "spend-breakdown",
-      label: "Spend breakdown",
-      description: "Where this month's spending broke down by category",
-    },
-  ],
-});
-```
-
-`description` is optional — it's the sentence an agent reads to pick between
-two slots a label alone can't separate. A declared slot needs no render, never
-decays, and beats a page report of the same id, so no one's page can rewrite
-what you authored.
-
-Declaring one makes it a destination, not a display. The pin lands, but a person
-sees what is pinned there only where some page renders a `<VendoSlot>` with that
-id — so a product that renders none still needs to mount one somewhere before a
-pinned dashboard is visible to anybody.
-
-To make a pin land somewhere, name the destination on the provider with
-`pinSlot`. With one slot the panel shows **Pin to dashboard**; with several,
-the same button becomes a picker of your slots.
+A pin needs no wiring of its own: a slot that exists is already a destination.
+With one slot in your product, a finished view shows a one-click **Pin to
+dashboard** and it lands there. With several, the same button becomes an
+**Add to…** picker of your slots and the person chooses.
 
 ## Triggers
 

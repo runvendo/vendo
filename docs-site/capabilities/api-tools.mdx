@@ -79,7 +79,11 @@ Every entry carries the same five fields. Here is one, whole.
 
 Extraction grades from protocol facts only. `DELETE` is `destructive` and a tRPC mutation is at least `write`; a name decides nothing.
 
-Everything else lands `ungraded`, which the guard asks about on every call. The grading pass reads the handler behind each tool and writes what it finds to `.vendo/judgments.json`, running on your Cloud key.
+Everything else lands `ungraded`, which the guard asks about on every call. The grading pass reads the handler behind each tool and writes what it finds to `.vendo/judgments.json`.
+
+<Note>
+  The grading pass runs on your Vendo Cloud key.
+</Note>
 
 <Warning>
   Never hand-edit `.vendo/tools.json`. The next sync regenerates it wholesale.
@@ -124,6 +128,32 @@ Raising risk lapses old grants. The next call parks a fresh approval that names 
 ### Compound tools
 
 The same file's `compounds` array bundles a short sequence of existing tools into one capability the agent calls by name.
+
+```json .vendo/overrides.json focus={4-18}
+{
+  "format": "vendo/overrides@3",
+  "tools": {},
+  "compounds": [
+    {
+      "name": "host_invoice_send_flow",
+      "description": "Create an invoice and email it",
+      "inputSchema": { "type": "object" },
+      "risk": "write",
+      "binding": {
+        "kind": "compound",
+        "steps": [
+          { "id": "create", "tool": "host_invoices_create", "args": { "amount": "args.amount" } },
+          { "id": "send", "tool": "host_invoices_send", "if": "args.email != null", "args": { "id": "steps.create.id" } }
+        ]
+      }
+    }
+  ]
+}
+```
+
+Keep `tools` even when it is empty — it is a required key. Each `args` value is a JSONata expression evaluated against `{ args, steps, item }`, not a literal, which is how `steps.create.id` hands one step's output to the next.
+
+Two rules the loader enforces after the file parses: `risk` must equal the highest risk among the steps, and a step may only name an enabled primitive tool — never another compound. An entry that breaks either is quarantined with a console warning rather than failing the boot, so read the log once after adding one.
 
 Each step still crosses the guard on its own descriptor, so approvals, grants, and audit apply per step. A compound entry inside `tools.json` is rejected.
 

@@ -1,5 +1,455 @@
 # @vendoai/vendo
 
+## 0.37.0
+
+### Minor Changes
+
+- 853c591: `vendo init` writes the caller resolver on the agent-loop arm. Init owns
+  `lib/vendo.ts`, and both existing-agent walkthroughs opened by telling the
+  reader to hand-add one export — `resolvePrincipal` — to the file init had just
+  written, because the chat route needs the caller and only the composition knows
+  how this host resolves one. `--use-case agent-loop` now emits it, over the same
+  identity the wire composed: a hoisted `const auth = <preset>()` shared with
+  `createVendo({ auth })`, or the hoisted demo `principal` when no provider was
+  detected. One binding, so the wire and your own loop cannot land on different
+  subjects — the mismatch that has no error and leaves the embeds polling a screen
+  nobody is shown.
+
+  The export appears on that arm only: the composition is one file across the
+  embedded, MCP and agent-loop arms, and a name none of the other readers import
+  is noise in their scaffold. The two quickstarts now describe the file rather
+  than add to it.
+
+- 853c591: The slot registry is page-reported and nothing else. `createVendo({ slots })` is
+  gone, and with it the merge that put a host's declared entries in front of the
+  reports: a declared slot never decayed and beat a page report of the same id, so
+  a declaration the product had outgrown was a silent black hole — the pin landed
+  where no page displays it, and nothing ages that out. A slot is now known
+  because a `<VendoSlot>` rendered, per user, refreshed on every render and aged
+  out on its own after `SLOT_DECAY_MS`, so the list is always the places that
+  really exist.
+
+  Nothing declared config could say is lost. The one capability it carried beyond
+  an id is `description` — the sentence an agent reads to pick between two slots a
+  label alone cannot separate — and that already lives on the component:
+  `<VendoSlot description="…">` reports it over the wire, through the registry, to
+  the model.
+
+### Patch Changes
+
+- Updated dependencies [853c591]
+- Updated dependencies [853c591]
+  - @vendoai/ui@0.37.0
+  - @vendoai/mcp@0.37.0
+  - @vendoai/apps@0.37.0
+  - @vendoai/agents@0.37.0
+  - @vendoai/actions@0.37.0
+  - @vendoai/harnesses@0.37.0
+  - @vendoai/store@0.37.0
+  - @vendoai/core@0.37.0
+  - @vendoai/guard@0.37.0
+  - @vendoai/automations@0.37.0
+  - @vendoai/knowledge@0.37.0
+
+## 0.36.5
+
+### Patch Changes
+
+- 718c39a: `vendo.agentTools` — one method for an agent loop you wrote yourself.
+
+  A host on the AI SDK or Mastra gets `vendoTools(vendo)` and is done. A host
+  driving `messages.create` by hand had to write about seventy lines first: mint a
+  badge, stand up an MCP client and a transport, map the tool format, keep ONE
+  session for the whole conversation (the door pins a parked approval to the
+  session that parked it, so a per-request reconnect parks forever), re-mint when
+  the ten minutes run out, and collect the typed envelopes the page renders. None
+  of that is a decision a host wants to make.
+
+  ```ts
+  const door = await vendo.agentTools(request); // or a user id, same as tokenFor
+
+  while (true) {
+    const reply = await anthropic.messages.create({ tools: door.tools, messages, ... });
+    messages.push({ role: "assistant", content: reply.content });
+    const results = await door.results(reply);
+    if (results.length === 0) break;          // the model called nothing: done
+    messages.push({ role: "user", content: results });
+  }
+  // door.embeds — the approval refs and app refs this conversation produced
+  ```
+
+  `tools` is already the shape `messages.create` takes and `results` is already
+  the shape you push back, with no import from `@anthropic-ai/sdk` on either side
+  and nothing for you to annotate. `is_error` rides along; a parked call comes
+  back as the sentence the model should read, and its typed
+  `vendo/approval-ref@1` lands in `embeds` — read from `structuredContent`, never
+  from the prose.
+
+  In-process, like `tokenFor`: every call rides `vendo.handler`, so a deployment
+  never has to be able to reach itself over the network, and a path-prefixed
+  deployment works unchanged.
+
+  - @vendoai/core@0.36.5
+  - @vendoai/store@0.36.5
+  - @vendoai/actions@0.36.5
+  - @vendoai/guard@0.36.5
+  - @vendoai/apps@0.36.5
+  - @vendoai/automations@0.36.5
+  - @vendoai/harnesses@0.36.5
+  - @vendoai/ui@0.36.5
+  - @vendoai/mcp@0.36.5
+  - @vendoai/knowledge@0.36.5
+  - @vendoai/agents@0.36.5
+
+## 0.36.4
+
+### Patch Changes
+
+- 833fec6: A guarded call the MCP door parks now says so in a type, not only in English.
+
+  The door already answered a `pending-approval` with the sentence the model needs
+  — "This action needs approval. Approval apr\_… is waiting in Maple's Vendo
+  approvals queue — resolve it there, then retry." That sentence is unchanged, and
+  it is still the whole content of the result. But it was also the ONLY answer, so
+  an agent loop that wanted to render an approval card had to regex an id out of
+  prose written for a reader, not a parser.
+
+  The parked result now carries `vendo/approval-ref@1` on `structuredContent`
+  beside the text: the same `{ kind, approvalId, summary }` envelope the in-process
+  tool pack has always returned to a BYO loop. Both venues mint it through one
+  producer in `@vendoai/core` (`vendoApprovalRef`), so an approval parked at the
+  door and one parked in an AI SDK loop describe themselves the same way and
+  `<VendoApprovalEmbed>` titles either card identically.
+
+  Only the parked case grew a field. An ok result, a block, a refused connection
+  and an error answer exactly as before, and the typed ref rides an `isError`
+  result safely: the official MCP client compiles an `outputSchema` validator for
+  ok results only.
+
+- Updated dependencies [833fec6]
+  - @vendoai/core@0.36.4
+  - @vendoai/mcp@0.36.4
+  - @vendoai/actions@0.36.4
+  - @vendoai/agents@0.36.4
+  - @vendoai/apps@0.36.4
+  - @vendoai/automations@0.36.4
+  - @vendoai/guard@0.36.4
+  - @vendoai/harnesses@0.36.4
+  - @vendoai/knowledge@0.36.4
+  - @vendoai/store@0.36.4
+  - @vendoai/ui@0.36.4
+
+## 0.36.3
+
+### Patch Changes
+
+- Updated dependencies [7d7e7c4]
+  - @vendoai/ui@0.36.3
+  - @vendoai/core@0.36.3
+  - @vendoai/store@0.36.3
+  - @vendoai/actions@0.36.3
+  - @vendoai/guard@0.36.3
+  - @vendoai/apps@0.36.3
+  - @vendoai/automations@0.36.3
+  - @vendoai/harnesses@0.36.3
+  - @vendoai/mcp@0.36.3
+  - @vendoai/knowledge@0.36.3
+  - @vendoai/agents@0.36.3
+
+## 0.36.2
+
+### Patch Changes
+
+- 66cf10a: A workspace upload the box never received no longer reads as the user deleting
+  everything.
+
+  The `claudeCode()` turn puts the workspace on the box before the model runs, and
+  that upload was the one unguarded network call in the turn. When it died before
+  the box applied it — a refused connect, a dead socket, a first chunk that never
+  landed — the turn's `finally` still read the box's disk back, the box answered
+  honestly that it held nothing, and the sync-back read "nothing here" as "the user
+  deleted everything" and erased the whole workspace from the store. The failed
+  READ was already guarded ("an EMPTY read is not the same fact as the user deleted
+  everything"); this was the same fact from the other end, and it had no guard.
+
+  Now the turn tracks whether the box actually holds the checkout, and syncs back
+  only if it does. A machine that never received the workspace makes no statement
+  about it: the store keeps what it had and the next turn recovers on a fresh box,
+  exactly as a machine that died mid-turn already did.
+
+  Two things that made it hard to survive and hard to diagnose are fixed with it.
+  The workspace calls — the upload and the turn-end read, both of which are the
+  same twice — are now sent again once if the transport drops, so a blip no longer
+  costs the turn. And a Cloud sandbox that cannot be reached now says so: the
+  adapter turns the transport fault into a named `sandbox-unavailable` failure
+  carrying the cause, and the runtime's operator log prints the ROOT of that cause
+  chain alongside the message. The observed failure used to reach the log as
+  undici's bare `fetch failed` — three words naming neither Vendo nor the call.
+
+  The retry is what made the rest necessary. Aborting a request cancels this host's
+  leg of it and nothing else, so a chunk this host gave up on can still land after
+  its own replay — and the first chunk of an upload carries the reset that empties
+  the box's root. Every materialize now mints a GENERATION and carries it on each
+  chunk: the box refuses a generation it has already moved past, empties the root
+  once per generation instead of once per request, and reports the generation it
+  holds. That report is also how a box whose supervisor RESTARTED — same machine,
+  same token, empty disk — stops passing as the box that holds the conversation:
+  the host reads its own generation back before it treats an empty disk as news.
+
+  **The box image must be rebaked for the generation to take effect** — half of it
+  lives in the machine image, beside the supervisor. A host on this version against
+  an older image is safe but unprotected: the box ignores the generation it is sent
+  and reports none, and an absent report is tolerated on purpose, so the seam
+  behaves exactly as it did before rather than refusing every sync-back until the
+  rebake lands. Such a turn now logs `harnesses.claude-code-box-no-generation`, so
+  the unprotected window is visible while it is open.
+
+  And the retry itself now knows what a retry is for. It replayed everything,
+  including answers — a meter refusal, a rejected key, a machine the provider had
+  destroyed — and threw the first error away to say the second one twice. Only a
+  call that DROPPED may be sent again, only while the box is still waiting for it,
+  and the attempt that failed is logged rather than discarded.
+
+- Updated dependencies [66cf10a]
+- Updated dependencies [91595d2]
+  - @vendoai/harnesses@0.36.2
+  - @vendoai/apps@0.36.2
+  - @vendoai/agents@0.36.2
+  - @vendoai/actions@0.36.2
+  - @vendoai/mcp@0.36.2
+  - @vendoai/store@0.36.2
+  - @vendoai/ui@0.36.2
+  - @vendoai/core@0.36.2
+  - @vendoai/guard@0.36.2
+  - @vendoai/automations@0.36.2
+  - @vendoai/knowledge@0.36.2
+
+## 0.36.1
+
+### Patch Changes
+
+- Updated dependencies [a9fca38]
+  - @vendoai/apps@0.36.1
+  - @vendoai/actions@0.36.1
+  - @vendoai/agents@0.36.1
+  - @vendoai/harnesses@0.36.1
+  - @vendoai/mcp@0.36.1
+  - @vendoai/store@0.36.1
+  - @vendoai/ui@0.36.1
+  - @vendoai/core@0.36.1
+  - @vendoai/guard@0.36.1
+  - @vendoai/automations@0.36.1
+  - @vendoai/knowledge@0.36.1
+
+## 0.36.0
+
+### Minor Changes
+
+- a34009b: One canonical copy-paste install prompt. `buildAgentPrompt({ src, signedIn })`
+  is the original every surface builds from; the docs card and the README carry
+  copies of its output and a docs-rot gate holds them to it. The prompt's
+  done-gate is now the product working — the app runs and the agent answers from
+  the host's own API — with `vendo doctor` demoted to the optional checkup it
+  actually is.
+- b1493c6: `vendo init` states facts and links out. Every instruction it used to print —
+  the `<VendoProvider>` mount paste, the AI SDK and Mastra loop snippets, the MCP
+  client steps, the doctor gate, the agent tail — was a second copy of something
+  the docs already carry, and a terminal cannot keep a copy correct. The run now
+  ends on four computed lines: what it wired, what it detected, the guard posture
+  it left, and one URL for the use case you picked. `--agent` receives the same
+  facts as structured JSON (`wrote`, `detected`, `guardPosture`, `continueUrl`)
+  instead of `pasteEdits`.
+
+  A backend agent is a real answer to the first question now (`--use-case
+backend`), so `vendo doctor` stops demanding a mounted UI from a server-side
+  install and the run points at the backend quickstart.
+
+  The models question decides the wiring. Choosing Vendo Cloud no longer writes
+  `anthropic("claude-sonnet-4-6")` into your composition because an
+  `ANTHROPIC_API_KEY` happened to be in your shell — the runtime resolves the
+  model from `VENDO_API_KEY`, so nothing is written. Choosing your own key writes
+  the provider line as before. Init records the key its wiring actually reads, and
+  `vendo doctor`'s E-MODEL-001 now names that one variable instead of listing
+  three provider keys the resolver never consults.
+
+  Nothing prompts after the up-front questions. "Where does this app run in dev?"
+  moved ahead of the AI pass, the uncertain-theme-slot review is gone (uncertain
+  slots keep what was extracted and the run says which), and the zod-floor bump
+  prints its command rather than asking. Every stage spinner carries elapsed time,
+  and the AI pass says up front that it can take several minutes.
+
+  `vendo init --check` / `--no-check` are removed: doctor is a standalone command,
+  and init succeeds or fails on its own work.
+
+- 0108715: A remix follows the page it was forked from. The `<Remixable>` wrapper now
+  couriers its wrapped instance's live serializable props to the server — on mount
+  and again on every change — and the ported screen is painted on them.
+
+  Until now it was painted on the baseline's `sampleProps`, captured the day
+  `vendo sync` ran. Maple's remixed net-worth card read `$54,907.15` — the
+  hardcoded declared example in the host's own registry — while the host's card two
+  inches away read `$142,929.30`, with a visibly different chart series. A port
+  renders FROM its props and a query resolves before the render, so nothing in the
+  screen's source could ever have carried them; the capture was the only value the
+  floor had.
+
+  `AppSeed.props` records them, `POST /apps/:id/props` (`apps.seed.props`,
+  `client.apps.courierProps`) is the door, and the checks floor's props resolver
+  prefers them over the capture — which remains the fallback for a remix whose
+  wrapper has not couriered yet. Writing props is provenance about the call site,
+  not a content edit: it mints no version and replays no wish, so it is safe on
+  every render the props really change on.
+
+  The boundary is the captured baseline's own declared prop names, applied at the
+  door, so a prop the host component never declared is dropped before it is stored.
+  JSON-serializable values only, as before.
+
+  Also removes the client-side splice this replaces. It searched the payload for a
+  node named `seedComponentName(slot)` with `source: "generated"`; a remix is a
+  ported SCREEN whose tree is whatever rendering produced — nodes marked
+  `source: "ported"` — and that name only ever names a seat in
+  `document.components`. The find never matched and the merge never ran, which is
+  why the numbers were stale in the first place.
+
+### Patch Changes
+
+- 6c7b76a: Docs: the pages say what the code does, and the fix is where it bites.
+
+  Four published statements were false. `environment-variables` said `NODE_ENV`
+  fails closed on both the telemetry collector and the local store's
+  plaintext-secret allowance — it fails closed on telemetry and **open** on
+  secrets, so a deploy that never sets `NODE_ENV` stored secrets in plaintext
+  behind one `console.warn` while the docs promised the opposite. That row is now
+  two statements, with the fail-open and both ways to shut it stated plainly.
+  `how-vendo-works` and `how-it-works` said prompts go to Vendo's model gateway
+  unconditionally; on a composition that selects its own model object the call
+  goes straight to that provider and Vendo's servers never see it. The
+  `existing-agent` quickstart implied `vendo doctor` catches a mismatched
+  `@ai-sdk/anthropic` major — E-DEP-001 inspects the `ai` major and nothing else,
+  so that pin is the reader's to keep by hand, and the page now says so.
+
+  `server-api`'s `Vendo` interface was missing four real members: `tokenFor`,
+  `putUserFile`, `agent`, and `tenantConnectors` — `handler-options` already
+  pointed at `putUserFile` with nowhere to land.
+
+  `how-vendo-works` promised a walkthrough under "One request, end to end" and
+  delivered one sentence and the next heading; it now walks a real question
+  through all five boxes. The MCP quickstart's first real call carries the 60s
+  opt-in it needs, matching `your-own-agent`. The index quickstart's third step
+  led with a byte-identical repeat of the second step's terminal transcript.
+
+  Three troubleshooting pages were unreachable from the error-code index —
+  E-MODEL-001, E-TOOLS-005, and E-AUTH-009, which is live and had no row at all.
+  New page for a stock MCP client dying at 60 seconds on a long `vendo_make`,
+  which is not a doctor code and so had nowhere to be listed.
+
+  The CLI and hooks references had six more statements that did not match the
+  code. `cli` glossed `--base-url` as "where this deploys" when it is a dev URL
+  that must never hold a deployed one; gave the pre-0.4.2 `~/.vendo/pending-claim.json`
+  path, which is now read once for migration and deleted; omitted `vendo sync`'s
+  exit `1`; and claimed every command rejects an unknown option, which only
+  `init`, `login`, `doctor`, `sync`, and `knowledge` do — `eject`, `mcp`, `cloud`,
+  and `config` ignore them, and `vendo cloud device-login` diverges from `vendo
+login` for that reason. `hooks` said every documented hook is re-exported from
+  `@vendoai/vendo/react`; `useApprovalModal` ships only on `@vendoai/ui/chrome`,
+  and `useVendoClientOrNone` is in no published entrypoint at all, so its row is
+  gone rather than sending readers at an import that cannot resolve. Both `cli`
+  and `vendo-init` now carry the broker's https refusal.
+
+  Polish where the reader hits the instruction second: `api-tools` gains the
+  `compounds` snippet it only described, with the two loader rules that quarantine
+  an entry; `automations` leads with `useAutomations()` before the hand-built
+  `RunContext`; `backend/quickstart` shows the two-line model swap instead of
+  describing it; `connectors`, `knowledge`, and `erasing-a-user` lead with the
+  instruction.
+
+- 0b6bb92: A remix's wish list records what the person GOT, and a follow-up edit changes the
+  port instead of replacing it.
+
+  One follow-up ask on Maple was refused three times and left four entries on
+  `seed.wishes` — a list every Update replays in order, so one ask became four
+  edits the person never made. The front door recorded the ask whether or not the
+  change landed, which is right for `memory.asks` (the next editor wants to read
+  "asked for X, then asked for X again, narrower") and wrong for the replay list
+  beside it. `AppsRuntime.remember` now takes `landed`, and only a change that
+  reached the screen becomes a wish. The ask itself is still recorded either way,
+  the list is still ordered and never trimmed, and an inapplicable wish still lands
+  on `seed.unapplied` and is still said out loud.
+
+  The fourth attempt then abandoned the ported source and rewrote the app out of
+  the host's catalog, losing the first wish's edit. The port reaches the model
+  through `startingSource`, which was filled from the CHECKOUT — and the checkout
+  only ever fills an EMPTY workspace. So once the first edit's save had landed a
+  file, every later edit of that remix arrived with no code at all in front of it
+  (the loop has no file hand and cannot read the workspace itself), and an ask with
+  nothing to change is answered out of the catalog. The stored screen is now read
+  for every edit of a remix, not only the first; it is still never written over a
+  file a save left behind. A port that genuinely cannot take an edit now fails
+  through the one channel there is, rather than succeeding as a different app.
+
+- 7ba5ac7: `vendo sync` now finds the wire on a host that is mounted under a path prefix.
+
+  The blast-radius probe — the one that answers "what does changing this tool
+  break?" — addressed the dev server at `<base>/api/vendo`, and with no
+  `VENDO_BASE_URL` in the environment that base was a bare
+  `http://localhost:3000`. On a host served under a prefix (Maple runs at
+  `/maple`, so its wire answers at `/maple/api/vendo`) the request landed on a
+  path the router never matched, and the probe reported the 404 it caused as
+  `impact unknown — dev server not reachable`. Every mounted host got that same
+  wrong diagnosis on every sync, with a running server the whole time.
+
+  With no base URL configured the probe now reads the prefix off the OpenAPI
+  spec's relative server mount — the only other place it is written down, already
+  how the prefix reaches host tool calls, and the value `vendo doctor` holds
+  `VENDO_BASE_URL` to agreement with (E-CFG-003). A host with no prefix, or one
+  whose `VENDO_BASE_URL` is set, is addressed exactly as before.
+
+- 2c662ac: On the sandbox rung, warming the chat now warms the machine the conversation
+  actually runs on. `POST /threads/warm` — the call the panel fires when the chat
+  surface opens — replays a real turn under a throwaway thread id, and the box
+  pool keyed on that id: so every warm call booted a real cloud box the user's
+  first message could never find, paid a full cold boot anyway, and left the warm
+  box idling its whole billed TTL before being destroyed unused. Warming cost a
+  box and bought nothing but the provider's prompt cache.
+
+  A warm turn's box is now parked as a warm SPARE, and the first real
+  conversation claims it: re-keyed to its own thread, liveness-probed on the way
+  in, and handed over exactly as a fresh box is — the workspace is materialized
+  and the session opened for that conversation, so nothing of the probe's turn
+  carries into the user's first message. A spare that died in the meantime falls
+  back to a cold boot, a second warm reuses the live spare instead of booting a
+  second box, and a spare nobody ever claims is reaped on the same idle budget as
+  any other box.
+
+  Each box now says how it was obtained, so the saving is greppable rather than
+  inferred: `harnesses.claude-code-box-ready` reports `thread-reuse`,
+  `spare-claim` or `cold-boot`, with the time it took.
+
+  `WARM_THREAD_PREFIX` is new in `@vendoai/core` — the thread-id prefix a warm
+  turn carries. It is what the pool reads to recognise one, since `Harness` is
+  deliberately unchanged: a warm turn is an ordinary turn, and the id is the
+  whole of the seam.
+
+- Updated dependencies [f325443]
+- Updated dependencies [f8dcc28]
+- Updated dependencies [c5af077]
+- Updated dependencies [b2b3cac]
+- Updated dependencies [0108715]
+- Updated dependencies [1d72979]
+- Updated dependencies [0b6bb92]
+- Updated dependencies [2c662ac]
+  - @vendoai/apps@0.36.0
+  - @vendoai/ui@0.36.0
+  - @vendoai/store@0.36.0
+  - @vendoai/agents@0.36.0
+  - @vendoai/core@0.36.0
+  - @vendoai/harnesses@0.36.0
+  - @vendoai/actions@0.36.0
+  - @vendoai/mcp@0.36.0
+  - @vendoai/automations@0.36.0
+  - @vendoai/guard@0.36.0
+  - @vendoai/knowledge@0.36.0
+
 ## 0.35.0
 
 ### Minor Changes

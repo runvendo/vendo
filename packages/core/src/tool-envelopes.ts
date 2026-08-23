@@ -1,6 +1,8 @@
 import { z } from "zod";
 import type { AutomationId } from "./automation.js";
 import { appIdSchema, approvalIdSchema, isoDateTimeSchema, type AppId, type ApprovalId, type IsoDateTime } from "./ids.js";
+import { canonicalJson } from "./jcs.js";
+import type { ToolDescriptor } from "./tools.js";
 
 /**
  * Existing-agents contract — the versioned tool-output envelopes a BYO agent
@@ -85,6 +87,39 @@ export const vendoToolEnvelopeSchema = z.discriminatedUnion("kind", [
   vendoApprovalRefSchema,
   vendoAutomationRefSchema,
 ]) satisfies z.ZodType<VendoToolEnvelope>;
+
+const SUMMARY_CAP = 500;
+
+/** The ONE producer of `vendo/approval-ref@1`, so the two venues that park a
+ *  guarded call — the tool pack in a BYO agent loop, and the MCP door — cannot
+ *  describe the same parked call two different ways. Lived in `pack.ts` until
+ *  the door needed to mint one too.
+ *
+ *  The summary is state-free on purpose. It is minted ONCE, and
+ *  `<VendoApprovalEmbed>` titles the card with it for the rest of the request's
+ *  life — so a lifecycle claim baked in here outlives the lifecycle: it read
+ *  "Awaiting user approval: …" over "Approved — ran" on every settled receipt.
+ *  The state belongs to whoever knows it at render time. */
+export function vendoApprovalRef(
+  approvalId: ApprovalId,
+  descriptor: ToolDescriptor,
+  args: unknown,
+): VendoApprovalRef {
+  let preview: string;
+  try {
+    preview = canonicalJson(args);
+  } catch {
+    preview = "";
+  }
+  const line = `${descriptor.description || descriptor.name} — ${descriptor.name} ${preview}`
+    .replace(/\s+/g, " ")
+    .trim();
+  return {
+    kind: VENDO_APPROVAL_REF_KIND,
+    approvalId,
+    summary: line.length > SUMMARY_CAP ? `${line.slice(0, SUMMARY_CAP - 1)}…` : line,
+  };
+}
 
 /** The `<VendoToolResult>` dispatch: give it any `vendo_*` tool output and get
  *  the typed envelope to render, or null for plain data (and for a malformed

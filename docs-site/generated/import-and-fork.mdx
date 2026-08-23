@@ -1,6 +1,6 @@
 ---
 title: "Import & fork"
-description: "How an app copy is minted and what it deliberately leaves behind, how a user forks one of your own components with Remixable, and what drift and reseed do to that fork."
+description: "How an app copy is minted and what it deliberately leaves behind, how a user forks one of your own components with Remixable, how sync ports that component so a remix edits your real code, and what drift and reseed do to that fork."
 sidebarTitle: "Import & fork"
 ---
 
@@ -39,7 +39,7 @@ Two copies are refused outright, and both refusals are loud.
 
 ## Forking one of your components
 
-Wrap a component and a user can make it theirs. What they get is a new screen, generated from what they asked for — nothing copies your source into it. Your captured baseline is provenance: what the remix started from, and what a later update replays against.
+Wrap a component and a user can make it theirs. What they get is your own component: `vendo sync` [ports it](#the-port) into the dialect a generated screen speaks, and the wish edits that code. A remix is an edit of the component, not a fresh screen wearing its name.
 
 ```tsx focus={3-5}
 import { Remixable } from "@vendoai/ui/chrome";
@@ -63,6 +63,40 @@ At rest a muted ✦ mark sits in the wrapped element's corner. It blooms on hove
 The remix renders in place, because the wrapper is the mount boundary. The page morphs for that user alone.
 
 The ✦ is one door, so there is no second form to ask through: a remix that fails to build says so in the same thread that asked for it. Follow-up wishes in that thread edit the remix rather than minting another — the seed dedupes per user and per component, so asking twice can never leave two behind.
+
+### Hook the wiring up in both places
+
+The wrapper alone does nothing. `vendo sync` generates `.vendo/generated/remix-wiring.ts` — one const, keyed by slot, binding each ported component back to the functions and components you already wrote — and your app hands **the same const to both `createVendo` and `<VendoProvider>`**.
+
+```ts vendo.ts focus={2,6}
+import { createVendo } from "@vendoai/vendo/server";
+import { remixWiring } from "../../.vendo/generated/remix-wiring";
+
+export const vendo = createVendo({
+  catalog: mapleRegistry,
+  remixWiring,
+});
+```
+
+```tsx VendoRoot.tsx focus={3,5}
+"use client";
+import { VendoProvider } from "@vendoai/vendo/react";
+import { remixWiring } from "../../../.vendo/generated/remix-wiring";
+
+<VendoProvider components={mapleRegistry} remixWiring={remixWiring}>
+  {children}
+</VendoProvider>
+```
+
+The server leg registers each ported component's tools into the one registry. The provider leg renders its holes, and its keys are what decide where a ✦ may appear.
+
+<Warning>
+  **Wire only `createVendo` and you get a clean sync and no ✦ anywhere.** The provider's wiring is the only thing that puts the mark on the page, and there is no warning — unset is read as the honest zero, the same state as a host with no remixable components at all.
+
+  The mirror failure is loud instead: wire only the provider and the checks floor refuses the port by name the first time a remix tries to build. Sync's own report ends with the reminder to do both.
+</Warning>
+
+The file is regenerated whole on every sync and never hand-edited — you read it in the diff. Your own source imports it, so it has to exist before anything compiles: the demo host runs `vendo sync` in `predev` and `prebuild`.
 
 ### Instant and reviewed
 
@@ -88,12 +122,91 @@ The gate is the [in-client approval machinery](/generated/in-client-venue), and 
 
 ### What crosses the fork boundary
 
-The JSON-serializable props your call site passes flow into the fork on every render. Nothing is captured, so nothing goes stale.
+The JSON-serializable props your call site passes follow the page. On mount, and again whenever they change, the wrapper couriers them to the server, the server repaints the remix on them, and the surface reopens. A remix moves with the page it was forked from rather than freezing at the values it was made on.
+
+Only props the captured baseline declares are admitted, and only serializable values cross — functions, elements, and class instances (Dates included) are dropped. The values `vendo sync` captured are the fallback, and only that: what a remix paints in the moment between its row landing and its first courier.
 
 Host functions do not cross. Callbacks, your router, and context-style hooks are dropped, and a fork's behavior is rewired through your API instead, exactly like any generated app.
 
 <Note>
   Sync notices this for you. A component that reaches into host plumbing gets a warning suggesting `review`, because plumbing does not cross the boundary and an approved reviewed remix runs natively where it would have kept working.
+</Note>
+
+## The port
+
+`vendo sync` splits every `<Remixable>` component in two.
+
+<Columns cols={2}>
+  <Card title="The ported half" icon="pen-line">
+    Real TSX in the screen dialect, carrying your JSX and your class names. A wish edits this, and it runs sandboxed.
+  </Card>
+
+  <Card title="The home half" icon="house">
+    The parts a sandbox cannot run, cut out and kept in your app. It runs natively, in your own bundle.
+  </Card>
+</Columns>
+
+The **ported half** is your component rewritten into the dialect a generated screen speaks: real TSX, your JSX, your class names, your inline styles, your call sites still reading the way you wrote them. It lands on the baseline as `ported.source`, and it is the file the agent opens and edits when a wish mints the remix.
+
+That is the whole difference between a remix and a lookalike. The agent starts from your code with the ask applied to it, so everything the ask did not name survives.
+
+The **home half** never leaves your app. It is generated into `.vendo/generated/remix-holes/<Slot>.tsx` and rendered by your own React.
+
+### Holes
+
+A real component is rarely portable whole. Its chart is hand-rolled `<svg>`, its icons are inlined `<path>` data, its count-up hook reads `requestAnimationFrame`. None of that may enter the dialect — and none of it has to.
+
+Sync cuts each unportable subtree out of the port and leaves a named element where it stood. The cut code is copied verbatim into the home half and rendered natively, in your page, by your bundle. That is why a remix keeps the real chart and the real icons rather than a sandbox's impression of them.
+
+```tsx
+<AreaChart series={sliced} height={chartHeight} />
+```
+
+There is no placeholder syntax to learn: a hole is an ordinary named element, resolved through the wiring to your own component. Free variables the cut read from the surrounding scope become its props, and they must be JSON-serializable or the port is refused by name.
+
+What counts as unportable is mechanical, never a guess.
+
+| Cut as a hole | Examples |
+| --- | --- |
+| A lowercase JSX tag outside the dialect's display set | `<svg>` `<img>` `<a>` `<input>` `<canvas>` |
+| A read of a name only the browser declares | `requestAnimationFrame` `matchMedia` `performance` |
+| A component used as a tag, yours or npm's | `<MiniChart>` `<LineChart>` from recharts |
+
+<Note>
+  A hole is a bet sync has to prove. A cut it cannot prove — a hook whose value paints more than one element, a prop whose type cannot ride a tree node — refuses the whole slot instead of shipping a guess.
+</Note>
+
+### Buttons
+
+A plain `<button>` becomes the Kit `Button`. It is a tag rename, so your `className` and your `onClick` survive verbatim and your CSS goes on styling it. Only `type` is dropped, because the Kit `Button` already defaults to `type="button"`.
+
+```tsx
+<Button className="chip" style={{ height: 28, backgroundColor: "#FFF" }} onClick={() => setRange(option)}>
+```
+
+Inline `style` keys are narrowed on the same law: `background` becomes `backgroundColor`, and a key the paint allowlist does not carry is removed rather than guessed at. No value is ever inspected.
+
+Where a handler calls one of your imported functions, sync generates one tool per action — reachable only from a handler — and the wiring binds it to that function. It joins the one registry under the name it declares, so your guard grades it and the audit trail records it exactly as it does any host tool. A press inside a remix is an audited intent, not a private call.
+
+### When a component cannot be ported
+
+Fail-closed, at every layer. A slot sync could not split gets no `ported`, so the generated wiring never names it, so `<Remixable>` never offers a ✦ on it — not a disabled one, not a greyed one, none. Your own markup renders alone, and the server refuses to mint a remix for that component even if something asks directly.
+
+The reason is loud. Sync prints one warning per slot and one line per issue, naming the construct that defeated the split.
+
+```text
+warning: remixable component TwiceCard was not split, so it stays un-remixable (the rest of this sync is unaffected):
+    it calls useNow(…), a hook the dialect cannot run, whose value does not flow into
+    exactly one JSX element — no single cut can carry the hook home without changing
+    what something else paints
+```
+
+One issue per line, because a real component fails a dozen ways at once and a dozen repair instructions joined by semicolons is a wall nobody reads. Failures that only surface when the port is compiled or type-checked additionally cite a line in the generated port.
+
+None of it stops the run. Every other slot still captures, still ports, and still ships: an unportable component is a warning, and warnings do not move the exit code. A `<Remixable>` wrapper that cannot be *captured* at all is the harder failure, and it is [an error that exits `2`](#what-sync-captures).
+
+<Note>
+  The ✦ gate is on the **offer** only. A component that stops porting keeps mounting and managing a remix a user already has, because revert is the way back.
 </Note>
 
 ## What sync captures
@@ -105,9 +218,12 @@ The slot name is the component's own exported identifier, so remixes survive cal
 | Captured | Notes |
 | --- | --- |
 | The component source | Plus a `sha256:` content hash of it |
+| The ported half | `ported.source`, with the tool and hole names it binds. Absent when the component could not be split |
 | Its local import closure | No depth limit, bounded by the `node_modules` boundary and 256 KB |
 | Your app-root stylesheets | From `app/layout.*`, `app/root.*`, `pages/_app.*`, or their `src/` variants |
 | The kind | `review: true` for a reviewed wrapper |
+
+Two more files are generated rather than captured, and both are rewritten whole on every run: `.vendo/generated/remix-wiring.ts`, the const [both call sites take](#hook-the-wiring-up-in-both-places), and one `.vendo/generated/remix-holes/<Slot>.tsx` per slot the carver cut. A slot that stops needing a home module loses its file, so nothing lingers for the wiring to dangle on.
 
 Sync never skips a wrapper without saying so. Inline JSX, an unimported component, an anonymous default export, or source outside your project root each print one `error:` line naming the file, the line, and the fix, and the run exits `2`.
 

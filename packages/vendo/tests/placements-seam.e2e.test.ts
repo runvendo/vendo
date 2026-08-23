@@ -63,7 +63,7 @@ const speak = (text: string): Chunk[] => [
   { type: "finish", usage: ZERO_USAGE, finishReason: { unified: "stop", raw: undefined } },
 ];
 
-/** A deterministic LanguageModelV2 double that HOLDS until the test releases
+/** A deterministic LanguageModelV3 double that HOLDS until the test releases
  *  it — which is what makes "the slot shows the build forming" observable
  *  without a sleep. It drives the ONE engine the way a real screen agent does:
  *  a `save_app` hand, then a word to finish on. */
@@ -71,7 +71,7 @@ function gatedModel(gate: Promise<void>): LanguageModel {
   const turns: Chunk[][] = [saveApp(SPENDING), speak("done")];
   const answer = (): Chunk[] => turns.shift() ?? speak("nothing more to do");
   const model = {
-    specificationVersion: "v2" as const,
+    specificationVersion: "v3" as const,
     provider: "vendo-placements-seam",
     modelId: "vendo-placements-seam-v1",
     supportedUrls: {},
@@ -87,8 +87,8 @@ function gatedModel(gate: Promise<void>): LanguageModel {
             toolName: toolCall["toolName"] as string,
             input: toolCall["input"] as string,
           }],
-          finishReason: "tool-calls" as const,
-          usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+          finishReason: { unified: "tool-calls" as const, raw: undefined },
+          usage: ZERO_USAGE,
         };
       }
       return {
@@ -98,8 +98,8 @@ function gatedModel(gate: Promise<void>): LanguageModel {
             .filter((chunk) => chunk["type"] === "text-delta")
             .map((chunk) => chunk["delta"] as string).join(""),
         }],
-        finishReason: "stop" as const,
-        usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+        finishReason: { unified: "stop" as const, raw: undefined },
+        usage: ZERO_USAGE,
       };
     },
     async doStream() {

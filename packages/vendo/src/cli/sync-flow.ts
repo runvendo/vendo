@@ -2,7 +2,7 @@ import { readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import type { z } from "zod";
 import type { ExtractedTool } from "@vendoai/actions";
-import { vendoSync, type SyncReportWithWarnings } from "@vendoai/actions/sync";
+import { firstOpenApiSpec, openApiMountPath, vendoSync, type SyncReportWithWarnings } from "@vendoai/actions/sync";
 import type { VendoThemeFont } from "@vendoai/apps/contract";
 import type { ToolImpact } from "../sync-impact.js";
 import {
@@ -690,6 +690,25 @@ async function runGradingStages(input: {
   return { judged, themeDraft };
 }
 
+/** The deployment's path prefix, for the run that has no VENDO_BASE_URL to read
+ *  it off. The spec's relative server mount is the only other place it is
+ *  written down — doctor holds the two to agreement (E-CFG-003) — and it is
+ *  already how the prefix reaches host tool calls. Without it the probe asks a
+ *  mounted host one prefix short and reads its own 404 back as "not reachable".
+ *
+ *  Total on purpose, the way doctor's own mount check is (`doctor-config-checks`):
+ *  this reads a file and parses it, it runs OUTSIDE the probe's error boundary,
+ *  and no prefix is the answer the probe already handles. A spec that will not
+ *  parse costs the run its impact line, never the sync. */
+async function declaredMount(root: string): Promise<string> {
+  try {
+    const spec = await firstOpenApiSpec(root);
+    return spec === null ? "" : await openApiMountPath(spec);
+  } catch {
+    return "";
+  }
+}
+
 async function probeImpact(input: {
   report: SyncReportWithWarnings;
   options: SyncFlowOptions;
@@ -700,7 +719,7 @@ async function probeImpact(input: {
   note: (message: string) => void;
 }): Promise<ToolImpact[] | null> {
   const { report, options, env, output, note } = input;
-  const base = (env.VENDO_BASE_URL ?? "http://localhost:3000").replace(/\/+$/, "");
+  const base = (env.VENDO_BASE_URL ?? `http://localhost:3000${await declaredMount(options.root)}`).replace(/\/+$/, "");
   const wireUrl = (options.url ?? env.VENDO_URL ?? `${base}/api/vendo`).replace(/\/+$/, "");
   const tools = [...new Set([
     ...report.breaking.map((breaking) => breaking.tool),

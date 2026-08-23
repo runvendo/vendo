@@ -255,7 +255,10 @@ describe.sequential("existing-agents — parked BYO guarded calls", () => {
     const resolved = await byo.read(parked.approvalId, principal);
     expect(resolved.state).toBe("executed");
     if (resolved.state !== "executed") throw new Error("expected executed");
-    expect(resolved.outcome.status).toBe("error");
+    // Optional on the type since the MCP door's lane records a yes with no
+    // outcome to carry; THIS lane runs the call itself, so it always has one —
+    // an absent outcome fails the assertion rather than reading as a pass.
+    expect(resolved.outcome?.status).toBe("error");
   });
 
   it("answers pending, never not-found, to a read that lands mid-resume", async () => {

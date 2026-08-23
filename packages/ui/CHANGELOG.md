@@ -1,5 +1,176 @@
 # @vendoai/ui
 
+## 0.37.0
+
+### Minor Changes
+
+- 853c591: Placement reads the slot registry, and `pinSlot` is gone. Naming the pin's
+  destination on the provider was a second copy of a fact the registry already
+  held: a mounted `<VendoSlot>` reports itself, and `useSlots()` has always been
+  able to say which destinations exist. The prop is deleted outright — no shim,
+  nothing replaces it, and no slot list moves onto the provider.
+
+  One affordance now carries the whole rule, and every surface holding a finished
+  app renders it — the in-thread card, the BYO embed card, and the workspace
+  stage. With one slot known it is a one-click **Pin to dashboard** doing the real
+  `apps.place` write, with the ghost flight and the settle ring exactly as before.
+  With several it is the **Add to…** picker. With none it is nothing at all,
+  unless the host wired `onPin`: that DIY hook is untouched and is still the whole
+  pin on a page with nowhere to put a view.
+
+  `usePinAction(slot?)` takes the destination instead of reading a prop, and
+  `PlacementAction` joins the `@vendoai/ui/chrome` surface beside `AddToPicker`
+  (the thread is an eject template, so what it renders is public by construction).
+  The MCP Apps shim is regenerated off the same sources.
+
+### Patch Changes
+
+- Updated dependencies [853c591]
+  - @vendoai/apps@0.37.0
+  - @vendoai/core@0.37.0
+
+## 0.36.5
+
+### Patch Changes
+
+- @vendoai/core@0.36.5
+- @vendoai/apps@0.36.5
+
+## 0.36.4
+
+### Patch Changes
+
+- Updated dependencies [833fec6]
+  - @vendoai/core@0.36.4
+  - @vendoai/apps@0.36.4
+
+## 0.36.3
+
+### Patch Changes
+
+- 7d7e7c4: The embeds work bare: `VendoProvider` is now an override, not a prerequisite.
+
+  `<VendoToolResult>`, `<VendoAppEmbed>` and `<VendoApprovalEmbed>` used to throw
+  without a surrounding provider, which made the first thing a BYO chat does a
+  piece of setup. Every setting the provider carries already had a universal
+  default — the wire at `/api/vendo`, auth riding the session cookie the browser
+  already sends, Vendo's own `--vendo-*` tokens — so the provider was never
+  telling the embeds anything they could not have assumed.
+
+  Now they assume it. With nothing above them the three embeds render, poll,
+  approve, deny and mount apps exactly as they always have, off one shared client
+  per page — a fresh client per embed would be a fresh wire per embed, and every
+  poll keys its effect on client identity. A surrounding `VendoProvider` still
+  wins, for everything inside it, with no observable change to any page that has
+  one: it was always "settings for the components inside me", and this only adds
+  "here is what I assume when you don't say".
+
+  No new props, no config object, no environment variable. The headless hooks
+  ride the same seam, so they self-boot too.
+
+  - @vendoai/core@0.36.3
+  - @vendoai/apps@0.36.3
+
+## 0.36.2
+
+### Patch Changes
+
+- Updated dependencies [91595d2]
+  - @vendoai/apps@0.36.2
+  - @vendoai/core@0.36.2
+
+## 0.36.1
+
+### Patch Changes
+
+- Updated dependencies [a9fca38]
+  - @vendoai/apps@0.36.1
+  - @vendoai/core@0.36.1
+
+## 0.36.0
+
+### Minor Changes
+
+- 0108715: A remix follows the page it was forked from. The `<Remixable>` wrapper now
+  couriers its wrapped instance's live serializable props to the server — on mount
+  and again on every change — and the ported screen is painted on them.
+
+  Until now it was painted on the baseline's `sampleProps`, captured the day
+  `vendo sync` ran. Maple's remixed net-worth card read `$54,907.15` — the
+  hardcoded declared example in the host's own registry — while the host's card two
+  inches away read `$142,929.30`, with a visibly different chart series. A port
+  renders FROM its props and a query resolves before the render, so nothing in the
+  screen's source could ever have carried them; the capture was the only value the
+  floor had.
+
+  `AppSeed.props` records them, `POST /apps/:id/props` (`apps.seed.props`,
+  `client.apps.courierProps`) is the door, and the checks floor's props resolver
+  prefers them over the capture — which remains the fallback for a remix whose
+  wrapper has not couriered yet. Writing props is provenance about the call site,
+  not a content edit: it mints no version and replays no wish, so it is safe on
+  every render the props really change on.
+
+  The boundary is the captured baseline's own declared prop names, applied at the
+  door, so a prop the host component never declared is dropped before it is stored.
+  JSON-serializable values only, as before.
+
+  Also removes the client-side splice this replaces. It searched the payload for a
+  node named `seedComponentName(slot)` with `source: "generated"`; a remix is a
+  ported SCREEN whose tree is whatever rendering produced — nodes marked
+  `source: "ported"` — and that name only ever names a seat in
+  `document.components`. The find never matched and the merge never ran, which is
+  why the numbers were stale in the first place.
+
+### Patch Changes
+
+- f8dcc28: A failed slot keeps its headline and its ways out, in whatever box the host sized.
+  The other slot CTAs are three words over a skeleton, so the overlay carrying them
+  is positioned absolutely and contributes no height. A failure carries a classified
+  build reason — real prose — and that overlay is centred, so in a rail-width or
+  host-sized slot the ghost's `overflow: hidden` sliced "This view didn't build" off
+  the top and "Try again" / "Clear this slot" off the bottom, leaving a bare
+  developer sentence with no title and no way out. The DOM held all of it, so
+  `toBeVisible()` had been calling it visible for as long as the card has existed.
+
+  The failure card stacks in flow now, on the same grid cell as the skeleton, so it
+  grows to its own content instead of being clipped by it; the reason also stops
+  bleeding past the card's padding. Every other slot state is untouched.
+
+- c5af077: A failed app surface says why, instead of printing its own discriminant. The
+  terminal `{kind:"failed", reason}` that `open` started answering had no consumer
+  on either renderer: `AppFrame` fell through to its unknown-kind catch-all and put
+  `Unsupported app surface "failed".` on a host's logged-in dashboard, and a slot
+  never reached the card that already knows how to say this — a placement's status
+  is build-time truth, so a build that landed and a screen that has since stopped
+  compiling both read as "ready", and only the open knows the difference.
+
+  Both consumers read the kind now. `AppFrame` contains the reason in the same
+  notice every other in-surface failure uses, and a mounted slot hands the failed
+  surface to the existing build-failed card: the reason, and the way back to the
+  host's own markup. Placement status is untouched — it reports the build honestly,
+  and the consumer side is where this belonged.
+
+- 1d72979: A remix repaints when its build lands, instead of holding the pre-edit port
+  until the person presses F5. A remix's screen is written long after its row
+  exists: the seed paints the ported host component first and rebuilds it into the
+  person's wish tens of seconds later, and every edit the chat runs does the same
+  again. `useApp` re-reads only while `open` is still answering pending, so the
+  surface settled on whichever screen happened to be servable first — the port —
+  and then never looked again. The agent said "it's replaced the original on your
+  page" over a card still painting the original.
+
+  `<Remixable>` now re-reads on what a build leaves on the app document — the code
+  it saved and whether it is still saving — off the discovery poll the wrapper
+  already runs. No request of its own, and no cadence: an app nobody is building
+  is an app nothing re-reads.
+
+- Updated dependencies [f325443]
+- Updated dependencies [0108715]
+- Updated dependencies [0b6bb92]
+- Updated dependencies [2c662ac]
+  - @vendoai/apps@0.36.0
+  - @vendoai/core@0.36.0
+
 ## 0.35.0
 
 ### Minor Changes

@@ -23,8 +23,10 @@ const ring = () => document.querySelector("[data-vendo-pin-ring]");
 /** Past every microtask the ring could still be waiting on. */
 const settled = () => new Promise<void>(resolve => setTimeout(resolve, 0));
 
-function PinButton() {
-  const pin = usePinAction();
+/** `slot` is what `PlacementAction` hands the hook when the registry knows one
+ *  destination; omitted is a page that has reported none. */
+function PinButton({ slot }: { slot?: string }) {
+  const pin = usePinAction(slot);
   return pin ? <button type="button" onClick={() => pin({ appId: "app_1", payload: {} })}>Pin</button> : null;
 }
 
@@ -90,7 +92,7 @@ describe("the settle ring answers to the pin, never to the timer", () => {
   });
 
   it("rings once the write lands", async () => {
-    await pinAndLand(<VendoProvider client={client} pinSlot="hero"><PinButton /></VendoProvider>);
+    await pinAndLand(<VendoProvider client={client}><PinButton slot="hero" /></VendoProvider>);
     await waitFor(() => expect(ring()).toBeTruthy());
   });
 
@@ -101,17 +103,17 @@ describe("the settle ring answers to the pin, never to the timer", () => {
     const dead = createVendoClient({ baseUrl: goneUrl });
     const place = vi.spyOn(dead.apps, "place");
 
-    await pinAndLand(<VendoProvider client={dead} pinSlot="hero"><PinButton /></VendoProvider>);
+    await pinAndLand(<VendoProvider client={dead}><PinButton slot="hero" /></VendoProvider>);
 
     await expect(place.mock.results[0]!.value as Promise<unknown>).rejects.toThrow();
     expect(ring()).toBeNull();
   });
 
   it("waits on the host's own onPin when that is the only confirmation there is", async () => {
-    // A host wiring onPin and no pinSlot is supported, and Vendo writes nothing
-    // in that config — so the ring has to hold for the host's mirror. It used to
-    // fire on the flight's timer here, claiming a landing for a pin nobody had
-    // confirmed and that the host may still drop.
+    // A host wiring onPin with no slot reported anywhere is supported, and Vendo
+    // writes nothing in that config — so the ring has to hold for the host's
+    // mirror. It used to fire on the flight's timer here, claiming a landing for
+    // a pin nobody had confirmed and that the host may still drop.
     let mirrored = () => {};
     const onPin = vi.fn(() => new Promise<void>(resolve => { mirrored = () => resolve(); }));
 
@@ -140,9 +142,9 @@ describe("the settle ring answers to the pin, never to the timer", () => {
     let mirrored = () => {};
     const onPin = vi.fn(() => new Promise<void>(resolve => { mirrored = () => resolve(); }));
     render(
-      <VendoProvider client={client} onPin={onPin} pinSlot="hero">
+      <VendoProvider client={client} onPin={onPin}>
         <VendoSlot id="hero" />
-        <PinButton />
+        <PinButton slot="hero" />
       </VendoProvider>,
     );
     const slot = () => document.querySelector("[data-vendo-slot]");
@@ -167,7 +169,7 @@ describe("the settle ring answers to the pin, never to the timer", () => {
     // ring, pointing the other way.
     const onPin = vi.fn(() => Promise.reject(new Error("host mirror exploded")));
     await pinAndLand(
-      <VendoProvider client={client} onPin={onPin} pinSlot="hero"><PinButton /></VendoProvider>,
+      <VendoProvider client={client} onPin={onPin}><PinButton slot="hero" /></VendoProvider>,
     );
     await waitFor(() => expect(ring()).toBeTruthy());
   });
@@ -175,14 +177,14 @@ describe("the settle ring answers to the pin, never to the timer", () => {
   it("rings anyway when the host's mirror NEVER settles but the write already landed", async () => {
     const onPin = vi.fn(() => new Promise<void>(() => {}));
     await pinAndLand(
-      <VendoProvider client={client} onPin={onPin} pinSlot="hero"><PinButton /></VendoProvider>,
+      <VendoProvider client={client} onPin={onPin}><PinButton slot="hero" /></VendoProvider>,
     );
     await waitFor(() => expect(ring()).toBeTruthy());
   });
 
   it("draws no ring when a rejecting mirror is the only confirmation there is", async () => {
-    // The other half of the distinction: with no slot Vendo wrote nothing, so a
-    // failed mirror means the pin did not happen and nothing may claim it did.
+    // The other half of the distinction: with no destination Vendo wrote nothing,
+    // so a failed mirror means the pin did not happen and nothing may claim it did.
     const onPin = vi.fn(() => Promise.reject(new Error("host mirror exploded")));
     await pinAndLand(<VendoProvider client={client} onPin={onPin}><PinButton /></VendoProvider>);
 

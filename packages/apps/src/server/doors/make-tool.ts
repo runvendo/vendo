@@ -110,8 +110,10 @@ interface MakeCall {
   ask: string;
   /** The client parts this execution may publish, when the caller opened a stream. */
   stream: ((update: VendoViewStreamUpdate) => void) | undefined;
-  /** The ask, onto the app's memory. Best-effort, always. */
-  remember(appId: string): Promise<void>;
+  /** The ask, onto the app's memory. Best-effort, always. `landed` says the
+   *  change reached the screen, which is what makes it a remix WISH as well as
+   *  an ask — the create arms leave it off because a new app has no wish list. */
+  remember(appId: string, landed?: boolean): Promise<void>;
 }
 
 const makeNewApp = async (
@@ -281,10 +283,13 @@ const changeExistingApp = async (
 ): Promise<ToolOutcome> => {
   const appId = await resolveAppRef(runtime, app, ctx);
   const result = await runtime.edit(appId, ask, ctx);
-  // Recorded whether or not the change landed: the person DID ask this of
-  // this app, and the next editor reading "asked for X, then asked for X
-  // again, narrower" is reading the truth.
-  await remember(appId);
+  // The ASK is recorded whether or not the change landed: the person DID ask
+  // this of this app, and the next editor reading "asked for X, then asked for
+  // X again, narrower" is reading the truth. Whether it landed travels with it,
+  // because a remix's wish list is the other thing this writes and that one
+  // replays on every Update — an attempt the person never got back is not a
+  // change to replay.
+  await remember(appId, result.failure === undefined);
   // An automation this edit authored raises its own card. Published HERE, by the
   // side that knows, rather than duck-typed out of this tool's return value at
   // the bridge: the receipt carries words only.
@@ -376,6 +381,17 @@ const remixComponent = async (
 const ASKS_TO_RECUR = /\b(?:every|each)\s+(?:\d+\s+)?(?:minute|hour|day|night|morning|afternoon|evening|week|weekday|month|year|monday|tuesday|wednesday|thursday|friday|saturday|sunday)s?\b|\b(?:daily|hourly|nightly|weekly|monthly|on a schedule|on a timer)\b/i;
 
 /**
+ * What the person is told when the door stayed shut: the redirect, never
+ * silence. Conditional, because the sniff below is a WORD in the person's own
+ * sentence and "Tracked monthly" is a caption, not a schedule — a sentence that
+ * assumes it was a schedule would be wrong most of the time it appeared. It says
+ * nothing about WHY, so it is equally true of a remix and of a row this door
+ * could not read back.
+ */
+const SCHEDULE_ELSEWHERE = "If you also meant to have something run on a schedule, "
+  + "that didn't get set up here — ask for it in the main chat.";
+
+/**
  * Arm the schedule the same ask asked for, on the app it just produced.
  *
  * Through `runtime.automation.author` — so a schedule that arrives with an app
@@ -384,6 +400,17 @@ const ASKS_TO_RECUR = /\b(?:every|each)\s+(?:\d+\s+)?(?:minute|hour|day|night|mo
  *
  * Never fatal. The app is on the person's page; an automation that could not be
  * planned is a sentence on the receipt, not a failed make.
+ *
+ * NOT ON A REMIX (#1568). A remix is the ✦ on one of the host's own components,
+ * and what it may do is edit that component, read its data and call its declared
+ * actions — authoring an automation is not on that list, and this arm is the one
+ * way it got there. It got there on a purely COSMETIC wish, too: the sniff reads
+ * the person's own words, so `a caption that reads "Tracked monthly"` armed a
+ * schedule, asked its author to grant 34 scopes for a text label, and left the
+ * remix repainted as an automation board with nothing in it. `seed` is what says
+ * a row is a remix (`compose-apps.ts`'s `storedScreen` reads it the same way), so
+ * the ✦ mint and every later wish are covered alike — a follow-up arrives naming
+ * the APP, not the component.
  */
 const withCompoundSchedule = async (
   { runtime, ctx, ask, stream }: MakeCall,
@@ -391,8 +418,22 @@ const withCompoundSchedule = async (
 ): Promise<ToolOutcome> => {
   if (outcome.status !== "ok") return outcome;
   const built = makeReceiptSchema.safeParse(outcome.output);
-  if (!built.success || built.data.status === "failed") return outcome;
+  if (!built.success) return outcome;
   const made = built.data;
+  // `null` is an ANSWER (no such row, so not a remix); `undefined` is the read
+  // itself not resolving, and that FAILS CLOSED — `seed` is the only thing
+  // standing between a remix and the automation door, so a read that answered
+  // nothing is not a licence to arm one.
+  //
+  // Both ahead of the failed-build gate below, because a failure is the LOUDEST
+  // way to drop the ask: asked to "refresh this view every Monday morning", the
+  // screen agent tries to build the schedule into the view, cannot, and the
+  // person is told only that it did not go through (browser walk, 2026-08-20).
+  const document = await runtime.get(made.id as AppId, ctx).catch(() => undefined);
+  if (document === undefined || document?.seed !== undefined) {
+    return receipt({ ...made, say: `${made.say} ${SCHEDULE_ELSEWHERE}` });
+  }
+  if (made.status === "failed") return outcome;
   const authored = await runtime.automation
     .author({ appId: made.id as AppId, instruction: ask, mode: "goal" }, ctx)
     .catch((error: unknown) => {
@@ -452,8 +493,9 @@ export const runMakeTool = async (
    * Best-effort, always. There is no arrangement of a lost memory write
    * that is worse than failing a make the person can already see.
    */
-  const remember = async (appId: string): Promise<void> => {
-    await runtime.remember({ appId, ask: request }, ctx).catch((error: unknown) => {
+  const remember = async (appId: string, landed?: boolean): Promise<void> => {
+    const recorded = { appId, ask: request, ...(landed === undefined ? {} : { landed }) };
+    await runtime.remember(recorded, ctx).catch((error: unknown) => {
       log({
         code: "apps.ask-not-recorded",
         level: "warn",

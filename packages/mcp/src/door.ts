@@ -15,6 +15,7 @@ import {
   type ToolOutcome,
   type ToolRegistry,
   type ToolResult,
+  vendoApprovalRef,
   withPathPrefix,
 } from "@vendoai/core";
 import type { AppsRuntime } from "@vendoai/apps";
@@ -903,8 +904,8 @@ class Door {
     // An off-menu name answers exactly like a name that does not exist: the
     // menu decides what this door OFFERS, and offering nothing is the whole
     // refusal (the guard, not the menu, is what stops a call that IS offered).
-    if (!offeredAtDoor(await this.#menu(), name, this.#withheld)
-      || !descriptors.some((descriptor) => descriptor.name === name)) {
+    const descriptor = descriptors.find((candidate) => candidate.name === name);
+    if (!offeredAtDoor(await this.#menu(), name, this.#withheld) || descriptor === undefined) {
       // The apps ride-along path answers names the registry does not own, so it
       // has to honour the same withholding — otherwise a withheld viewer name
       // would be invisible on the listing and callable anyway.
@@ -924,7 +925,7 @@ class Door {
       const output = await this.#mcpAppsOpenOutput(outcome.output, args, state.context, identity);
       return mapOutcome({ status: "ok", output: output as Json }, identity.name);
     }
-    return mapOutcome(outcome, identity.name);
+    return mapOutcome(outcome, identity.name, { descriptor, args });
   }
 
   /** The ride-along tools are door tool calls like any other (10-mcp §2/§4).
@@ -996,7 +997,7 @@ class Door {
         },
       });
     }
-    return mapOutcome(outcome, identity.name);
+    return mapOutcome(outcome, identity.name, { descriptor, args });
   }
 
   async #executeAppsTool(
@@ -1717,16 +1718,35 @@ async function withProgress<T>(
   }
 }
 
-function mapOutcome(outcome: ToolOutcome, productName: string): CallToolResult {
+function mapOutcome(
+  outcome: ToolOutcome,
+  productName: string,
+  /** The call being answered. Present at both sites that can park, so a
+   *  `pending-approval` always carries its typed ref; absent only where the
+   *  outcome is statically not a park (an ok output, a refused argument). */
+  call?: { descriptor: ToolDescriptor; args: unknown },
+): CallToolResult {
   switch (outcome.status) {
     case "ok":
       return textResult(outcome.output);
     case "error":
       return inBandError(`${outcome.error.code}: ${outcome.error.message}`);
     case "pending-approval":
-      return inBandError(
-        `This action needs approval. Approval ${outcome.approvalId} is waiting in ${productName}'s Vendo approvals queue — resolve it there, then retry.`,
-      );
+      return {
+        ...inBandError(
+          `This action needs approval. Approval ${outcome.approvalId} is waiting in ${productName}'s Vendo approvals queue — resolve it there, then retry.`,
+        ),
+        // The prose is what the MODEL reads and must not move. The typed ref is
+        // for the CODE around it: an outside loop collects `vendo/approval-ref@1`
+        // off `structuredContent` instead of regexing an id out of English, and
+        // the line it renders is the same one the in-process tool pack mints
+        // (core's `vendoApprovalRef` is the single producer). Safe on an
+        // `isError` result: the official client compiles an `outputSchema`
+        // validator for OK results only — see the note above `textResult`.
+        ...(call === undefined
+          ? {}
+          : { structuredContent: { ...vendoApprovalRef(outcome.approvalId, call.descriptor, call.args) } }),
+      };
     case "blocked":
       return inBandError(outcome.reason);
     case "connect-required":

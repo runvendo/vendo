@@ -5,7 +5,7 @@ on:
   push:
     tags: ["v*"]
   # Dry run by default: manually dispatch to prove the publish end-to-end WITHOUT
-  # publishing. Runs the exact gate stack + `pnpm -r publish --dry-run`.
+  # publishing. Runs the same gate + `pnpm -r publish --dry-run`.
   workflow_dispatch:
     inputs:
       publish:
@@ -34,22 +34,6 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    # Same Postgres leg as the `ci` gate: @vendoai/store's postgres-gate test
-    # requires POSTGRES_URL in CI so the PostgreSQL backend suite really runs.
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: vendo
-          POSTGRES_PASSWORD: vendo
-          POSTGRES_DB: vendo_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U vendo"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
@@ -62,18 +46,15 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # BUILD + TYPECHECK, not the full gate. This workflow only ever runs at a
+      # tag, and that tag's tree already merged through main's required checks
+      # (ci, integration, conformance, audit) — re-running the suite here proved
+      # nothing a second time and put ~38 minutes between "merge the version PR"
+      # and "it is on npm". Build stays because the tarballs are its output;
+      # typecheck stays because it is seconds and it reads the .d.ts files the
+      # build emits, which are what users actually compile against.
       - run: pnpm build
-      # `pnpm test` now includes the UI smoke pack (`turbo run test:ui`), a real
-      # Chromium run — so the release gate needs the browser the CI browser job
-      # installs too.
-      - run: pnpm --filter @vendoai/ui exec playwright install --with-deps chromium
-      - run: pnpm test
-        env:
-          POSTGRES_URL: postgres://vendo:vendo@localhost:5432/vendo_test
-      # Parity with the `ci` gate — a release must never publish something that
-      # would have failed CI. typecheck + lint were previously missing here.
       - run: pnpm typecheck
-      - run: pnpm lint
 
       # Dry run (workflow_dispatch): prove the publish resolves + packs without
       # touching the registry. --provenance is dropped here (no tag/release to
@@ -135,34 +116,63 @@ jobs:
             exit 0
           fi
           version=$(node -p "require('./packages/vendo/package.json').version")
-          branch="chore/bump-vendoai-$version"
+          # The branch prefix is a contract: vendo-web's vendoai-bump-merge
+          # workflow only ever merges `vendoai-bump/*`.
+          branch="vendoai-bump/v$version"
           git clone --depth=1 "https://x-access-token:$GH_TOKEN@github.com/runvendo/vendo-web.git" /tmp/vendo-web
           cd /tmp/vendo-web
-          # Rewritten in place so the file's own formatting survives; catches
+          # THREE pnpm projects, not one. The repo root (marketing site) and
+          # apps/console are the obvious two; apps/console/checker is an
+          # isolated workspace nested INSIDE the console, with its own manifest
+          # and its own lockfile, so no install in the console can ever reach
+          # it. Bumping the first two and leaving it behind is what stranded
+          # the checker on 0.34.0 for two releases (vendo-web#608).
+          #
+          # Rewritten in place so each file's own formatting survives; catches
           # both `dependencies` and `pnpm.overrides`. @vendoai/telemetry is
           # deliberately excluded: it is outside this repo's changesets `fixed`
           # group and versions on its own, so it must never ride the lockstep
           # bump. (It is a `file:` reference today, which the semver pattern
           # skips anyway — the name is excluded so that holds if it is ever
           # published as a version.)
-          node -e '
-            const fs = require("fs");
-            fs.writeFileSync("package.json", fs.readFileSync("package.json", "utf8")
-              .replace(/"@vendoai\/(?!telemetry")[a-z-]+": "\d+\.\d+\.\d+"/g,
-                (dep) => dep.replace(/\d+\.\d+\.\d+/, process.argv[1])));
-          ' "$version"
+          for dir in . apps/console apps/console/checker; do
+            node -e '
+              const fs = require("fs");
+              const [version, file] = process.argv.slice(1);
+              fs.writeFileSync(file, fs.readFileSync(file, "utf8")
+                .replace(/"@vendoai\/(?!telemetry")[a-z-]+": "\d+\.\d+\.\d+"/g,
+                  (dep) => dep.replace(/\d+\.\d+\.\d+/, version)));
+            ' "$version" "$dir/package.json"
+          done
+          # Fail closed on whatever the rewrite could not reach. That regex only
+          # moves EXACT pins, so a range (`^0.36.1`), a `pnpm.overrides` entry or
+          # anything else added to these files later would be skipped in silence
+          # while the PR still went out claiming it covered all three projects —
+          # the same shape of miss as vendo-web#608, one layer up. Every pin is
+          # exact today, so this is quiet until the day it is not.
+          for dir in . apps/console apps/console/checker; do
+            missed=$(grep -oE '"@vendoai/[^"]+": "[^"]+"' "$dir/package.json" \
+              | grep -v '^"@vendoai/telemetry"' | grep -vF ": \"$version\"") || true
+            if [ -n "$missed" ]; then
+              echo "::error::$dir/package.json still holds @vendoai deps the bump could not rewrite, so this release is only half applied: $missed"
+              exit 1
+            fi
+          done
           if git diff --quiet; then
             echo "vendo-web is already on $version"
             exit 0
           fi
           # pnpm 9 is what vendo-web's own CI installs with, and it runs
           # --frozen-lockfile: a lockfile written by this repo's pnpm 11 would
-          # fail there. Without this refresh the PR is red on arrival.
-          npx --yes pnpm@9 install --lockfile-only --ignore-scripts
+          # fail there. Without this refresh the PR is red on arrival. One
+          # install per project — each owns a separate lockfile.
+          for dir in . apps/console apps/console/checker; do
+            npx --yes pnpm@9 install --lockfile-only --ignore-scripts --dir "$dir"
+          done
           git -c user.name='github-actions[bot]' \
               -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
               commit -am "chore: bump @vendoai/* to $version"
           git push origin "HEAD:refs/heads/$branch"
           gh pr create --head "$branch" \
             --title "chore: bump @vendoai/* to $version" \
-            --body "Automated by runvendo/vendo's release workflow for v$version. \`@vendoai/telemetry\` is outside the release group and is left alone."
+            --body "Automated by runvendo/vendo's release workflow for v$version. Covers all three pnpm projects — the root site, \`apps/console\` and the isolated \`apps/console/checker\` workspace — with each lockfile regenerated. \`@vendoai/telemetry\` is outside the release group and is left alone."

@@ -140,8 +140,11 @@ neither a key nor a secret, every knock is refused.
 A record names an agent with a string. The agent itself is your code, registered
 under that name when your process boots and looked up when the automation fires.
 
-```ts
-createVendo({ agents: [support, billing] });
+```ts lib/vendo.ts focus={4}
+import { createVendo } from "@vendoai/vendo/server";
+import { billing, support } from "./agents";
+
+export const vendo = createVendo({ agents: [support, billing] });
 ```
 
 Two agents claiming one name throw at startup, where you are watching. A record
@@ -168,8 +171,16 @@ loudly with the permission it needed named on it, and one tap runs it again.
 
 ## Observe and control
 
-Server-side, every verb takes the caller's `RunContext` last — that is what scopes
-the read to what this principal may see, so there is no ambient "current user":
+In the browser there is nothing to build: the wire resolves the context from the
+request, and one hook carries every verb into a panel you write yourself.
+
+```tsx
+const { automations, enable, disable, runs, dryRun, stopRun, rerun } = useAutomations();
+```
+
+Server-side there is no request to read from, so every verb takes the caller's
+`RunContext` last — that is what scopes the read to what this principal may see,
+so there is no ambient "current user":
 
 ```ts
 import type { RunContext } from "@vendoai/core";
@@ -198,13 +209,6 @@ filters by resolving its own `automations` list and dropping the dead ids.
 
 `disable` is a person's decision, and it outranks your code: a redeploy's
 reconcile will never re-arm something a human switched off.
-
-In the browser you never build a context — the wire resolves it from the request,
-and one hook carries all of it into a panel you build:
-
-```tsx
-const { automations, enable, disable, runs, dryRun, stopRun, rerun } = useAutomations();
-```
 
 ## Where to go next
 

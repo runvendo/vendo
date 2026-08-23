@@ -281,18 +281,33 @@ export function cloudSandbox(options: CloudSandboxOptions): SandboxAdapter {
   const fetchImpl = options.fetch ?? keepAliveFetch;
 
   const send = async (path: string, init: RequestInit = {}): Promise<Response> => {
-    const response = await fetchImpl(`${base}${CLOUD_SANDBOX_PATH}${path}`, {
-      ...init,
-      headers: {
-        authorization: `Bearer ${options.apiKey}`,
-        accept: "application/json",
-        // Interaction model: key-authed Cloud requests carry the deployment
-        // identity; the console meters usage from real traffic.
-        ...(await deploymentIdentityHeaders()),
-        ...init.headers,
-      },
-      signal: AbortSignal.timeout(timeoutMs),
-    });
+    let response: Response;
+    try {
+      response = await fetchImpl(`${base}${CLOUD_SANDBOX_PATH}${path}`, {
+        ...init,
+        headers: {
+          authorization: `Bearer ${options.apiKey}`,
+          accept: "application/json",
+          // Interaction model: key-authed Cloud requests carry the deployment
+          // identity; the console meters usage from real traffic.
+          ...(await deploymentIdentityHeaders()),
+          ...init.headers,
+        },
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+    } catch (cause) {
+      // Every console ANSWER this adapter dislikes is already named below; a
+      // console it never REACHED was not. undici's throw for a dead connection
+      // is `TypeError: fetch failed` and nothing else — the reason rides only on
+      // the cause, so raw it reaches a caller, and the log seam above it, as
+      // three words naming neither Vendo nor the call. The route stays on
+      // `detail`: this message is one the wire gate shows a user verbatim.
+      throw new VendoError(
+        "sandbox-unavailable",
+        "Vendo Cloud sandbox could not be reached",
+        { path, cause },
+      );
+    }
     if (!response.ok) await raiseSandboxError(response);
     return response;
   };

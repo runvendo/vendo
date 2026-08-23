@@ -2,19 +2,16 @@
     so Mintlify server-renders it — visible before any JavaScript loads. Only
     the copy/expand buttons (AgentPromptControls, agent-prompt.jsx) hydrate
     late. Mintlify strips ALL JSX expressions from the SSR pass, so the prompt
-    is written twice on purpose: as literal one-span-per-line text for the
-    page, and as CARD_PROMPT for the copy button. Keep them identical.
+    is written twice on purpose: as literal text for the page, and as
+    CARD_PROMPT for the copy button. Both are copies of
+    `buildAgentPrompt({ src: "docs", signedIn: false })` in
+    packages/vendo/src/agent-prompt.ts —
+    change it there first; agent-prompt-docs.docs.test.ts holds them to it.
     Styling: styles.css under .vendo-agent-prompt. */}
 
 import { AgentPromptControls } from "/snippets/agent-prompt.jsx";
 
-export const CARD_PROMPT = `Set up Vendo in this repo.
-
-Install @vendoai/vendo, then run npx vendo init.
-Read what it detects: my framework, my API routes, my auth.
-Wire up exactly what it prints, and nothing more.
-Ask me before creating any account or key.
-Done when my app runs and the agent answers from my own API.`;
+export const CARD_PROMPT = "Install Vendo in this repo. Read https://vendo.run/agents.md and follow it exactly. Relay Vendo's setup questions to me and use my answers. Ask me before creating any account or key — Vendo Cloud is the recommended option. You're done when my app runs and the agent answers from my own API. Then ask me whether I'd like to star it via https://vendo.run/star?src=docs to support the project.";
 
 <div className="vendo-agent-prompt not-prose">
   <div className="vendo-agent-prompt-head">
@@ -44,7 +41,7 @@ Done when my app runs and the agent answers from my own API.`;
   </div>
   <div className="vendo-agent-prompt-body">
     <div className="vendo-agent-prompt-clip">
-      <pre className="vendo-agent-prompt-pre"><span className="vendo-agent-prompt-line">Set up Vendo in this repo.</span><span className="vendo-agent-prompt-line vendo-agent-prompt-line-gap">Install @vendoai/vendo, then run npx vendo init.</span><span className="vendo-agent-prompt-line">Read what it detects: my framework, my API routes, my auth.</span><span className="vendo-agent-prompt-line">Wire up exactly what it prints, and nothing more.</span><span className="vendo-agent-prompt-line">Ask me before creating any account or key.</span><span className="vendo-agent-prompt-line">Done when my app runs and the agent answers from my own API.</span></pre>
+      <pre className="vendo-agent-prompt-pre">Install Vendo in this repo. Read https://vendo.run/agents.md and follow it exactly. Relay Vendo's setup questions to me and use my answers. Ask me before creating any account or key — Vendo Cloud is the recommended option. You're done when my app runs and the agent answers from my own API. Then ask me whether I'd like to star it via https://vendo.run/star?src=docs to support the project.</pre>
       <span className="vendo-agent-prompt-fade" aria-hidden="true" />
     </div>
     <AgentPromptControls prompt={CARD_PROMPT} />

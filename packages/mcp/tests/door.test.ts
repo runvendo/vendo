@@ -1480,12 +1480,24 @@ describe("createMcpDoor MCP protocol", () => {
     expect(pending.isError).toBe(true);
     expect(textOf(pending)).toContain("apr_waiting");
     expect(textOf(pending)).toContain("resolve it there, then retry");
+    // The prose above is what the MODEL reads; the typed ref beside it is what
+    // the CODE reads, so a loop collects the parked call instead of regexing an
+    // id out of English. Same line the in-process tool pack mints — one
+    // producer, `vendoApprovalRef` in core.
+    expect(pending.structuredContent).toEqual({
+      kind: "vendo/approval-ref@1",
+      approvalId: "apr_waiting",
+      summary: "Look something up — host_lookup {}",
+    });
 
     outcome = { status: "blocked", reason: "MCP access is disabled" };
-    expect(await connected.client.callTool({ name: "host_lookup", arguments: {} })).toMatchObject({
+    const blocked = await connected.client.callTool({ name: "host_lookup", arguments: {} });
+    expect(blocked).toMatchObject({
       isError: true,
       content: [{ text: "MCP access is disabled" }],
     });
+    // Only the parked case grew a typed ref; a refusal still carries prose alone.
+    expect(blocked.structuredContent).toBeUndefined();
 
     expect(await connected.client.callTool({ name: "unknown_tool", arguments: {} })).toMatchObject({
       isError: true,
@@ -1776,6 +1788,13 @@ describe("createMcpDoor MCP protocol", () => {
       arguments: { appId: "app_1", ref: "host_write", args: {} },
     });
     expect(parked).toMatchObject({ isError: true, content: [{ text: expect.stringContaining("apr_1") }] });
+    // The ride-along path parks through its own decide→park branch, so it has to
+    // answer with the same typed ref the registry path does.
+    expect(parked.structuredContent).toEqual({
+      kind: "vendo/approval-ref@1",
+      approvalId: "apr_1",
+      summary: 'Run an interaction from a saved Vendo app — vendo_apps_call {"appId":"app_1","args":{},"ref":"host_write"}',
+    });
     expect(asked).toEqual(["vendo_apps_call"]);
     await connected.client.close();
   });

@@ -70,6 +70,9 @@ jobs:
       # them left 0.x. Downgrade the changeset to `minor` and this goes green.
       - name: Guard the 0.x ceiling
         if: steps.changesets.outputs.hasChangesets == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PAT || secrets.GITHUB_TOKEN }}
+          PR: ${{ steps.changesets.outputs.pullRequestNumber }}
         run: |
           set -euo pipefail
           git fetch origin changeset-release/main
@@ -82,9 +85,41 @@ jobs:
             esac
           done
           if [ -n "$crossed" ]; then
+            # Disarm before failing. Failing this step stops the arming step
+            # below from running, but it cannot un-arm a PR that was already
+            # armed on an earlier, still-0.x push — and that PR would carry
+            # 1.0.0 into main by itself the moment its checks went green.
+            # Disarming an unarmed PR is already a clean no-op, so `|| true` is
+            # here for one reason: nothing gh does may swallow the error below.
+            gh pr merge "$PR" --disable-auto || true
             echo "::error::proposed versions left 0.x —$crossed. Vendo stays below 1.0.0 until Yousef lifts the ceiling; use a minor changeset."
             exit 1
           fi
+
+      # Arm GitHub's native auto-merge so the version PR merges itself the
+      # moment ci/integration/conformance/audit are green — main runs a merge
+      # queue (ruleset merge-queue-main, SQUASH), so this enqueues rather than
+      # merges directly. It sits AFTER the 0.x guard on purpose: a version PR
+      # that crossed the ceiling must never be armed.
+      #
+      # RELEASE_PAT, not GITHUB_TOKEN, and this step is worthless without it —
+      # for both halves of the same rule. Without the PAT the version PR gets no
+      # checks at all (see the header), so required checks never report and
+      # auto-merge would wait forever; and the merge it eventually performs is
+      # attributed to whoever armed it, so a GITHUB_TOKEN merge would land on
+      # main without re-triggering this workflow — no tag, no publish.
+      - name: Arm auto-merge on the version PR
+        if: steps.changesets.outputs.pullRequestNumber != ''
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
+          PR: ${{ steps.changesets.outputs.pullRequestNumber }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::notice::RELEASE_PAT is not set — PR #$PR stays a manual merge"
+            exit 0
+          fi
+          # Re-arming an armed PR is a no-op, so this is safe on every push.
+          gh pr merge "$PR" --auto --squash
 
       # THE CHANGESET RACE: a changeset-carrying PR landed in the gap between
       # this version PR being cut and it merging, so the tag step below sees
@@ -110,6 +145,15 @@ jobs:
       - name: Push the release tag
         id: tag
         if: steps.changesets.outputs.hasChangesets == 'false'
+        env:
+          # The built-in token, spelled out, because the checkout above persists
+          # RELEASE_PAT and a plain `git push origin` would inherit it. A real
+          # credential's tag push DOES fire release.yml's `push: tags` trigger,
+          # so the tag and the dispatch below both started a publish and the two
+          # runs collided on npm (2026-08-21: dispatch 32437362971 lost to push
+          # 32437364008). GITHUB_TOKEN's silence is the interlock that makes the
+          # dispatch the single trigger — it is load-bearing, not incidental.
+          TAG_PUSH_URL: https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}
         run: |
           set -euo pipefail
           tag="v$(node -p "require('./packages/vendo/package.json').version")"
@@ -124,7 +168,7 @@ jobs:
             exit 0
           fi
           git tag "$tag"
-          git push origin "refs/tags/$tag"
+          git push "$TAG_PUSH_URL" "refs/tags/$tag"
           echo "pushed $tag -> $(git rev-parse HEAD)"
           echo "tag=$tag" >>"$GITHUB_OUTPUT"
 

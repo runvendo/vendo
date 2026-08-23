@@ -1,5 +1,104 @@
 # @vendoai/mcp
 
+## 0.37.0
+
+### Minor Changes
+
+- 853c591: Placement reads the slot registry, and `pinSlot` is gone. Naming the pin's
+  destination on the provider was a second copy of a fact the registry already
+  held: a mounted `<VendoSlot>` reports itself, and `useSlots()` has always been
+  able to say which destinations exist. The prop is deleted outright — no shim,
+  nothing replaces it, and no slot list moves onto the provider.
+
+  One affordance now carries the whole rule, and every surface holding a finished
+  app renders it — the in-thread card, the BYO embed card, and the workspace
+  stage. With one slot known it is a one-click **Pin to dashboard** doing the real
+  `apps.place` write, with the ghost flight and the settle ring exactly as before.
+  With several it is the **Add to…** picker. With none it is nothing at all,
+  unless the host wired `onPin`: that DIY hook is untouched and is still the whole
+  pin on a page with nowhere to put a view.
+
+  `usePinAction(slot?)` takes the destination instead of reading a prop, and
+  `PlacementAction` joins the `@vendoai/ui/chrome` surface beside `AddToPicker`
+  (the thread is an eject template, so what it renders is public by construction).
+  The MCP Apps shim is regenerated off the same sources.
+
+### Patch Changes
+
+- Updated dependencies [853c591]
+  - @vendoai/apps@0.37.0
+  - @vendoai/core@0.37.0
+
+## 0.36.5
+
+### Patch Changes
+
+- @vendoai/core@0.36.5
+- @vendoai/apps@0.36.5
+
+## 0.36.4
+
+### Patch Changes
+
+- 833fec6: A guarded call the MCP door parks now says so in a type, not only in English.
+
+  The door already answered a `pending-approval` with the sentence the model needs
+  — "This action needs approval. Approval apr\_… is waiting in Maple's Vendo
+  approvals queue — resolve it there, then retry." That sentence is unchanged, and
+  it is still the whole content of the result. But it was also the ONLY answer, so
+  an agent loop that wanted to render an approval card had to regex an id out of
+  prose written for a reader, not a parser.
+
+  The parked result now carries `vendo/approval-ref@1` on `structuredContent`
+  beside the text: the same `{ kind, approvalId, summary }` envelope the in-process
+  tool pack has always returned to a BYO loop. Both venues mint it through one
+  producer in `@vendoai/core` (`vendoApprovalRef`), so an approval parked at the
+  door and one parked in an AI SDK loop describe themselves the same way and
+  `<VendoApprovalEmbed>` titles either card identically.
+
+  Only the parked case grew a field. An ok result, a block, a refused connection
+  and an error answer exactly as before, and the typed ref rides an `isError`
+  result safely: the official MCP client compiles an `outputSchema` validator for
+  ok results only.
+
+- Updated dependencies [833fec6]
+  - @vendoai/core@0.36.4
+  - @vendoai/apps@0.36.4
+
+## 0.36.3
+
+### Patch Changes
+
+- @vendoai/core@0.36.3
+- @vendoai/apps@0.36.3
+
+## 0.36.2
+
+### Patch Changes
+
+- Updated dependencies [91595d2]
+  - @vendoai/apps@0.36.2
+  - @vendoai/core@0.36.2
+
+## 0.36.1
+
+### Patch Changes
+
+- Updated dependencies [a9fca38]
+  - @vendoai/apps@0.36.1
+  - @vendoai/core@0.36.1
+
+## 0.36.0
+
+### Patch Changes
+
+- Updated dependencies [f325443]
+- Updated dependencies [0108715]
+- Updated dependencies [0b6bb92]
+- Updated dependencies [2c662ac]
+  - @vendoai/apps@0.36.0
+  - @vendoai/core@0.36.0
+
 ## 0.35.0
 
 ### Patch Changes

@@ -26,7 +26,7 @@ import { rungFor } from "../persistence/edit-journal.js";
 import { findingLine } from "./build-messages.js";
 import { generationDependencies } from "../runtime/generation-context.js";
 import type { AppData } from "../../contract/index.js";
-import { APPS_COLLECTION, appRecordInput, rowFromRecord } from "../persistence/persistence.js";
+import { APPS_COLLECTION, appRecordInput, onAppRow, rowFromRecord } from "../persistence/persistence.js";
 import type { AppsRuntimeContext } from "../runtime/runtime-context.js";
 import type { AppsRuntime, EditResult, VersionEntry } from "../runtime/types.js";
 
@@ -267,7 +267,11 @@ const createAuthoredScreenDoor = (
   },
 ): AppsRuntime["authoredScreen"] => {
   const { engine, holds, buildingNow, saveAuthoredDocument } = deps;
-  return async (input, ctx) => {
+  // The BASELINE READ is inside the turn, not before it: the document below is
+  // computed over `row`, and `saveAuthoredDocument` refuses if the stored row
+  // stopped matching it. Taking the turn after the read would leave exactly the
+  // window that refusal exists to catch (`onAppRow`).
+  return async (input, ctx) => onAppRow(input.appId, async () => {
     const record = await engine.get(APPS_COLLECTION, input.appId);
     const row = record === null ? null : rowFromRecord(record);
     if (row !== null && !await holds(input.appId, ctx, "editor", record)) return;
@@ -283,7 +287,7 @@ const createAuthoredScreenDoor = (
       previous: row?.doc,
       row,
     }, ctx);
-  };
+  });
 };
 
 /**
@@ -503,10 +507,14 @@ export const createWriteSurface = (
         memory: rememberedMemory(doc.memory, input),
         // A REMIX keeps every wish beside the memory, because the two answer
         // different questions. `memory.asks` is a capped working set for the
-        // next editor; `seed.wishes` is what a re-seed replays onto the host's
-        // new version, so a wish that fell off a cap would be an edit the person
-        // loses the next time the host ships.
-        ...(doc.seed === undefined || input.ask === undefined
+        // next editor and holds every ask, landed or not; `seed.wishes` is what
+        // a re-seed REPLAYS onto the host's new version, so it holds only the
+        // asks that reached the screen — a refused attempt is not a change the
+        // person has, and one ask refused three times used to leave four entries
+        // that every Update then replayed (live 2026-08-18). A wish that fell off
+        // a cap would be an edit the person loses the next time the host ships,
+        // which is why the list is never trimmed.
+        ...(doc.seed === undefined || input.ask === undefined || input.landed !== true
           ? {}
           : { seed: { ...doc.seed, wishes: [...doc.seed.wishes, input.ask] } }),
       }));

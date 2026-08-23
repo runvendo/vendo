@@ -1378,6 +1378,17 @@ html[data-vendo-dock] {
 .fl-slot-ghost:hover .fl-slot-cta { background: color-mix(in srgb, var(--vendo-bg) 16%, transparent); }
 .fl-slot-cta svg { margin-bottom: 2px; opacity: .85; }
 .fl-slot-cta small { font-weight: 400; font-size: 11.5px; color: var(--vendo-fg-muted); }
+/* A failure has to read AT REST, in whatever box the host sized. The other CTAs
+   are three words over a skeleton, but a failure carries a classified reason —
+   real prose — and an absolutely-positioned overlay contributes no height, so
+   the ghost's overflow:hidden sliced the headline off the top and the ways out
+   off the bottom and left a paragraph nobody could act on. Stacked in flow (the
+   .fl-boot-labels idiom) the card grows to its own content instead. */
+.fl-slot-ghost:has(> .fl-slot-cta[role="alert"]) { display: grid; }
+.fl-slot-ghost:has(> .fl-slot-cta[role="alert"]) > * { grid-area: 1 / 1; }
+/* relative, not static: the skeleton's blur makes it a stacking context, so an
+   out-of-layer card would sit UNDER it and hand it the button presses. */
+.fl-slot-cta[role="alert"] { position: relative; }
 
 /* ---- empty-state invitation ----
    Accent-washed surface carrying real copy, up to three concrete suggestion

@@ -1,0 +1,33 @@
+name: ai-dual nightly
+
+# The lane that FLOATS. ci.yml calls the same seven legs against the PINNED
+# pairing in scripts/pin-ai-major-7.mjs, so that an upstream publish can no
+# longer red every open branch at whatever hour it clears pnpm's 24h quarantine
+# — which is exactly what ai@7.0.70 did on 2026-08-20, failing PRs and
+# merge_group alike until #1584. This workflow resolves the NEWEST ai@7 every
+# morning instead, on main, so the drift is found here.
+#
+# Red here IS the notification — same as a red main, there is no pager. The fix
+# is a deliberate PR: read the version off the run's "Resolved AI SDK versions"
+# step, fix the break or move the pin, land it with a green run behind it.
+#
+# It provides no required check and never runs on a PR, so it cannot block a
+# merge: `ci`, `integration`, `conformance` and `audit` all live in ci.yml and
+# none of them needs this workflow.
+on:
+  schedule:
+    # 08:00 UTC daily. pnpm quarantines anything published in the last 24h, so
+    # this hour is chosen to sit AFTER the previous evening's npm publishes have
+    # become eligible — a red then names a version that is actually resolvable
+    # today, rather than one nobody can install yet.
+    - cron: "0 8 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ai-dual:
+    uses: ./.github/workflows/ai-dual.yml
+    with:
+      float: true

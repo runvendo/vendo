@@ -670,13 +670,20 @@ export function claudeCode(
       const stale = truncated(state, turn.messages.length);
       let sessionId = machine.carriesSession && !stale ? state.sessionId : undefined;
       let finished = false;
+      /** Whether the box's disk is KNOWN to hold this checkout — a warm one
+       *  already does, a fresh one only once materialize lands. What the
+       *  sync-back below needs before it may read the disk as a statement. */
+      let materialized = machine.carriesSession;
 
       try {
         // ONLY on a machine that is not already carrying this conversation. A warm
         // box's disk IS the working copy: re-materializing between messages would
         // reset the tree the live session is holding open, which is the one thing
         // "one box per conversation" exists to prevent.
-        if (!machine.carriesSession) await machine.materialize(checkout.files);
+        if (!machine.carriesSession) {
+          await machine.materialize(checkout.files);
+          materialized = true;
+        }
 
         /** Every hot path this turn actually LANDED in the store — what the
          *  validate gate below checks. Accumulated from the syncs' own answers
@@ -816,9 +823,23 @@ export function claudeCode(
         // other would erase the workspace on every dead box. No read, no sync:
         // the store keeps what it had and the next turn recovers on a fresh
         // machine, which is exactly what the kill-mid-turn law asks for.
+        //
+        // A machine that never RECEIVED the workspace is that same fact from the
+        // other end, and the more dangerous one: the box answers the read
+        // honestly, and its honest answer is an empty tree. Read as a sync-back
+        // it deletes every baseline path — the whole workspace — on a materialize
+        // that died before it landed. No disk of ours, nothing it holds or lacks
+        // is news about the store.
         let collected: SyncFile[] | undefined;
         try {
-          collected = await machine.collect();
+          if (materialized) collected = await machine.collect();
+          else {
+            log({
+              code: "harnesses.claude-code-workspace-not-materialized",
+              level: "error",
+              message: "[vendo] claude-code: the box never received the workspace; nothing is synced back",
+            });
+          }
         } catch (error) {
           log({
             code: "harnesses.claude-code-workspace-read-failed",

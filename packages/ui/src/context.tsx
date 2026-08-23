@@ -32,16 +32,17 @@ export interface VendoContextValue {
    */
   transport?: ChatTransport<UIMessage>;
   /**
-   * Optional host handler for pinning a previewed app into the product. When
-   * present, generated views show a "Pin to dashboard" action; nothing is
-   * saved to the host surface until the user invokes it.
+   * Optional host handler for pinning a previewed app into the product — the
+   * DIY path, for a host that keeps placement in its own product state.
+   *
+   * WHERE a pin lands is not a prop: a mounted `<VendoSlot>` reports itself to
+   * the slot registry, and the placement affordance reads that registry (see
+   * `PlacementAction`). So a host that mounts one slot gets a real
+   * `apps.place` write with no config at all, and this handler is a mirror it
+   * may also keep. With NO slot reported it is the whole pin, and the only
+   * thing that puts a "Pin to dashboard" action on a finished view.
    */
   onPin?(app: { appId: string; payload: unknown }): void | Promise<void>;
-  /** Which VendoSlot a pin lands in. Set it and a pin becomes REAL: the pin
-   *  action places the app in this slot through the wire (`apps.place`) and
-   *  the slot picks it up on its own — a host needs no pin route of its own.
-   *  Unset, a pin is presentation plus whatever `onPin` chooses to do. */
-  pinSlot?: string;
   /** Optional host-supplied friendly tool metadata, keyed by tool name/id
       (ENG-216 humanization seam — additive, UI-side, no wire/contract change). */
   tools: ToolMetaMap;
@@ -164,8 +165,6 @@ export function VendoProvider(props: {
   fonts?: string;
   transport?: ChatTransport<UIMessage>;
   onPin?(app: { appId: string; payload: unknown }): void | Promise<void>;
-  /** The slot pins land in — see VendoContextValue.pinSlot. */
-  pinSlot?: string;
   tools?: ToolMetaMap;
   connectors?: ConnectorOption[];
   discoverability?: VendoDiscoverability;
@@ -182,7 +181,7 @@ export function VendoProvider(props: {
   onNavigate?(nav: VendoNavigation): void;
   children: ReactNode;
 }): ReactNode {
-  const { client, baseUrl, components, remixWiring, theme, fonts, transport, onPin, pinSlot, tools, connectors, discoverability, greeting, intl, captureScreen, routes, onNavigate, children } = props;
+  const { client, baseUrl, components, remixWiring, theme, fonts, transport, onPin, tools, connectors, discoverability, greeting, intl, captureScreen, routes, onNavigate, children } = props;
   const currency = intl?.currency;
   const locale = intl?.locale;
   // Installed during RENDER, not in an effect: the formatters are called while
@@ -201,7 +200,6 @@ export function VendoProvider(props: {
       fonts,
       transport,
       onPin,
-      pinSlot,
       tools: tools ?? {},
       connectors: connectors ?? "auto",
       discoverability: discoverability ?? "default",
@@ -211,19 +209,53 @@ export function VendoProvider(props: {
       routes,
       onNavigate,
     }),
-    [client, baseUrl, components, remixWiring, theme, fonts, transport, onPin, pinSlot, tools, connectors, discoverability, greeting, resolvedIntl, captureScreen, routes, onNavigate],
+    [client, baseUrl, components, remixWiring, theme, fonts, transport, onPin, tools, connectors, discoverability, greeting, resolvedIntl, captureScreen, routes, onNavigate],
   );
   return <VendoContext.Provider value={value}>{children}</VendoContext.Provider>;
+}
+
+/** What the components assume when nobody says otherwise: the wire at
+ *  `/api/vendo`, auth riding the session cookie the browser already sends, the
+ *  default brand tokens, and no host catalog — the same value a
+ *  `<VendoProvider>` with no props resolves to. Every provider prop has a
+ *  universal default, which is why the provider is settings rather than a
+ *  switch.
+ *
+ *  ONE value per bundle, built on first use. A fresh object per call would mean
+ *  a fresh client per embed, and every poll keys its effect on client identity
+ *  — so N embeds on a page would each stand up their own wire instead of
+ *  sharing one (and each would print the mount-mismatch paragraph on its own).
+ *  Nothing in it is per-user — the client is a closure over a URL, and the
+ *  browser's cookie is the auth — so a server render sharing it across requests
+ *  carries nothing between them. */
+let bareContext: VendoContextValue | undefined;
+
+function bareContextValue(): VendoContextValue {
+  bareContext ??= {
+    client: createVendoClient({}),
+    components: {},
+    remixSlots: new Set(),
+    theme: defaultVendoTheme,
+    tools: {},
+    connectors: "auto",
+    discoverability: "default",
+    intl: getKitIntl(),
+    captureScreen: true,
+  };
+  return bareContext;
 }
 
 /** Everything VendoProvider supplies — the seam every hook and surface reads.
  *  Named `useVendoProvider` (not `useVendoContext`) since 2026-08-05: the
  *  host-facing `useVendoContext(data)` publishes into the agent's [Situation]
- *  channel and owns that name. */
+ *  channel and owns that name.
+ *
+ *  The provider is OPTIONAL: with none above, this answers the shared defaults
+ *  ({@link bareContextValue}) and the surfaces work bare. A provider always
+ *  wins — it has always been "settings for the components inside me", and the
+ *  defaults only add "here's what I assume when you don't say". */
 export function useVendoProvider(): VendoContextValue {
-  const ctx = useContext(VendoContext);
-  if (!ctx) throw new Error("Vendo hooks and surfaces must be rendered inside <VendoProvider>.");
-  return ctx;
+  return useContext(VendoContext) ?? bareContextValue();
 }
 
 /** Resolved brand tokens (08 §3 — the useVendoTheme hook). */
