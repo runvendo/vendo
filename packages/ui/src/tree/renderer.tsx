@@ -952,7 +952,10 @@ function StatefulTreeView({
   // forever. That one boots fresh. A tree with no query plan (a plain action tree)
   // has nothing to re-read; its notice still settles.
   useParkedApprovals(parked, (nodeId, resolution) => {
-    const settled: ToolOutcome = resolution.state === "executed" ? resolution.outcome : {
+    // An executed answer that carries no outcome ran somewhere this screen
+    // cannot see (the MCP door's lane): it moved the data, so the re-read below
+    // still runs, but there is no notice to leave.
+    const settled: ToolOutcome | undefined = resolution.state === "executed" ? resolution.outcome : {
       status: "blocked",
       reason: resolution.state === "expired"
         ? "This needed approval and nobody answered in time — nothing was sent."
@@ -963,7 +966,9 @@ function StatefulTreeView({
     // ok read clears this very slot.
     setOutcomes((current) => ({ ...current, [nodeId]: undefined }));
     void screen.refresh(nodeId, resolution.state !== "executed").then(() => {
-      if (settled.status !== "ok") setOutcomes((current) => ({ ...current, [nodeId]: settled }));
+      if (settled !== undefined && settled.status !== "ok") {
+        setOutcomes((current) => ({ ...current, [nodeId]: settled }));
+      }
     });
   });
   // The served paint until a handler moves the screen, and the screen's own tree

@@ -141,11 +141,14 @@ export interface EnableResult {
  *  renders them with the existing failed vocabulary, never a blank).
  *  Mirrors the umbrella's `ByoApprovalResolution`. */
 export type ApprovalResolution =
-  // The request is absent only for an in-app parked press read during the
-  // resume window: still undecided, but the ask itself is gone (the umbrella's
-  // ByoApprovalResolution says why). Surfaces keep waiting on it.
+  // The request is absent where the ask is gone but the answer is not in yet —
+  // an in-app parked press during the resume window, or a door-parked call
+  // whose yes is in and whose caller has not retried (the umbrella's
+  // ByoApprovalResolution says why). Surfaces keep waiting on it. The outcome
+  // is absent for that same door lane: nothing server-side ran the call, so
+  // "it ran" is all its receipt can say.
   | { state: "pending"; request?: ApprovalRequest }
-  | { state: "executed"; outcome: ToolOutcome }
+  | { state: "executed"; outcome?: ToolOutcome }
   | { state: "declined" }
   | { state: "expired" };
 

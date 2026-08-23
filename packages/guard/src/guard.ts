@@ -48,6 +48,7 @@ import {
 } from "@vendoai/core";
 import { PolicyResolver, resolvePolicyConfig, ruleMatches } from "./policy.js";
 import type {
+  ApprovalReading,
   CreateGuardConfig,
   Judge,
   PolicyConfigObject,
@@ -547,10 +548,7 @@ class GuardImplementation implements VendoGuard {
     parkedCallTtlMs: DEFAULT_PARKED_CALL_TTL_MS,
     pending: (principal: Principal): Promise<ApprovalRequest[]> =>
       this.#pendingApprovals(principal),
-    get: (
-      id: ApprovalId,
-      principal: Principal,
-    ): Promise<{ request: ApprovalRequest; status: ApprovalRecordData["status"] } | undefined> =>
+    get: (id: ApprovalId, principal: Principal): Promise<ApprovalReading | undefined> =>
       this.#getApproval(id, principal),
     decide: (
       ids: ApprovalId | ApprovalId[],
@@ -2249,12 +2247,18 @@ class GuardImplementation implements VendoGuard {
   async #getApproval(
     id: ApprovalId,
     principal: Principal,
-  ): Promise<{ request: ApprovalRequest; status: ApprovalRecordData["status"] } | undefined> {
+  ): Promise<ApprovalReading | undefined> {
     const record = await this.#engine.get(APPROVALS_COLLECTION, id);
     if (record === null) return undefined;
     const data = approvalData(record);
     if (data.request.ctx.principal.subject !== principal.subject) return undefined;
-    return { request: data.request, status: data.status };
+    return {
+      request: data.request,
+      status: data.status,
+      ...(data.consumedAt === undefined ? {} : { consumedAt: data.consumedAt }),
+      ...(data.voidedAt === undefined ? {} : { voidedAt: data.voidedAt }),
+      ...(data.deniedBy === undefined ? {} : { deniedBy: data.deniedBy }),
+    };
   }
 
   async #pendingApprovals(principal: Principal): Promise<ApprovalRequest[]> {

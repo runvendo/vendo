@@ -150,6 +150,32 @@ describe("existing-agents embeds", () => {
       }
     });
 
+    /** A call parked at the MCP DOOR runs in the outside agent's own retry, not
+     *  server-side, so its executed receipt carries no outcome to show. It is
+     *  still a call that RAN — the one thing this card must never call it is
+     *  expired (observed live 2026-08-23, on the approval the user had just
+     *  granted). */
+    it("renders the approved receipt for an executed answer that carries no outcome", async () => {
+      wire.state.approvals = [];
+      wire.state.approvalResolutions.set("apr_1", { state: "executed" });
+      mount(<VendoApprovalEmbed refValue={approvalRef} />);
+      await waitFor(() => expect(screen.getByText("Approved — ran")).toBeDefined());
+      expect(document.querySelector(".fl-approval-sub--failed")).toBeNull();
+      expect(document.body.textContent).not.toMatch(/expired/i);
+    });
+
+    /** The window between the press and the outside agent's retry: the yes is
+     *  in, so the ask is gone, but nothing has run. The card keeps its working
+     *  beat and its poll instead of settling on any receipt at all. */
+    it("keeps working, with no ask to re-answer, for a decided approval whose call has not run yet", async () => {
+      wire.state.approvals = [];
+      wire.state.approvalResolutions.set("apr_1", { state: "pending" });
+      const { container } = mount(<VendoApprovalEmbed refValue={approvalRef} />);
+      await waitFor(() => expect(container.querySelector(".fl-beat-working")).not.toBeNull());
+      expect(screen.queryByRole("button", { name: "Approve" })).toBeNull();
+      expect(document.body.textContent).not.toMatch(/expired/i);
+    });
+
     it("renders expired for a TTL-swept approval", async () => {
       wire.state.approvals = [];
       wire.state.approvalResolutions.set("apr_1", { state: "expired" });

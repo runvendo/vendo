@@ -73,13 +73,17 @@ interface ParkedByoCall {
  *  the full request while pending (the consent card shows real inputs), the
  *  executed outcome after resume.
  *
- *  The request is absent in exactly one case: an IN-APP parked press read
- *  during the resume window, where the answer is "not decided yet" and the ask
- *  itself is no longer anywhere to be had (that lane persists the call, not the
- *  request). Surfaces treat it as still-working and keep polling. */
+ *  The request is absent where the answer is "not decided yet" but the ask
+ *  itself is no longer anywhere to be had: an IN-APP parked press read during
+ *  the resume window (that lane persists the call, not the request), and a
+ *  DOOR-parked call whose yes is in but whose caller has not retried it yet.
+ *  Surfaces treat both as still-working and keep polling.
+ *
+ *  The outcome is absent for the same door lane: nothing here runs that call,
+ *  so once it has run all this seam can honestly say is that it did. */
 export type ByoApprovalResolution =
   | { state: "pending"; request?: ApprovalRequest }
-  | { state: "executed"; outcome: ToolOutcome }
+  | { state: "executed"; outcome?: ToolOutcome }
   | { state: "declined" }
   | { state: "expired" };
 
@@ -284,6 +288,33 @@ export function createByoApprovals({ guard, tools, ops }: ByoApprovalsConfig): B
         const data = stillParked?.data as Pick<ParkedByoCall, "owner" | "request"> | undefined;
         if (data?.owner !== principal.subject) continue;
         return { state: "pending", ...(data.request === undefined ? {} : { request: data.request }) };
+      }
+      // The THIRD lane: a call parked at the MCP door. `compose-mcp` hands the
+      // door the plain bound registry, so nothing was ever parked here and
+      // nothing here resumes it — approving GRANTS the call and the outside
+      // agent retries it itself ("resolve it there, then retry", door.ts). So
+      // the guard's own row is the only witness left, and without it every
+      // decided door approval fell through to the not-found below, which
+      // <VendoApprovalEmbed> renders as "Expired" on the very approval the
+      // person just granted.
+      const decided = await guard.approvals.get?.(approvalId, principal);
+      if (decided !== undefined) {
+        if (decided.status === "pending") return { state: "pending", request: decided.request };
+        // Only a person's no is a decline; the TTL sweep's and the abandonment
+        // path's are expiries, and a row too old to carry the field reads as
+        // the sweep's (the fail-safe direction — "ask again", never a no
+        // nobody said).
+        if (decided.status === "denied") {
+          return { state: decided.deniedBy === "human" ? "declined" : "expired" };
+        }
+        // Approved. The yes is spent by the call it authorizes, so `consumedAt`
+        // is what tells "it ran" from "it is about to": until then the card
+        // keeps its working beat and its poll rather than settling on a receipt
+        // for something that has not happened.
+        if (decided.consumedAt !== undefined) return { state: "executed" };
+        // A yes taken back (`DELETE /approvals/:id`) can never be spent — the
+        // same nothing-ran receipt a no leaves.
+        return decided.voidedAt === undefined ? { state: "pending" } : { state: "declined" };
       }
       throw new VendoError("not-found", `Approval ${approvalId} was not found`);
     },
