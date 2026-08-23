@@ -107,6 +107,26 @@ export interface Judge {
   }): Promise<{ action: "run" | "ask" | "block"; rationale: string }>;
 }
 
+/**
+ * ONE approval as {@link VendoGuard.approvals.get} answers it.
+ *
+ * The three markers beside the status separate receipts a status alone cannot:
+ * an approved call that RAN from one still waiting on its caller to retry, and
+ * a person's no from the sweep's. Each is optional so an implementation that
+ * knows only the two original fields still satisfies the method; absent means
+ * the row carries no such marker.
+ */
+export interface ApprovalReading {
+  request: ApprovalRequest;
+  status: "pending" | "approved" | "denied";
+  /** When the yes was spent by the call it authorized. */
+  consumedAt?: IsoDateTime;
+  /** When the decision was taken back (`revoke`): it no longer stands. */
+  voidedAt?: IsoDateTime;
+  /** Who said no. Absent reads as `system` (rows predating the field). */
+  deniedBy?: "human" | "system";
+}
+
 export interface VendoGuard extends Guard {
   bind(tools: ToolRegistry): ToolRegistry;
 
@@ -147,10 +167,7 @@ export interface VendoGuard extends Guard {
      *  Optional for the reason `sweepExpiredApprovals` is — `VendoGuard` is a
      *  published interface and an implementation written before this method
      *  must keep compiling; every guard this package builds has it. */
-    get?(
-      id: ApprovalId,
-      principal: Principal,
-    ): Promise<{ request: ApprovalRequest; status: "pending" | "approved" | "denied" } | undefined>;
+    get?(id: ApprovalId, principal: Principal): Promise<ApprovalReading | undefined>;
     decide(
       ids: ApprovalId | ApprovalId[],
       decision: ApprovalDecision,

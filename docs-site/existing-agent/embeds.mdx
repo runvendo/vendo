@@ -102,6 +102,8 @@ A guarded call that needs approval does not throw and does not stall your turn. 
 
 When the person approves in the card, the wire runs the parked call and the card resolves in place. Deny throws it away.
 
+A call parked at the [MCP door](/outside-agents/your-own-agent) is the one exception: approving there grants the call, and the outside agent's own retry of it is what runs it. The card waits through that gap on its working beat, then settles on "Approved — ran" once the retry spends the approval.
+
 <Frame>
   <img
     src="/images/existing-agents/embed-approval.png"

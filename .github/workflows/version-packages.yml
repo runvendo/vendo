@@ -1,23 +1,33 @@
 name: Version Packages
 
-# Keeps a "chore: version packages" PR open on main whenever there are
-# pending changesets. Releasing = merge that PR; the post-merge run of this
-# workflow pushes the `v<version>` tag and then dispatches release.yml at that
-# tag, which does the publish. Merging the version PR is the deliberate act.
+# Releasing is a push to main with pending changesets, and nothing else. This
+# workflow consumes them in place: `changeset version` runs HERE, the result is
+# committed straight to main, tagged, and release.yml is dispatched at that tag
+# to publish. There is no "Version Packages" PR any more. That PR cost a second
+# ~15-minute trip through the merge queue to re-prove a diff that is only
+# CHANGELOGs and version fields, on a tree whose real changes had already
+# passed every required check on the way in.
 #
-# The dispatch is the whole automation. GitHub never triggers a workflow from
-# anything pushed with the default GITHUB_TOKEN, so the tag push alone publishes
-# nothing — v0.23.0 is tagged and published nothing. `workflow_dispatch` is the
-# documented exception GITHUB_TOKEN may trigger, and dispatching release.yml
-# keeps it the top-level workflow of its run, which is what npm's trusted
-# publisher config names for every @vendoai package (npm validates the calling
-# workflow's filename, so `workflow_call` would break OIDC publishing).
+# Pushing to main directly is granted, not stolen: main's merge-queue ruleset
+# and its branch protection both give the repository-admin role an always
+# bypass, and RELEASE_PAT is yousefh409's. GITHUB_TOKEN is not an admin, so
+# without that secret the push below is refused and nothing releases.
 #
-# RELEASE_PAT (optional repo secret): GitHub also never triggers workflows from
-# the version PR's own commits, so without this secret the version PR gets no
-# checks until someone closes and reopens it. Publishing no longer depends on
-# it. Fine-grained PAT scoped to this repo only — Contents: read+write, Pull
-# requests: read+write — stored as the secret RELEASE_PAT.
+# The version commit goes up under a real credential, so it triggers this
+# workflow again. That run finds no changesets left, sees the tag it would push
+# already on the remote, and exits green having done nothing. That path is
+# load-bearing twice over: it is what keeps the loop from eating itself, and —
+# because it decides on the remote's tags rather than on what this run did — it
+# is also how a release interrupted between its commit and its tag gets
+# finished by the next push to main instead of vanishing.
+#
+# The dispatch is the whole publish automation. GitHub never triggers a workflow
+# from anything pushed with the default GITHUB_TOKEN, so the tag push alone
+# publishes nothing — v0.23.0 is tagged and published nothing. `workflow_dispatch`
+# is the documented exception GITHUB_TOKEN may trigger, and dispatching
+# release.yml keeps it the top-level workflow of its run, which is what npm's
+# trusted publisher config names for every @vendoai package (npm validates the
+# calling workflow's filename, so `workflow_call` would break OIDC publishing).
 
 on:
   push:
@@ -25,7 +35,6 @@ on:
 
 permissions:
   contents: write
-  pull-requests: write
   # Dispatching release.yml is an Actions write.
   actions: write
 
@@ -37,9 +46,9 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0
-          # The PAT has to be here too, not just on the action: changesets/action
-          # pushes the version branch with a plain `git push`, so it uses the
-          # credentials checkout persists.
+          # The PAT belongs here, not only in a step env: the version commit
+          # goes up with a plain `git push`, which uses the credentials
+          # checkout persists.
           token: ${{ secrets.RELEASE_PAT || secrets.GITHUB_TOKEN }}
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
@@ -47,14 +56,20 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - id: changesets
-        uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d # v1.9.0
-        with:
-          version: pnpm changeset:version
-          commit: "chore: version packages"
-          title: "chore: version packages"
-        env:
-          GITHUB_TOKEN: ${{ secrets.RELEASE_PAT || secrets.GITHUB_TOKEN }}
+
+      # The `versioned` output gates the two steps below, so a push with no
+      # pending changesets — an ordinary commit, or the version commit's own
+      # push event — falls through to the tag step having changed nothing.
+      - name: Version the pending changesets
+        id: version
+        run: |
+          set -euo pipefail
+          if [ -z "$(find .changeset -name '*.md' ! -name README.md)" ]; then
+            echo "no pending changesets"
+            exit 0
+          fi
+          pnpm changeset:version
+          echo "versioned=true" >>"$GITHUB_OUTPUT"
 
       # THE 0.x CEILING — deliberate, not a bug. Vendo does not ship 1.0.0 until
       # Yousef says so, and lifting this ceiling is his call alone: delete this
@@ -63,88 +78,72 @@ jobs:
       # A major is not a one-package event here. All 13 packages are a single
       # changesets `fixed` group, so ONE `major` changeset drags every one of
       # them to 1.0.0 — that is exactly what happened on 2026-08-15, when four
-      # majors put 1.0.0 on all 13 in the version PR and the numbers had to be
-      # walked back by hand. So this does not look for a literal "1.0.0" in a
-      # changeset; it reads the versions the bot actually wrote on its branch —
-      # the same numbers a human reads off the version PR — and fails if any of
-      # them left 0.x. Downgrade the changeset to `minor` and this goes green.
+      # majors put 1.0.0 on all 13 and the numbers had to be walked back by
+      # hand. So this does not look for a literal "1.0.0" in a changeset; it
+      # reads the versions `changeset version` just wrote. It runs before the
+      # commit, so the runner's working tree is the only copy that has ever held
+      # them: failing here leaves main untouched and there is nothing to undo.
+      # Downgrade the changeset to `minor` and this goes green.
       - name: Guard the 0.x ceiling
-        if: steps.changesets.outputs.hasChangesets == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.RELEASE_PAT || secrets.GITHUB_TOKEN }}
-          PR: ${{ steps.changesets.outputs.pullRequestNumber }}
+        if: steps.version.outputs.versioned == 'true'
         run: |
           set -euo pipefail
-          git fetch origin changeset-release/main
           crossed=""
-          for f in $(git ls-tree -r --name-only FETCH_HEAD | grep -E '^packages/[^/]+/package\.json$'); do
-            read -r name version <<<"$(git show "FETCH_HEAD:$f" | jq -r '.name + " " + .version')"
+          for f in packages/*/package.json; do
+            read -r name version <<<"$(jq -r '.name + " " + .version' "$f")"
             case "$version" in
               0.*) ;;
               *) crossed="$crossed $name@$version" ;;
             esac
           done
           if [ -n "$crossed" ]; then
-            # Disarm before failing. Failing this step stops the arming step
-            # below from running, but it cannot un-arm a PR that was already
-            # armed on an earlier, still-0.x push — and that PR would carry
-            # 1.0.0 into main by itself the moment its checks went green.
-            # Disarming an unarmed PR is already a clean no-op, so `|| true` is
-            # here for one reason: nothing gh does may swallow the error below.
-            gh pr merge "$PR" --disable-auto || true
             echo "::error::proposed versions left 0.x —$crossed. Vendo stays below 1.0.0 until Yousef lifts the ceiling; use a minor changeset."
             exit 1
           fi
 
-      # Arm GitHub's native auto-merge so the version PR merges itself the
-      # moment ci/integration/conformance/audit are green — main runs a merge
-      # queue (ruleset merge-queue-main, SQUASH), so this enqueues rather than
-      # merges directly. It sits AFTER the 0.x guard on purpose: a version PR
-      # that crossed the ceiling must never be armed.
+      # THE CHANGESET RACE, in its only remaining form: a changeset-carrying
+      # commit landing on main while this job runs. The push then is not a
+      # fast-forward and git refuses it — which is the whole guard. Do not
+      # force, and do not retry in-run: a retry would version on top of a tree
+      # this job never checked out. Nothing needs repairing by hand either. The
+      # commit that won the race triggers this workflow itself, and that run
+      # versions every pending changeset, this one's included, under the next
+      # number.
       #
-      # RELEASE_PAT, not GITHUB_TOKEN, and this step is worthless without it —
-      # for both halves of the same rule. Without the PAT the version PR gets no
-      # checks at all (see the header), so required checks never report and
-      # auto-merge would wait forever; and the merge it eventually performs is
-      # attributed to whoever armed it, so a GITHUB_TOKEN merge would land on
-      # main without re-triggering this workflow — no tag, no publish.
-      - name: Arm auto-merge on the version PR
-        if: steps.changesets.outputs.pullRequestNumber != ''
-        env:
-          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
-          PR: ${{ steps.changesets.outputs.pullRequestNumber }}
+      # `git add -A`, not `commit -a`: a package's first CHANGELOG.md is
+      # untracked, and `-a` would leave it out of the release it documents.
+      - name: Commit the version to main
+        if: steps.version.outputs.versioned == 'true'
         run: |
-          if [ -z "$GH_TOKEN" ]; then
-            echo "::notice::RELEASE_PAT is not set — PR #$PR stays a manual merge"
-            exit 0
+          set -euo pipefail
+          git add -A
+          git -c user.name='github-actions[bot]' \
+              -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+              commit -m "chore: version packages"
+          if ! git push origin HEAD:main; then
+            echo "::error::main moved while this release was being versioned, so the version commit is not a fast-forward and was NOT pushed. Nothing to repair: the next push to main releases these changesets."
+            exit 1
           fi
-          # Re-arming an armed PR is a no-op, so this is safe on every push.
-          gh pr merge "$PR" --auto --squash
 
-      # THE CHANGESET RACE: a changeset-carrying PR landed in the gap between
-      # this version PR being cut and it merging, so the tag step below sees
-      # those leftover changesets and skips — a green run that released nothing
-      # (phantom 0.31.0 on 2026-08-19, run 32250259707). Every other skip is a
-      # healthy no-op; this one loses a release, so it has to be loud. Nothing to
-      # repair by hand: the version PR the step above just re-opened ships this
-      # one's changelog too, under the next number.
-      - name: Fail a swallowed release
-        # Quoted because the commit subject it matches contains a colon.
-        if: "steps.changesets.outputs.hasChangesets == 'true' && startsWith(github.event.head_commit.message, 'chore: version packages')"
-        run: |
-          echo "::error::Release skipped: changesets landed after this version PR was cut. Nothing was published — merge the next Version Packages PR to release."
-          exit 1
-
-      # No changesets left = this push is the version PR landing (or an ordinary
-      # commit after a release, where the tag already exists and this no-ops), so
-      # package.json already holds the released version. `changeset tag` is
-      # deliberately not used: in a workspace it writes one `<pkg>@<version>` tag
-      # per package, and release.yml — like every release so far — is keyed on
-      # the single lockstep `v<version>`. packages/vendo is the version of record
-      # (scripts/sync-version-constants.mjs reads the same file).
+      # UNGATED, and the remote's tags are what it decides on — not whether this
+      # run versioned anything. That is what makes every push to main a retry of
+      # a half-finished release: a run that pushed the version commit and then
+      # died before tagging has consumed its changesets, so nothing would ever
+      # release that version again, silently. Now the next push finds
+      # `v<version>` missing and finishes the job. If instead the tag went up and
+      # only the dispatch below failed, that run is red with the tag already in
+      # place, and the one-line repair is `gh workflow run release.yml --ref
+      # <tag> -f publish=true`.
+      #
+      # The existing-tag skip is also the correct answer for an ordinary commit
+      # (tag already pushed, nothing to do) and for any release that leaves the
+      # umbrella version alone. `changeset tag` is deliberately not used to name
+      # it: in a workspace it writes one `<pkg>@<version>` tag per package, and
+      # release.yml — like every release so far — is keyed on the single lockstep
+      # `v<version>`. packages/vendo is the version of record
+      # (sync-version-constants.mjs reads the same file).
       - name: Push the release tag
         id: tag
-        if: steps.changesets.outputs.hasChangesets == 'false'
         env:
           # The built-in token, spelled out, because the checkout above persists
           # RELEASE_PAT and a plain `git push origin` would inherit it. A real
@@ -157,14 +156,14 @@ jobs:
         run: |
           set -euo pipefail
           tag="v$(node -p "require('./packages/vendo/package.json').version")"
-          # Second half of the 0.x ceiling above: that guard fails the version
-          # PR, this one refuses to tag or publish a 1.0.0 that got past it.
+          # Second half of the 0.x ceiling above: that guard keeps a 1.0.0 off
+          # main, this one refuses to tag or publish one that got past it.
           case "$tag" in
             v0.*) ;;
             *) echo "::error::$tag left 0.x — Yousef lifts the ceiling, not a release run."; exit 1 ;;
           esac
           if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
-            echo "$tag already exists — nothing to release"
+            echo "$tag is already tagged — nothing to release"
             exit 0
           fi
           git tag "$tag"
@@ -174,11 +173,12 @@ jobs:
 
       # The tag push above used GITHUB_TOKEN, so release.yml's `push: tags`
       # trigger did NOT fire (by GitHub's design) — dispatching it here is what
-      # turns a merged version PR into a published release. `--ref "$tag"` pins
-      # the publish to the exact commit that was tagged, not to whatever main
-      # has drifted to.
+      # turns a versioned main into a published release. `--ref "$TAG"` pins the
+      # publish to the exact commit that was tagged, not to whatever main has
+      # drifted to.
       - name: Publish the tag
         if: steps.tag.outputs.tag != ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh workflow run release.yml --ref "${{ steps.tag.outputs.tag }}" -f publish=true
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: gh workflow run release.yml --ref "$TAG" -f publish=true

@@ -135,7 +135,11 @@ function ResolvedApprovalCard({ summary, ok, line, detail }: {
   );
 }
 
-function executedCard(summary: string, outcome: ToolOutcome): ReactNode {
+function executedCard(summary: string, outcome: ToolOutcome | undefined): ReactNode {
+  // A call parked at the MCP door runs in the outside agent's own retry, not
+  // server-side, so its receipt carries no result to show — only that the yes
+  // was spent by the call it authorized.
+  if (outcome === undefined) return <ResolvedApprovalCard summary={summary} ok line="Approved — ran" />;
   if (outcome.status === "ok") {
     // The result reads as the shell's ONE body — field rows, never the raw JSON
     // dump this used to print at an end user (spec §16.2). `resultRows`, not

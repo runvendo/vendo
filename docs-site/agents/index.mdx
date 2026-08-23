@@ -455,10 +455,6 @@ a signing secret) — it writes nothing MCP, and 1 and 2 are yours:
 npx vendo init --agent --use-case mcp --auth authJs --base-url http://localhost:3000
 ```
 
-That path needs Next.js and one of the four zero-arg presets,
-`--auth authJs|clerk|supabase|auth0`. On anything else — Express, `--auth none`,
-or `--auth jwt` (init prints the recipe instead: it cannot guess your signing
-secret) — it prints why and writes nothing MCP, and 1 and 2 are yours to wire.
 Once the use case is `mcp`, ONE more question comes back on that run for you to
 relay, and only when your human holds no Vendo Cloud key: Vendo Cloud, or their
 own keys. A free Cloud key runs their models AND signs outside agents in — on
@@ -566,13 +562,12 @@ the answer once they have an https origin to point it at.
    queue worker). `mcp: { serviceAuth: { keys: [...] } }` opens an RFC 8693
    exchange at the door's own token endpoint: the backend posts a key plus one
    of the host's user ids and gets back a short-lived token bound to that user.
-   The keys are opaque secrets your human generates — ask before creating one
-   (Rules of engagement below). On the MCP init path a local door generates one
-   into `.env.local` and wires it by DEFAULT, which is also what keeps sign-in
-   on the dev machine; a broker-fronted door (`--posture broker`) serves no
-   token endpoint of its own, so the key is the console's to create there.
-   Third-party agents need none of it; they run
-   the per-user OAuth the door already serves. Recipe:
+   The keys are opaque secrets your human generates — ask before creating one.
+   On the MCP init path a local door generates one into `.env.local` and wires
+   it by DEFAULT, which is also what keeps sign-in on the dev machine; a
+   broker-fronted door (`--posture broker`) serves no token endpoint of its
+   own, so the key is the console's to create there. Third-party agents need
+   none of it; they run the per-user OAuth the door already serves. Recipe:
    [MCP door](/outside-agents/how-the-door-works).
 
 **Guard and done on this path.** The outside AI app is the surface, and the

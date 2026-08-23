@@ -33,6 +33,7 @@ export { parseOrgPolicyFile } from "./org-policy.js";
 // package.
 export type { GuardLike } from "@vendoai/core";
 export type {
+  ApprovalReading,
   GuardRules,
   Judge,
   PolicyConfig,
