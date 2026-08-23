@@ -4,19 +4,14 @@ description: "Turn your app into an MCP server that Claude, ChatGPT, Cursor and 
 sidebarTitle: "Quickstart: outside agents"
 ---
 
-## Quickstart
-
-`npx vendo init` turns your app into an MCP server. Outside agents connect
-through your own login; your own backend gets a token from one method.
-
-Four steps, each with a checkpoint. Do not move on until the checkpoint passes.
+`vendo init` turns your app into an MCP server. Your own agent connects to it —
+from this codebase or from your backend — and acts as the user who is signed in,
+under the same guard, approvals and audit trail as the rest of your product.
+Claude, ChatGPT and Cursor connect to the same door.
 
 <Steps>
 
 <Step title="Run init">
-
-Already ran `vendo init` and answered **From outside agents over MCP**? You
-have this step — skip to **Open the door**.
 
 <CodeGroup>
 
@@ -32,75 +27,136 @@ pnpm exec vendo init
 
 </CodeGroup>
 
-Answer the first question — *How will people use your agent?* — with **From
-outside agents over MCP — Claude, ChatGPT, Cursor, or any MCP agent
-(experimental)**. That option is labelled experimental; the door itself is what
-this page proves.
+Answer the first question with **From outside agents over MCP**, then give init
+the origin your dev server prints. With a Vendo Cloud key — yours, or the one
+init's browser login mints in a click — there is nothing else to decide: dev
+runs on this machine, and your deployment uses the Cloud broker automatically.
 
-Next it confirms the auth preset it detected — *Should the agent act as your
-signed-in … user?* — which is what wires `actAs`, and then asks where your model
-key comes from.
+Init writes the door — `mcp: true` — into `lib/vendo.ts`, adds the discovery
+route beside your wire route, and fills `.vendo/` with your tool catalog, policy
+and brand.
 
-Then *Where does this app run in dev?* — the origin your dev server actually
-prints, `http://localhost:3000` or whatever port it names.
-
-After the posture question below, init asks a few more that are not this page's
-business — the AI judgment pass, and any theme slots it could not read
-confidently. Their defaults are fine; press Enter through them.
-
-Init writes the wiring: `mcp: true` into the composition it creates, the
-origin-root discovery route beside it, `VENDO_BASE_URL` into `.env.local`, and a
-`.vendo/` directory holding the tool catalog, judgments, policy, overrides and
-theme. It adds two package scripts — `predev` and `prebuild`, both running
-`vendo sync` so the catalog cannot drift from your code — and installs `ai` and
-`@ai-sdk/anthropic`. The closing line counts the files it wrote.
-
-```ts lib/vendo.ts focus={5}
-import { authJs } from "@vendoai/vendo/auth/auth-js";
-import { createVendo } from "@vendoai/vendo/server";
-
-export const vendo = createVendo({
-  auth: authJs(),
-  mcp: true,
-});
-```
-
-`auth` has to be a preset that carries the oauth half — `clerk()`, `authJs()`,
-`supabase()` or `auth0()`. [Auth](/production/auth) lists them.
-
-<Note>
-**Checkpoint.** `lib/vendo.ts` says `mcp: true`,
-`app/.well-known/[...vendo]/route.ts` exists, and `.env.local` has a
-`VENDO_BASE_URL` line.
-</Note>
+You should see a `Wired:` line naming `lib/vendo.ts`.
 
 </Step>
 
-<Step title="Check the door answers">
-
-Start your app and ask the door who it is. It should refuse you, and say where
-to go and sign in.
+<Step title="Prove the door">
 
 ```bash
 curl -si http://localhost:3000/api/vendo/mcp | head -3
 ```
 
-```http response focus={1,3}
-HTTP/1.1 401 Unauthorized
-content-type: application/json
-www-authenticate: Bearer resource_metadata="http://localhost:3000/.well-known/oauth-protected-resource/api/vendo/mcp"
-```
-
-That `401` is the door working. The `www-authenticate` header is how every MCP
-client discovers your sign-in without being told about it.
-
-<Note>
-**Checkpoint.** A `401` with a `www-authenticate` header naming your own origin.
-</Note>
+You should see a `401` carrying a `www-authenticate` header — the door working,
+telling every agent where to sign in.
 
 </Step>
 
-<Step title="Connect an outside agent">
+<Step title="Wire your agent">
+
+`vendo.agentTools` opens the door for one conversation. Pass the incoming
+request and the agent acts as whoever is signed in; pass one of your own user
+ids and it acts as them headlessly, from a cron or a queue worker.
+`vendo.tokenFor` takes the same two arguments, for a client you would rather
+hold yourself.
+
+```ts app/api/agent/route.ts
+import Anthropic from "@anthropic-ai/sdk";
+import { vendo } from "@/lib/vendo";
+
+const anthropic = new Anthropic();
+
+export async function POST(request: Request) {
+  const { task } = await request.json();
+  const door = await vendo.agentTools(request);
+  const messages: Anthropic.MessageParam[] = [{ role: "user", content: task }];
+
+  while (true) {
+    const reply = await anthropic.messages.create({
+      model: "claude-sonnet-4-6",
+      max_tokens: 4096,
+      tools: door.tools,
+      messages,
+    });
+    messages.push({ role: "assistant", content: reply.content });
+
+    const results = await door.results(reply);
+    if (results.length === 0) return Response.json({ reply, embeds: door.embeds });
+    messages.push({ role: "user", content: results });
+  }
+}
+```
+
+An empty `results` is how the loop knows the model is done. Ship `door.embeds`
+to the page and render each one:
+
+```tsx app/chat.tsx
+import { VendoToolResult } from "@vendoai/vendo/react";
+
+// wherever you render the assistant's turn:
+embeds.map((embed, index) => <VendoToolResult key={index} output={embed} />)
+```
+
+Nothing to wrap: the embed finds the wire at `/api/vendo` and rides your host
+session cookie.
+
+You should see the model call one of your own tools and answer with your own data.
+
+</Step>
+
+<Step title="Prove it end to end">
+
+Ask your agent to write something — pay someone, cancel something. The first one
+parks: a tool nobody has graded needs a person, so the guard asks. Approve it on
+the card, ask again, and it runs.
+
+You should see an approval card in your chat, and the same request go through once you approve.
+
+Grade the catalog with `vendo sync --ai` and the asking stops for everything but
+the destructive tools.
+
+</Step>
+
+</Steps>
+
+## When you deploy
+
+Two variables on your platform, and the same code:
+
+```bash
+VENDO_BASE_URL=https://app.example.com
+VENDO_API_KEY=vnd_…
+```
+
+`VENDO_BASE_URL` is the public https origin your app answers on — every
+discovery URL derives from it. `VENDO_API_KEY` is the key init already put in
+`.env.local`.
+
+<svg viewBox="0 0 760 172" role="img" aria-label="Dev on this machine and your deployment run the same code; only where the keys live differs" style={{ width: "100%", height: "auto", margin: "1.5rem 0" }}>
+  <g fill="none" stroke="currentColor" strokeOpacity="0.2">
+    <rect x="1" y="1" width="300" height="56" rx="11" />
+    <rect x="459" y="1" width="300" height="56" rx="11" />
+    <rect x="230" y="114" width="300" height="56" rx="11" />
+  </g>
+  <g fill="none" stroke="#6c3bff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M151 61v29h229v20" />
+    <path d="M609 61v29H380" />
+  </g>
+  <g fill="#6c3bff">
+    <path d="M376 106l4 8 4-8z" />
+  </g>
+  <g fill="currentColor" fontSize="13.5" fontWeight="600" textAnchor="middle">
+    <text x="151" y="26">Dev — this machine</text>
+    <text x="609" y="26">Your deployment</text>
+    <text x="380" y="139">The same code</text>
+  </g>
+  <g fill="currentColor" fillOpacity="0.55" fontSize="11.5" textAnchor="middle">
+    <text x="151" y="45">init wrote .env.local</text>
+    <text x="609" y="45">VENDO_BASE_URL · VENDO_API_KEY</text>
+    <text x="380" y="158">{"createVendo({ mcp: true })"}</text>
+  </g>
+</svg>
+
+## Claude, ChatGPT and Cursor
 
 Your users' setup page ships with the door. Open it in a browser:
 
@@ -108,140 +164,15 @@ Your users' setup page ships with the door. Open it in a browser:
 http://localhost:3000/api/vendo/mcp/connect
 ```
 
-It carries the copy-paste config for Claude, ChatGPT and Cursor. Paste one in,
-sign in with your app's own login when the client bounces you there, and ask it
-to do something.
-
-For Claude Code, the plugin is one command:
+It carries the copy-paste config for each client, and they sign in with your
+app's own login. For Claude Code, the plugin is two lines:
 
 ```
 /plugin marketplace add runvendo/vendo
 /plugin install vendo@vendo
 ```
 
-<Note>
-**Checkpoint.** The client lists your tools, and a call runs and comes back with
-*your own* data. Reads and writes both execute — nothing parks, and that is
-correct on a fresh install. The policy init writes to `.vendo/policy.json` asks
-on one thing only, `risk: destructive`, and a young app often has no tool graded
-that way. Approvals are a policy you opt into, not a default the door imposes:
-edit that file when you want a call to wait for a person.
-</Note>
-
-</Step>
-
-<Step title="Mint a token for your own backend">
-
-A backend agent has no browser to bounce through, so it asks your composition
-for a token instead. One method, two ways to call it.
-
-It exchanges a service key to do that. On Vendo Cloud the key is provisioned
-with your tenant and there is nothing to do. On the zero-key posture you declare
-one — `npx vendo init --service-key` writes it, and
-[Service keys](/outside-agents/service-keys-and-broker) is the whole story.
-
-Inside a request, pass the request — `tokenFor` reads who is signed in from the
-session cookie, the same way your own pages do:
-
-```ts app/api/agent/route.ts focus={6}
-import { vendo } from "@/lib/vendo";
-
-export async function POST(request: Request) {
-  const accessToken = await vendo.tokenFor(request);
-  // …hand it to your agent
-  return Response.json({ ok: true });
-}
-```
-
-Headless — a cron job, a queue worker, anything with no request in hand — pass
-the user id your own product spells:
-
-```ts jobs/nightly.ts focus={3}
-import { vendo } from "@/lib/vendo";
-
-const accessToken = await vendo.tokenFor("user_1904");
-```
-
-The token lasts ten minutes, is bound to that one person, and has no refresh
-path. Every call made with it runs *as that user*, through the same guard,
-policy and audit your own UI answers to. Under the hood it is an RFC 8693
-`urn:ietf:params:oauth:grant-type:token-exchange`, which you never have to spell
-yourself.
-
-<Note>
-**Checkpoint.** `tokenFor` returns a token string. Its shape tells you which
-posture minted it: `vmat_…` from your own door on the local posture, a raw JWT
-(`eyJhbG…`) from the broker on Vendo Cloud. Both are correct — feed it to a stock MCP
-client — [Your own agent](/outside-agents/your-own-agent) is the whole loop —
-and the call lands in your product under the user you named.
-</Note>
-
-One thing to pass on that first call. Your client abandons a `tools/call` after
-60 seconds by default, and generating a screen with `vendo_make` routinely runs
-longer. The door beats `notifications/progress` every 15 seconds, but the SDK
-extends the deadline only when you asked it to — so a client that receives every
-frame still gives up at 60 seconds. Ask for both: `onprogress` is what puts the
-progress token on the request, and `resetTimeoutOnProgress` is what makes the
-frames count.
-
-```js focus={4}
-const result = await client.callTool(
-  { name: "vendo_make", arguments: args },
-  undefined,
-  { onprogress: () => {}, resetTimeoutOnProgress: true },
-);
-```
-
-</Step>
-
-</Steps>
-
-## Who runs the sign-in
-
-The door needs an OAuth authorization server in front of it. There are two
-answers, and the door's URL is the same either way — it derives from
-`VENDO_BASE_URL` and never from a broker, so switching later invalidates nothing
-your users already configured.
-
-**Local — your app serves its own OAuth (default, no key).** Everything above
-already did this. Your app is the authorization server, your login is the
-sign-in, and nothing leaves your origin. Zero config, and it works on `http`, so
-this is the posture for local development.
-
-**Vendo Cloud broker (no question).** With a `VENDO_API_KEY` in hand, your
-deployment gets this one automatically: the OAuth surface moves off your domain
-to a stable `yourcompany.mcp.vendo.run` tenant that Vendo provisions on first
-use. There is nothing to copy: no console visit, no environment values, no keys.
-It needs an https `VENDO_BASE_URL`, per the warning in Step 1.
-
-Init writes both, and each lands where it belongs. `VENDO_SERVICE_KEY` goes into
-`.env.local`, which is dev-only and gitignored, so your machine keeps the local
-answer; your deployment never sees that variable and takes the broker. If a copy
-of it does reach production, the explicit key wins and the door stays local —
-`vendo doctor` warns about exactly that (E-MCP-010).
-
-To front the door with a broker you run yourself, set both values where you
-deploy. An explicit override always wins over the Cloud default.
-
-```bash .env
-VENDO_MCP_BROKER_URL=https://broker.example.com/mcp
-VENDO_MCP_FEDERATION_SECRET=…
-```
-
-Upgrading a deployment that already has `VENDO_API_KEY` and `mcp: true` moves
-its door from local to Cloud-brokered — declare those two variables yourself, or
-pass `mcp.serviceAuth`, to keep it where it is.
-
-## When you deploy
-
-Set `VENDO_BASE_URL` on your platform to the public origin your app answers on.
-Discovery, issuer and token audience all derive from it, and a door pointed at
-the wrong origin surfaces hours later as *"Claude can't find my server"*.
-
 ## Where to go next
-
-An app an outside agent builds lands in the person's own list of views until
-you give it a place: [Apps in your product](/generated/quickstart).
 
 <CardGroup cols={3}>
   <Card title="How the door works" href="/outside-agents/how-the-door-works">
@@ -250,9 +181,9 @@ you give it a place: [Apps in your product](/generated/quickstart).
     `mcp + oauth + actAs`
   </Card>
   <Card title="Your own agent" href="/outside-agents/your-own-agent">
-    The stock MCP client, one session per conversation, and the whole loop.
+    The whole loop: one door per conversation, approvals, long calls.
 
-    `tokenFor`
+    `agentTools`
   </Card>
   <Card title="Service keys & broker" href="/outside-agents/service-keys-and-broker">
     Where the key lives, the audit's `svc:` attribution, and rotation.

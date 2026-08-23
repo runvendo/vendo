@@ -39,7 +39,8 @@ you — this page is what is behind that call.
 
 **On a local door (no key).** The key is any opaque string you generate. It
 lives in your own environment as `VENDO_SERVICE_KEY`, the composition lists it,
-and `vendo init --service-key` writes both for you — this is what it generates:
+and `vendo init --use-case mcp` writes both for you by default — this is what it
+generates:
 
 ```ts lib/vendo.ts focus={8}
 import { authJs } from "@vendoai/vendo/auth/auth-js";

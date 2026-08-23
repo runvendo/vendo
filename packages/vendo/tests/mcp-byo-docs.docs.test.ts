@@ -20,9 +20,13 @@ const REPO_ROOT = new URL("../../../", import.meta.url);
 const read = (path: string): Promise<string> => readFile(new URL(path, REPO_ROOT), "utf8");
 const readJson = async <T>(path: string): Promise<T> => JSON.parse(await read(path)) as T;
 
-/** Opening the door, minting a user-bound token, wiring a client. */
+/** Opening the door and wiring the host's own agent to it. */
 const SETUP_PAGE = "docs-site/outside-agents/quickstart.mdx";
 const NAV_ENTRY = "outside-agents/quickstart";
+/** Where the key lives, what the exchange is, and the broker a host runs
+    itself — the operator's half, which the setup page links to rather than
+    restates. */
+const KEYS_PAGE = "docs-site/outside-agents/service-keys-and-broker.mdx";
 /** The Cloud restructure split the door story in three, and this gate follows
     the split rather than holding the docs to a shape they deliberately left:
     the setup page opens the door, `how-the-door-works` is what a call does once
@@ -89,13 +93,22 @@ describe("the setup page opens the door", () => {
     ["the door URL to paste", "/api/vendo/mcp"],
     ["the createVendo key that opens it", "mcp: true"],
     ["the origin every discovery document derives from", "VENDO_BASE_URL"],
-    ["the broker the door trusts", "VENDO_MCP_BROKER_URL"],
-    ["the token exchange the backend runs", "urn:ietf:params:oauth:grant-type:token-exchange"],
+    ["the method that opens the door for a host's own agent", "vendo.agentTools"],
     ["the door internals link", "/outside-agents/how-the-door-works"],
   ];
 
   it.each(mustMention)("names %s", async (_label, needle) => {
     expect(await read(SETUP_PAGE)).toMatch(needle);
+  });
+
+  /** Moved off the setup page with the Cloud-first rewrite: a broker a host
+      runs itself and the exchange behind `tokenFor` are operator facts, and the
+      setup page carries the happy path only. */
+  it.each([
+    ["the broker the door trusts", "VENDO_MCP_BROKER_URL"],
+    ["the token exchange the backend runs", "RFC 8693"],
+  ])("the keys page names %s", async (_label, needle) => {
+    expect(await read(KEYS_PAGE)).toMatch(needle);
   });
 });
 
