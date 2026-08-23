@@ -28,7 +28,7 @@
   "integrations": {
     "posthog": {
       "apiKey": "phc_siVHW4wVh8yDeDzMgnjLGrYYqsHMceqfdqYF9fPEGXpS",
-      "sessionRecording": true
+      "sessionRecording": false
     }
   },
   "contextual": {
