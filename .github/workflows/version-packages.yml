@@ -145,13 +145,12 @@ jobs:
       - name: Push the release tag
         id: tag
         env:
-          # The built-in token, spelled out, because the checkout above persists
-          # RELEASE_PAT and a plain `git push origin` would inherit it. A real
-          # credential's tag push DOES fire release.yml's `push: tags` trigger,
-          # so the tag and the dispatch below both started a publish and the two
-          # runs collided on npm (2026-08-21: dispatch 32437362971 lost to push
-          # 32437364008). GITHUB_TOKEN's silence is the interlock that makes the
-          # dispatch the single trigger — it is load-bearing, not incidental.
+          # The built-in token, spelled out, because a real credential's tag push
+          # DOES fire release.yml's `push: tags` trigger, and then the tag and the
+          # dispatch below each start a publish and the two collide on npm
+          # (2026-08-21 and again on v0.38.0: push run 32661101752 failed against
+          # dispatch 32661101524). GITHUB_TOKEN's silence is the interlock that
+          # makes the dispatch the single trigger — load-bearing, not incidental.
           TAG_PUSH_URL: https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}
         run: |
           set -euo pipefail
@@ -167,7 +166,14 @@ jobs:
             exit 0
           fi
           git tag "$tag"
-          git push "$TAG_PUSH_URL" "refs/tags/$tag"
+          # The URL alone was NOT enough, and v0.38.0 proved it: actions/checkout
+          # persists its credential as `http.https://github.com/.extraheader:
+          # AUTHORIZATION: basic <RELEASE_PAT>`, and that header BEATS basic auth
+          # embedded in the URL — git sends both, GitHub honours the header. So
+          # the tag went up as yousefh409 and fired `push: tags` anyway. Emptying
+          # the header for this one command is what actually forces the URL's
+          # token; the config itself is left alone for every other git call.
+          git -c http.https://github.com/.extraheader= push "$TAG_PUSH_URL" "refs/tags/$tag"
           echo "pushed $tag -> $(git rev-parse HEAD)"
           echo "tag=$tag" >>"$GITHUB_OUTPUT"
 

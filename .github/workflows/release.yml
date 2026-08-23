@@ -113,13 +113,28 @@ jobs:
           # release partway through, after earlier packages are already live.
           done < <(pnpm -r --filter './packages/*' exec node -e "const p=require('./package.json'); if (!p.private) process.stdout.write(p.name+'\n')")
 
-      # Last: open the @vendoai bump PR on vendo-web, so the console never sits
-      # on a stale release. GITHUB_TOKEN is scoped to this repo alone, so this
-      # needs its own cross-repo credential; without it the step says so and
-      # stops, and it never reddens a release that already published.
+  # Opening the @vendoai bump PR on vendo-web is its OWN job so that its
+  # failures are visible. It used to be the publish job's last step under
+  # `continue-on-error: true`, and that combination is how the console sat on a
+  # stale release for two days: v0.38.0's bump died on
+  # ERR_PNPM_NO_MATCHING_VERSION, the annotation was a warning inside a green
+  # release, and nobody had any reason to look. A separate job can go red on its
+  # own without claiming the publish failed — the publish really did succeed,
+  # and the packages really are on npm.
+  #
+  # GITHUB_TOKEN is scoped to this repo alone, so this needs its own cross-repo
+  # credential; without it the job says so and stops green, because a missing
+  # optional secret is not a failure.
+  bump-console:
+    needs: publish
+    if: github.event_name == 'push' || inputs.publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
       - name: Open the vendo-web dep bump PR
-        if: github.event_name == 'push' || inputs.publish
-        continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.VENDO_WEB_PAT }}
         run: |
@@ -129,6 +144,21 @@ jobs:
             exit 0
           fi
           version=$(node -p "require('./packages/vendo/package.json').version")
+          # `npm publish` returning is not the same as the version being
+          # installable: the registry's read path lags the write by seconds to
+          # minutes, and this job starts immediately after. v0.38.0's bump asked
+          # pnpm for a version npm had not surfaced yet and died with
+          # ERR_PNPM_NO_MATCHING_VERSION. Wait for the thing we just published to
+          # actually resolve before rewriting nine files against it.
+          published=false
+          for _ in $(seq 60); do
+            if npm view "@vendoai/vendo@$version" version >/dev/null 2>&1; then published=true; break; fi
+            sleep 5
+          done
+          if [ "$published" != true ]; then
+            echo "::error::@vendoai/vendo@$version is still not resolvable 5 minutes after publish — refusing to open a bump PR pnpm cannot install"
+            exit 1
+          fi
           # The branch prefix is a contract: vendo-web's vendoai-bump-merge
           # workflow only ever merges `vendoai-bump/*`.
           branch="vendoai-bump/v$version"
