@@ -36,19 +36,6 @@ Init writes the door — `mcp: true` — into `lib/vendo.ts`, adds the discovery
 route beside your wire route, and fills `.vendo/` with your tool catalog, policy
 and brand.
 
-You should see a `Wired:` line naming `lib/vendo.ts`.
-
-</Step>
-
-<Step title="Prove the door">
-
-```bash
-curl -si http://localhost:3000/api/vendo/mcp | head -3
-```
-
-You should see a `401` carrying a `www-authenticate` header — the door working,
-telling every agent where to sign in.
-
 </Step>
 
 <Step title="Wire your agent">
@@ -99,17 +86,14 @@ embeds.map((embed, index) => <VendoToolResult key={index} output={embed} />)
 Nothing to wrap: the embed finds the wire at `/api/vendo` and rides your host
 session cookie.
 
-You should see the model call one of your own tools and answer with your own data.
-
 </Step>
 
-<Step title="Prove it end to end">
+<Step title="Approvals">
 
-Ask your agent to write something — pay someone, cancel something. The first one
-parks: a tool nobody has graded needs a person, so the guard asks. Approve it on
-the card, ask again, and it runs.
-
-You should see an approval card in your chat, and the same request go through once you approve.
+Ask your agent to write something — pay someone, cancel something — and the call
+parks: a tool nobody has graded needs a person, so the guard asks. The approval
+card is one of the embeds, so it renders in your chat. Approve it there, ask
+again, and the call runs.
 
 Grade the catalog with `vendo sync --ai` and the asking stops for everything but
 the destructive tools.

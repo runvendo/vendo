@@ -90,7 +90,7 @@ describe("the BYO-over-MCP pages are published", () => {
 
 describe("the setup page opens the door", () => {
   const mustMention: [label: string, needle: string | RegExp][] = [
-    ["the door URL to paste", "/api/vendo/mcp"],
+    ["the connect page a user opens, at the door's own path", "/api/vendo/mcp/connect"],
     ["the createVendo key that opens it", "mcp: true"],
     ["the origin every discovery document derives from", "VENDO_BASE_URL"],
     ["the method that opens the door for a host's own agent", "vendo.agentTools"],
