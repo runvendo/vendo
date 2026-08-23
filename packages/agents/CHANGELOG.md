@@ -1,5 +1,19 @@
 # @vendoai/agents
 
+## 0.37.1
+
+### Patch Changes
+
+- Updated dependencies [695e218]
+  - @vendoai/guard@0.37.1
+  - @vendoai/harnesses@0.37.1
+  - @vendoai/core@0.37.1
+  - @vendoai/store@0.37.1
+  - @vendoai/actions@0.37.1
+  - @vendoai/apps@0.37.1
+  - @vendoai/automations@0.37.1
+  - @vendoai/mcp@0.37.1
+
 ## 0.37.0
 
 ### Patch Changes
