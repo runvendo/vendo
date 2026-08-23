@@ -1,5 +1,56 @@
 # @vendoai/vendo
 
+## 0.37.0
+
+### Minor Changes
+
+- 853c591: `vendo init` writes the caller resolver on the agent-loop arm. Init owns
+  `lib/vendo.ts`, and both existing-agent walkthroughs opened by telling the
+  reader to hand-add one export — `resolvePrincipal` — to the file init had just
+  written, because the chat route needs the caller and only the composition knows
+  how this host resolves one. `--use-case agent-loop` now emits it, over the same
+  identity the wire composed: a hoisted `const auth = <preset>()` shared with
+  `createVendo({ auth })`, or the hoisted demo `principal` when no provider was
+  detected. One binding, so the wire and your own loop cannot land on different
+  subjects — the mismatch that has no error and leaves the embeds polling a screen
+  nobody is shown.
+
+  The export appears on that arm only: the composition is one file across the
+  embedded, MCP and agent-loop arms, and a name none of the other readers import
+  is noise in their scaffold. The two quickstarts now describe the file rather
+  than add to it.
+
+- 853c591: The slot registry is page-reported and nothing else. `createVendo({ slots })` is
+  gone, and with it the merge that put a host's declared entries in front of the
+  reports: a declared slot never decayed and beat a page report of the same id, so
+  a declaration the product had outgrown was a silent black hole — the pin landed
+  where no page displays it, and nothing ages that out. A slot is now known
+  because a `<VendoSlot>` rendered, per user, refreshed on every render and aged
+  out on its own after `SLOT_DECAY_MS`, so the list is always the places that
+  really exist.
+
+  Nothing declared config could say is lost. The one capability it carried beyond
+  an id is `description` — the sentence an agent reads to pick between two slots a
+  label alone cannot separate — and that already lives on the component:
+  `<VendoSlot description="…">` reports it over the wire, through the registry, to
+  the model.
+
+### Patch Changes
+
+- Updated dependencies [853c591]
+- Updated dependencies [853c591]
+  - @vendoai/ui@0.37.0
+  - @vendoai/mcp@0.37.0
+  - @vendoai/apps@0.37.0
+  - @vendoai/agents@0.37.0
+  - @vendoai/actions@0.37.0
+  - @vendoai/harnesses@0.37.0
+  - @vendoai/store@0.37.0
+  - @vendoai/core@0.37.0
+  - @vendoai/guard@0.37.0
+  - @vendoai/automations@0.37.0
+  - @vendoai/knowledge@0.37.0
+
 ## 0.36.5
 
 ### Patch Changes

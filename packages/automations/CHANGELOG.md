@@ -1,5 +1,11 @@
 # @vendoai/automations
 
+## 0.37.0
+
+### Patch Changes
+
+- @vendoai/core@0.37.0
+
 ## 0.36.5
 
 ### Patch Changes
