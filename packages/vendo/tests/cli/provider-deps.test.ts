@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { aiBelowPeerFloor, defaultRunner, ensureGeneratedImports, ensureProviderDeps, ensureVendoPackage, ensureZodFloor, installCommandFor, installStderrTail, providerModuleFor, VENDO_PACKAGE_SPEC, zodBelowAiSdkFloor, ZOD_FLOOR_SPEC } from "../../src/cli/provider-deps.js";
+import { aiBelowPeerFloor, defaultRunner, installSpawnPlan, ensureGeneratedImports, ensureProviderDeps, ensureVendoPackage, ensureZodFloor, installCommandFor, installStderrTail, providerModuleFor, VENDO_PACKAGE_SPEC, zodBelowAiSdkFloor, ZOD_FLOOR_SPEC } from "../../src/cli/provider-deps.js";
 
 // Init installs the provider module the resolved credential loads at
 // runtime (0.4.1 E2E cert finding: nothing declares @ai-sdk/*, so a fresh
@@ -766,5 +766,33 @@ describe("ensureZodFloor in a hoisted workspace (checker round 1)", () => {
       },
     });
     expect(calls).toEqual([{ command: "pnpm", args: ["add", ZOD_FLOOR_SPEC], cwd: app }]);
+  });
+});
+
+/**
+ * The Windows half of the install spawn. Package managers are `.cmd` shims
+ * there and Node has refused to exec one without a shell since CVE-2024-27980,
+ * so the spawn ENOENTs before the install starts. CI is ubuntu-only, so the
+ * platform is injected rather than observed — this is the only place the win32
+ * shape is checked at all.
+ */
+describe("installSpawnPlan", () => {
+  it("gives Windows ONE command string and a shell, never an args array", () => {
+    const plan = installSpawnPlan("pnpm", ["add", "ai@^6"], "win32");
+    expect(plan.shell).toBe(true);
+    // An args array alongside `shell: true` is DEP0190: Node 24 prints that
+    // deprecation warning by default, onto the CLI's own stderr, mid-install.
+    expect(plan.args).toBeUndefined();
+    expect(plan.command).toBe('pnpm "add" "ai@^6"');
+  });
+
+  it("quotes every arg, because cmd.exe reads a bare ^ as an escape", () => {
+    // Unquoted, `ai@^6.1` reaches npm as `ai@6.1` — a different, pinned spec.
+    expect(installSpawnPlan("npm", ["install", "ai@^6.1"], "win32").command).toContain('"ai@^6.1"');
+  });
+
+  it("leaves every other platform on the shell-less argv spawn", () => {
+    const plan = installSpawnPlan("pnpm", ["add", "ai@^6"], "linux");
+    expect(plan).toEqual({ command: "pnpm", args: ["add", "ai@^6"], shell: false });
   });
 });

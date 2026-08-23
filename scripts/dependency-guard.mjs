@@ -314,7 +314,12 @@ const IMPORT_RE =
  * `<parent>/*` glob. Anything else throws, because a silently unscanned directory
  * is the defect above. */
 function workspacePackageDirs() {
-  const yaml = readFileSync(join(ROOT, "pnpm-workspace.yaml"), "utf8");
+  // Normalized, because a Windows checkout (core.autocrlf=true, the git default
+  // there) hands every line back with a trailing \r. The entry pattern below
+  // ends at `["']?$`, which cannot consume it — so `pnpm lint` died on its very
+  // first step with `unreadable workspace entry: - "packages/*"`, an error about
+  // the workspace file rather than about the platform.
+  const yaml = readFileSync(join(ROOT, "pnpm-workspace.yaml"), "utf8").replace(/\r\n/g, "\n");
   const list = /^packages:[^\S\n]*\n((?:[^\S\n]+-[^\n]*\n)+)/m.exec(yaml)?.[1];
   if (!list) throw new Error("dependency-guard: no `packages:` list in pnpm-workspace.yaml");
   const dirs = [];

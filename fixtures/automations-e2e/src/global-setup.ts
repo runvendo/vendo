@@ -9,7 +9,12 @@ import { join } from "node:path";
 import type { TestProject } from "vitest/node";
 
 const fixtureDir = fileURLToPath(new URL("../../host-app/", import.meta.url));
-const nextBin = join(fixtureDir, "node_modules", ".bin", "next");
+// `node_modules/.bin/next` is an extensionless shell script on POSIX and a
+// `.cmd`/`.ps1` pair on Windows, where Node has refused to exec either without
+// a shell since CVE-2024-27980 — the bare spawn ENOENTs and the fixture never
+// comes up. Next ships its real entry as plain JS, so run that on this same
+// Node: no shell, no quoting, one code path on both platforms.
+const nextBin = join(fixtureDir, "node_modules", "next", "dist", "bin", "next");
 
 let child: ChildProcessWithoutNullStreams | undefined;
 let serverOutput = "";
@@ -48,7 +53,7 @@ async function waitForFixture(baseUrl: string): Promise<void> {
 export default async function setup(project: TestProject): Promise<() => Promise<void>> {
   const port = await freePort();
   const baseUrl = `http://127.0.0.1:${port}`;
-  child = spawn(nextBin, ["dev", "-p", String(port)], {
+  child = spawn(process.execPath, [nextBin, "dev", "-p", String(port)], {
     cwd: fixtureDir,
     // Own dist dir → own dev-server lock; the actions fixture e2e may be
     // booting the same host app concurrently under turbo. Nested under .next

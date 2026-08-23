@@ -11,7 +11,12 @@ import { vendoSync } from "../../src/sync/index.js";
 import { createActions, type ActionsRunContext } from "../../src/runtime/registry.js";
 
 const fixtureDir = fileURLToPath(new URL("../../../../fixtures/host-app/", import.meta.url));
-const nextBin = join(fixtureDir, "node_modules", ".bin", "next");
+// `node_modules/.bin/next` is an extensionless shell script on POSIX and a
+// `.cmd`/`.ps1` pair on Windows, where Node has refused to exec either without
+// a shell since CVE-2024-27980 — the bare spawn ENOENTs and the fixture never
+// comes up. Next ships its real entry as plain JS, so run that on this same
+// Node: no shell, no quoting, one code path on both platforms.
+const nextBin = join(fixtureDir, "node_modules", "next", "dist", "bin", "next");
 
 let child: ChildProcessWithoutNullStreams | undefined;
 let baseUrl = "";
@@ -91,7 +96,7 @@ async function startFixture(): Promise<void> {
   const port = await freePort();
   baseUrl = `http://127.0.0.1:${port}`;
   serverOutput = "";
-  const fixtureChild = spawn(nextBin, ["dev", "-p", String(port)], {
+  const fixtureChild = spawn(process.execPath, [nextBin, "dev", "-p", String(port)], {
     cwd: fixtureDir,
     // FIXTURE_DIST_DIR: host-app's next.config gives each concurrent consumer
     // its own dist dir (see the comment there); the previous default `.next`
