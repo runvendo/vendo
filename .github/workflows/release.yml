@@ -45,6 +45,19 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+      # The same GitHub-cache-backed turbo remote cache ci.yml fills, so `build`
+      # and `typecheck` below replay whatever has already been built for this
+      # exact commit instead of recompiling it.
+      #
+      # How much that is depends on a race, honestly: the tag names the version
+      # commit, and main's own CI run on that commit starts seconds before this
+      # one, so the two build in parallel and this job replays only the tasks CI
+      # finished first. What is NOT a race is a second run at the same tag — a
+      # re-run after a flaky publish reads back its own tag-scoped cache and is
+      # pure replay. (GitHub scopes cache writes to the current ref and lets any
+      # ref read the default branch's, which is what makes both directions work.)
+      - name: Turbo remote cache (GitHub-cache backed)
+        uses: rharkor/caching-for-turbo@2238fae6eb9a9936f92356f54cb3660200d105e7 # v2.5.1
       - run: pnpm install --frozen-lockfile
       # BUILD + TYPECHECK, not the full gate. This workflow only ever runs at a
       # tag, and that tag's tree already merged through main's required checks
