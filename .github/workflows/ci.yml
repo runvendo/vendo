@@ -34,7 +34,9 @@ concurrency:
 #   test-rest         every other package, one job, one turbo run
 #   ai-dual           the same suites against the OTHER AI SDK major (ai@7),
 #                     which is the only thing that can prove the peer range,
-#                     sharded the same way (vendo x4, ui x2, rest)
+#                     sharded the same way (vendo x4, ui x2, rest). The matrix
+#                     itself lives in ai-dual.yml, because ai-dual-nightly.yml
+#                     runs it a second time against the newest ai@7
 #   coverage-merge    merges the shards' blob reports and enforces the
 #                     per-package coverage floors (they cannot be enforced on a
 #                     single shard — see the comment on that job)
@@ -461,82 +463,18 @@ jobs:
         if: always()
         run: stat -c '%n size=%s inode=%i links=%h mtime=%Y' node_modules/.pnpm/@electric-sql+pglite@*/node_modules/@electric-sql/pglite/dist/pglite.data
 
-  # The OTHER AI SDK major (#478). Every other job in this file resolves ai@6 —
-  # the version each package's devDependencies pin — so a peer range that claims
-  # `ai >=6 <8` is a claim nothing checks. This lane pins the whole tree to the
-  # v7 pairing and runs the same suites against it, which is the only way the
-  # two live majors can disagree in front of anyone.
-  #
-  # SHARDED like test-shards, because unsharded it was the whole PR run's
-  # critical path: 31 minutes against every other job's <=9 (main run
-  # 32394860278), of which the serial test phase was 27m30s and @vendoai/vendo
-  # alone was 1171s, ui 377s. Same split as the v6 lane — vendo x4, ui x2 — with
-  # everything else in one `rest` leg, whose own long pole is @vendoai/agents at
-  # 320s. `pnpm test:ai7` is still the one-shot a laptop runs; the three halves
-  # of it are unrolled below so the last one can shard.
-  #
-  # It BUILDS first on purpose: every package compiles with tsc, so a v7 type
-  # break fails here before a single test runs. The shard legs build only their
-  # own closure; `rest` keeps the UNFILTERED build, so examples/ and fixtures/
-  # are still type-checked against v7 somewhere. `store` is the one package with
-  # no `ai` peer at all and three shards' worth of PGlite boots, so it is the one
-  # negation; the rest is `./packages/*`, expressed that way so a new package
-  # joins this lane the day it is created.
-  #
-  # NOT cached: the flipped lockfile hashes differently from every other job's,
-  # so every leg is a cold run by construction. Parallelism is the entire win
-  # here; there is no cache to chase.
-  #
-  # `test` only, never `test:ui` — no browser runs in CI (2026-08-06: headless
-  # mis-resolves :focus-visible and light-dark()), and an SDK major is not a
-  # pixel question anyway. The Playwright suite stays the local pre-PR gate it
-  # is for the v6 lane.
+  # The OTHER AI SDK major (#478), as a reusable workflow: the same seven legs
+  # run again on a nightly schedule against the NEWEST ai@7, so the matrix and
+  # its comments live once, in ai-dual.yml. What this call gets is the PINNED
+  # pairing (scripts/pin-ai-major-7.mjs) — `float` defaults to false — because a
+  # floating range let ai@7.0.70 red every PR and merge_group entry on
+  # 2026-08-20 until #1584.
   ai-dual:
-    name: ai-dual (${{ matrix.name }})
-    runs-on: ubuntu-latest
-    # ~10 minutes of real work on the longest leg (install ~40s, build <=2m30s,
-    # tests <=6m). A timeout is a hang detector, so the ceiling sits well above
-    # that rather than at it.
-    timeout-minutes: 25
     needs: cone
     # Same reasoning as the shards' RUN gate: the version PR puts every package
     # in the cone and there is nothing here for it to prove.
     if: needs.cone.outputs.heavy == 'true'
-    env:
-      # Both halves, at job level: this job invokes turbo directly, so it does
-      # not inherit the root scripts' caps, and a max-only cap makes Tinypool
-      # throw before a single test runs. Stays at 2 rather than test-shards' 4:
-      # `rest` runs turbo across many packages, which is the outer layer the cap
-      # exists to stop multiplying, and a cold v7 tree is the heaviest install
-      # in the file.
-      VITEST_MIN_FORKS: "1"
-      VITEST_MAX_FORKS: "2"
-      VITEST_MIN_THREADS: "1"
-      VITEST_MAX_THREADS: "2"
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { name: vendo-1, build: "--filter=@vendoai/vendo", test: "--filter=@vendoai/vendo exec vitest run --shard=1/4" }
-          - { name: vendo-2, build: "--filter=@vendoai/vendo", test: "--filter=@vendoai/vendo exec vitest run --shard=2/4" }
-          - { name: vendo-3, build: "--filter=@vendoai/vendo", test: "--filter=@vendoai/vendo exec vitest run --shard=3/4" }
-          - { name: vendo-4, build: "--filter=@vendoai/vendo", test: "--filter=@vendoai/vendo exec vitest run --shard=4/4" }
-          - { name: ui-1, build: "--filter=@vendoai/ui", test: "--filter=@vendoai/ui exec vitest run --shard=1/2" }
-          - { name: ui-2, build: "--filter=@vendoai/ui", test: "--filter=@vendoai/ui exec vitest run --shard=2/2" }
-          # No build filter = the whole tree; this is the leg that carries the
-          # type-break guarantee above.
-          - { name: rest, build: "", test: "turbo run test --continue --concurrency=2 '--filter=./packages/*' '--filter=!@vendoai/store' '--filter=!@vendoai/vendo' '--filter=!@vendoai/ui'" }
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: node scripts/pin-ai-major-7.mjs
-      - run: pnpm install --no-frozen-lockfile
-      - run: pnpm turbo run build ${{ matrix.build }}
-      - run: pnpm ${{ matrix.test }}
+    uses: ./.github/workflows/ai-dual.yml
 
   # The per-package coverage floors (vendo 78 / store 84 / ui 90, each in the
   # package's vitest config) live HERE, because a floor is only meaningful
