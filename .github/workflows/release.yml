@@ -129,6 +129,11 @@ jobs:
     needs: publish
     if: github.event_name == 'push' || inputs.publish
     runs-on: ubuntu-latest
+    # Narrower than the workflow default: this job reads this repo and talks to
+    # vendo-web with VENDO_WEB_PAT. It publishes nothing, so it has no business
+    # holding the OIDC token that `publish` mints npm credentials with.
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
@@ -144,21 +149,37 @@ jobs:
             exit 0
           fi
           version=$(node -p "require('./packages/vendo/package.json').version")
+          # EVERY package the bump will pin, not just the umbrella. The lockstep
+          # group is exactly the public packages carrying this version, so
+          # matching on it is also what excludes @vendoai/telemetry, which
+          # versions on its own and never rides the bump.
+          group=$(node -e '
+            const fs = require("fs");
+            for (const dir of fs.readdirSync("packages")) {
+              const file = "packages/" + dir + "/package.json";
+              if (!fs.existsSync(file)) continue;
+              const pkg = JSON.parse(fs.readFileSync(file, "utf8"));
+              if (!pkg.private && pkg.version === process.argv[1]) console.log(pkg.name);
+            }' "$version")
           # `npm publish` returning is not the same as the version being
-          # installable: the registry's read path lags the write by seconds to
-          # minutes, and this job starts immediately after. v0.38.0's bump asked
-          # pnpm for a version npm had not surfaced yet and died with
-          # ERR_PNPM_NO_MATCHING_VERSION. Wait for the thing we just published to
-          # actually resolve before rewriting nine files against it.
-          published=false
-          for _ in $(seq 60); do
-            if npm view "@vendoai/vendo@$version" version >/dev/null 2>&1; then published=true; break; fi
-            sleep 5
+          # installable: the registry's read path lags the write, and this job
+          # starts immediately after. v0.38.0's bump asked pnpm for a version npm
+          # had not surfaced yet and died with ERR_PNPM_NO_MATCHING_VERSION.
+          #
+          # Every package is checked because propagation is per-package and
+          # unordered — the umbrella can be live while a sibling still 404s, and
+          # pnpm resolves all of them. One 5-minute budget covers the whole set.
+          deadline=$(( SECONDS + 300 ))
+          for name in $group; do
+            until npm view "$name@$version" version >/dev/null 2>&1; do
+              if [ "$SECONDS" -ge "$deadline" ]; then
+                echo "::error::$name@$version is still not resolvable 5 minutes after publish — refusing to open a bump PR pnpm cannot install"
+                exit 1
+              fi
+              sleep 5
+            done
           done
-          if [ "$published" != true ]; then
-            echo "::error::@vendoai/vendo@$version is still not resolvable 5 minutes after publish — refusing to open a bump PR pnpm cannot install"
-            exit 1
-          fi
+          echo "all of $(printf '%s' "$group" | wc -w) published packages resolve at $version"
           # The branch prefix is a contract: vendo-web's vendoai-bump-merge
           # workflow only ever merges `vendoai-bump/*`.
           branch="vendoai-bump/v$version"
