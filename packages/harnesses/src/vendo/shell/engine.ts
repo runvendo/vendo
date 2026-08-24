@@ -43,8 +43,10 @@ const TMP_MAX_BYTES = 32 * 1024 * 1024;
 
 /** Routed through a mutable binding so NO bundler ever statically resolves the
  *  interpreter. just-bash's graph reaches `node:worker_threads`, `undici` and
- *  `sql.js`, and it `import()`s two packages that are not its dependencies at
- *  all (`@mongodb-js/zstd`, `node-liblzma`) — esbuild hard-fails a Worker build
+ *  `sql.js`, and it `import()`s the two native packages it declares as
+ *  `optionalDependencies` (`@mongodb-js/zstd`, `node-liblzma`) — installed on a
+ *  consumer's disk, which is why their build scripts have to be denied
+ *  (pnpm-workspace.yaml), and unbundleable, so esbuild hard-fails a Worker build
  *  on those two, which is `scripts/portability-gate.mjs` Leg A. Same containment,
  *  and the same reasoning, as the optional e2b SDK
  *  (`packages/apps/src/server/escalation/e2b/index.ts`); a `let` is what defeats

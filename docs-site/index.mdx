@@ -51,7 +51,14 @@ No agent handy? Do it by hand. Three steps.
 
     </CodeGroup>
 
-    On pnpm the install ends with `Ignored build scripts: esbuild`. Nothing to approve — Vendo reaches esbuild through its Node API, which that script has nothing to do with.
+    On pnpm the install downloads everything and then exits 1 with `Ignored build scripts: @mongodb-js/zstd, esbuild, node-liblzma`. None of the three needs compiling — Vendo reaches esbuild through its Node API, which that script has nothing to do with, and the other two are the shell's optional native `tar` backends, behind guarded imports nothing calls. pnpm writes the three names into your `pnpm-workspace.yaml` with a placeholder; set all three to `false` and install again.
+
+    ```yaml pnpm-workspace.yaml
+    allowBuilds:
+      '@mongodb-js/zstd': false
+      esbuild: false
+      node-liblzma: false
+    ```
   </Step>
 
   <Step title="Run npx vendo init">

@@ -12,12 +12,14 @@ packages:
 # runtime for the portability gate (scripts/portability-gate.mjs).
 allowBuilds:
   # zstd + lzma are just-bash's OPTIONAL native backends for its compressed-tar
-  # commands. just-bash is a devDependency (the workspace's bash tests) and
-  # nothing in the tree compresses an archive through it, so the native builds
-  # are denied rather than compiled — running two build scripts would widen the
-  # supply-chain surface for a code path with no caller. Kept rather than
-  # dropped because the packages remain in the install graph and strictDepBuilds
-  # fails a cold install that merely ignores them. Flip to true the day a
+  # commands. just-bash is a runtime dependency of @vendoai/harnesses (the shell
+  # tool) and nothing in the tree compresses an archive through it, so the native
+  # builds are denied rather than compiled — running two build scripts would
+  # widen the supply-chain surface for a code path with no caller. Kept rather
+  # than dropped because the packages remain in the install graph and
+  # strictDepBuilds fails a cold install that merely ignores them. Every
+  # consumer of the published packages inherits the same two — that is why
+  # docs-site/index.mdx tells them to deny both. Flip to true the day a
   # bash-native harness needs `tar -z`.
   '@mongodb-js/zstd': false
   cbor-extract: true
