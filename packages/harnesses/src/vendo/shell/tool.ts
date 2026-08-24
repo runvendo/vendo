@@ -159,6 +159,13 @@ export function createShellTools(
         // `/tmp` and staged writes are then unreachable.
         opening = openTurn(ctx.principal);
         live.set(key, opening);
+        // A REJECTED open is not cached, though: the store blinking once must
+        // not wedge the rest of the turn. Guarded on identity so a turn that was
+        // evicted and re-opened keeps its newer entry.
+        const failed = opening;
+        void failed.catch(() => {
+          if (live.get(key) === failed) live.delete(key);
+        });
       }
       const turn = await opening;
       const run = turn.queue.then(async () => ({
@@ -168,12 +175,16 @@ export function createShellTools(
       turn.queue = run.catch(() => undefined);
       const { result, committed } = await run;
       if (committed.status === "conflict") {
-        // `/orgs` is compare-and-swap: the command ran, and nothing it wrote was
-        // kept. Saying `ok` here would tell the model a durable write happened.
+        // `/orgs` is compare-and-swap and a commit batches PER OWNER
+        // (store/src/workspace-fs.ts:592-595), so the losing swap is the only
+        // thing rolled back — the same command's `/user` writes DID land. Saying
+        // `ok` would hide the lost write; saying nothing was saved would send the
+        // model to re-run a command that already half-applied.
         return fail(
           "conflict",
-          `Someone else changed ${committed.paths.join(", ")} while this ran, so none of this command's `
-          + `writes were saved. Re-read those paths and run it again.`,
+          `Someone else changed ${committed.paths.join(", ")} while this ran, so the writes to those `
+          + `paths were rejected. Anything this command wrote elsewhere DID land. Re-read those paths `
+          + `and redo only that part.`,
         );
       }
       return ok({ stdout: clip(result.stdout), stderr: clip(result.stderr), exitCode: result.exitCode });

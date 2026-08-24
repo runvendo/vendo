@@ -99,7 +99,14 @@ describe("the shell tool's hands", () => {
     );
 
     expect(outcome).toMatchObject({ status: "error", error: { code: "conflict" } });
-    expect((outcome as { error: { message: string } }).error.message).toContain("/orgs/acme/files/ledger.csv");
+    const { message } = (outcome as { error: { message: string } }).error;
+    expect(message).toContain("/orgs/acme/files/ledger.csv");
+    // A commit batches PER OWNER (store/src/workspace-fs.ts:592-595), so a lost
+    // `/orgs` swap does NOT take the same command's `/user` writes down with it.
+    // Saying nothing was saved would send the model to re-run a command that
+    // already half-landed.
+    expect(message).not.toContain("none of this command");
+    expect(message).toContain("elsewhere");
   });
 });
 
@@ -192,5 +199,29 @@ describe("the session's lifetime", () => {
 
     expect(opened).toBe(1);
     expect((second as { output: { stdout: string } }).output.stdout).toBe("one\n");
+  });
+
+  it("does not poison the turn when opening the workspace fails once", async () => {
+    const workspace = workspaceDouble();
+    let attempt = 0;
+    const registry = createShellTools(async () => {
+      attempt += 1;
+      if (attempt === 1) throw new Error("store unreachable");
+      return workspace;
+    });
+    const turn = ctx({ turnId: "trn_flaky" });
+
+    await expect(registry.execute(
+      { id: "c13", tool: VENDO_BASH_TOOL, args: { command: "echo hi" } },
+      turn,
+    )).rejects.toThrow("store unreachable");
+    // Caching the PROMISE is what fixes the open race; caching a REJECTED one
+    // would wedge the rest of the turn on a blip the store already recovered from.
+    const second = await registry.execute(
+      { id: "c14", tool: VENDO_BASH_TOOL, args: { command: "echo recovered" } },
+      turn,
+    );
+
+    expect((second as { output: { stdout: string } }).output.stdout).toBe("recovered\n");
   });
 });
