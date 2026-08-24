@@ -76,4 +76,29 @@ describe("one shell session over the workspace", () => {
 
     expect(result.exitCode).not.toBe(0);
   });
+
+  it("stops a command that will not stop", async () => {
+    const session = createShellSession({
+      workspace: await disk({}),
+      limits: { maxExecutionTimeMs: 250 },
+    });
+
+    const result = await session.exec("while true; do echo spin > /dev/null; done");
+
+    expect(result.exitCode).not.toBe(0);
+  });
+
+  it("stops a command that will not stop TALKING", async () => {
+    const session = createShellSession({
+      workspace: await disk({}),
+      limits: { maxOutputBytes: 512 },
+    });
+
+    // `seq`, not `yes`: just-bash 3.4.2 ships no `yes`, and in a pipeline the
+    // `command not found` is invisible — the exit code is `head`'s 0.
+    const result = await session.exec("seq 1 100000");
+
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stdout.length).toBeLessThan(4096);
+  });
 });
