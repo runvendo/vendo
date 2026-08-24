@@ -31,6 +31,7 @@ import {
   type RecordInput,
   type ResolvedModels,
   type RunContext,
+  type StoreOps,
   type ThreadId,
   type ToolRegistry,
   type WorkspaceFs,
@@ -50,6 +51,7 @@ import {
 } from "@vendoai/apps";
 import type { VendoGuard } from "@vendoai/guard";
 import {
+  eraseStore,
   harnessStateKey,
   harnessStateRow,
   harnessStateStore,
@@ -77,7 +79,7 @@ import type { VendoToolSearchConfig } from "@vendoai/harnesses/vendo";
 import { createUIMessageStream, createUIMessageStreamResponse, type LanguageModel, type UIMessage } from "ai";
 import { discoveryRail } from "./prompt.js";
 import { finishActiveTurn } from "./turn-liveness.js";
-import { isUserFilePath, threadFilePath, uploadStagingPath, userFilePath, USER_UPLOADS } from "./user-files.js";
+import { isUserFilePath, threadFilePath, threadFilesDir, uploadStagingPath, userFilePath, USER_UPLOADS } from "./user-files.js";
 import type { Limiter } from "./limits.js";
 
 export interface HarnessTurnsConfig {
@@ -89,6 +91,11 @@ export interface HarnessTurnsConfig {
   /** THE deployment's files adapter (`selectStore`), so workspace blobs are
    *  written where the erase cascade will look for them. */
   files: FilesAdapter;
+  /** THE deployment's named-operation surface (`selectStoreOps`), when it has
+   *  one. The delete cascade is its one caller here: `transcripts.deleteThread`
+   *  is a single transaction over three tables, and the row-at-a-time route it
+   *  replaces could only ever delete the first of them. */
+  ops?: StoreOps;
   guard: VendoGuard;
   /** The composed sandbox adapter (`selectSandbox`). A harness declaring
    *  `requires: { sandbox: true }` — `claudeCode()` — is constructed by the HOST
@@ -498,6 +505,26 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
     }
   };
 
+  /** A conversation's files go with the conversation.
+   *
+   *  A SQL-backed store erases the rows, their history AND the blobs those rows
+   *  were the only pointer to, in one pass (`eraseStore().byThread`). Every other
+   *  backend gets the façade's recursive delete, which removes the live rows and
+   *  leaves the history rows that hold the blob refs — the same residue a bare
+   *  `rm` leaves today, and the same follow-up. Both paths leave the person's
+   *  view identical; they differ only in what the bucket still holds. */
+  const sweepThreadFiles = async (id: ThreadId, ctx: RunContext): Promise<void> => {
+    if (maybeDbFor(config.store) !== undefined) {
+      await eraseStore(config.store, { files: config.files }).byThread(id);
+      return;
+    }
+    const workspace = await sqlDoors().workspaces.open(ctx.principal);
+    const dir = threadFilesDir(id);
+    if (!await workspace.exists(dir)) return;
+    await workspace.rm(dir, { recursive: true, force: true });
+    await workspace.commit();
+  };
+
   /** The thread's harness-state slot, when this store can hold one. The slot
    *  carries a native session ref and vendo()'s searched-in loadout, so it has
    *  to die with the thread — a reused id must never inherit either (the
@@ -517,8 +544,21 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
       get: (id, ctx) => threads.get(id, ctx),
       list: (ctx) => threads.list(ctx),
       delete: async (id, ctx) => {
-        await threads.delete(id, ctx);
-        await stateDoor()?.clear(id);
+        // Ownership stays the repository's law: `get` answers null for another
+        // subject's id, and an absent thread is a no-op — exactly as before.
+        if (await threads.get(id, ctx) === null) return;
+        // The REAL cascade. `transcripts.deleteThread` is thread row + message
+        // rows + harness state in ONE transaction (store/ops.ts:543-552, mirrored
+        // by the hosted store); the single-row delete it replaces left every
+        // message behind forever, unreachable by any later erase because the join
+        // that identified them went with the row.
+        if (config.ops === undefined) {
+          await threads.delete(id, ctx);
+          await stateDoor()?.clear(id);
+        } else {
+          await config.ops.transcripts.deleteThread(id);
+        }
+        await sweepThreadFiles(id, ctx);
       },
     },
 

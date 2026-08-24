@@ -215,7 +215,7 @@ const harnessTurnDoorSeams = (
 const harnessTurnConfig = (
   composition: VendoComposition,
 ): Parameters<typeof createHarnessTurns>[0] => {
-  const { harness, sandbox, store, files, guard, boundTools, capability, catalog } = composition;
+  const { harness, sandbox, store, files, guard, boundTools, capability, catalog, ops } = composition;
   const { inference, system, toolSearch, capabilityMiss } = composition;
   const { serviceCatalog, toolOutputCap, connectGate, membershipsSeam } = composition;
   // The host's `surfaces.agent` menu, bound at the harness door's registry
@@ -234,6 +234,7 @@ const harnessTurnConfig = (
     // The SAME adapter the erase cascade deletes through (selectStore) — the
     // whole point of resolving it once.
     files,
+    ...(ops === undefined ? {} : { ops }),
     guard,
     tools: menuBoundTools,
     skills: capability.skills,
