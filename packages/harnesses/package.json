@@ -68,13 +68,13 @@
   },
   "dependencies": {
     "@ai-sdk/anthropic": "3.0.12",
+    "@e965/xlsx": "0.20.3",
     "@vendoai/apps": "workspace:*",
     "@vendoai/core": "workspace:*",
     "@vendoai/guard": "workspace:*",
     "fflate": "^0.8.3",
     "just-bash": "^3.4.2",
     "unpdf": "^1.8.1",
-    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
     "zod": "^3.25.0"
   },
   "peerDependencies": {
@@ -88,7 +88,8 @@
     "@types/node": "^22.0.0",
     "ai": "6.0.28",
     "typescript": "^5.6.0",
-    "vitest": "^3.2.6"
+    "vitest": "^3.2.6",
+    "xlsx": "npm:@e965/xlsx@0.20.3"
   },
   "peerDependenciesMeta": {
     "@anthropic-ai/claude-agent-sdk": {

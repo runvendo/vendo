@@ -5,15 +5,24 @@
  * stdout, `cut`, `awk`, `sort` and `jq -R` all work on it, which is the whole
  * reason the parsers are COMMANDS and not tools of their own.
  *
- * SheetJS Community Edition, pure JavaScript, synchronous, no native code. It
- * comes from the SheetJS CDN rather than npm — the registry copy is years stale.
+ * SheetJS Community Edition, pure JavaScript, synchronous, no native code.
  */
 import type { Command, LazyCommand } from "just-bash";
 import { inputBytes, notThisFormat } from "./input.js";
 
-let XLSX_SPECIFIER = "xlsx";
+/** `@e965/xlsx` is SheetJS CE republished on the public registry. SheetJS
+    itself ships only from its own CDN, and pnpm 11 (blockExoticSubdeps)
+    refuses a URL-resolved dependency reached through a dependency, so the CDN
+    tarball breaks every pnpm consumer; npm's stale `xlsx@0.18.5` carries
+    CVE-2023-30533 and CVE-2024-22363, both in this read path. The mirror is
+    one individual's account, so the EXACT pin is the control — npm forbids
+    replacing a published version, so a consumer can only get bytes we checked.
+    Re-verify on any bump (empty diff == identical to the official tarball):
+      diff <(curl -sL https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz \
+        | tar xzO package/xlsx.js) node_modules/@e965/xlsx/xlsx.js */
+let XLSX_SPECIFIER = "@e965/xlsx";
 
-type SheetJs = typeof import("xlsx");
+type SheetJs = typeof import("@e965/xlsx");
 
 const NAME = "xlsx2csv";
 

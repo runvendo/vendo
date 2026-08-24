@@ -1180,6 +1180,9 @@ importers:
       '@anthropic-ai/claude-agent-sdk':
         specifier: '>=0.3.0 <1'
         version: 0.3.214(@anthropic-ai/sdk@0.112.3(zod@3.25.76))(@modelcontextprotocol/sdk@1.29.0(@cfworker/json-schema@4.1.1)(zod@3.25.76))(zod@3.25.76)
+      '@e965/xlsx':
+        specifier: 0.20.3
+        version: 0.20.3
       '@vendoai/apps':
         specifier: workspace:*
         version: link:../apps
@@ -1198,9 +1201,6 @@ importers:
       unpdf:
         specifier: ^1.8.1
         version: 1.8.1
-      xlsx:
-        specifier: https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz
-        version: https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz
       zod:
         specifier: ^3.25.0
         version: 3.25.76
@@ -1223,6 +1223,9 @@ importers:
       vitest:
         specifier: ^3.2.6
         version: 3.2.7(@types/debug@4.1.13)(@types/node@22.20.0)(jiti@2.7.0)(jsdom@29.1.1(@noble/hashes@2.2.0))(lightningcss@1.32.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.9.0)
+      xlsx:
+        specifier: npm:@e965/xlsx@0.20.3
+        version: '@e965/xlsx@0.20.3'
 
   packages/knowledge:
     dependencies:
@@ -2243,6 +2246,11 @@ packages:
 
   '@duckdb/node-bindings@1.5.2-r.2':
     resolution: {integrity: sha512-A17A6pXB7SEBAm93POdmEG+f4vQWMSujUP8/hNUfDWjaqp4C5mUWFnyuBM4XiB4qyXXH3vbjis2TYsnxAN2xEQ==}
+
+  '@e965/xlsx@0.20.3':
+    resolution: {integrity: sha512-703RN/3OdsRD5mtse2HBX7Um7xwaP9tlswEG6svOtjqokXoX7rJdQj7DyabD2I+xk22RgaIIU+R6BHgkpZGB/w==}
+    engines: {node: '>=0.8'}
+    hasBin: true
 
   '@electric-sql/pglite@0.2.17':
     resolution: {integrity: sha512-qEpKRT2oUaWDH6tjRxLHjdzMqRUGYDnGZlKrnL4dJ77JVMcP2Hpo3NYnOSPKdZdeec57B6QPprCUFg0picx5Pw==}
@@ -9637,12 +9645,6 @@ packages:
       utf-8-validate:
         optional: true
 
-  xlsx@https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz:
-    resolution: {integrity: sha512-oLDq3jw7AcLqKWH2AhCpVTZl8mf6X2YReP+Neh0SJUzV/BdZYjth94tG5toiMB1PPrYtxOCfaoUCkvtuH+3AJA==, tarball: https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz}
-    version: 0.20.3
-    engines: {node: '>=0.8'}
-    hasBin: true
-
   xml-name-validator@5.0.0:
     resolution: {integrity: sha512-EvGK8EJ3DhaHfbRlETOWAS5pO9MZITeauHKJyb8wyajUfQUenkIg2MvLDTZ4T/TgIcm3HU0TFBgWWboAZ30UHg==}
     engines: {node: '>=18'}
@@ -10645,6 +10647,8 @@ snapshots:
       '@duckdb/node-bindings-linux-x64-musl': 1.5.2-r.2
       '@duckdb/node-bindings-win32-arm64': 1.5.2-r.2
       '@duckdb/node-bindings-win32-x64': 1.5.2-r.2
+
+  '@e965/xlsx@0.20.3': {}
 
   '@electric-sql/pglite@0.2.17': {}
 
@@ -19585,8 +19589,6 @@ snapshots:
   wrappy@1.0.2: {}
 
   ws@8.21.0: {}
-
-  xlsx@https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz: {}
 
   xml-name-validator@5.0.0: {}
 
