@@ -59,6 +59,7 @@ export const CREATE_VENDO_CONFIG_KEYS = [
   "profileDir",
   "fetch",
   "profile",
+  "shell",
   "mcp",
   "oauth",
   "agent",
