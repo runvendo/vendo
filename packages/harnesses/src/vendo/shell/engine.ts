@@ -88,8 +88,18 @@ export function createShellSession(opts: {
   return {
     async exec(command) {
       const bash = await (booting ??= boot());
-      const { stdout, stderr, exitCode } = await bash.exec(command);
-      return { stdout, stderr, exitCode };
+      try {
+        const { stdout, stderr, exitCode } = await bash.exec(command);
+        return { stdout, stderr, exitCode };
+      } catch (error) {
+        // The workspace refuses a write outside the caller's mounts by THROWING
+        // (`EACCES`, store/src/workspace-fs.ts:65), and just-bash lets that out of
+        // `exec` instead of turning it into an exit code. A path the person's own
+        // filesystem refused is an ordinary shell failure, not a broken tool call:
+        // the model has to READ it and pick another path, which it cannot do if
+        // the turn dies instead.
+        return { stdout: "", stderr: `${(error as Error).message}\n`, exitCode: 1 };
+      }
     },
   };
 }

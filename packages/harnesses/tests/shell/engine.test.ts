@@ -45,4 +45,35 @@ describe("one shell session over the workspace", () => {
     expect(result.exitCode).not.toBe(0);
     expect(result.stderr).toContain("No such file or directory");
   });
+
+  it("gives the session a writable /tmp the workspace never sees", async () => {
+    const workspace = await disk({ "/user/files/a.txt": "one\ntwo\n" });
+    const session = createShellSession({ workspace });
+
+    const wrote = await session.exec("sort files/a.txt > /tmp/sorted.txt");
+    expect(wrote.exitCode).toBe(0);
+    // Same session, second call: the scratch is still there.
+    expect((await session.exec("cat /tmp/sorted.txt")).stdout).toBe("one\ntwo\n");
+    // And it is NOT in the workspace — nothing to commit, nothing to leak.
+    expect(await workspace.exists("/tmp/sorted.txt")).toBe(false);
+  });
+
+  it("refuses a write outside the mounts, because the filesystem does", async () => {
+    // The refusal is the WORKSPACE's, never the engine's — `WorkspaceStoreFs`
+    // raises EACCES outside the caller's mounts (store/src/workspace-fs.ts:229),
+    // and this module deliberately bolts no check of its own on top. So the base
+    // here is one that refuses, and what this proves is the engine's
+    // non-interference: it surfaces the filesystem's EACCES rather than routing
+    // around it. A bare `InMemoryFs` has no mounts and would assert nothing.
+    const workspace = await disk({});
+    const mounted = workspace.writeFile.bind(workspace);
+    workspace.writeFile = async (path, data) => {
+      if (!path.startsWith("/user/")) throw new Error(`EACCES: permission denied, open '${path}'`);
+      return await mounted(path, data);
+    };
+
+    const result = await createShellSession({ workspace }).exec("echo pwned > /etc/passwd");
+
+    expect(result.exitCode).not.toBe(0);
+  });
 });
