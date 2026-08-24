@@ -30,6 +30,8 @@ const DESCRIPTION =
   + "workspace: /user/threads/<thread>/files holds what they dropped in THIS conversation, "
   + "/user/apps/<app> holds an app's files, and /user/files is the shelf of things they asked you to "
   + "keep. /tmp is scratch that lasts this conversation and is never saved. "
+  + "Binary formats are ordinary commands here: `pdftotext <file>`, `xlsx2csv <file> [sheet]` and "
+  + "`docx2txt <file>` each write text to stdout, so they pipe into grep, awk and the rest. "
   + (JAVASCRIPT
     ? "For anything bash is awkward at, write JavaScript: `js-exec -c '<code>'` runs it in a sandbox with "
       + "require(\"node:fs\") bound to this same filesystem. "

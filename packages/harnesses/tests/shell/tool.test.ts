@@ -241,3 +241,13 @@ describe("the JavaScript hand, through the tool", () => {
     expect((outcome as { output: { stdout: string } }).output.stdout).toContain("42");
   });
 });
+
+describe("the parsers, announced", () => {
+  it("names all three in the description, so the model never guesses at a PDF", async () => {
+    const [descriptor] = await createShellTools(async () => workspaceDouble()).descriptors();
+
+    expect(descriptor?.description).toContain("pdftotext");
+    expect(descriptor?.description).toContain("xlsx2csv");
+    expect(descriptor?.description).toContain("docx2txt");
+  });
+});
