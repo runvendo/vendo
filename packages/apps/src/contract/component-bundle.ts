@@ -148,8 +148,8 @@ export interface CapturedHostComponent {
    * docs recommend and what every demo component does), and a preview has NO
    * data plane: every query stubs to `[]`. Without a seed the module loads, the
    * component correctly draws nothing, and the surface sits on a streaming
-   * silhouette forever. `InClientFurnishing.sampleProps` is exactly this seam and
-   * pin baselines already carry it.
+   * silhouette forever. `sampleProps` is exactly this seam, and pin baselines
+   * already carry it.
    */
   sampleProps?: Record<string, unknown>;
   /**

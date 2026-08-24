@@ -66,9 +66,10 @@ export interface ScreenDescription {
    *  posture only — inline keeps Expand, staged keeps Back-to-chat, so a wrong
    *  hint costs one tap. */
   display?: "inline" | "stage";
-  /** The in-client (unjailed) verdict for this app's forked pins. Shape owned by
-   *  `@vendoai/apps` (`InClientVenueState`); the channel promises the verdict and
-   *  the version it was reached on. */
+  /** Legacy in-client verdict field. In-client native execution is gone and no
+   *  verdict is authored anymore, but the field stays in the schema so the server
+   *  keeps STRIPPING any forged one (`stripServerAuthoritativeFields`) — a client
+   *  still carrying the executor must never be handed a `granted`. */
   inClient?: { granted: boolean; versionHash: string };
   pinDrift?: ScreenSeedDrift[];
 }

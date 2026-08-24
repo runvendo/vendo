@@ -5,7 +5,9 @@ import { VendoError } from "./errors.js";
     ENGINE_COLLECTIONS or ENGINE_COLLECTION_PATTERNS changes. */
 // 6: v5's list plus `vendo_tenant_connectors`, which shipped missing from it. A
 // refusal still quoting v5 would be describing a build without that entry.
-export const ENGINE_ALLOWLIST_VERSION = 6;
+// 7: dropped `vendo_inclient_approvals` and `vendo_remix_rejections` with the
+// removal of in-client native execution and the remix review flow.
+export const ENGINE_ALLOWLIST_VERSION = 7;
 
 /** What a collection HOLDS. `knowledge` is the retrieval corpus — documents and
     the chunks an engine mints from them; everything else is `storage`.
@@ -18,7 +20,7 @@ export type CollectionKind = "storage" | "knowledge";
 export interface EngineCollectionSpec {
   kind: CollectionKind;
   /** The fields an `engine.list` watermark may bound, because THIS collection
-      keeps them indexed. Absent for the 38 collections with nothing to walk
+      keeps them indexed. Absent for the 36 collections with nothing to walk
       forward through: an unindexed bound is a full table scan wearing a filter's
       clothes, so it is refused rather than served slowly. */
   indexed?: readonly string[];

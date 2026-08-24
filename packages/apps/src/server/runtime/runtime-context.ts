@@ -270,8 +270,9 @@ const createStores = (
   return { engine, placementRows, slots, data, history, egressApprovals, parkedActions };
 };
 
-/** The composed seams the doors call through: interchange, the review-kind
- *  lifecycle, the box-aware caller, and the one opener. */
+/** The composed seams the doors call through: interchange, the machine
+ *  lifecycle seams (fn caller and manifest triggers), the box-aware caller,
+ *  and the one opener. */
 const createDoors = (
   deps: Pick<AppsRuntimeContext,
     "config" | "engine" | "parkedActions" | "lifecycle"
@@ -351,10 +352,8 @@ const createDoors = (
     async (input, ctx) => {
       // `saves: false` — the same gauntlet, with the row half off. An open is a
       // READ: it must not create a row, must not record a refusal, and above all
-      // must not store what it painted. A review-kind app serving an older
-      // APPROVED snapshot (`serveDocFor`) paints that snapshot, and a writing
-      // floor wrote it back over the row — silently reverting the app and
-      // destroying the version awaiting review.
+      // must not store what it painted — a writing floor would quietly rewrite
+      // the stored document with whatever this reopen produced.
       const paint = deps.runtime().floor(ctx, { saves: false }).component;
       // Optional only for a floor that predates the screen engine; this runtime
       // composes its own (checking/floor.ts), so absence is a build mismatch.

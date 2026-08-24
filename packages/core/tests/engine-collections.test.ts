@@ -30,7 +30,7 @@ function messageOf(run: () => unknown): string {
 
 describe("engine allowlist", () => {
   it("holds 37 distinct static collections", () => {
-    expect(ENGINE_ALLOWLIST_VERSION).toBe(6);
+    expect(ENGINE_ALLOWLIST_VERSION).toBe(7);
     expect(ENGINE_COLLECTIONS).toHaveLength(37);
     expect(new Set(ENGINE_COLLECTIONS).size).toBe(37);
   });

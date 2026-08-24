@@ -92,7 +92,10 @@ const paintedScreenSurface = async (
     nodes: Object.values(painted.nodes) as unknown as Json,
   };
   for (const [key, value] of Object.entries(await additionalVenueState(seams.venueState, app, ctx))) {
-    if (key === "data" || key === "seedDrift" || key === "seedUnapplied"
+    // `inClient` stays reserved even though nothing authors a verdict anymore:
+    // venueState must never be able to smuggle a forged one onto the payload,
+    // where a client still carrying the executor could act on it.
+    if (key === "inClient" || key === "data" || key === "seedDrift" || key === "seedUnapplied"
       || key === "dataUnavailable") continue;
     payload[key] = value as Json;
   }

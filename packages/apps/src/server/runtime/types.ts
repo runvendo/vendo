@@ -157,11 +157,11 @@ export interface AppsConfig {
   onDocumentEdit?: (previous: AppDocument, next: AppDocument, editor: string) => Promise<void>;
   /**
    * Build contract §9.9 (lane H's other half) — an ADDITIVE, ctx-aware venue
-   * state merged into the open payload beside the in-client verdict. Lane H's
-   * adoption card rides it, which is why it takes the RunContext: the card is
-   * served only to callers with `can(editor)`, so the decision is per-caller,
-   * not per-document. Returned keys spread onto the payload; `inClient`,
-   * `data` and `pinDrift` are reserved and never overwritten.
+   * state spread onto the open payload. It takes the RunContext so a per-caller
+   * decision stays per-caller, not per-document: a state served only to callers
+   * with `can(editor)` is decided here, never baked into the document. Returned
+   * keys spread onto the payload; the reserved keys (`inClient`, `data`,
+   * `seedDrift`, `seedUnapplied`, `dataUnavailable`) are skipped (open.ts).
    */
   venueState?: (app: AppDocument, ctx: RunContext) => Promise<Record<string, unknown> | undefined>;
   /**
@@ -557,10 +557,8 @@ export interface AppsRuntime {
    * `saves: false` asks for the same five-stage gauntlet with the ROW HALF off —
    * no `authoredScreen`, no `refusedScreen`. `open()` needs it: a component
    * screen's tree is what rendering it produces, so opening one paints it, and a
-   * paint that is a READ must never write. It is not a hypothetical — a
-   * review-kind app serving an older APPROVED snapshot (`serveDocFor`) paints
-   * that snapshot, so a writing floor stored it straight back over the row and
-   * the pending version the reviewer was looking at ceased to exist.
+   * paint that is a READ must never write — otherwise a reopen would store its
+   * paint straight back over the row.
    */
   floor(ctx: RunContext, options?: { saves?: boolean }): AppFloor;
   /**
@@ -785,9 +783,8 @@ export interface AppsRuntime {
      * route rides: wake the app's machine on demand and proxy ONE HTTP request
      * to its $PORT (the box serves `POST /fn/<name>` per the contract; the
      * caller shapes the path). Editor-scoped: writing through someone else's
-     * app is an edit. Additive like `proxy`/`inClient` — not part of the frozen
-     * §1 method table. Lane B's machine lifecycle owns the wake internals
-     * behind this door.
+     * app is an edit. Additive — not part of the frozen §1 method table. Lane
+     * B's machine lifecycle owns the wake internals behind this door.
      */
     request(appId: AppId, request: BoxRequest, ctx: RunContext): Promise<BoxResponse>;
     /**
@@ -834,7 +831,7 @@ export interface AppsRuntime {
   };
   /**
    * execution-v2 — additive machine lifecycle surface (same additive precedent
-   * as `inClient`/`seed`). An app with no `machine` on its document
+   * as `seed`). An app with no `machine` on its document
    * is a layer-1 tree app; presence of `machine` means layer 2+ — the layer is
    * always derived from presence, never stored. Wake single-flight and idle
    * auto-sleep live in-process; a multi-instance host can wake one app twice

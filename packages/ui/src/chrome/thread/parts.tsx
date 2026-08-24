@@ -481,10 +481,9 @@ export function ThreadPart({ part, partKey, role, restored, count = 1, risks, co
     // withdraws the embed (the removeEmbed cleanup below), which is what
     // clears the stage.
     if (!turnPending && (data.payload as { streaming?: boolean }).streaming === true) return null;
-    // 06-apps §§8–9 — in-thread surfaces are conversational previews, never
-    // the approved in-client venue and never a drift report: both fields are
-    // server-authoritative, so whatever the stream carried, render
-    // notice-free.
+    // 06-apps §§8–9 — in-thread surfaces are conversational previews, and both
+    // `inClient` and `pinDrift` are server-authoritative fields that never
+    // belong on one: strip whatever the stream carried and render notice-free.
     const {
       inClient: _neverInThread,
       pinDrift: _serverOnly,

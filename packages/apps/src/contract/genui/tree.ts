@@ -225,12 +225,19 @@ export function validateTree(input: unknown): TreeValidation {
  * the computed drift (when any) is attached — and strip at persist time too (the
  * runtime shares this helper), streamed or at rest.
  *
- * `dataUnavailable` joins it: only the code that ran the queries and watched
+ * `inClient` is stripped for a harder reason. In-client native execution is
+ * gone, but the verdict field still exists in the wire schema, and no verdict is
+ * ever authored now — so any `inClient` on a document is a forgery. Left on the
+ * wire it could hand a `granted` verdict to a client that still carries the
+ * executor and make it run native code, so it is always dropped.
+ *
+ * `dataUnavailable` joins them: only the code that ran the queries and watched
  * them fail may tell the user their data did not load. Document-carried it would
  * be a claim about a load that never happened, and a transient failure must never
  * be persisted as one.
  */
 export const stripServerAuthoritativeFields = <T extends object>(payload: T): T => {
+  delete (payload as { inClient?: unknown }).inClient;
   delete (payload as { pinDrift?: unknown }).pinDrift;
   delete (payload as { dataUnavailable?: unknown }).dataUnavailable;
   stripFurnishingPackages(payload);

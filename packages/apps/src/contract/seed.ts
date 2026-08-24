@@ -25,10 +25,9 @@ export interface SeedBaseline {
   hash: string;
   exportable: boolean;
   capturedAt: IsoDateTime;
-  /** Remix final shape (2026-08-02) — the component kind, captured by sync
-   *  from the `<Remixable review>` wrapper prop: a fork of a review-kind
-   *  baseline is invisible to its own user until a host reviewer approves,
-   *  then mounts natively. Absent = instant (jailed, no review process). */
+  /** Vestigial capture metadata. The review-kind venue it once gated (a fork
+   *  mounting natively in the host page on approval) is gone, so it no longer
+   *  changes how a fork renders — every fork renders sandboxed. */
   review?: boolean;
   sourceImports?: Record<string, string>;
   subSources?: Record<string, SeedSubSource>;
