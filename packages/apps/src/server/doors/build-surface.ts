@@ -213,9 +213,9 @@ const routeThroughAssembler = async (
 
 const createCreateDoor = (
   deps: Pick<AppsRuntimeContext,
-    "config" | "engine" | "claimSlot" | "reportLifecycle">,
+    "config" | "engine" | "claimSlot">,
 ): AppsRuntime["create"] => {
-  const { config, engine, claimSlot, reportLifecycle } = deps;
+  const { config, engine, claimSlot } = deps;
   return async (input, ctx) => {
     if (config.model === undefined) {
       throw new VendoError("not-implemented", "generation requires a model");
