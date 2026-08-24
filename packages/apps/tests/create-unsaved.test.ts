@@ -8,7 +8,6 @@ import {
   type ScreenAssembler,
 } from "../src/contract/index.js";
 import { describe, expect, it } from "vitest";
-import { createAgentTools } from "../src/server/doors/agent-tools.js";
 import { createApps, type AppsRuntime } from "../src/server/index.js";
 import { assembleTree } from "../src/server/runtime/runtime.js";
 import { authoringAssembler } from "../src/server/testing/screen-assembler.js";
