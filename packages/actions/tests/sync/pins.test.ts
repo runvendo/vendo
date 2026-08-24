@@ -250,7 +250,7 @@ describe("wrapper pin capture", () => {
     await expect(fs.access(path.join(root, ".vendo/remixable/Card.json"))).rejects.toThrow();
   });
 
-  it("suggests <Remixable review> for a plumbing-heavy child and stays quiet once review is set", async () => {
+  it("warns a plumbing-heavy child reaches into host plumbing and stays quiet once review is set", async () => {
     const root = await temporaryRoot();
     await write(root, "src/components/Plumbed.tsx", `
       import { useRouter } from "next/navigation";
@@ -269,10 +269,11 @@ describe("wrapper pin capture", () => {
 
     const warned = await capturePins(root, path.join(root, ".vendo"));
     expect(warned.captured).toEqual(["Plumbed"]);
-    const warning = warned.warnings.find((entry) => entry.includes("<Remixable review>"));
+    const warning = warned.warnings.find((entry) => entry.includes("reaches into host plumbing"));
     expect(warning).toContain("imports next/navigation");
     expect(warning).toContain("calls useRouter()");
     expect(warning).toContain("receives the function-typed prop onSelect");
+    expect(warning).not.toContain("<Remixable review>");
 
     await write(root, "src/app/page.tsx", `
       import { Remixable } from "${UI_CHROME}";
@@ -282,7 +283,7 @@ describe("wrapper pin capture", () => {
       }
     `);
     const reviewed = await capturePins(root, path.join(root, ".vendo"));
-    expect(reviewed.warnings.filter((entry) => entry.includes("<Remixable review>"))).toEqual([]);
+    expect(reviewed.warnings.filter((entry) => entry.includes("reaches into host plumbing"))).toEqual([]);
     expect((await baselineFor(root, "Plumbed")).review).toBe(true);
   });
 

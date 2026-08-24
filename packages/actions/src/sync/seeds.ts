@@ -481,7 +481,7 @@ async function captureSlot(slot: string, sites: readonly ResolvedSite[], ctx: Ca
       ...sites.flatMap((site) => site.functionProps).map((name) => `receives the function-typed prop ${name}`),
     ])];
     if (signals.length > 0) {
-      result.warnings.push(`remixable component ${slot} reaches into host plumbing (${signals.join("; ")}) — plumbing does not cross the fork boundary; consider <Remixable review> so approved remixes run natively in the page`);
+      result.warnings.push(`remixable component ${slot} reaches into host plumbing (${signals.join("; ")}) — plumbing does not cross the fork boundary`);
     }
   }
   const styles = result.styles;
