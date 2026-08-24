@@ -20,7 +20,14 @@ import {
   type ToolDescriptor,
 } from "@vendoai/core";
 import type { BuiltFile } from "../../contract/index.js";
-import { BUILD_ALREADY_ASKED, BUILD_DECLINED, NO_MACHINE, fallbackAppName } from "./build-messages.js";
+import {
+  BUILD_ALREADY_ASKED,
+  BUILD_DECLINED,
+  BUILD_WATCHDOG_REASON,
+  NO_MACHINE,
+  buildWatchdogMs,
+  fallbackAppName,
+} from "./build-messages.js";
 import { sealBundleBlobs } from "../persistence/app-source.js";
 import { APPS_COLLECTION, appRecordInput } from "../persistence/persistence.js";
 import type { AppsRuntimeContext } from "../runtime/runtime-context.js";
@@ -168,26 +175,64 @@ export const createBuildDoor = (
       const parked = await parkedBuilds.byApproval(approvalId);
       if (parked === null) return;
       const { appId, prompt, why, ctx } = parked;
-      // The ONE terminal landing every failure shares: the tombstone that turns
-      // the claimed slot into the honest failure card. A denial is one of them —
-      // it clears the proposal with the rest of the row, and no box was opened.
-      const refuse = (reason: string): Promise<void> =>
-        markUnbuilt(appId, fallbackAppName(prompt), reason, ctx);
+      // Read raw and untyped, like the placement read: one unparseable row must
+      // not decide how every other build fails.
+      const record = await engine.get(APPS_COLLECTION, appId);
+      const alreadySealed = (record?.data as { doc?: { bundle?: unknown } } | null)?.doc?.bundle !== undefined;
+      /**
+       * The ONE terminal landing every failure shares: the tombstone that turns
+       * the claimed slot into the honest failure card. A denial is one of them —
+       * it clears the proposal with the rest of the row, and no box was opened.
+       *
+       * Except on a RESEAL. `markUnbuilt` REPLACES the whole row, which is right
+       * for a first build — there is nothing there to lose — and would destroy a
+       * working app here. So a reseal that fails keeps everything it had and
+       * loses only the build state; the person's app is still their app.
+       */
+      const refuse = async (reason: string): Promise<void> => {
+        if (!alreadySealed) return await markUnbuilt(appId, fallbackAppName(prompt), reason, ctx);
+        await updateAppDocument(appId, ({ building: _building, proposal: _proposal, ...rest }) => rest);
+      };
       if (!approved) return await refuse(BUILD_DECLINED);
       if (builder === undefined || !builder.available()) return await refuse(NO_MACHINE);
       const doc = await updateAppDocument(appId, (previous) => {
         const { proposal: _proposal, ...rest } = previous;
         return { ...rest, building: new Date().toISOString() };
       });
-      const outcome = await builder.build({
-        appId,
-        prompt,
-        why,
-        // Present on a RESEAL: the box starts from what this app already is.
-        ...(doc.source === undefined ? {} : { source: doc.source }),
-      }, ctx);
-      if (outcome.kind === "failed") return await refuse(outcome.why);
-      await seal({ appId, files: outcome.files, entry: outcome.entry });
+      /**
+       * FROM HERE THE BUILD IS ON ITS OWN, and it has to be.
+       *
+       * The guard AWAITS its decision subscribers (`#decideApprovals`), and this
+       * is one of them, so awaiting the box held `POST /approvals/decide` open
+       * for the whole build — minutes, while the person who just pressed Approve
+       * watched a request hang. Detached the way this codebase detaches every
+       * other long job (`runInboundDetached`, the umbrella's wire/channels.ts):
+       * the row's `building` is all a poll needs, and progress is chat status
+       * lines, never a held connection.
+       *
+       * A detached lane can also die saying nothing, so it is armed with the
+       * same dead-man timer `create` uses (`startBuildWatchdog`) and on the same
+       * window — cleared only once something terminal has landed, so a lane that
+       * threw leaves the switch to land it.
+       */
+      const watchdog = setTimeout(() => {
+        void refuse(BUILD_WATCHDOG_REASON).catch(() => undefined);
+      }, buildWatchdogMs());
+      (watchdog as { unref?: () => void }).unref?.();
+      void (async () => {
+        const outcome = await builder.build({
+          appId,
+          prompt,
+          why,
+          // Present on a RESEAL: the box starts from what this app already is.
+          ...(doc.source === undefined ? {} : { source: doc.source }),
+        }, ctx);
+        if (outcome.kind === "failed") await refuse(outcome.why);
+        else await seal({ appId, files: outcome.files, entry: outcome.entry });
+        clearTimeout(watchdog);
+        // Swallowed because the still-armed watchdog is what says so: a lane
+        // that threw never reached the clear above.
+      })().catch(() => undefined);
     },
 
     seal,

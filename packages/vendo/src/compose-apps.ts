@@ -12,6 +12,8 @@ import {
   type AppsConfig,
 } from "@vendoai/apps";
 import { unattendedIrreversibilityCheck } from "@vendoai/automations";
+import { inferenceEnv } from "@vendoai/harnesses/claude-code/box";
+import { appBuilder } from "./build-agent.js";
 import { screenAssembler } from "./screen-agent.js";
 import {
   engineOverAdapter,
@@ -276,6 +278,19 @@ const appsScreenSeam = (composition: VendoComposition, seams: AppsSeams): AppsCo
   });
 };
 
+/** THE OTHER SEAM — the build lane behind the escalations the screen agent
+ *  refuses, joined here for the same reason and on the same terms. */
+const appsBuildSeam = (composition: VendoComposition, seams: AppsSeams): AppsConfig["build"] =>
+  appBuilder({
+    sandbox: composition.sandbox.adapter,
+    // The SAME env a session box gets, and deliberately not `machineEnv`: that
+    // one carries the store URL and a minted app token, and a build box holds
+    // ZERO store credentials (FINAL SPEC v1). It returns files; the host seals
+    // them.
+    boxEnv: inferenceEnv,
+    ...(seams.boxTemplate === undefined ? {} : { template: seams.boxTemplate }),
+  });
+
 /** The host's own knobs, the config-surface providers, and the machine lane. */
 const appsTailSeams = (composition: VendoComposition, seams: AppsSeams): Partial<AppsConfig> => {
   const { config, automationsMounted, themeProvider, briefing, hostSemanticsProvider } = composition;
@@ -410,6 +425,7 @@ export const composeApps = (composition: VendoComposition): Pick<VendoCompositio
     ...appsStoreSeams(composition, seams),
     ...appsHostSeams(composition),
     screen: appsScreenSeam(composition, seams),
+    build: appsBuildSeam(composition, seams),
     ...appsTailSeams(composition, seams),
   } as AppsConfig);
   // Every contributed tool reaches the ONE registry here — the same `add` the

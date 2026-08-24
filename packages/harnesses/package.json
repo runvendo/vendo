@@ -39,6 +39,10 @@
       "types": "./dist/claude-code/index.d.ts",
       "default": "./dist/claude-code/index.js"
     },
+    "./claude-code/box": {
+      "types": "./dist/claude-code/box.d.ts",
+      "default": "./dist/claude-code/box.js"
+    },
     "./inference": {
       "types": "./dist/inference/model.d.ts",
       "default": "./dist/inference/model.js"

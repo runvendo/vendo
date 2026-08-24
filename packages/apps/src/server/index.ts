@@ -109,6 +109,12 @@ export {
   type AppSourceSeam,
 } from "./persistence/app-source.js";
 export { updateAppRow } from "./persistence/persistence.js";
+// The one classifier for what goes on a failed build's record. Public because
+// the BUILD engine now lives outside this package too (`AppsConfig.build`), and
+// a lane that classified its own throws would grow a second vocabulary for the
+// same failures — and would surface the provider's raw words, which this one
+// deliberately never does.
+export { buildFailureReason } from "./doors/build-messages.js";
 // The hot-path render seam (§1.6) — the commit-intercepting wrap that paints a
 // landing `app.tsx`. Public because the workspace it wraps lives
 // outside this package: composition fills the harness runtime's `wrapWorkspace`
