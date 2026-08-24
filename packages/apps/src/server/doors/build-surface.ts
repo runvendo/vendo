@@ -238,7 +238,10 @@ const createCreateDoor = (
       const routed = await routeThroughAssembler(
         { config, engine, appId, createStartedAt, watchdog, failBuild }, input, ctx);
       if (routed.kind === "assembled") {
-        await reportLifecycle("create", routed.document.id, ctx);
+        // No `create` audit event here: the assembly WRITE path already emits
+        // it (`write-surface.ts` authoredScreen, on a first save), and the one
+        // this branch replaced belonged to the escalation lane, which wrote its
+        // row directly and so had to report its own.
         log({
           code: "apps.gen-create-complete",
           level: "info",
