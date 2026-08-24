@@ -88,3 +88,22 @@ describe("the shell tool's hands", () => {
     expect(workspace.commits).toBe(1);
   });
 });
+
+describe("a very talkative command", () => {
+  it("comes back clipped, and says so, instead of tripping the bridge's cap", async () => {
+    const workspace = workspaceDouble();
+    const registry = createShellTools(async () => workspace);
+
+    // `seq`, not `yes`: just-bash 3.4.2 ships no `yes`. ~48 900 chars — well over
+    // the 16 000-char clip, well under the 1 MB default output ceiling.
+    const outcome = await registry.execute(
+      { id: "c4", tool: VENDO_BASH_TOOL, args: { command: "seq 1 10000" } },
+      ctx(),
+    );
+
+    const { stdout } = (outcome as { output: { stdout: string } }).output;
+    expect(stdout.length).toBeLessThanOrEqual(16_000);
+    expect(stdout).toContain("[clipped]");
+    expect(JSON.stringify((outcome as { output: unknown }).output).length).toBeLessThan(32_000);
+  });
+});
