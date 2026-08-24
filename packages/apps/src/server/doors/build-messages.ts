@@ -31,6 +31,20 @@ export const NOTHING_RENDERABLE = "the build produced nothing renderable.";
  *  no sandbox has no box to give it. Third person: these strings surface as
  *  SYSTEM notices, never in the assistant's voice. */
 export const NO_MACHINE = "This needs a real build — code running on a server — and this deployment has no build machine.";
+/** What the person is told when the ask became a standing card instead of a
+ *  screen. FIRST person, unlike the three above: this one is the assistant's
+ *  own sentence on the receipt, and it is the only thing the calling agent is
+ *  given to say. No estimate and no cost — the card is a consent question, not
+ *  a price quote (make-receipt.ts law 5). */
+export const AWAITING_CONSENT = "This one needs a real build, not just a screen — I've asked for your"
+  + " go-ahead, and it starts as soon as you approve.";
+/** The other terminal landing an OFFERED build has: the person answered the
+ *  standing card with no. Same third-person voice as NO_MACHINE — a system
+ *  notice — and it never mentions a box, because none was opened. */
+export const BUILD_DECLINED = "This needed a real build, and it was not approved.";
+/** The guard already holds this exact yes, so the card the person would answer
+ *  has been answered. Lowercase: it is read as a reason, mid-sentence. */
+export const BUILD_ALREADY_ASKED = "this build has already been asked for.";
 
 /** 0.4.5 E2E cert (defect D) — the terminal record the build watchdog writes
  *  when a create neither persisted an app nor a failure inside its window:

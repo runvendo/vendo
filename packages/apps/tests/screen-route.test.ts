@@ -102,6 +102,12 @@ const runtimeWith = (screen?: ScreenAssembler, options: {
           buildEnv: () => ({ PORT: "8080" }),
           boxEditPollMs: 5,
         },
+        // S3 — a composed builder is what makes the escalation an honest ASK.
+        // It is never reached here: the card stands undecided.
+        build: {
+          available: () => true,
+          build: async () => ({ kind: "failed" as const, why: "never reached" }),
+        },
       }
       : {}),
     ...(screen === undefined ? {} : { screen }),
@@ -186,30 +192,33 @@ const EDITED = SCREEN.replace("This month", "Last month");
 describe("an escalation and the build that finishes it share ONE app id", () => {
   it("the build runs at the id the screen agent was handed, briefed with the ask itself", async () => {
     const { seen, assembler } = recordingAssembler({ kind: "escalate", why: "this needs real code" });
-    const { agentTools, briefs, boxTasks } = runtimeWith(assembler, { sandbox: true });
+    const { agentTools, briefs, boxTasks, store } = runtimeWith(assembler, { sandbox: true });
 
     const outcome = await make(agentTools);
 
     expect(outcome.status).toBe("ok");
     const receipt = (outcome as { output: { id: string; status: string } }).output;
     // The assembler was consulted ONCE, before anything was built — the seam
-    // routes, the caller does not, and an escalation carries its `why` into
-    // `create` so the build never runs a second agent over the same ask.
+    // routes, the caller does not, and an escalation carries its `why` into the
+    // proposal so the build never runs a second agent over the same ask.
     expect(seen).toHaveLength(1);
-    // …and that consultation, plus the app the build went on to make, is at ONE
-    // id. This is the assertion that stops a stranded second stream.
+    // …and that consultation, plus the build the person is being asked about,
+    // is at ONE id. This is the assertion that stops a stranded second stream.
     expect(seen[0]?.appId).toBe(receipt.id);
-    // An escalation with somewhere to build is a BUILD, not a failure.
-    expect(receipt.status).toBe("ready");
-    // THE ASK IS THE BRIEF, and it reached the builder as written — the person's
-    // own words rather than a second, unrelated answer to the same ask.
-    expect(boxTasks.join("\n")).toContain("Show my spending by category");
-    // The escalation's one-line `why` travels beside it: the box hears why this
-    // cannot happen in the browser, and nothing else was decided for it.
-    expect(boxTasks.join("\n")).toContain("this needs real code");
-    // AND NOTHING RE-PLANNED IT. There is no middleman between the ask and the
-    // box, so no model was asked what to build.
+    // S3 — an escalation with somewhere to build is an ASK, not a build.
+    expect(receipt.status).toBe("awaiting-consent");
+    // THE ASK IS THE BRIEF, and it is held as written — the person's own words
+    // rather than a second, unrelated answer to the same ask. It waits on the
+    // proposal because the yes may land long after this turn.
+    const row = await store.records("vendo_apps").get(receipt.id);
+    const proposal = (row?.data as { doc: { proposal?: { prompt: string; why: string } } }).doc.proposal;
+    expect(proposal?.prompt).toContain("Show my spending by category");
+    // The escalation's one-line `why` travels beside it: the box will hear why
+    // this cannot happen in the browser, and nothing else was decided for it.
+    expect(proposal?.why).toContain("this needs real code");
+    // NOTHING RE-PLANNED IT and NOTHING WAS SPENT: no model call, no box task.
     expect(briefs).toHaveLength(0);
+    expect(boxTasks).toEqual([]);
   });
 
   it("with no sandbox the escalation FAILS honestly at the same id, and nothing is generated", async () => {

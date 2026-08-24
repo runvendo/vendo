@@ -29,8 +29,13 @@
  *    agent over MCP — read plain success off a half-built app (2026-08-11). Not
  *    `"failed"`, which means nothing is painted and sends the agent to rebuild:
  *    this view is real, reopenable, and worth keeping.
- * 5. **No consent ceremony.** Cost governance is host config, never a question
- *    asked here.
+ * 5. **`"awaiting-consent"` is the honest answer for a BUILD.** A build spends a
+ *    machine, and FINAL SPEC v1's law is that no machine is spent without the
+ *    person's explicit yes — so the tool raises the standing approval card and
+ *    the turn ENDS, having spent nothing. Not `"building"`, which would have the
+ *    agent narrate work nobody has authorized yet. Cost governance stays host
+ *    config: this is a consent card, not a price quote, and `say` carries no
+ *    estimate.
  */
 import { z } from "zod";
 import { appIdSchema, type AppId } from "@vendoai/core";
@@ -40,7 +45,7 @@ export interface MakeReceipt {
   id: AppId;
   /** The app's name, in human words — never a slug or an identifier. */
   title: string;
-  status: "ready" | "partial" | "building" | "failed";
+  status: "ready" | "partial" | "building" | "awaiting-consent" | "failed";
   /** Speakable as it stands, consumer voice — the builder's own summary where
    *  there was one to relay. */
   say: string;
@@ -50,6 +55,6 @@ export interface MakeReceipt {
 export const makeReceiptSchema = z.object({
   id: appIdSchema,
   title: z.string().min(1),
-  status: z.enum(["ready", "partial", "building", "failed"]),
+  status: z.enum(["ready", "partial", "building", "awaiting-consent", "failed"]),
   say: z.string().min(1),
 }).passthrough() satisfies z.ZodType<MakeReceipt>;

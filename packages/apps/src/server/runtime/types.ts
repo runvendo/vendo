@@ -37,6 +37,7 @@ import type {
   WorkspaceFs,
 } from "@vendoai/core";
 import type {
+  AppBuilder,
   AppDocument,
   AppListRow,
   BriefingPack,
@@ -263,6 +264,17 @@ export interface AppsConfig {
    * `vendo_make` in agent-tools.ts).
    */
   screen?: ScreenAssembler;
+  /**
+   * FINAL SPEC v1 — the build engine, for the ask a screen cannot serve. The
+   * screen agent's `escalate` is the only thing that reaches it, and only after
+   * the person has answered the standing card.
+   *
+   * An ADAPTER SLOT for the same reason `screen` is: the lane runs a coding
+   * agent inside a disposable box, which this block does not hold. Unfilled,
+   * an escalation is answered with a failed receipt naming the missing sandbox
+   * rather than a promise of a build nothing can run.
+   */
+  build?: AppBuilder;
   /**
    * ADAPTER SLOT — what compiles, type-checks and paints a component screen.
    *
@@ -837,6 +849,25 @@ export interface AppsRuntime {
    * auto-sleep live in-process; a multi-instance host can wake one app twice
    * (known v2 limit — the last sleep's CAS wins).
    */
+  /**
+   * FINAL SPEC v1 — the built-app door.
+   *
+   * `propose` is the only route to a build box, and it never opens one: it
+   * raises the standing approval card and returns, so the turn that asked ends
+   * having spent nothing. The person's yes — whenever it lands, possibly long
+   * after that turn is gone — is what starts the build, through the
+   * `onApprovalDecision` seam (persistence/approval-flow.ts).
+   */
+  build: {
+    /** Can this deployment build at all — i.e. is a sandbox adapter composed?
+     *  The ONE gate, so the front door can answer an escalation honestly before
+     *  it asks for consent it could not act on. */
+    available(): boolean;
+    propose(
+      input: { appId: AppId; name: string; prompt: string; why: string },
+      ctx: RunContext,
+    ): Promise<{ approvalId: ApprovalId } | { declined: string }>;
+  };
   machine: {
     /**
      * Can this deployment run a machine at all — i.e. is a `sandbox` adapter

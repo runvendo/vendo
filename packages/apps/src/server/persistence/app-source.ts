@@ -35,6 +35,7 @@ import {
   appSourceFileSchema,
   type AppDocument,
   type AppSourceFile,
+  type BuiltFile,
 } from "../../contract/index.js";
 
 /**
@@ -118,7 +119,7 @@ const bundleKey = (appId: AppId, hex: string): string => `apps/${appId}/bundle/$
  */
 export const sealBundleBlobs = async (
   appId: AppId,
-  files: readonly { path: string; bytes: Uint8Array }[],
+  files: readonly BuiltFile[],
   entry: string,
   blobs: FilesAdapter,
 ): Promise<AppBundle> => {

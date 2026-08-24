@@ -309,11 +309,11 @@ describe("the documented arguments match the real schemas", () => {
 });
 
 describe("the receipt law the docs teach is the real receipt", () => {
-  it("has exactly id, title, status, say — and status's four values", async () => {
+  it("has exactly id, title, status, say — and status's five values", async () => {
     const source = await read("packages/apps/src/contract/make-receipt.ts");
     expect(source).toContain("id: appIdSchema");
     expect(source).toContain("title: z.string().min(1)");
-    expect(source).toContain('status: z.enum(["ready", "partial", "building", "failed"])');
+    expect(source).toContain('status: z.enum(["ready", "partial", "building", "awaiting-consent", "failed"])');
     expect(source).toContain("say: z.string().min(1)");
   });
 

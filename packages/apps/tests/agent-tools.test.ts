@@ -624,6 +624,10 @@ describe("vendo_make — the slot a new app lands in", () => {
     model: basicLanguageModel(),
     machine: { sandbox: fakeBoxSandbox(), buildEnv: () => ({ PORT: "8080" }), boxEditPollMs: 5 },
     screen: { async assemble() { return { kind: "escalate", why: "this needs real code" }; } },
+    // S3 — an escalation now ASKS before it builds, so the deployment needs a
+    // builder for the ask to be honest. What it never reaches is this stub's
+    // `build`: the card stands, undecided, for the whole of this test.
+    build: { available: () => true, async build() { return { kind: "failed", why: "never reached" }; } },
   });
 
   it("takes request, app, context, slot and component — request required, nothing else allowed", async () => {
@@ -732,7 +736,9 @@ describe("vendo_make — the slot a new app lands in", () => {
 
     expect(outcome.status).toBe("ok");
     const receipt = (outcome as { output: { id: string; status: string } }).output;
-    expect(receipt.status).toBe("ready");
+    // S3 — the escalated ask is now OFFERED, not built. The row and the slot
+    // still land at the mint, which is what this test is about.
+    expect(receipt.status).toBe("awaiting-consent");
     expect(await runtime.placements({}, ctx)).toEqual([
       expect.objectContaining({ slot: "dashboard.hero", app: receipt.id }),
     ]);

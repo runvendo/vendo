@@ -69,6 +69,8 @@ export * from "./briefing.js";
 export * from "./theme.js";
 // screen + floor + checking contract
 export * from "./screen.js";
+// build — the other engine's seam
+export * from "./build.js";
 export * from "./app-floor.js";
 // seed — remix provenance
 export * from "./seed.js";

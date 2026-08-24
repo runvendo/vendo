@@ -1,7 +1,6 @@
 import { type RunContext, type ToolRegistry } from "@vendoai/core";
 import { type ScreenAssembler } from "../src/contract/index.js";
 import { describe, expect, it, vi } from "vitest";
-import { createAgentTools } from "../src/server/doors/agent-tools.js";
 import { createApps } from "../src/server/index.js";
 import { fakeBoxSandbox, type FakeBoxAgent } from "../src/server/testing/fake-box.js";
 import { guardFixture } from "../src/server/testing/guard-fixture.js";
@@ -56,16 +55,6 @@ const setup = (agent: FakeBoxAgent) => createApps({
 
 const brokenBox: FakeBoxAgent = () => ({ ok: false, summary: BOX_GAVE_UP, filesChanged: [], testsRun: 0 });
 
-/** The real front door (`vendo_make`) over the real create door, with nothing
- *  stubbed between them — the seam a receipt's `status` is actually read at. */
-const bridge = (agent: FakeBoxAgent) => createAgentTools(setup(agent), {
-  data: {} as never,
-  requireOwned: async () => { throw new Error("unused"); },
-  claimSlot: async () => { throw new Error("unused"); },
-  markUnbuilt: async () => { throw new Error("unused"); },
-  screen: escalating,
-});
-
 /** The box builds the work and names the function it wrote — the plain success
  *  the failure-only signal has to stay silent for. */
 const workingBox: FakeBoxAgent = ({ box }) => {
@@ -116,70 +105,11 @@ describe("a create whose server work could not be built", () => {
     }
   });
 
-  it("reads to the person as an honest half-success through the agent bridge, not a plain 'it's on your screen'", async () => {
-    // The SEAM: the real front door (`vendo_make`) over the real create door,
-    // with nothing stubbed between them. This is what the person actually
-    // hears, and an unqualified "on your screen" here is the whole bug —
-    // the app is empty and the turn calls it done.
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
-    try {
-      const agentTools = bridge(brokenBox);
-
-      const outcome = await agentTools.execute({
-        id: "call_1",
-        tool: "vendo_make",
-        args: { request: "Make me a full kanban board for my invoices with drag-and-drop between columns" },
-      }, ctx);
-
-      expect(outcome.status).toBe("ok");
-      const output = (outcome as { output: Record<string, unknown> }).output;
-      expect(output.say).toBe(
-        "I built the screen, but the server-side part didn't get built: "
-        + "the in-box agent could not build the server work: could not build the drag-and-drop server"
-        + " — the machine was discarded and the rest of the app stands."
-        + ". The app works for viewing — ask me to try the build again.",
-      );
-      // Contract §3.1 — four fields of words, and no document among them.
-      expect(Object.keys(output).sort()).toEqual(["id", "say", "status", "title"]);
-    } finally {
-      errorSpy.mockRestore();
-      infoSpy.mockRestore();
-    }
-  });
-
-  it("says so in `status`, not only in `say` — a host branching on the field must not read plain success", async () => {
-    // The bug one field over (found 2026-08-11, the cold walk after the `say`
-    // fix above shipped): the sentence told the truth and `status` still said
-    // `"ready"`, so everything that BRANCHES rather than reads — a host's own
-    // if, the pack's ref capture, an outside agent over MCP — saw a clean build
-    // of a half-built app. Not `"failed"` either: the screen is real and
-    // reopenable, and `"failed"` means nothing was painted.
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
-    try {
-      const broken = (await bridge(brokenBox).execute({
-        id: "call_broken",
-        tool: "vendo_make",
-        args: { request: "Make me a full kanban board for my invoices with drag-and-drop between columns" },
-      }, ctx) as { output: Record<string, unknown> }).output;
-      expect(broken.status).toBe("partial");
-
-      // The control, through the SAME door: a box that builds what was asked
-      // for is still plainly `"ready"`. Without this, a `status` hardwired
-      // to `"partial"` would pass the assertion above.
-      const built = (await bridge(workingBox).execute({
-        id: "call_built",
-        tool: "vendo_make",
-        args: { request: "Make me a full kanban board for my invoices with drag-and-drop between columns" },
-      }, ctx) as { output: Record<string, unknown> }).output;
-      expect(built.status).toBe("ready");
-    } finally {
-      errorSpy.mockRestore();
-      infoSpy.mockRestore();
-    }
-  });
-
+  // REMOVED by the consent slice (S3): `vendo_make` no longer calls `create` on
+  // an escalation — it raises the standing build card and returns
+  // "awaiting-consent" — so the two receipts this file used to pin through the
+  // agent bridge ("partial", and the half-success `say`) have no producer left.
+  // The create door's own signals below are untouched.
   it("reports the failure exactly once, even when the consumer's own callback throws", async () => {
     // The report used to run INSIDE the try that wraps the server lane, so a
     // throwing consumer re-entered that catch as a second "server work failed":

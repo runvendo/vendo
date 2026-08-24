@@ -30,9 +30,9 @@ import {
 } from "../../contract/index.js";
 import type { AgentToolsDataDependencies } from "./agent-tools.js";
 import { automationCard } from "./automate-tool.js";
-import { NO_ASSEMBLER, NOTHING_RENDERABLE, NO_MACHINE } from "./build-messages.js";
+import { AWAITING_CONSENT, NO_ASSEMBLER, NOTHING_RENDERABLE, NO_MACHINE } from "./build-messages.js";
 import { input, optionalString, resolveAppRef } from "./tool-args.js";
-import type { AppsRuntime, CreateServerWork, EditResult } from "../runtime/types.js";
+import type { AppsRuntime, EditResult } from "../runtime/types.js";
 
 /** An automation authored alongside an app raises its own card (#881).
  *  Published by the side that knows rather than duck-typed out of the tool's
@@ -196,14 +196,13 @@ const makeNewApp = async (
   // is not the seam failing. Two answers, and the deployment's own shape
   // picks which:
   //
-  //  - A sandbox is configured → the build runs. Same `create` a
-  //    server-needing ask has always taken, at the SAME app id, so
-  //    whatever the screen agent painted and the finished app share one
-  //    stream. The ask travels verbatim; the escalation adds one line
-  //    about why assembly could not serve it.
-  //  - No sandbox → say so, rather than spending a full build's latency
-  //    to arrive at a worse version of the screen the person was already
-  //    shown.
+  //  - A sandbox is configured → the person is ASKED. A build spends a
+  //    machine, and FINAL SPEC v1's law is that no machine is spent
+  //    without their explicit yes, so this raises the standing approval
+  //    card and the turn ends here having spent nothing. Their answer,
+  //    whenever it lands, is what starts the build (build-door.ts).
+  //  - No sandbox → say so, rather than asking for consent to a build
+  //    this deployment could not run.
   const escalated = routed?.kind === "escalate";
   if (!escalated) {
     // Assembly produced no screen. Said plainly, at the id whose stream
@@ -217,64 +216,20 @@ const makeNewApp = async (
       ),
     );
   }
-  if (!runtime.machine.available()) {
-    return await failUnbuilt(nameForUnbuilt(ask), NO_MACHINE);
+  const title = nameForUnbuilt(ask);
+  if (!runtime.build.available()) {
+    return await failUnbuilt(title, NO_MACHINE);
   }
-  let unsaved: string | undefined;
-  let serverWork: CreateServerWork | undefined;
-  const created = await runtime.create({
-    appId,
-    prompt: ask,
-    // The screen agent already ran, right above: its one line rides along so
-    // this build does not re-route the ask through a second agent.
-    why: routed.why,
-    // No `slot`: the claim went down at the mint above, which is the
-    // same instant `create` would have made it for an id of its own.
-    onUnsaved: (reason) => { unsaved = reason; },
-    // The lane's outcome arrives in up to two calls on one envelope shape
-    // (#881): the success half (the automation that raises the card below,
-    // caveat issues) and the failure report (`failed` — server work the plan
-    // required that did not get built), which reaches the receipt's STATUS
-    // too, not just its words (see the return below): `create` resolves with
-    // the document either way, and an unqualified "it's on your screen" is
-    // how an empty app gets declared successful. Merged, never overwritten —
-    // a failure must not erase the automation that DID land, or vice versa.
-    onServerWork: (work) => { serverWork = { ...serverWork, ...work }; },
-    ...(stream === undefined ? {} : {
-      onView: (part) => stream({ id: vendoViewStreamId(part.appId), part }),
-    }),
-  }, ctx);
-  // An unsaved create has no row to remember onto; `remember` says so
-  // and moves on, which is the same non-event every other failure is.
-  await remember(created.id);
-  // #881 — a create that rode its plan to an automation raises the same card
-  // an edit does. Before this, the envelope died inside `create` and the
-  // person's first-ask automation surfaced nothing: no card, no grants.
-  if (serverWork?.automation !== undefined && stream !== undefined) {
-    publishAutomationCard(stream, serverWork.automation);
+  // The ask travels verbatim; the escalation's one line rides beside it, so
+  // the build never re-routes through a second agent. Nothing waits on the
+  // card — it stands until the person answers it.
+  const proposed = await runtime.build.propose(
+    { appId, name: title, prompt: ask, why: routed.why }, ctx);
+  if ("declined" in proposed) {
+    return await failUnbuilt(title, unbuiltSay(proposed.declined));
   }
-  // View-only (the store refused the write): the screen IS on the user's
-  // page, so this is a success with a caveat, not a failure. Reporting it
-  // as an error made the agent apologize for a rendered view and rebuild
-  // it twice more — three cards, one prompt (live 2026-07-27). The
-  // caveat rides `say`, which is the whole point of `say`: one true
-  // sentence, and nothing to react to.
-  //
-  // FAILED SERVER WORK is not that: the app on screen is missing the half its
-  // plan asked for, so it is `"partial"` (§3.1 law 4). `say` alone was the same
-  // silent success one field over — the sentence said the server side did not
-  // get built while every reader that BRANCHES on `status` saw plain "ready".
-  const failedWork = serverWork?.failed ?? [];
-  return receipt({
-    id: created.id,
-    title: created.name,
-    status: failedWork.length === 0 ? "ready" : "partial",
-    say: failedWork.length !== 0
-      ? `I built the screen, but the server-side part didn't get built: ${failedWork.join("; ")}. The app works for viewing — ask me to try the build again.`
-      : unsaved === undefined
-        ? `${created.name} is on your screen.`
-        : `${created.name} is on your screen, though I couldn't save it to your apps.`,
-  });
+  await remember(appId);
+  return receipt({ id: appId, title, status: "awaiting-consent", say: AWAITING_CONSENT });
 };
 
 const changeExistingApp = async (

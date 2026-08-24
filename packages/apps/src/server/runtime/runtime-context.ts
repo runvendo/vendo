@@ -46,6 +46,8 @@ import { createManifestTriggers } from "../escalation/manifest-triggers.js";
 import { createAppData } from "../persistence/app-data.js";
 import { createAppOpener } from "../persistence/open.js";
 import { createParkedActions, type ParkedActions } from "../persistence/parked-action.js";
+import { createParkedBuilds, type ParkedBuilds } from "../persistence/parked-build.js";
+import { createBuildDoor, type BuildDoor } from "../doors/build-door.js";
 import { updateAppRow } from "../persistence/persistence.js";
 import { placementStore, type PlacementRow, type PlacementStore } from "../persistence/placements.js";
 import { createPlacementRows } from "../doors/placement-surface.js";
@@ -79,6 +81,11 @@ export interface AppsRuntimeContext {
   egressApprovals: EgressApprovals;
   /** W0 — the undecided in-app actions the guard parked (parked-action.ts). */
   parkedActions: ParkedActions;
+  /** S3 — the builds that have been OFFERED and not answered (parked-build.ts). */
+  parkedBuilds: ParkedBuilds;
+  /** S3 — propose/resume/seal. Built before the approval flow, which subscribes
+   *  to the decision that fires `resume` (build-door.ts). */
+  build: BuildDoor;
   /** execution-v2 — provision/wake/sleep/destroy (machine-lifecycle.ts). */
   lifecycle: MachineLifecycle;
   /** The box manifest's schedules, folded into automation records. */
@@ -253,7 +260,7 @@ const createStores = (
   config: AppsConfig,
 ): Pick<AppsRuntimeContext,
   "engine" | "placementRows" | "slots" | "data" | "history" | "egressApprovals"
-  | "parkedActions"> => {
+  | "parkedActions" | "parkedBuilds"> => {
   const engine = engineOf(config.ops, config.store);
   const placementRows = placementStore(engine);
   const slots = createSlotRegistry(engine);
@@ -267,7 +274,11 @@ const createStores = (
   // re-dispatch the exact call the instant the owner approves. Holds only
   // undecided actions; both decisions clear it.
   const parkedActions = createParkedActions(engine);
-  return { engine, placementRows, slots, data, history, egressApprovals, parkedActions };
+  // S3 — the builds the person has been ASKED about. Unlike the two above,
+  // nothing has been called: the record IS the awaiting-consent state, and it
+  // exists so the yes can arrive long after the turn that raised the card.
+  const parkedBuilds = createParkedBuilds(engine);
+  return { engine, placementRows, slots, data, history, egressApprovals, parkedActions, parkedBuilds };
 };
 
 /** The composed seams the doors call through: interchange, the machine
@@ -424,10 +435,13 @@ export const createRuntimeContext = (
     config: withBuildTracking(config, placement),
     ...stores, ...audit, ...access, ...machine, updateAppDocument, runtime,
   };
-  const approvals = createApprovalFlow(base);
   const journal = createEditJournal(base);
+  // Before the approval flow, which subscribes to the decision that fires its
+  // `resume` — the seam that turns the person's yes into the build.
+  const build = createBuildDoor({ ...base, ...placement, ...journal });
+  const approvals = createApprovalFlow({ ...base, build });
   const doors = createDoors(base);
   const generation = createGenerationContext(base.config);
   const box = createBoxLane({ ...base, ...approvals, ...journal, ...doors });
-  return { ...base, ...approvals, ...journal, ...doors, ...placement, ...generation, ...box };
+  return { ...base, build, ...approvals, ...journal, ...doors, ...placement, ...generation, ...box };
 };

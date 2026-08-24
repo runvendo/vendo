@@ -153,10 +153,11 @@ const createEgressGrants = (
 };
 
 const subscribeApprovalDecisions = (
-  deps: Pick<AppsRuntimeContext, "config" | "egressApprovals" | "parkedActions" | "reportGuard">
+  deps: Pick<AppsRuntimeContext,
+    "config" | "egressApprovals" | "parkedActions" | "parkedBuilds" | "build" | "reportGuard">
     & Pick<ReturnType<typeof createEgressGrants>, "commitEgressApproval">,
 ): void => {
-  const { config, egressApprovals, parkedActions, reportGuard } = deps;
+  const { config, egressApprovals, parkedActions, parkedBuilds, build, reportGuard } = deps;
   const { commitEgressApproval } = deps;
   const onApprovalDecision = async (id: ApprovalId, approved: boolean): Promise<void> => {
     // Lane E — parked egress domains riding this approval commit or clear as
@@ -212,6 +213,20 @@ const subscribeApprovalDecisions = (
         await parkedActions.remove(id);
       }
     }
+
+    // S3 — the person's yes (or no) on a STANDING build card, which may land
+    // long after the turn that raised it. Nothing was called when the card went
+    // up, so this decision is not a resumption but the START: it is the only
+    // path from an escalated ask to a build box. The record clears either way
+    // (approve builds and clears; deny clears, and no box is ever opened).
+    const parkedBuild = await parkedBuilds.byApproval(id);
+    if (parkedBuild !== null) {
+      try {
+        await build.resume(id, approved);
+      } finally {
+        await parkedBuilds.remove(id);
+      }
+    }
   };
   config.guard.onApprovalDecision((id, approved) => onApprovalDecision(id, approved));
 };
@@ -219,7 +234,7 @@ const subscribeApprovalDecisions = (
 /** The egress approval slice of `createApps`' closure. */
 export const createApprovalFlow = (
   deps: Pick<AppsRuntimeContext,
-    "config" | "engine" | "egressApprovals" | "parkedActions"
+    "config" | "engine" | "egressApprovals" | "parkedActions" | "parkedBuilds" | "build"
     | "holds" | "lifecycle" | "updateAppDocument" | "reportGuard">,
 ) => {
   const egressGrants = createEgressGrants(deps);

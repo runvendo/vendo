@@ -20,7 +20,7 @@ import {
 import { describe, expect, it } from "vitest";
 import type { AgentToolsDataDependencies } from "../src/server/doors/agent-tools.js";
 import { runMakeTool } from "../src/server/doors/make-tool.js";
-import type { AppsRuntime, AutomationAuthorResult, CreateServerWork } from "../src/server/runtime/types.js";
+import type { AppsRuntime, AutomationAuthorResult, EditResult } from "../src/server/runtime/types.js";
 
 const ctx: RunContext = {
   principal: { kind: "user", subject: "user_ada" },
@@ -40,25 +40,28 @@ const RECORD: AutomationRecord = {
   updatedAt: "2026-08-17T00:00:00.000Z",
 };
 
-const AUTOMATION: NonNullable<CreateServerWork["automation"]> = { record: RECORD, enabled: true };
+const AUTOMATION: NonNullable<EditResult["automation"]> = { record: RECORD, enabled: true };
 
 /** The one door under test is the PUBLICATION seam, so the runtime is a fake:
- *  a create that hands back whatever server-work outcome the case needs, and an
+ *  an edit that hands back whatever automation envelope the case needs, a build
+ *  door that only ever OFFERS (S3 — an escalated ask spends nothing), and an
  *  automation door that records what the compound path asked it for. */
 const runtimeWith = (
-  work: CreateServerWork | undefined,
+  automation: EditResult["automation"] | undefined,
   authored?: AutomationAuthorResult,
 ): { runtime: AppsRuntime; asked: Array<{ appId: string; instruction: string; mode: string }> } => {
   const asked: Array<{ appId: string; instruction: string; mode: string }> = [];
+  const app = { format: VENDO_APP_FORMAT, id: "app_made", name: "Invoice nudges", ui: "tree" as const };
   const partial = {
-    machine: { available: () => true },
-    async create(input: Parameters<AppsRuntime["create"]>[0]) {
-      if (work !== undefined) input.onServerWork?.(work);
+    build: {
+      available: () => true,
+      async propose() { return { approvalId: "apr_build_1" }; },
+    },
+    async edit() {
       return {
-        format: VENDO_APP_FORMAT,
-        id: input.appId ?? "app_made",
-        name: "Invoice nudges",
-        ui: "tree" as const,
+        app,
+        version: { at: "2026-08-24T00:00:00.000Z", intent: "make it", rung: 1 as const },
+        ...(automation === undefined ? {} : { automation }),
       };
     },
     automation: {
@@ -86,7 +89,7 @@ const deps = {
 
 /** The plain ask names no recurrence, so nothing reaches the automation door
  *  unless a case asks for it. */
-const makeCall = (request = "make me an invoice board"): {
+const makeCall = (request = "make me an invoice board", app?: string): {
   call: VendoViewStreamingToolCall;
   updates: VendoViewStreamUpdate[];
 } => {
@@ -94,7 +97,7 @@ const makeCall = (request = "make me an invoice board"): {
   const call: VendoViewStreamingToolCall = {
     id: "call_1",
     tool: "vendo_make",
-    args: { request },
+    args: { request, ...(app === undefined ? {} : { app }) },
     [VENDO_VIEW_STREAM]: (update) => { updates.push(update); },
   };
   return { call, updates };
@@ -117,8 +120,8 @@ const cardIn = (updates: VendoViewStreamUpdate[]): Record<string, unknown> => {
 
 describe("vendo_make publishes the automation card (#881)", () => {
   it("raises a card about the RECORD, humanized, that core's own schema accepts", async () => {
-    const { call, updates } = makeCall();
-    const { runtime } = runtimeWith({ automation: AUTOMATION });
+    const { call, updates } = makeCall("make me an invoice board", "app_made");
+    const { runtime } = runtimeWith(AUTOMATION);
     await runMakeTool(runtime, deps, call, ctx);
 
     expect(cardIn(updates)).toMatchObject({
@@ -132,33 +135,30 @@ describe("vendo_make publishes the automation card (#881)", () => {
   });
 
   it("counts pending grants on the card", async () => {
-    const { call, updates } = makeCall();
-    const pendingGrants = [{}, {}] as unknown as NonNullable<NonNullable<CreateServerWork["automation"]>["pendingGrants"]>;
-    const { runtime } = runtimeWith({ automation: { ...AUTOMATION, pendingGrants } });
+    const { call, updates } = makeCall("make me an invoice board", "app_made");
+    const pendingGrants = [{}, {}] as unknown as NonNullable<NonNullable<EditResult["automation"]>["pendingGrants"]>;
+    const { runtime } = runtimeWith({ ...AUTOMATION, pendingGrants });
     await runMakeTool(runtime, deps, call, ctx);
 
     expect(cardIn(updates).pendingGrants).toBe(2);
   });
 
-  it("says when required server work could not be built, never a silent green receipt", async () => {
-    const { call } = makeCall();
-    const { runtime } = runtimeWith({ failed: ["the box did not produce a verified served web app"] });
-    const outcome = await runMakeTool(runtime, deps, call, ctx);
-    // The merged shape (#881 + upstream's partial-status receipt): the words
-    // carry the reason AND the status branches — a reader that only checks
-    // `status` no longer sees plain "ready" on a half-built app.
-    const receipt = receiptOf(outcome);
-    expect(receipt.say).toContain("didn't get built");
-    expect(receipt.say).toContain("the box did not produce a verified served web app");
-    expect(receipt.status).toBe("partial");
-  });
-
   it("publishes no card and no caveat when the lane authored nothing", async () => {
-    const { call, updates } = makeCall();
+    const { call, updates } = makeCall("make me an invoice board", "app_made");
     const { runtime } = runtimeWith(undefined);
     const outcome = await runMakeTool(runtime, deps, call, ctx);
     expect(updates.some((update) => update.part.type === "data-vendo-automation")).toBe(false);
-    expect(receiptOf(outcome).say).toBe("Invoice nudges is on your screen.");
+    expect(receiptOf(outcome).say).toBe("Invoice nudges is updated.");
+  });
+});
+
+describe("an escalated ask is OFFERED, never built (S3)", () => {
+  it("ends the turn on awaiting-consent, with nothing spent", async () => {
+    const { call } = makeCall();
+    const { runtime } = runtimeWith(undefined);
+    const receipt = receiptOf(await runMakeTool(runtime, deps, call, ctx));
+    expect(receipt.status).toBe("awaiting-consent");
+    expect(receipt.say).toContain("go-ahead");
   });
 });
 
@@ -194,7 +194,7 @@ describe("the schedule half of a compound ask", () => {
     const outcome = await runMakeTool(runtime, deps, call, ctx);
 
     const receipt = receiptOf(outcome);
-    expect(receipt.status).toBe("ready");
+    expect(receipt.status).toBe("awaiting-consent");
     expect(receipt.say).toContain("I couldn't set up the schedule: no valid plan validated");
     expect(updates.some((update) => update.part.type === "data-vendo-automation")).toBe(false);
   });

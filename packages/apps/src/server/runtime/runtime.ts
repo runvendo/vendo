@@ -50,6 +50,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     slots: ctx.slots,
     takeReplaySource: ctx.takeReplaySource,
     seed: createSeedSurface(ctx),
+    build: ctx.build,
     machine: createMachineSurface(ctx),
   };
   return runtime;

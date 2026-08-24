@@ -192,7 +192,7 @@ const createAppCopyDoors = (
 export const createAppsSurface = (
   deps: Pick<AppsRuntimeContext,
     "config" | "engine" | "caller" | "data" | "history" | "opener" | "interchange"
-    | "egressApprovals" | "parkedActions" | "placementRows"
+    | "egressApprovals" | "parkedActions" | "parkedBuilds" | "placementRows"
     | "lifecycle" | "owned" | "requireOwned"
     | "grantedRecords" | "reportLifecycle" | "claimSlot" | "markUnbuilt"
     | "runtime">,
@@ -200,7 +200,7 @@ export const createAppsSurface = (
   "get" | "list" | "delete" | "fork" | "share" | "publish" | "seen"
   | "exportApp" | "importApp" | "history" | "open" | "call" | "agentTools"> => {
   const { config, engine, data, history } = deps;
-  const { egressApprovals, parkedActions, placementRows, lifecycle } = deps;
+  const { egressApprovals, parkedActions, parkedBuilds, placementRows, lifecycle } = deps;
   const { requireOwned, reportLifecycle, claimSlot, markUnbuilt, runtime } = deps;
   return {
     ...createAppReadDoors(deps),
@@ -216,6 +216,7 @@ export const createAppsSurface = (
       await history.clear(appId);
       await egressApprovals.clearForApp(appId);
       await parkedActions.clearForApp(appId);
+      await parkedBuilds.clearForApp(appId);
       await engine.delete(APPS_COLLECTION, appId);
       // A deleted app can never mount again, so its placement rows are dead
       // weight — and a row with no app record reads as a build in flight, which

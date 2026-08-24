@@ -106,6 +106,16 @@ const referenceFieldsError = (app: AppDocument): AppDocumentValidation | null =>
   return null;
 };
 
+/** `proposal` is `building`'s half-step BACK — a build that has been offered
+ *  and not answered — so a document carrying both claims a box was spent on an
+ *  ask nobody has said yes to yet. The shape schema cannot say this (it parses
+ *  fields, not their relationship), and the propose path is the first writer
+ *  that could produce it. */
+const buildStateError = (app: AppDocument): AppDocumentValidation | null =>
+  app.proposal !== undefined && app.building !== undefined
+    ? fail("validation", "a document cannot carry both proposal and building")
+    : null;
+
 const validateAppDocumentUnsafe = (input: unknown): AppDocumentValidation => {
   if (typeof input !== "object" || input === null || Array.isArray(input)) {
     return fail("validation", "app document must be a non-null object");
@@ -129,7 +139,8 @@ const validateAppDocumentUnsafe = (input: unknown): AppDocumentValidation => {
     ?? componentToolsError(app)
     ?? sourceError(app)
     ?? storageError(app)
-    ?? referenceFieldsError(app);
+    ?? referenceFieldsError(app)
+    ?? buildStateError(app);
   if (violation !== null) return violation;
 
   return { ok: true, app };

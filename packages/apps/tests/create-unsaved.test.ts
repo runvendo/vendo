@@ -134,49 +134,10 @@ describe("a create the store refuses to persist", () => {
     expect(unsaved[0]).toContain("Store request failed.");
   });
 
-  it("reads to the agent as success with an honest note — never a failure it would retry", async () => {
-    // Through the front door, which reaches `create` by ESCALATION: the screen
-    // agent asks for the builder and this deployment has a sandbox to build in.
-    // (It used to reach it by falling through from an unwired assembler; that
-    // fall-through is gone, and an unwired assembler now fails loudly.)
-    const escalating: ScreenAssembler = {
-      assemble: async () => ({ kind: "escalate", why: "this needs a real build" }),
-    };
-    const runtime = createApps({
-      store: storeRefusingAppWrites(),
-      guard: guardFixture(),
-      tools,
-      catalog: [],
-      model: basicLanguageModel(),
-      machine: { sandbox: fakeBoxSandbox(), buildEnv: () => ({ PORT: "8080" }), boxEditPollMs: 5 },
-      screen: escalating,
-    });
-    const agentTools = createAgentTools(runtime, {
-      data: {} as never,
-      requireOwned: async () => { throw new Error("unused"); },
-      claimSlot: async () => { throw new Error("unused"); },
-      markUnbuilt: async () => { throw new Error("unused"); },
-      screen: escalating,
-    });
-
-    const outcome = await agentTools.execute(
-      { id: "call_1", tool: "vendo_make", args: { request: "Show my spending by category" } },
-      ctx,
-    );
-
-    expect(outcome.status).toBe("ok");
-    const output = (outcome as { output: Record<string, unknown> }).output;
-    // The receipt reads "ready", because the screen IS on the user's page. The
-    // caveat rides `say` — one true sentence with nothing in it to react to,
-    // which is what stops the three-cards-per-prompt loop. A "failed" status
-    // here, or a structured note to reason about, is an invitation to rebuild.
-    expect(output.status).toBe("ready");
-    expect(output.say).toMatch(/on your screen/i);
-    expect(output.say).toMatch(/couldn't save it to your apps/i);
-    // Contract §3.1 — four fields of words, and no document among them.
-    expect(Object.keys(output).sort()).toEqual(["id", "say", "status", "title"]);
-  });
-
+  // REMOVED by the consent slice (S3): `vendo_make` no longer calls `create` on
+  // an escalation, so the view-only caveat this pinned through the agent bridge
+  // has no producer left on that route. `create`'s own `onUnsaved` signal —
+  // the thing this file is about — is covered above and below.
   it("says nothing extra when the store is healthy (the note is failure-only)", async () => {
     let runtime: AppsRuntime;
     runtime = createApps({
