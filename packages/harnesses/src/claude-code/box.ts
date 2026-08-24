@@ -69,6 +69,16 @@ export interface SandboxMachineLike {
 
 /** The supervisor's control port, as `box-agent.ts` names it. */
 const CONTROL_PORT = 8811;
+/**
+ * Where the host's workspace is mounted ON THE BOX'S DISK. The session door
+ * maps every workspace path the host speaks onto this root (`toDisk`,
+ * `box/turn-routes.mjs`) and opens the in-box session with it as `cwd`.
+ *
+ * Exported because anything a PROMPT sends the in-box agent to has to be spelled
+ * from here: the agent has a shell, so it reads a bare `/user/apps/<id>` as the
+ * filesystem root and writes where `collect` never looks.
+ */
+export const BOX_WORKSPACE_ROOT = "/workspace";
 /** How long a box may sit between messages before it is destroyed. */
 export const BOX_IDLE_TTL_MS = 5 * 60_000;
 /** The box holds each poll open this long before answering empty. */
@@ -280,7 +290,7 @@ export async function boxMachine(options: BoxMachineOptions): Promise<SessionMac
       env: {
         ...options.env,
         VENDO_BOX_TOKEN: token,
-        VENDO_WORKSPACE_ROOT: "/workspace",
+        VENDO_WORKSPACE_ROOT: BOX_WORKSPACE_ROOT,
         // The dev port is DECLARED here, at create, from the same core constant
         // the template's vite config resolves. A preview URL is minted from it
         // before the dev server has necessarily booted, so it can never be
@@ -434,7 +444,7 @@ export async function boxMachine(options: BoxMachineOptions): Promise<SessionMac
     carriesSession: box.warm,
 
     // The frozen layout (§3.1) one level under the box's root.
-    pluginPath: "/workspace/host",
+    pluginPath: `${BOX_WORKSPACE_ROOT}/host`,
 
     tree: box.tree,
 

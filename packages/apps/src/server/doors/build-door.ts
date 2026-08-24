@@ -215,22 +215,31 @@ export const createBuildDoor = (
         return { declined: decision.action === "block" ? decision.reason : BUILD_ALREADY_ASKED };
       }
       const approvalId = decision.approval.id;
-      // Parked BEFORE the row: the record is what the decision seam reads, and a
-      // yes that lands between these two writes must find the build to run.
-      await parkedBuilds.put({
-        approvalId,
-        appId: input.appId,
-        owner: ctx.principal.subject,
-        prompt: input.prompt,
-        why: input.why,
-        ctx: guardCtx,
-      });
-      await proposeRow(input.appId, input.name, {
-        approvalId,
-        prompt: input.prompt,
-        why: input.why,
-        at: new Date().toISOString(),
-      }, ctx);
+      try {
+        // Parked BEFORE the row: the record is what the decision seam reads, and
+        // a yes that lands between these two writes must find the build to run.
+        await parkedBuilds.put({
+          approvalId,
+          appId: input.appId,
+          owner: ctx.principal.subject,
+          prompt: input.prompt,
+          why: input.why,
+          ctx: guardCtx,
+        });
+        await proposeRow(input.appId, input.name, {
+          approvalId,
+          prompt: input.prompt,
+          why: input.why,
+          at: new Date().toISOString(),
+        }, ctx);
+      } catch (error) {
+        // The card was parked before either write, so a write that throws leaves
+        // an ask standing with no build behind it — a question the person can
+        // answer yes to and nothing happens. Taken back through the same verb the
+        // chat door uses for an ask nobody needs any more.
+        await config.guard.abandonApprovals?.([approvalId], guardCtx);
+        throw error;
+      }
       return { approvalId };
     },
 
@@ -241,7 +250,8 @@ export const createBuildDoor = (
       // Read raw and untyped, like the placement read: one unparseable row must
       // not decide how every other build fails.
       const record = await engine.get(APPS_COLLECTION, appId);
-      const alreadySealed = (record?.data as { doc?: { bundle?: unknown } } | null)?.doc?.bundle !== undefined;
+      const existing = (record?.data as { doc?: { bundle?: unknown; name?: string } } | null)?.doc;
+      const alreadySealed = existing?.bundle !== undefined;
       /**
        * The ONE terminal landing every failure shares: the tombstone that turns
        * the claimed slot into the honest failure card. A denial is one of them —
@@ -251,9 +261,16 @@ export const createBuildDoor = (
        * for a first build — there is nothing there to lose — and would destroy a
        * working app here. So a reseal that fails keeps everything it had and
        * loses only the build state; the person's app is still their app.
+       *
+       * The row's own NAME survives either way. `markUnbuilt` replaces the row,
+       * so naming it from the prompt renamed the person's app to a 60-character
+       * cut of what they typed — and that name then rode into the version
+       * history. `fallbackAppName` is left for the row that has no name to keep.
        */
       const refuse = async (reason: string): Promise<void> => {
-        if (!alreadySealed) return await markUnbuilt(appId, fallbackAppName(prompt), reason, ctx);
+        if (!alreadySealed) {
+          return await markUnbuilt(appId, existing?.name ?? fallbackAppName(prompt), reason, ctx);
+        }
         await updateAppDocument(appId, ({ building: _building, proposal: _proposal, ...rest }) => rest);
       };
       if (!approved) return await refuse(BUILD_DECLINED);

@@ -25,7 +25,12 @@ import {
 } from "@vendoai/core";
 import { buildFailureReason } from "@vendoai/apps";
 import type { AppBuilder, BuildOutcome, BuildRequest, BuiltFile } from "@vendoai/apps/contract";
-import { boxEgress, boxMachine, type SandboxAdapterLike } from "@vendoai/harnesses/claude-code/box";
+import {
+  BOX_WORKSPACE_ROOT,
+  boxEgress,
+  boxMachine,
+  type SandboxAdapterLike,
+} from "@vendoai/harnesses/claude-code/box";
 
 export interface AppBuilderDeps {
   sandbox: SandboxAdapterLike | undefined;
@@ -43,10 +48,24 @@ export interface AppBuilderDeps {
  */
 export const BUILD_ALLOWED_DOMAINS: readonly string[] = ["registry.npmjs.org"];
 
-/** Where a build works — the same `/user/apps/<id>` layout the screen agent
- *  writes under, which is also the only tree the box door carries back
- *  (`carriedBack`, `packages/harnesses/box/turn-routes.mjs`). */
+/**
+ * Where a build works, in the two spellings the box has.
+ *
+ * `materialize` and `collect` speak WORKSPACE paths, which the box door maps
+ * onto its disk under the mount root (`toDisk`,
+ * `packages/harnesses/box/turn-routes.mjs`) — and `/user/**` is the only tree
+ * that door carries back (`carriedBack`). The BRIEF cannot use that spelling:
+ * the in-box agent has a shell, so it reads a leading `/` as the filesystem
+ * root, sudo-creates `/user` there and bundles into a directory `collect` never
+ * looks at. Measured live 2026-08-24 — a real 28 KB bundle on the box, an empty
+ * collect, and "the build's own test did not pass" on every run.
+ *
+ * (The screen agent's identical-looking `/user/apps/<id>` is not a precedent:
+ * its model writes through the host's workspace FAÇADE, which speaks workspace
+ * paths, and never touches a disk.)
+ */
 const appDirectory = (appId: AppId): string => `/user/apps/${appId}`;
+const diskDirectory = (appId: AppId): string => `${BOX_WORKSPACE_ROOT}${appDirectory(appId)}`;
 
 /** What the frame boots, and the one file whose presence means the build worked:
  *  the brief tells the box to remove it if its own test does not pass. */
@@ -73,6 +92,7 @@ const checkoutOf = (source: Record<string, AppSourceFile> | undefined, directory
     ? []
     : [{ path: `${directory}/${path}`, bytes: encoder.encode(file.text), readOnly: false }]);
 
+/** `directory` is the DISK spelling — this text is read by a shell. */
 const briefFor = (request: BuildRequest, directory: string): string =>
   `Build this for real, in ${directory}.
 
@@ -137,7 +157,10 @@ export function appBuilder(deps: AppBuilderDeps): AppBuilder {
         request.onStatus?.("Writing the code, installing what it needs, and testing it…");
         // No `toolDoor`: this box reaches none of the host's tools, so there is
         // nothing for it to act with and no credential to act under.
-        await machine.send({ prompt: briefFor(request, directory), emit: () => undefined });
+        await machine.send({
+          prompt: briefFor(request, diskDirectory(request.appId)),
+          emit: () => undefined,
+        });
         const collected = await machine.collect([
           `${directory}/${ENTRY}`,
           `${directory}/src/*`,

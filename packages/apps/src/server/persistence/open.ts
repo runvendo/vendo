@@ -235,6 +235,13 @@ const serveOpenApp = (
   if (app.seed !== undefined) {
     throw new VendoError("not-found", `app ${app.id} has no screen yet`);
   }
+  // Offered and unanswered. The row exists precisely so the slot can show the
+  // standing ask (`proposeRow`, doors/build-door.ts), and "can't be opened any
+  // more" is the one thing it must not say to someone who has just been asked
+  // whether to build it. Same not-found as the remix above, for the same reason.
+  if (app.proposal !== undefined) {
+    throw new VendoError("not-found", `app ${app.id} is waiting on its build to be approved`);
+  }
   // Nothing left to open. A document with no screen is one written back when a
   // stored tree was the artifact; that field is gone, so there is no layout to
   // serve and never will be. Terminal, and said as such, so the embed resolves

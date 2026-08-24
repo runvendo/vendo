@@ -38,6 +38,7 @@ import { boxEgress, boxMachine, inferenceEnv, type SandboxAdapterLike } from "./
 // and a host process that wants to reap idle conversation boxes on shutdown
 // (`disposeLocalSessions` in ./local.js is the `machine: "local"` counterpart).
 export {
+  BOX_WORKSPACE_ROOT,
   boxEgress,
   boxMachine,
   disposeSessionMachines,
@@ -45,6 +46,9 @@ export {
   type SandboxAdapterLike,
   type SandboxMachineLike,
 } from "./box.js";
+/** The bound a build's dead-man timer has to clear: what the box itself gives
+ *  ONE message before giving up on it. */
+export { MESSAGE_BUDGET_MS } from "./machine.js";
 
 /** The knobs a TURN may still carry (harness-declared; see optionsSchema). */
 export interface ClaudeCodeTurnOptions {

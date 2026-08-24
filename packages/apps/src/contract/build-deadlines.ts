@@ -8,7 +8,24 @@
  * affordance) lands before the client gives up with the generic deadline beat.
  */
 
-export const BUILD_WATCHDOG_MS = 4 * 60_000;
+/**
+ * A dead-man timer, so it has to outlast the work it guards.
+ *
+ * It was 4 minutes, which is shorter than a build: three real box builds took
+ * 229 s, 414 s and 450 s on 2026-08-24, and the first was killed at exactly 4:00
+ * while the box was still installing from npm. The bound that matters is the
+ * box's own — it gives ONE message 15 minutes (`MESSAGE_BUDGET_MS`,
+ * `@vendoai/harnesses`) before giving up and reporting a failure itself — so
+ * this sits above that plus boot, collect and seal. Anything shorter cannot
+ * distinguish a lane that died from one that is working, which is the only
+ * question it exists to answer. Pinned against the box's budget in
+ * `packages/vendo/tests/build-lane.test.ts`, the one package that sees both.
+ *
+ * The cost, stated: a screen create that dies SILENTLY (`startBuildWatchdog`,
+ * doors/build-surface.ts) now shows as building for this long instead of four
+ * minutes. `VENDO_APP_BUILD_WATCHDOG_MS` is the operator's escape hatch either way.
+ */
+export const BUILD_WATCHDOG_MS = 20 * 60_000;
 
 /** How long the UI keeps polling past the watchdog: covers the watchdog's
  *  persist + one poll cadence with generous slack. */

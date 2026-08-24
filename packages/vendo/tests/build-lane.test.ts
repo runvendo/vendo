@@ -21,17 +21,25 @@ import { dirname, join } from "node:path";
 import type { LanguageModel } from "ai";
 import { memoryStoreAdapter } from "@vendoai/core/conformance";
 import {
+  PARKED_BUILD_COLLECTION,
   type AppId,
   type ApprovalId,
   type FilesAdapter,
   type Principal,
   type RunContext,
+  type StoreAdapter,
   type ToolRegistry,
 } from "@vendoai/core";
 import { createApps, readBundleBlob, type AppsConfig } from "@vendoai/apps";
+import { BUILD_WATCHDOG_MS } from "@vendoai/apps/contract";
 import { createGuard } from "@vendoai/guard";
+import { MESSAGE_BUDGET_MS } from "@vendoai/harnesses/claude-code";
 import { createSessionRoutes } from "@vendoai/harnesses/box-door";
-import { disposeSessionMachines, inferenceEnv } from "@vendoai/harnesses/claude-code/box";
+import {
+  BOX_WORKSPACE_ROOT,
+  disposeSessionMachines,
+  inferenceEnv,
+} from "@vendoai/harnesses/claude-code/box";
 import { createStore, type VendoStore } from "@vendoai/store";
 import * as kit from "@vendoai/ui/kit";
 import { afterEach, describe, expect, it } from "vitest";
@@ -75,9 +83,10 @@ interface Box {
   kill: () => void;
 }
 
-/** The in-box coding agent, scripted: handed the brief and the box's own disk
- *  root, it writes what a real one would write. */
-type InBoxAgent = (input: { prompt: string; root: string; box: Box }) => void | Promise<void>;
+/** The in-box coding agent, scripted: handed the brief and the box's WHOLE
+ *  disk, it writes what a real one would write. It has a shell, not the host's
+ *  workspace map, so it resolves the brief's paths against that disk. */
+type InBoxAgent = (input: { prompt: string; disk: string; box: Box }) => void | Promise<void>;
 
 interface ScriptedSandbox {
   boxes: Box[];
@@ -94,8 +103,14 @@ function scriptedSandbox(agent: InBoxAgent): ScriptedSandbox {
     boxes,
     async create(spec: unknown) {
       const { env, allowedDomains } = spec as { env: Record<string, string>; allowedDomains?: string[] };
-      const root = mkdtempSync(join(tmpdir(), "vendo-build-box-"));
-      boxRoots.push(root);
+      // The box's whole filesystem, with the host's workspace mounted where the
+      // host itself said to mount it. Two paths, because the box has two: the
+      // session door maps the host's workspace spellings onto `root`, while the
+      // agent inside writes absolute paths onto `disk`.
+      const disk = mkdtempSync(join(tmpdir(), "vendo-build-box-"));
+      const root = join(disk, env["VENDO_WORKSPACE_ROOT"] ?? "");
+      mkdirSync(root, { recursive: true });
+      boxRoots.push(disk);
       let dead = false;
       const box: Box = {
         env: { ...env },
@@ -113,7 +128,7 @@ function scriptedSandbox(agent: InBoxAgent): ScriptedSandbox {
         openSession: (input: { emit: (event: Record<string, unknown>) => void }) => ({
           async send(prompt: string) {
             box.prompts.push(prompt);
-            await agent({ prompt, root, box });
+            await agent({ prompt, disk, box });
             input.emit({ type: "text", delta: "done." });
           },
           async interrupt() { /* the turn stops; the session lives */ },
@@ -140,23 +155,30 @@ function scriptedSandbox(agent: InBoxAgent): ScriptedSandbox {
   };
 }
 
-/** What a working in-box agent leaves behind: a bundled entry, its source, and
- *  the lockfile of what it installed. */
-const wrote = (root: string, appId: string, files: Record<string, string>): void => {
+/**
+ * What a working in-box agent leaves behind: a bundled entry, its source, and
+ * the lockfile of what it installed — at the path the BRIEF named, resolved
+ * against the box's own disk the way its shell resolves it.
+ *
+ * Not against the host's workspace map, which is the whole point: a brief that
+ * spells a workspace path puts every write outside the mounted workspace, where
+ * `collect` never looks. Measured live 2026-08-24 — 28 KB really bundled from
+ * npm, `{"files":[]}` collected, every build reported as "its own test did not
+ * pass".
+ */
+const wrote = (disk: string, prompt: string, files: Record<string, string>): void => {
+  const directory = /^Build this for real, in (\S+)\.$/mu.exec(prompt)?.[1];
+  if (directory === undefined) throw new Error(`the brief names no build directory:\n${prompt}`);
   for (const [path, text] of Object.entries(files)) {
-    const disk = join(root, "user/apps", appId, path);
-    mkdirSync(dirname(disk), { recursive: true });
-    writeFileSync(disk, text);
+    const target = join(disk, directory, path);
+    mkdirSync(dirname(target), { recursive: true });
+    writeFileSync(target, text);
   }
 };
 
-/** The appId out of the brief the box was handed — the lane mints none, it is
- *  the one the proposal carried. */
-const appIdOf = (prompt: string): string => /\/user\/apps\/(app_[\w-]+)/u.exec(prompt)?.[1] ?? "";
-
 /** A build whose in-box agent does its job. */
-const buildsFine: InBoxAgent = ({ prompt, root }) => {
-  wrote(root, appIdOf(prompt), {
+const buildsFine: InBoxAgent = ({ prompt, disk }) => {
+  wrote(disk, prompt, {
     "dist/app.js": "console.log('cropped')",
     "src/index.ts": "export const crop = () => {};",
     "package-lock.json": "{}",
@@ -179,8 +201,7 @@ const memoryBlobs = (): FilesAdapter => {
   };
 };
 
-const setup = (sandbox: ScriptedSandbox | undefined) => {
-  const store = memoryStoreAdapter();
+const setup = (sandbox: ScriptedSandbox | undefined, store: StoreAdapter = memoryStoreAdapter()) => {
   const files = memoryBlobs();
   // The REAL guard: `decide` awaits its subscribers, which is the whole reason
   // the lane has to detach.
@@ -242,6 +263,9 @@ describe("a consented build runs the box and seals what it made", () => {
     expect(box.prompts).toHaveLength(1);
     expect(box.prompts[0]).toContain(ASK);
     expect(box.prompts[0]).toContain(WHY);
+    // A SHELL reads this brief, so it must name the box's own disk path. The
+    // host's workspace spelling puts every write outside the mounted workspace.
+    expect(box.prompts[0]).toContain(`${BOX_WORKSPACE_ROOT}/user/apps/${APP}`);
 
     // Sealed: the row is a bundle, and the entry hash reads back as the bytes
     // the box wrote — through the real seal and the real blob read.
@@ -351,6 +375,10 @@ describe("every failure lands on the ONE terminal record", () => {
     expect(row["building"]).toBeUndefined();
     expect(row["proposal"]).toBeUndefined();
     expect(row["ui"]).toBeUndefined();
+    // A failure loses the BUILD, never the app: the tombstone used to replace
+    // the row wholesale and rename the person's app to a cut of their prompt,
+    // which then rode into the version history.
+    expect(row["name"]).toBe("Photo editor");
   };
 
   it("no sandbox composed — the failure names the missing machine", async () => {
@@ -372,9 +400,9 @@ describe("every failure lands on the ONE terminal record", () => {
   });
 
   it("the agent's own test failed, so it left no entry behind", async () => {
-    const sandbox = scriptedSandbox(({ prompt, root }) => {
+    const sandbox = scriptedSandbox(({ prompt, disk }) => {
       // Source, but no `dist/app.js` — the brief's way of saying the test failed.
-      wrote(root, appIdOf(prompt), { "src/index.ts": "broken" });
+      wrote(disk, prompt, { "src/index.ts": "broken" });
     });
     const harness = setup(sandbox);
 
@@ -401,6 +429,42 @@ describe("every failure lands on the ONE terminal record", () => {
 
     failsWith(await settled(harness), /not approved/u);
     expect(sandbox.boxes).toHaveLength(0);
+  });
+});
+
+describe("the dead-man timer outlasts the work it guards", () => {
+  it("gives a build longer than the box's own message budget", () => {
+    // The two numbers only meet HERE — `@vendoai/apps` cannot see the box, and
+    // the box cannot see the watchdog. At 4 minutes the watchdog always won:
+    // three real builds (229 s, 414 s, 450 s) were killed mid-work on
+    // 2026-08-24, and the box will not even give up on one message for 15.
+    expect(BUILD_WATCHDOG_MS).toBeGreaterThan(MESSAGE_BUDGET_MS);
+  });
+});
+
+describe("a propose that cannot finish leaves no card standing", () => {
+  it("takes the ask back when the parked record cannot be written", async () => {
+    // What the real Cloud store did on 2026-08-24: its engine allowlist is a
+    // version behind, so `vendo_parked_build` was refused — AFTER the guard had
+    // already parked the card. Two orphan asks were left standing in a real
+    // person's feed with no build behind either of them.
+    const backing = memoryStoreAdapter();
+    const store: StoreAdapter = {
+      ...backing,
+      records: (collection) => collection !== PARKED_BUILD_COLLECTION
+        ? backing.records(collection)
+        : {
+          ...backing.records(collection),
+          put: () => Promise.reject(new Error(`collection "${collection}" is not an engine collection`)),
+        },
+    };
+    const harness = setup(scriptedSandbox(buildsFine), store);
+
+    await expect(harness.runtime.build.propose(
+      { appId: APP, name: "Photo editor", prompt: ASK, why: WHY }, ctx,
+    )).rejects.toThrow(/engine collection/u);
+
+    expect(await harness.guard.approvals.pending(principal)).toEqual([]);
   });
 });
 
@@ -444,6 +508,22 @@ describe("composition fills the slot", () => {
     await store.ensureSchema();
     return vendo;
   };
+
+  it("an app that is only OFFERED reads as pending on the wire, never as gone", async () => {
+    const vendo = await compose(scriptedSandbox(buildsFine));
+    const proposed = await vendo.apps.build.propose(
+      { appId: APP, name: "Photo editor", prompt: ASK, why: WHY }, ctx);
+    if (!("approvalId" in proposed)) throw new Error("expected a card");
+
+    // The exact request the embed makes while the card stands. It answered
+    // "This app can't be opened any more — create it again to replace it." to a
+    // person who had just been asked whether to build it (measured live
+    // 2026-08-24, on all three propose runs).
+    const answer = await vendo.handler(new Request(
+      `https://host.test/api/vendo/apps/${APP}/open?pending=1`));
+
+    expect(await answer.json()).toEqual({ kind: "pending" });
+  });
 
   it("a composed sandbox is the ONE gate, and the composed box holds no store credentials", async () => {
     expect((await compose(undefined)).apps.build.available()).toBe(false);
