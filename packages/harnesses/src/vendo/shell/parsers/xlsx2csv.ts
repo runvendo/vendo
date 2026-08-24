@@ -8,6 +8,7 @@
  * SheetJS Community Edition, pure JavaScript, synchronous, no native code.
  */
 import type { Command, LazyCommand } from "just-bash";
+import { importShellLibrary } from "../runtime.js";
 import { inputBytes, notThisFormat } from "./input.js";
 
 /** `@e965/xlsx` is SheetJS CE republished on the public registry. SheetJS
@@ -20,8 +21,6 @@ import { inputBytes, notThisFormat } from "./input.js";
     Re-verify on any bump (empty diff == identical to the official tarball):
       diff <(curl -sL https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz \
         | tar xzO package/xlsx.js) node_modules/@e965/xlsx/xlsx.js */
-let XLSX_SPECIFIER = "@e965/xlsx";
-
 type SheetJs = typeof import("@e965/xlsx");
 
 const NAME = "xlsx2csv";
@@ -45,7 +44,7 @@ export const xlsx2csv: LazyCommand = {
   name: NAME,
   trusted: true,
   async load(): Promise<Command> {
-    const XLSX = await import(/* webpackIgnore: true */ /* turbopackIgnore: true */ /* @vite-ignore */ XLSX_SPECIFIER) as SheetJs;
+    const XLSX = await importShellLibrary<SheetJs>("@e965/xlsx");
     return {
       name: NAME,
       trusted: true,

@@ -13,9 +13,8 @@
  * "Revenue rose 26%" into three.
  */
 import type { Command, LazyCommand } from "just-bash";
+import { importShellLibrary } from "../runtime.js";
 import { inputBytes, notThisFormat } from "./input.js";
-
-let FFLATE_SPECIFIER = "fflate";
 
 type Fflate = typeof import("fflate");
 
@@ -90,7 +89,7 @@ export const docx2txt: LazyCommand = {
   name: NAME,
   trusted: true,
   async load(): Promise<Command> {
-    const { unzipSync, strFromU8 } = await import(/* webpackIgnore: true */ /* turbopackIgnore: true */ /* @vite-ignore */ FFLATE_SPECIFIER) as Fflate;
+    const { unzipSync, strFromU8 } = await importShellLibrary<Fflate>("fflate");
     return {
       name: NAME,
       trusted: true,

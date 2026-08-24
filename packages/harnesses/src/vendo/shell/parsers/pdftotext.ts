@@ -12,12 +12,8 @@
  * mid-pipeline. Redirect it if you want a file.
  */
 import type { Command, LazyCommand } from "just-bash";
+import { importShellLibrary } from "../runtime.js";
 import { inputBytes, notThisFormat } from "./input.js";
-
-/** Mutable so no bundler statically resolves it — same containment as just-bash
- *  in engine.ts, and the same reason: this module is reachable from the umbrella's
- *  server entry, which must bundle for a Worker target. */
-let UNPDF_SPECIFIER = "unpdf";
 
 type Unpdf = typeof import("unpdf");
 
@@ -27,7 +23,7 @@ export const pdftotext: LazyCommand = {
   name: NAME,
   trusted: true,
   async load(): Promise<Command> {
-    const { extractText } = await import(/* webpackIgnore: true */ /* turbopackIgnore: true */ /* @vite-ignore */ UNPDF_SPECIFIER) as Unpdf;
+    const { extractText } = await importShellLibrary<Unpdf>("unpdf");
     return {
       name: NAME,
       trusted: true,

@@ -14,6 +14,7 @@ import type { Bash as BashInstance } from "just-bash";
 import { docx2txt } from "./parsers/docx2txt.js";
 import { pdftotext } from "./parsers/pdftotext.js";
 import { xlsx2csv } from "./parsers/xlsx2csv.js";
+import { importShellLibrary } from "./runtime.js";
 
 /** One `bash` call's ceilings. Both map onto just-bash's own execution limits;
  *  everything else keeps just-bash's `normal` profile. */
@@ -44,22 +45,7 @@ export const DEFAULT_MAX_OUTPUT_BYTES = 1_000_000;
  *  still hold several copies of the largest file a person can drop. */
 const TMP_MAX_BYTES = 32 * 1024 * 1024;
 
-/** Routed through a mutable binding so NO bundler ever statically resolves the
- *  interpreter. just-bash's graph reaches `node:worker_threads`, `undici` and
- *  `sql.js`, and it `import()`s the two native packages it declares as
- *  `optionalDependencies` (`@mongodb-js/zstd`, `node-liblzma`) — installed on a
- *  consumer's disk, which is why their build scripts have to be denied
- *  (pnpm-workspace.yaml), and unbundleable, so esbuild hard-fails a Worker build
- *  on those two, which is `scripts/portability-gate.mjs` Leg A. Same containment,
- *  and the same reasoning, as the optional e2b SDK
- *  (`packages/apps/src/server/escalation/e2b/index.ts`); a `let` is what defeats
- *  esbuild's constant folding. */
-let JUST_BASH_SPECIFIER = "just-bash";
-
 type JustBash = typeof import("just-bash");
-
-const loadJustBash = async (): Promise<JustBash> =>
-  await import(/* webpackIgnore: true */ /* turbopackIgnore: true */ /* @vite-ignore */ JUST_BASH_SPECIFIER) as JustBash;
 
 /**
  * One session, one workspace. The interpreter boots on the FIRST call and is
@@ -74,7 +60,7 @@ export function createShellSession(opts: {
   let booting: Promise<BashInstance> | undefined;
 
   const boot = async (): Promise<BashInstance> => {
-    const { Bash, InMemoryFs, MountableFs } = await loadJustBash();
+    const { Bash, InMemoryFs, MountableFs } = await importShellLibrary<JustBash>("just-bash");
     // `/tmp` is the one place a script may scribble that is NOT the person's
     // workspace. It has to exist: the workspace holds `/user`, `/orgs/<org>` and
     // `/host` and answers EACCES everywhere else, and a shell with nowhere to put
