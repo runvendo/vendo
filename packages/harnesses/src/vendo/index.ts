@@ -43,3 +43,16 @@ export {
 // surface the failure.
 export { isContextOverflow } from "./overflow.js";
 export { failoverModel, type ResolvedModel } from "./failover.js";
+// The shell — `vendo()`'s hands over the user's own files. It lives inside this
+// harness's directory and leaves through this subpath because it IS this
+// harness's hand: a sandbox harness has a machine and reaches a disk its own
+// way, and the umbrella mounts these tools only when the resident brain is
+// `vendo()` (compose-tools.ts).
+export {
+  createShellSession,
+  DEFAULT_MAX_EXECUTION_TIME_MS,
+  DEFAULT_MAX_OUTPUT_BYTES,
+  type ShellLimits,
+  type ShellSession,
+} from "./shell/engine.js";
+export { createShellTools } from "./shell/tool.js";
