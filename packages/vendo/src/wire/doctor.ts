@@ -61,25 +61,18 @@ export const doctorBaseUrlRoutes: RouteEntry[] = [
     gets these routes at all (server.ts mounts the group behind
     `deps.development`). Mounting is the
     only thing standing between them and an unauthenticated caller: none takes a
-    principal, `/doctor/machines` reports every machine-bearing app in the
-    deployment across every subject, and POST `/doctor/act-as` makes the
-    composition mint host actAs material on demand. The gate this replaced was a
+    principal, and POST `/doctor/act-as` makes the composition mint host actAs
+    material on demand. The gate this replaced was a
     per-request `NODE_ENV === "production"` refusal, which answers "not
     production" for an unset NODE_ENV and on every runtime with no `process`
     global. */
 export const doctorRoutes: RouteEntry[] = [
-  // Machine/schedule reporting. Reporting only: which apps carry a machine, what
-  // their manifests declare, and whether ANY waker can reach the /tick surface —
-  // the same ladder the door itself verifies against (tick-enrolment.ts), so a
+  // Schedule reporting: whether ANY waker can reach the /tick surface — the
+  // same ladder the door itself verifies against (tick-enrolment.ts), so a
   // Cloud deployment that configured nothing still reads as configured, because
-  // its heartbeat knocks. WHEN a schedule last fired is not here:
-  // a vendo.json schedule is a doc trigger, so its history is the automation's
-  // run records.
-  route("GET", "/doctor/machines", async ({ deps }) => {
-    return json({
-      scheduleCallerConfigured: (await tickSecret()) !== undefined,
-      machines: await deps.apps.machine.report(),
-    });
+  // its heartbeat knocks.
+  route("GET", "/doctor/machines", async () => {
+    return json({ scheduleCallerConfigured: (await tickSecret()) !== undefined });
   }),
   route("GET", "/doctor/present/echo", async ({ request }) => {
     return json({

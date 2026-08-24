@@ -117,7 +117,7 @@ Your repo, your API, and your auth stay on your side. Vendo Cloud runs the manag
     Threads and audit rows live in Vendo Cloud's hosted store. Delete any of it through the erase API, which drops the rows for good.
   </Accordion>
   <Accordion title="What can generated apps reach?" defaultOpen>
-    A screen the model writes never runs in your page. Its code runs in a WebAssembly VM that can't touch anything — no DOM, no network, no clock — and your surface renders what comes out. A full generated app runs in a sandbox whose network is an allowlist: it reaches only domains you approved, one approval per domain.
+    A screen the model writes never runs in your page. Its code runs in a WebAssembly VM that can't touch anything — no DOM, no network, no clock — and your surface renders what comes out. A full generated app is built once in a disposable box and sealed, then renders in a sandboxed iframe with an opaque origin and `default-src 'none'`, so the frame makes no network request at all.
 
     Their tool calls come back through your server, under the same guard and the same approvals as a call from your own chat.
   </Accordion>

@@ -81,7 +81,6 @@ import type { AppsOptions, CreateVendoConfig } from "./types.js";
 import type { resolveVendoUrls } from "./urls.js";
 import type { WireDeps } from "./wire/shared.js";
 import type { createConnectGate, mergedHostSemantics } from "@vendoai/actions";
-import type { createAppTokens } from "@vendoai/apps";
 import type { selectSandbox } from "@vendoai/apps";
 import type { appAccess } from "@vendoai/store";
 import type { HostAuthPreset } from "./auth-presets/index.js";
@@ -212,7 +211,6 @@ export interface VendoComposition {
   catalog: ReturnType<typeof mergeRuntimeCatalog>;
 
   // ── compose-apps.ts ────────────────────────────────────────────────────────
-  appTokens: ReturnType<typeof createAppTokens>;
   /** Build contract §9.3 — ONE `can()` the apps runtime and the engine share. */
   access: ReturnType<typeof appAccess>;
   apps: AppsRuntime;

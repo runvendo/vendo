@@ -24,7 +24,7 @@ One key is required, an identity, as either `principal` or an `auth` preset. `oa
 | `instructions` | The prose this deployment puts in front of the agent every turn. Override for `.vendo/brief.md`; a non-blank string wins, blank falls through |
 | `store` | Unset with `VENDO_API_KEY` set, the Cloud hosted store fills the slot |
 | `files` | Where every workspace file's content lives — one backing, no tiering. Set, `s3Files` or your own `FilesAdapter` holds all of them. Unset, the store's own blobs back it, capped at 5 MiB each, and the first over-cap write fails naming this key |
-| `sandbox` | Unlocks machine-backed apps. Unset, `VENDO_API_KEY` fills it with the Cloud sandbox; with neither, apps stay tree-only |
+| `sandbox` | Unlocks built apps: the disposable box one is sealed in. Unset, `VENDO_API_KEY` fills it with the Cloud sandbox; with neither, apps stay tree-only |
 | `harness` | Who thinks. Default `vendo()`, also `claudeCode()`, or your own via `defineHarness`. A harness declaring `requires: { sandbox: true }` with no sandbox is a boot error |
 | `knowledge` | Composes the `vendo_knowledge_search` tool. Unset, that tool does not exist |
 | `connectors` | One mixed list. A string names a Vendo Cloud toolkit and scopes discovery to it; a `Connector` object is used verbatim. `[]` means no connectors |
@@ -149,7 +149,7 @@ A check is `{ name, run(input) }` returning `Finding[]`, or `{ name, kind: "judg
 
 A `block` finding stops the ship and a `warn` rides along. A check that throws degrades to a `warn` naming it, so a broken check never takes an app down.
 
-Machine-backed apps have no flag. They are gated by a configured `sandbox` adapter alone, and served apps additionally need the mounted wire plus `VENDO_BASE_URL`.
+Built apps have no flag. They are gated by a configured `sandbox` adapter alone.
 
 ## `profile`
 

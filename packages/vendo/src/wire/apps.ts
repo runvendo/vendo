@@ -347,12 +347,6 @@ export const appRoutes: RouteEntry[] = [
       await deps.apps.unplace({ app: appId, slot: string(body["slot"], "slot") }, ctx);
       return json({});
     }
-    // Wave 7 H2 — the embed surface's keepalive: user activity on an embedded
-    // served app rides one host-proxied HEAD through the machine (re-arming
-    // the idle timer); "woke" tells the embed its URL is stale — re-open.
-    if (op(wire, "POST", "machine", 4) && segments[3] === "ping") {
-      return json(await deps.apps.machine.ping(appId, ctx));
-    }
     // FINAL SPEC v1 — the sealed bundle's bytes, as the document the frame
     // renders. `BUNDLE_HEADERS` carries the CSP that IS the frame's enforcer
     // (zero network), so this route never assembles a header set of its own.

@@ -1,6 +1,6 @@
 ---
 title: "Generated apps"
-description: "How one ask becomes one app.tsx screen, what that screen may write, the three layers it can run at, and why every user ends up with their own copy."
+description: "How one ask becomes one app.tsx screen, what that screen may write, what happens when an ask is bigger than a screen, and why every user ends up with their own copy."
 sidebarTitle: "Generated apps"
 ---
 
@@ -44,62 +44,21 @@ export default function Spend() {
 
 `useQuery` is synchronous and hands back the tool's own result, so field names come off the tool's schema. `tools.<name>(args)` is the only way a screen changes anything.
 
-## One screen, three layers
+## When an ask is bigger than a screen
 
-Most apps never leave layer 1. The agent climbs only when the instruction demands it.
+Most asks are one screen. When one is not, the tool says so and stops: it raises a standing approval card and returns, having spent nothing. The card waits for the person, however long that takes.
 
-<Columns cols={3}>
-  <Card title="1. Screen app">
-    No server anywhere. The screen renders in the host surface and acts through guarded host tools.
-
-    <svg viewBox="0 0 220 104" width="100%" role="img" aria-label="Surface: app.tsx. Machine: none.">
-      <rect x="1" y="1" width="218" height="42" rx="8" fill="#6c3bff" fillOpacity="0.08" stroke="#6c3bff" strokeOpacity="0.35" />
-      <text x="12" y="17" fontSize="7" letterSpacing="1.2" fill="currentColor" fillOpacity="0.55">SURFACE</text>
-      <text x="12" y="33" fontSize="11" fontWeight="600" fill="#6c3bff">app.tsx</text>
-      <line x1="110" y1="45" x2="110" y2="59" stroke="currentColor" strokeOpacity="0.25" strokeDasharray="3 3" />
-      <rect x="1" y="61" width="218" height="42" rx="8" fill="none" stroke="currentColor" strokeOpacity="0.22" strokeDasharray="4 3" />
-      <text x="12" y="77" fontSize="7" letterSpacing="1.2" fill="currentColor" fillOpacity="0.45">MACHINE</text>
-      <text x="12" y="93" fontSize="11" fontWeight="500" fill="currentColor" fillOpacity="0.5">none</text>
-    </svg>
-  </Card>
-
-  <Card title="2. Screen plus machine">
-    The same screen, plus a persistent sandbox where execution lives. The machine never draws UI.
-
-    <svg viewBox="0 0 220 104" width="100%" role="img" aria-label="Surface: app.tsx. Machine: one sandbox.">
-      <rect x="1" y="1" width="218" height="42" rx="8" fill="#6c3bff" fillOpacity="0.08" stroke="#6c3bff" strokeOpacity="0.35" />
-      <text x="12" y="17" fontSize="7" letterSpacing="1.2" fill="currentColor" fillOpacity="0.55">SURFACE</text>
-      <text x="12" y="33" fontSize="11" fontWeight="600" fill="#6c3bff">app.tsx</text>
-      <line x1="110" y1="45" x2="110" y2="59" stroke="currentColor" strokeOpacity="0.25" strokeDasharray="3 3" />
-      <rect x="1" y="61" width="218" height="42" rx="8" fill="currentColor" fillOpacity="0.04" stroke="currentColor" strokeOpacity="0.22" />
-      <text x="12" y="77" fontSize="7" letterSpacing="1.2" fill="currentColor" fillOpacity="0.55">MACHINE</text>
-      <text x="12" y="93" fontSize="11" fontWeight="600" fill="currentColor">one sandbox</text>
-    </svg>
-  </Card>
-
-  <Card title="3. Machine everything">
-    The machine also serves a real web app, and the host embeds that URL as the surface.
-
-    <svg viewBox="0 0 220 104" width="100%" role="img" aria-label="Surface: the machine's web app, served up from the machine below it.">
-      <rect x="1" y="1" width="218" height="42" rx="8" fill="#6c3bff" fillOpacity="0.08" stroke="#6c3bff" strokeOpacity="0.35" />
-      <text x="12" y="17" fontSize="7" letterSpacing="1.2" fill="currentColor" fillOpacity="0.55">SURFACE</text>
-      <text x="12" y="33" fontSize="11" fontWeight="600" fill="#6c3bff">the machine's web app</text>
-      <line x1="110" y1="49" x2="110" y2="59" stroke="#6c3bff" strokeOpacity="0.45" strokeDasharray="3 3" />
-      <path d="M110 44 l5 6 h-10 z" fill="#6c3bff" fillOpacity="0.55" />
-      <rect x="1" y="61" width="218" height="42" rx="8" fill="currentColor" fillOpacity="0.04" stroke="currentColor" strokeOpacity="0.22" />
-      <text x="12" y="77" fontSize="7" letterSpacing="1.2" fill="currentColor" fillOpacity="0.55">MACHINE</text>
-      <text x="12" y="93" fontSize="11" fontWeight="600" fill="currentColor">one sandbox, serving the pages too</text>
-    </svg>
-  </Card>
-</Columns>
+On yes, a disposable sandbox builds the app once — npm from the registry, a coding agent inside the box, tested against reality — and then the box is released and dies. What comes home is **sealed**: an immutable, content-addressed bundle stored as blobs, alongside its source and lockfile. Every seal is a version.
 
 <Note>
-  **The gate.** Layers 2 and 3 are gated on one thing, a configured `sandbox` adapter.
-
-  Nobody picks a layer by hand, and the last working surface keeps serving while the next one builds.
+  **The gate.** A build is gated on one thing, a configured `sandbox` adapter. Without one the ask is refused rather than offered.
 </Note>
 
-A machine sleeps as a snapshot and auto-sleeps after five minutes idle. A served layer-3 app also needs the wire mounted, so `/apps/:appId/serve/**` answers on your own origin.
+A sealed bundle renders in a sandboxed iframe: `sandbox="allow-scripts"` without `allow-same-origin`, so the frame has an opaque origin, and a `Content-Security-Policy: default-src 'none'` header, so it makes no network request at all. Your brand tokens and fonts are injected at render, never baked into the seal, so one seal follows your palette rather than pinning the one it was built under.
+
+Host data reaches the frame through one `postMessage` bridge into the guarded tool door, with the viewer's own permissions.
+
+An edit reseals from the stored source in a fresh box.
 
 ## What a screen may write
 
@@ -157,7 +116,9 @@ Nobody uses someone else's app. They get their own copy of it.
 
 Ana shares a link, and the link carries the app and nothing else. Importing it mints a fresh id in your account, reading your rows under your approvals.
 
-Fork it and you mint another id. The copy drops the machine and the owner's approved egress, so it re-approves its own before it can run.
+Fork it and you mint another id.
+
+A built app is the exception. Sharing, forking, exporting, and placing one are all refused server-side.
 
 ## Where to go next
 

@@ -20,7 +20,6 @@ import type { CreateVendoConfig, Vendo } from "./types.js";
 import { appRoutes } from "./wire/apps.js";
 import { approvalRoutes, grantRoutes } from "./wire/approvals.js";
 import { automationRoutes, runRoutes } from "./wire/automations.js";
-import { boxRoutes, fnProxyRoutes, servedProxyRoutes } from "./wire/box.js";
 import { channelRoutes } from "./wire/channels.js";
 import { connectionRoutes } from "./wire/connections.js";
 import { createContextResolver } from "./wire/context.js";
@@ -276,11 +275,6 @@ const wireRoutesFor = (deps: WireDeps): readonly RouteEntry[] => [
   // between it and an anonymous caller. A composition that did not say it is
   // development never gets the route.
   ...(deps.development ? syncImpactRoutes : []),
-  // execution-v2 Lane C: the box callback surface is a machine surface like
-  // webhooks/tick — raw prefix match, bearer-authenticated, ahead of the user
-  // surfaces; the fn proxy sits just before the grouped /apps arm so
-  // /apps/:id/fn/:name resolves here, not through the grouped fall-through.
-  ...boxRoutes,
   ...threadRoutes,
   // The drop door sits beside the turns it feeds: a file is saved first, and
   // the message that follows carries only where it landed.
@@ -296,10 +290,6 @@ const wireRoutesFor = (deps: WireDeps): readonly RouteEntry[] => [
   // is nothing to open, fork, serve or import, so the door is not there either.
   ...(deps.mounted.apps
     ? [
-      ...fnProxyRoutes,
-      // Build contract §9.8 — ahead of the grouped /apps arm for the same reason
-      // the fn proxy is: /apps/:id/serve/** must resolve here, not fall through it.
-      ...servedProxyRoutes,
       ...appRoutes,
       // The slot registry rides the same mount: with `apps: false` nothing can
       // be built for a slot, so there is nothing to register one for either.

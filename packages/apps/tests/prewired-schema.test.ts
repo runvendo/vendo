@@ -2,7 +2,7 @@ import {
   KIT_SCREEN_COMPONENT_NAMES,
 } from "../src/contract/index.js";
 import { describe, expect, it } from "vitest";
-import { wirePropNames } from "../src/server/escalation/prewired-schema.js";
+import { wirePropNames } from "../src/server/checking/prewired-schema.js";
 
 describe("built-in prop names", () => {
   it("covers exactly the screen component names (no drift)", () => {

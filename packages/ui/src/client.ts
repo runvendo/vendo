@@ -164,13 +164,6 @@ export interface VendoClient {
      */
     courierProps(id: AppId, props: Record<string, Json>): Promise<AppDocument>;
     /**
-     * POST /apps/:id/machine/ping — the embed surface's keepalive:
-     * user activity on an embedded served app rides one host-proxied HEAD
-     * through the machine, keeping it from idling out under the user. "woke"
-     * means the machine had slept — the embed's URL is stale; re-open.
-     */
-    pingMachine(id: AppId): Promise<{ state: "awake" | "woke" }>;
-    /**
      * `GET /apps/:id/bundle/:entry` — where a SEALED bundle's document lives.
      *
      * A url rather than a fetch, because the browser is what asks: it is an

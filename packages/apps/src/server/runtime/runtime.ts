@@ -2,7 +2,6 @@ import { createAccessSurface } from "../doors/access-surface.js";
 import { createAutomationDoor } from "../automation/lane.js";
 import { createAppsSurface } from "../doors/apps-surface.js";
 import { createBuildSurface } from "../doors/build-surface.js";
-import { createMachineSurface, createServedDoors } from "../doors/machine-surface.js";
 import { createSeedSurface } from "../remix/seed-surface.js";
 import { createPlacementSurface } from "../doors/placement-surface.js";
 import { createRuntimeContext } from "./runtime-context.js";
@@ -44,7 +43,6 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     ...createWriteSurface(ctx),
     ...createAppsSurface(ctx),
     ...createPlacementSurface(ctx),
-    ...createServedDoors(ctx),
     access: createAccessSurface(ctx),
     automation: createAutomationDoor(ctx),
     slots: ctx.slots,
@@ -52,7 +50,6 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     seed: createSeedSurface(ctx),
     build: ctx.build,
     bundleDocument: ctx.build.bundleDocument,
-    machine: createMachineSurface(ctx),
   };
   return runtime;
 };

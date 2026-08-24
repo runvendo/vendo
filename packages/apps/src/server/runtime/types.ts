@@ -54,7 +54,6 @@ import type { Check, Finding } from "../checking/types.js";
 import type { CloudAppsClient, PublishRecord, ShareSnapshot } from "../persistence/cloud.js";
 import type { GenerationDependencies } from "../generation/engine.js";
 import type { BuildMachineEnv, LifecycleClock } from "../escalation/machine-lifecycle.js";
-import type { AppMachineStatus } from "../escalation/manifest-triggers.js";
 import type { SeedBaseline, SeedDrift } from "../../contract/index.js";
 import type { SandboxAdapter } from "../escalation/sandbox.js";
 import type { SlotRegistry } from "../persistence/slots.js";
@@ -790,35 +789,6 @@ export interface AppsRuntime {
     ctx: RunContext,
   ): Promise<{ appId: AppId; cron: string; enabled: boolean; missing: number }>;
   /**
-   * Build contract §9.8 — the served-app door. One request forwarded into the
-   * app's machine after `can(viewer)` is re-checked against LIVE rows, so a
-   * mid-session revoke bites the next request even though what the session
-   * already rendered stands. Viewer-level by design: `viewer` is see + use.
-   *
-   * Separate from {@link AppsRuntime.box}.request, which is the editor-level fn
-   * door — the two have different callers and deliberately different levels.
-   */
-  serve(appId: AppId, request: BoxRequest, ctx: RunContext): Promise<BoxResponse>;
-  box: {
-    /**
-     * execution-v2 skin contract (Lane C) — the box door the wire's fn proxy
-     * route rides: wake the app's machine on demand and proxy ONE HTTP request
-     * to its $PORT (the box serves `POST /fn/<name>` per the contract; the
-     * caller shapes the path). Editor-scoped: writing through someone else's
-     * app is an edit. Additive — not part of the frozen §1 method table. Lane
-     * B's machine lifecycle owns the wake internals behind this door.
-     */
-    request(appId: AppId, request: BoxRequest, ctx: RunContext): Promise<BoxResponse>;
-    /**
-     * Lane E — scrub the app's known secret values out of a JSON-ish value
-     * (defensive redaction guard). The /box wire surface runs every callback
-     * outcome and row payload through this before it can land in a response,
-     * a store row, or a log line. Not an authority operation: it only ever
-     * REMOVES information.
-     */
-    redact(appId: AppId, value: Json): Promise<Json>;
-  };
-  /**
    * 06-apps §8 — additive remix surface (not part of the frozen §1 method
    * table).
    *
@@ -852,14 +822,6 @@ export interface AppsRuntime {
     props(input: { appId: AppId; props: Record<string, Json> }, ctx: RunContext): Promise<AppDocument>;
   };
   /**
-   * execution-v2 — additive machine lifecycle surface (same additive precedent
-   * as `seed`). An app with no `machine` on its document
-   * is a layer-1 tree app; presence of `machine` means layer 2+ — the layer is
-   * always derived from presence, never stored. Wake single-flight and idle
-   * auto-sleep live in-process; a multi-instance host can wake one app twice
-   * (known v2 limit — the last sleep's CAS wins).
-   */
-  /**
    * FINAL SPEC v1 — the built-app door.
    *
    * `propose` is the only route to a build box, and it never opens one: it
@@ -877,33 +839,5 @@ export interface AppsRuntime {
       input: { appId: AppId; name: string; prompt: string; why: string },
       ctx: RunContext,
     ): Promise<{ approvalId: ApprovalId } | { declined: string }>;
-  };
-  machine: {
-    /**
-     * Can this deployment run a machine at all — i.e. is a `sandbox` adapter
-     * configured?
-     *
-     * The ONE gate on machine-backed execution, and deliberately not a
-     * capability boolean: a host configures a sandbox or it does not, and the
-     * presence of the adapter IS the deliberate opt-in (CLAUDE.md — "gating is
-     * valid key + meter, nothing else: no capability booleans"). Exposed because
-     * the front door has to answer an escalation honestly BEFORE it starts a
-     * build it cannot finish (agent-tools.ts); everything downstream of that
-     * decision still fails loudly on its own (`sandbox-unavailable`).
-     */
-    available(): boolean;
-    /**
-     * Wave 7 H2 — the embed surface's keepalive: one cheap HEAD through the
-     * idle-tracked machine wrapper, so user activity on an embedded served
-     * app counts as machine activity (re-arms the idle timer and rides any
-     * provider TTL extension). A sleeping machine wakes and reports "woke" —
-     * the embed's signal that its URL is stale and it should re-open once
-     * awake. Viewer-scoped, like `serve`: a keepalive for an embed someone was
-     * shared is theirs to send, and it grants no more than seeing the app does.
-     */
-    ping(appId: AppId, ctx: RunContext): Promise<{ state: "awake" | "woke" }>;
-    /** Dev-only reporting for the doctor: which apps carry a machine, whether
-     *  they are awake, and what their manifests schedule. */
-    report(): Promise<AppMachineStatus[]>;
   };
 }

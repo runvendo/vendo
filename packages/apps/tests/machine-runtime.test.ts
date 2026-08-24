@@ -70,19 +70,6 @@ const setup = async (options: {
   return { store, guard, sandbox, runtime, doc, provisionMachine, ada: context("user_ada") };
 };
 
-describe("apps runtime machine surface", () => {
-  it("enforces ownership on the machine door", async () => {
-    const { runtime, doc, provisionMachine, ada } = await setup();
-    await provisionMachine();
-
-    // `ping` is the ctx-taking machine door: a stranger is masked with
-    // not-found, and the owner's identical call proves the door works.
-    await expect(runtime.machine.ping(doc.id, context("user_grace")))
-      .rejects.toMatchObject({ name: "VendoError", code: "not-found" });
-    expect(await runtime.machine.ping(doc.id, ada)).toEqual({ state: "woke" });
-  });
-});
-
 describe("delete destroys the machine", () => {
   it("destroys the provisioned sandbox when the app is deleted", async () => {
     const { sandbox, runtime, doc, provisionMachine, ada } = await setup();
@@ -92,19 +79,6 @@ describe("delete destroys the machine", () => {
 
     expect(sandbox.destroyed).toEqual([provisionedDoc.machine?.snapshotRef]);
     expect(await runtime.get(doc.id, ada)).toBeNull();
-  });
-
-  it("stops a live machine on delete", async () => {
-    const { sandbox, runtime, doc, provisionMachine, ada } = await setup();
-    await provisionMachine();
-    // The machine has to be live on the RUNTIME's OWN lifecycle for delete to
-    // find it, so the wake rides a production door — ping wakes on the way to
-    // its keepalive HEAD.
-    await runtime.machine.ping(doc.id, ada);
-
-    await runtime.delete(doc.id, ada);
-
-    expect(sandbox.machines.every((machine) => machine.stopped)).toBe(true);
   });
 
   it("leaves layer-1 app deletion untouched by the machine path", async () => {

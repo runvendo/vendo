@@ -1,8 +1,8 @@
 /**
- * The INNER half of an embedded Vendo surface (blueprint §12.3) — the box app
- * template (`packages/box-template`) and every other surface that renders
- * inside a host-owned iframe owe the host the same two behaviours, so they
- * share this module rather than each keeping a copy of the protocol.
+ * The INNER half of an embedded Vendo surface (blueprint §12.3) — every
+ * surface that renders inside a host-owned iframe owes the host the same two
+ * behaviours, so they share this module rather than each keeping a copy of the
+ * protocol.
  *
  * Both jobs are RECEIVING or REPORTING, never negotiating:
  *

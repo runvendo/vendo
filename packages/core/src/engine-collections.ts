@@ -9,7 +9,9 @@ import { VendoError } from "./errors.js";
 // removal of in-client native execution and the remix review flow.
 // 8: added `vendo_parked_build`, the approval-keyed record of a build nobody
 // has consented to yet.
-export const ENGINE_ALLOWLIST_VERSION = 8;
+// 9: dropped `vendo_app_tokens` with the per-app box bearer — a sealed bundle
+// is served by the host and holds no store credential of its own.
+export const ENGINE_ALLOWLIST_VERSION = 9;
 
 /** What a collection HOLDS. `knowledge` is the retrieval corpus — documents and
     the chunks an engine mints from them; everything else is `storage`.
@@ -82,7 +84,6 @@ export const ENGINE_COLLECTION_REGISTRY = {
   vendo_pin_baselines: { kind: "storage" }, // PIN_BASELINES_COLLECTION, packages/vendo/src/cli/cloud/seed-baselines.ts:26
   vendo_placements: { kind: "storage" }, // PLACEMENTS_COLLECTION, packages/apps/src/server/persistence/placements.ts:48
   vendo_placement_slots: { kind: "storage" }, // PLACEMENT_SLOTS_COLLECTION, packages/apps/src/server/persistence/placements.ts:54
-  vendo_app_tokens: { kind: "storage" }, // APP_TOKEN_COLLECTION, packages/apps/src/server/persistence/app-token.ts:12
   vendo_parked_action: { kind: "storage" }, // COLLECTION, packages/apps/src/server/persistence/parked-action.ts:50
   vendo_parked_build: { kind: "storage" }, // COLLECTION, packages/apps/src/server/persistence/parked-build.ts
   vendo_egress_approval: { kind: "storage" }, // COLLECTION, packages/apps/src/server/escalation/egress-approval.ts:96

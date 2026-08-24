@@ -5,9 +5,7 @@
  * the arming seam onto the automations engine composed after it.
  */
 import {
-  buildEnv,
   createApps,
-  createAppTokens,
   SCREEN_FILE,
   type AppsConfig,
 } from "@vendoai/apps";
@@ -16,10 +14,7 @@ import { inferenceEnv } from "@vendoai/harnesses/claude-code/box";
 import { appBuilder } from "./build-agent.js";
 import { screenAssembler } from "./screen-agent.js";
 import {
-  engineOverAdapter,
-  joinUrl,
   VendoError,
-  type AppDocument,
   type AppId,
   type Json,
   type RunContext,
@@ -31,15 +26,8 @@ import { cloudApps } from "./cloud-apps.js";
 import { cloudKeyOptions, positiveIntegerEnv } from "./compose-selection.js";
 import type { VendoComposition } from "./compose-context.js";
 import { vendoVerbsRegistry } from "./vendo-verbs.js";
-import { BASE_PATH, environment } from "./wire/shared.js";
+import { environment } from "./wire/shared.js";
 
-// The box env assembler the machine lifecycle calls at provision: rotate the
-// app token, compose the callback doors from the operator-set public origin
-// (the wire lives under it at BASE_PATH), and inject granted secrets — the
-// apps runtime resolves the app's active grants and passes them here (Lane
-// E), so only declared ∩ granted secret values enter the box. A BYO model
-// key is just such a secret: declare it, grant it, and it rides the same
-// injection path as any other key.
 // execution-v2 Wave 3 — the box's inference door (the in-box coding agent's
 // model). SELECTION LAW: the explicit VENDO_INFERENCE_URL+KEY pair wins;
 // otherwise VENDO_API_KEY rides the console's Anthropic-compatible model gateway
@@ -96,10 +84,6 @@ const implicitMachineDomains = (configuredBaseUrl: string | undefined): string[]
  *  function assembled them (the env knobs THROW on a typo, so they are read
  *  where they were read). */
 interface AppsSeams {
-  machineEnv: (
-    app: AppDocument,
-    grants?: { grantedSecrets: ReadonlySet<string> },
-  ) => Promise<Record<string, string>>;
   boxTemplate: string | undefined;
   boxEditTimeoutMs: number | undefined;
   boxEditPollMs: number | undefined;
@@ -107,54 +91,6 @@ interface AppsSeams {
   screenWorkspace: (screenCtx: RunContext) => Promise<WorkspaceFs>;
   access: ReturnType<typeof appAccess>;
 }
-
-/** The box env assembler the machine lifecycle calls at provision. */
-const machineEnvFor = (
-  composition: VendoComposition,
-  appTokens: ReturnType<typeof createAppTokens>,
-): AppsSeams["machineEnv"] => {
-  const { ops, urls, secrets } = composition;
-  const machineEnv = async (
-    app: AppDocument,
-    grants?: { grantedSecrets: ReadonlySet<string> },
-  ): Promise<Record<string, string>> => {
-    if (ops === undefined) {
-      throw new VendoError(
-        "not-implemented",
-        "Provisioning a machine app reads the app's owner out of Vendo's own drawer, so it needs "
-        + "the store's named-operation surface: a SQL-backed store (`store: postgres(url)`, or the "
-        + "local default) or a StoreOps-capable store (the Cloud hosted store). The configured "
-        + "store is neither.",
-      );
-    }
-    const record = await ops.engine.get("vendo_apps", app.id);
-    const subject = record?.refs?.["subject"];
-    if (typeof subject !== "string") {
-      throw new VendoError("not-found", `app not found: ${app.id}`);
-    }
-    if (urls === undefined) {
-      throw new VendoError(
-        "validation",
-        "machine provisioning requires VENDO_BASE_URL — the box's callback URLs must be this deployment's public origin",
-      );
-    }
-    const boxBase = joinUrl(urls.publicUrl, `${BASE_PATH}/box`).href;
-    const inferenceEndpoint = boxInference();
-    const built = await buildEnv(app, {
-      granted: grants?.grantedSecrets ?? new Set<string>(),
-      secrets,
-      storeUrl: boxBase,
-      hostUrl: boxBase,
-      appToken: await appTokens.mint(app.id, subject),
-      // The in-box agent's model door (box-env sets VENDO_INFERENCE_URL/KEY).
-      ...(inferenceEndpoint === undefined ? {} : { inference: async () => ({ url: inferenceEndpoint.url, key: inferenceEndpoint.key }) }),
-    });
-    // Pass the box's model choice through as a plain env var the harness reads.
-    if (inferenceEndpoint?.model !== undefined) built.env["VENDO_INFERENCE_MODEL"] = inferenceEndpoint.model;
-    return built.env;
-  };
-  return machineEnv;
-};
 
 /** Persistence, permission and interchange: the seams the runtime reads and
  *  writes THROUGH. */
@@ -188,34 +124,6 @@ const appsStoreSeams = (composition: VendoComposition, seams: AppsSeams): Partia
     // machine-app scheduler: the ONE unattended firing path is the automations
     // engine, which is handed the same seam below.)
     appAccess: access,
-  };
-};
-
-/** The seams that cross a block line — the automations sponsorship hooks and the
- *  served-app proxy. */
-const appsHostSeams = (composition: VendoComposition): Partial<AppsConfig> => {
-  const { urls } = composition;
-  return {
-    // Build contract §9.8 — where the authenticated served-app proxy lives. The
-    // wire owns its base path, so it is filled here and nowhere else; the apps
-    // block never invents a URL for a door it does not mount.
-    //
-    // ABSOLUTE, like the sandbox provider's URL this replaced: an MCP client (or
-    // anything not already sitting on the host origin) cannot resolve a relative
-    // path. So this seam is supplied ONLY when the deployment has named an origin
-    // to build one from.
-    //
-    // Its ABSENCE is the answer, never a callback that exists and throws. The apps
-    // block tests availability by presence (`config.servedProxyPath !== undefined`)
-    // to shut the served lane, and a closure that always exists made that check a
-    // lie: a machines+sandbox host with no VENDO_BASE_URL was offered the served
-    // lane by the planner and only discovered the truth at serve time, after a box
-    // was built and a surface flipped. Availability now means "can actually produce
-    // a path", by construction.
-    ...(urls === undefined ? {} : {
-      servedProxyPath: (appId: AppId) =>
-        joinUrl(urls.publicUrl, `${BASE_PATH}/apps/${encodeURIComponent(appId)}/serve/`).href,
-    }),
   };
 };
 
@@ -291,10 +199,8 @@ const appsScreenSeam = (
 const appsBuildSeam = (composition: VendoComposition, seams: AppsSeams): NonNullable<AppsConfig["build"]> =>
   appBuilder({
     sandbox: composition.sandbox.adapter,
-    // The SAME env a session box gets, and deliberately not `machineEnv`: that
-    // one carries the store URL and a minted app token, and a build box holds
-    // ZERO store credentials (FINAL SPEC v1). It returns files; the host seals
-    // them.
+    // The SAME env a session box gets. A build box holds ZERO store
+    // credentials (FINAL SPEC v1): it returns files, and the host seals them.
     boxEnv: inferenceEnv,
     ...(seams.boxTemplate === undefined ? {} : { template: seams.boxTemplate }),
   });
@@ -303,7 +209,7 @@ const appsBuildSeam = (composition: VendoComposition, seams: AppsSeams): NonNull
 const appsTailSeams = (composition: VendoComposition, seams: AppsSeams): Partial<AppsConfig> => {
   const { config, automationsMounted, themeProvider, briefing, hostSemanticsProvider } = composition;
   const { secrets, sandbox } = composition;
-  const { appsCloud, machineEnv, boxTemplate, boxEditTimeoutMs, boxEditPollMs } = seams;
+  const { appsCloud, boxTemplate, boxEditTimeoutMs, boxEditPollMs } = seams;
   return {
     // The four verbs this block may ask of the automations engine: THE one create
     // operation (`vendo_automate`, `vendo_make`'s auto-arm sugar, the vendo.json
@@ -360,12 +266,11 @@ const appsTailSeams = (composition: VendoComposition, seams: AppsSeams): Partial
     semantics: hostSemanticsProvider,
     secrets,
     // execution-v2 — the machine lifecycle's seams: the selected v2 adapter
-    // (every provider speaks the canonical seam since the Wave 5 Cloud port)
-    // and Lane C's env assembly. The box template (Node + the in-box agent
-    // harness) is set by VENDO_BOX_TEMPLATE.
+    // (every provider speaks the canonical seam since the Wave 5 Cloud port).
+    // The box template (Node + the in-box agent harness) is set by
+    // VENDO_BOX_TEMPLATE.
     machine: {
       ...(sandbox.adapter === undefined ? {} : { sandbox: sandbox.adapter }),
-      buildEnv: machineEnv,
       implicitDomains: implicitMachineDomains(composition.configuredBaseUrl),
       ...(boxTemplate === undefined ? {} : { template: boxTemplate }),
       // The in-box agent edit is a minutes-long loop; operators tune its
@@ -380,15 +285,8 @@ const appsTailSeams = (composition: VendoComposition, seams: AppsSeams): Partial
 /** 06-apps §1 — the app runtime, and the three registries that join the ONE
  *  tool registry the moment it exists. */
 export const composeApps = (composition: VendoComposition): Pick<VendoComposition,
-  "appTokens" | "access" | "apps" | "appsRuntime" | "resolveAppToolRisk"> => {
-  const { store, ops, actions, capability } = composition;
-  // execution-v2 Lane C — the per-app box bearer store (hash rows are the
-  // authority) shared by the machine-env assembler below (mint at provision)
-  // and the wire's /box verification. The hash rows are one of Vendo's own
-  // drawers, so they are reached by name through the engine family — the
-  // deployment's own ops surface, or core's gate over a BYO adapter.
-  const appTokens = createAppTokens(ops?.engine ?? engineOverAdapter(store));
-  const machineEnv = machineEnvFor(composition, appTokens);
+  "access" | "apps" | "appsRuntime" | "resolveAppToolRisk"> => {
+  const { store, actions, capability } = composition;
   const boxTemplate = environment("VENDO_BOX_TEMPLATE");
   const boxEditTimeoutMs = positiveIntegerEnv("VENDO_BOX_EDIT_TIMEOUT_MS");
   const boxEditPollMs = positiveIntegerEnv("VENDO_BOX_EDIT_POLL_MS");
@@ -421,7 +319,6 @@ export const composeApps = (composition: VendoComposition): Pick<VendoCompositio
   };
   const access = appAccess(store);
   const seams: AppsSeams = {
-    machineEnv,
     boxTemplate,
     boxEditTimeoutMs,
     boxEditPollMs,
@@ -432,7 +329,6 @@ export const composeApps = (composition: VendoComposition): Pick<VendoCompositio
   const build = appsBuildSeam(composition, seams);
   const apps = createApps({
     ...appsStoreSeams(composition, seams),
-    ...appsHostSeams(composition),
     screen: appsScreenSeam(composition, seams, build),
     build,
     ...appsTailSeams(composition, seams),
@@ -474,5 +370,5 @@ export const composeApps = (composition: VendoComposition): Pick<VendoCompositio
     schedule: async ({ appId, cron }, ctx) =>
       await apps.schedule(appId as AppId, cron, ctx) as unknown as Json,
   }));
-  return { appTokens, access, apps, appsRuntime: apps, resolveAppToolRisk: apps.agentToolRisk };
+  return { access, apps, appsRuntime: apps, resolveAppToolRisk: apps.agentToolRisk };
 };

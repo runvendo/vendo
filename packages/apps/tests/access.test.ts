@@ -385,17 +385,6 @@ describe("§9.3 — the permission check costs what it claims to cost", () => {
     expect(canCalls()).toBe(1);
   });
 
-  it("checks access ONCE per serve, not twice", async () => {
-    const { runtime, store, reset, canCalls } = instrumented();
-    await seedAppRow(engineOverAdapter(store), doc("app_serve_once"), "acme");
-    await seedGrants(store, "app_serve_once", { "user:kim": "viewer" });
-    reset();
-    // The machine is absent, so the forward fails — the access check has
-    // already happened by then, which is exactly what this counts.
-    await runtime.serve("app_serve_once", { method: "GET", path: "/" }, ctx("kim"))
-      .catch(() => undefined);
-    expect(canCalls()).toBe(1);
-  });
 });
 
 /** §9.1 — an unattended fire asserting the same orgs a request does used to be

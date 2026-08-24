@@ -5,7 +5,7 @@ import {
   type RouteEntry as HttpRouteEntry,
   type RouteHandler as HttpRouteHandler,
 } from "@vendoai/agents/http";
-import type { AppsRuntime, AppTokens } from "@vendoai/apps";
+import type { AppsRuntime } from "@vendoai/apps";
 import type { SandboxVenue } from "@vendoai/apps";
 import type { AutomationsEngine } from "@vendoai/automations";
 import {
@@ -105,9 +105,6 @@ export interface WireDeps {
       automations execute through); the /box tools callback rides it so
       approvals and audit see box-originated calls like any other. */
   tools: ToolRegistry;
-  /** execution-v2 Lane C — verify a presented per-app box bearer
-      (createAppTokens over the composed store; mint lives with provision). */
-  appTokens: Pick<AppTokens, "verify">;
   automations: AutomationsEngine;
   /** Existing-agents Lane B — the per-approval state read `<VendoApprovalEmbed>`
       polls: pending (with the full request for the consent card), executed

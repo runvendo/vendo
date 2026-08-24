@@ -1178,9 +1178,7 @@ describe("09 §3 public wire", () => {
     // The gate used to be a per-request `NODE_ENV === "production"` refusal on
     // the /doctor/ prefix, so ABSENCE of configuration read as "not production"
     // and served the whole probe surface unauthenticated: /doctor/machines
-    // enumerates every machine-bearing app in the deployment (id, name,
-    // provisioned-at, awake-right-now, and each declared cron + fn) across every
-    // subject, and reports whether VENDO_TICK_SECRET guards /tick;
+    // reports whether VENDO_TICK_SECRET guards /tick;
     // POST /doctor/act-as makes the composition mint host actAs material for a
     // synthetic principal on demand. NODE_ENV is unset on plenty of Node deploys
     // and `process` does not exist at all on edge runtimes, where

@@ -36,7 +36,7 @@ the seams your composition left unset.
 | --- | --- | --- |
 | Model | The console's Anthropic-compatible gateway | [Model credentials](/production/model-credentials) |
 | Store | Vendo Cloud Postgres, tenant from the key's org | [Persistence](/production/persistence) |
-| Sandbox | Pooled machines for server-backed apps | [Hosted sandbox](#hosted-sandbox) |
+| Sandbox | Pooled boxes that built apps are sealed in | [Hosted sandbox](#hosted-sandbox) |
 | Connections | The Composio connector broker | [Connected accounts](/capabilities/connected-accounts) |
 | Knowledge | The Cloud retrieval engine | [Knowledge](/customize/knowledge) |
 | Secrets | Cloud secrets, behind your process environment | [Persistence](/production/persistence) |
@@ -122,17 +122,16 @@ cap is reached.
 
 ## Hosted sandbox
 
-Server-backed apps need a machine. `cloudSandbox` is the adapter behind them,
-and the key composes it into the unset sandbox slot for you.
+Building an app needs a box. `cloudSandbox` is the adapter behind them, and the
+key composes it into the unset sandbox slot for you.
 
-Machines boot from Cloud's pooled base image, Node plus the in-box agent.
-Snapshot references are prefixed `vendo:v2:` and resume only against the
-console.
+Boxes boot from Cloud's pooled base image, Node plus the in-box agent. A build
+box is disposable: it is released the moment the build finishes, and what
+survives is the sealed bundle, not the box.
 
 <Warning>
   Egress is HTTP(S) only. Raw TCP is severed even to allowlisted hosts, so a
-  direct database connection from inside a box never works, while the HTTPS
-  store callback does.
+  direct database connection from inside a box never works.
 </Warning>
 
 To construct it by hand, for instance to raise the per-request timeout:
@@ -184,12 +183,6 @@ External triggers ride the Composio connectors. Connect the account once in the
 console; `hooks.vendo.run` is the public URL the service posts to, and it
 forwards the delivery verbatim to your deployment's own webhook door and relays
 your answer back.
-
-<Note>
-  Because the run happens in your process, a `fn:` step into a generated app's
-  own sandbox machine works exactly as it does locally. There is no second
-  runner that has to reach it.
-</Note>
 
 ---
 

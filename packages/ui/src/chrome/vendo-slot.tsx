@@ -193,12 +193,6 @@ function SlotBuildFailed({ appId, slotId, onChanged }: {
 function MountedApp({ appId, placement, onParked }: { appId: string; placement?: { slotId: string; onChanged(): void }; onParked?: (parked: ParkedPress) => void }) {
   const { client, components } = useVendoProvider();
   const { surface, error, isLoading, refresh } = useApp(appId);
-  // The served-surface keepalive: an on-screen embed pings the
-  // machine (host-proxied) so a served app doesn't idle out under the user.
-  const keepalive = useMemo(
-    () => ({ ping: () => client.apps.pingMachine(appId) }),
-    [appId, client],
-  );
   // The silhouette this app's NEXT wait is drawn in (S2).
   useEffect(() => {
     if (surface?.kind === "tree") rememberShape(appId, surface.payload);
@@ -219,7 +213,7 @@ function MountedApp({ appId, placement, onParked }: { appId: string; placement?:
     if (error && !isLoading) return <SlotLoadFailed reason={error} onRetry={() => void refresh()} />;
     return <SlotGhost label="Loading app…" loading appId={appId} />;
   }
-  return <AppFrame key={appId} appId={appId} surface={surface} components={components} keepalive={keepalive} onParked={onParked} onAction={({ action, payload }) => client.apps.call(appId, action, payload ?? {})} />;
+  return <AppFrame key={appId} appId={appId} surface={surface} components={components} onParked={onParked} onAction={({ action, payload }) => client.apps.call(appId, action, payload ?? {})} />;
 }
 
 /** A generated view pinned into a slot (08-ui §4 — "or a pinned component").

@@ -6,13 +6,12 @@ description: "Every HTTP route the Vendo wire mounts under /api/vendo: method, b
 
 The base path is the fixed constant `/api/vendo`. Bodies are core types encoded as JSON; conversation turns stream over SSE.
 
-Most routes resolve a principal through `principal(req)`. Four surfaces never call it, because each authenticates its own way.
+Most routes resolve a principal through `principal(req)`. Three surfaces never call it, because each authenticates its own way.
 
 | Surface | Authenticated by |
 | --- | --- |
 | `/tick` | a bearer secret, `VENDO_TICK_SECRET`, or a standard-webhooks signature |
 | `/webhooks/*` | an HMAC-SHA256 signature, per automation record |
-| `/box/*` | the per-app bearer, `VENDO_APP_TOKEN` |
 | `/channels/text/inbound` | a bearer derived from `VENDO_API_KEY` |
 
 ## Threads
@@ -55,16 +54,14 @@ Mounted unless `apps: false`.
 | `/apps/review-queue` | GET | review-kind versions awaiting a reviewer. Outside a development composition it answers `[]`, never an error |
 | `/apps/:id` | GET · DELETE | app · delete |
 | `/apps/:id/open` | GET | `OpenSurface`. With `?pending=1` a not-yet-servable app answers `{ kind: "pending" }` at `200`, and a terminally failed build answers `{ kind: "failed", reason, retryable? }` at `200`, so the poll resolves instead of spinning |
-| `/apps/:id/call` | POST | `{ ref: "fn:<name>" \| "<tool>", args }` → `ToolOutcome` |
+| `/apps/:id/call` | POST | `{ ref: "<tool>", args }` → `ToolOutcome` |
 | `/apps/:id/edit` | POST | `{ instruction }` → `EditResult` |
 | `/apps/:id/reseed` | POST | re-seed this app from the current baseline |
 | `/apps/:id/history` | GET | the app's capped version log, newest first |
 | `/apps/:id/ship-diff` | GET | `ShipDiff`, the reviewable code diff against the last approved baseline, hash-pinned |
 | `/apps/:id/export` | GET | `.vendoapp` bytes |
 | `/apps/:id/fork` | POST | `AppDocument` |
-| `/apps/:id/fn/:name` | POST | proxies one `fn:` call into the app's machine and relays its status, body, and `content-type`. No cookies or authorization cross the skin; a call past the 30 s ceiling answers `504` while the box keeps working |
-| `/apps/:id/serve/*` | any | proxies everything after `/serve`, query string included, into the box |
-| `/apps/:id/machine/ping` | POST | `{ state: "awake" \| "woke" }`. Re-arms the machine's idle timer. `"woke"` tells the embed its URL is stale |
+| `/apps/:id/bundle/:hash` | GET | a sealed bundle's bytes, as the document its frame renders. Answered behind `Content-Security-Policy: default-src 'none'` and cached immutably, because the url is the content's own hash. Viewer level, so a person who may see a shared app may render it |
 | `/apps/:id/place` | POST | `{ slot }` → `{ evicted? }`. A slot holds one app per subject, so whatever it held is evicted |
 | `/apps/:id/unplace` | POST | `{ slot }` → `{}`. Unplacing a slot this app does not hold is not an error |
 | `/apps/:id/reject-review` | POST | `{ note }` → the rejection. The note is required and the work is not deleted |
@@ -120,21 +117,6 @@ There is no wire-hosted connector OAuth callback. The broker owns the redirect, 
 
 Organizations are a [Vendo Cloud](/production/vendo-cloud) capability. The `/orgs` family refuses before any principal resolution, and an `?org=<orgId>` query parameter or `body.org` on `/approvals` or `/grants` refuses the same way.
 
-## Box callbacks
-
-An app machine calls back into the host through `/box/*`, authenticated with `Authorization: Bearer $VENDO_APP_TOKEN`. No cookie and no host principal: this surface is called from inside the box, in any language.
-
-| Route | Method | Body → Response |
-| --- | --- | --- |
-| `/box/rows/<collection>` | GET | list durable rows. Query: `refs.<key>=<value>`, `limit`, `cursor`. Any other parameter is a `400` |
-| `/box/rows/<collection>/<id>` | GET · DELETE | read one row · delete it |
-| `/box/rows/<collection>/<id>` | PUT | body is exactly `{ data, refs? }`, JSON, 256 KiB cap. An unexpected key is a `400` |
-| `/box/tools/<name>` | POST | `{ args }` → `ToolOutcome`, executed through the same guard-bound registry chat uses. A pending-approval outcome is relayed, never bypassed, and approving it runs that exact call |
-
-Collection names match `^[A-Za-z0-9_-]{1,64}$` and row ids run 1 to 256 characters. Anything else under `/box/` answers `404`.
-
-A deleted or re-owned app answers `401`. Row values are redacted before they are persisted and again before they leave.
-
 ## Development routes
 
 These answer only in a development composition (`createVendo({ development })`, which `NODE_ENV=development` enables). Every other deployment answers `404` because the route is not in the table.
@@ -153,7 +135,7 @@ These answer on a running dev server, for anything that wants to check the compo
 | Route | Method | Purpose |
 | --- | --- | --- |
 | `/doctor/base-url` | GET | `{ ok: true }`, or `409` with `base-url-not-set-in-production`. Mounted in every environment |
-| `/doctor/machines` | GET | which apps carry a machine, and whether a schedule caller is configured |
+| `/doctor/machines` | GET | `{ scheduleCallerConfigured }` — whether any waker can reach `/tick` |
 | `/doctor/present` · `/doctor/present/echo` | POST · GET | mint and echo the present-mode credential round trip. The echo reports booleans only, never credential values |
 | `/doctor/act-as` · `/doctor/act-as/echo` | POST · GET | mint `actAs` material and check the host's own principal resolver accepts it |
 
@@ -202,14 +184,13 @@ A verification failure returns `401`, resolves no principal, starts no run, and 
 
 ## CSRF floor
 
-Cookie-authenticated state-changing requests require `Content-Type: application/json`. The exceptions are exactly four, and none of them carries ambient credentials.
+Cookie-authenticated state-changing requests require `Content-Type: application/json`. The exceptions are exactly three, and none of them carries ambient credentials.
 
 | Exception | Proves itself by |
 | --- | --- |
 | `/apps/import` | demanding `application/octet-stream` or `application/vnd.vendo.app`, a non-safelisted media type that forces a preflight |
 | `/webhooks/:source` | its signature |
 | `/tick` | its bearer secret or its signature alone. It checks no content type, and its body is empty |
-| `/box/*` | its per-app bearer, and by validating `application/json` on its own JSON routes |
 
 MCP door paths sit outside both rules. They speak MCP and OAuth response shapes, not the wire envelope.
 

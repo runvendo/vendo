@@ -272,7 +272,6 @@ describe("the shipped client against the shipped door", () => {
       ["apps.seedFrom", () => client.apps.seedFrom({ component: "hero", slot: "hero", instruction: "make it blue" })],
       ["apps.seedFrom(no slot)", () => client.apps.seedFrom({ component: "hero", instruction: "make it blue" })],
       ["apps.reseed", () => client.apps.reseed(app)],
-      ["apps.pingMachine", () => client.apps.pingMachine(app)],
       ["apps.place", () => client.apps.place(app, "hero")],
       ["apps.unplace", () => client.apps.unplace(app, "hero")],
       ["apps.placements", () => client.apps.placements(["hero", "sales,eu"])],

@@ -1,7 +1,7 @@
 ---
 title: "Environment variables"
 sidebarTitle: "Environment variables"
-description: "Every environment variable a Vendo host sets, what each one does, and where it belongs: the host process, the app machine, and the auth presets."
+description: "Every environment variable a Vendo host sets, what each one does, and where it belongs: the host process and the auth presets."
 ---
 
 Every variable a host developer sets. Keys are credentials; config selects.
@@ -28,7 +28,7 @@ Every variable a host developer sets. Keys are credentials; config selects.
 | `CI` | Disables telemetry. | set by your CI |
 | `NODE_ENV` | Two separate gates, and they behave differently when it is unset. Dev-server telemetry collection: unset counts as production, so collection stays off. The local store's plaintext-secret allowance: unset counts as *not* production, so plaintext is allowed — see the warning below. | deploy platform |
 | `E2B_API_KEY` | Credential the E2B SDK reads. Selects nothing. | deploy platform |
-| `VENDO_BOX_TEMPLATE` | Base template a provisioned e2b machine boots from. The Cloud pool ships its own image. | deploy platform |
+| `VENDO_BOX_TEMPLATE` | Base template an e2b box boots from. The Cloud pool ships its own image. | deploy platform |
 | `VENDO_BOX_EDIT_TIMEOUT_MS` | Long-poll budget for one in-box agent edit. Default 8 minutes. | deploy platform |
 | `VENDO_BOX_EDIT_POLL_MS` | Poll interval while an in-box agent edit runs. | deploy platform |
 | `VENDO_E2B_TIMEOUT_MS` | E2B machine lifetime. Unset, a raised edit budget implies a matching lifetime. | deploy platform |
@@ -63,22 +63,6 @@ Every variable a host developer sets. Keys are credentials; config selects.
   store refuses to write a secret rather than writing it in the clear. Vendo
   Cloud's hosted store is unaffected — this is the local store only.
 </Warning>
-
-## App machine
-
-Vendo injects these into every box at provision, and re-injects the current set before every in-box edit. An ordinary wake resumes the snapshot's environment.
-
-| Variable | What it does | Set where |
-| --- | --- | --- |
-| `PORT` | Port the app server must listen on. Default 8080. | at provision |
-| `VENDO_STORE_URL` | Base URL of the durable-rows callback surface. | at provision |
-| `VENDO_HOST_URL` | Base URL of the host-tools callback surface. | at provision |
-| `VENDO_APP_TOKEN` | Per-app bearer that authenticates every `/box` call. | at provision |
-| `VENDO_INFERENCE_URL` `VENDO_INFERENCE_KEY` | The in-box agent's model door. Absent when none is configured. | at provision |
-| `VENDO_INFERENCE_MODEL` | Optional model choice the box harness reads. | at provision |
-| declared secret names | Real values, only for secrets the owner granted this app. | at provision, if granted |
-
-Every name above except `VENDO_INFERENCE_MODEL` is reserved. A declared secret named like one of them fails composition with a validation error.
 
 ## Auth presets
 

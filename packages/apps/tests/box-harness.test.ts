@@ -33,16 +33,14 @@ const pollUntil = async (ready: () => boolean): Promise<void> => {
   while (!ready()) await new Promise((resolve) => setTimeout(resolve, 100));
 };
 
-/** Drive one harness on an ephemeral port against a scripted agent engine. */
+/** Drive one harness on an ephemeral port. */
 const withHarness = async (
-  runTask: (input: { prompt: string; context?: string; env: Record<string, string> }) => Promise<unknown>,
   body: (base: string, harness: ReturnType<typeof createHarness>) => Promise<void>,
 ): Promise<void> => {
   const appDir = boxDir("vendo-box-");
   const harness = createHarness({
     appDir,
     controlPort: 0,
-    runTask: runTask as never,
     baseEnv: { VENDO_INFERENCE_URL: "http://model.test", VENDO_INFERENCE_KEY: "k" },
   });
   await harness.start();
@@ -62,7 +60,7 @@ afterEach(async () => {
 
 describe("box control-port protocol", () => {
   it("reports health", async () => {
-    await withHarness(async () => ({ ok: true, summary: "", filesChanged: [], testsRun: 0 }), async (base) => {
+    await withHarness(async (base) => {
       const response = await fetch(`${base}/agent/health`);
       expect(response.status).toBe(200);
       const body = await jsonOf<{ ok: boolean; harness: string }>(response);
@@ -71,97 +69,11 @@ describe("box control-port protocol", () => {
     });
   });
 
-  it("runs a task to a structured result the host polls", async () => {
-    const seen: { prompt?: string; context?: string; token?: string } = {};
-    await withHarness(async (input) => {
-      seen.prompt = input.prompt;
-      seen.context = input.context;
-      seen.token = input.env.VENDO_APP_TOKEN;
-      return { ok: true, summary: "wrote chaseInvoices", filesChanged: ["/app/server.js"], testsRun: 1, fns: ["chaseInvoices"] };
-    }, async (base, harness) => {
-      const started = await fetch(`${base}/agent/task`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ prompt: "build a chaser", context: "SKIN CONTRACT ..." }),
-      });
-      expect(started.status).toBe(202);
-      const { taskId } = await jsonOf<{ taskId: string }>(started);
-      expect(taskId).toMatch(/^boxtask_/);
-      await harness.taskPromise(taskId);
-      const polled = await fetch(`${base}/agent/task/${taskId}`);
-      const body = await jsonOf<{ status: string; result: unknown }>(polled);
-      expect(body.status).toBe("done");
-      expect(body.result).toEqual({
-        ok: true,
-        summary: "wrote chaseInvoices",
-        filesChanged: ["/app/server.js"],
-        testsRun: 1,
-        fns: ["chaseInvoices"],
-      });
-      expect(seen.prompt).toBe("build a chaser");
-      expect(seen.context).toBe("SKIN CONTRACT ...");
-    });
-  });
-
-  it("refuses a second concurrent task with 409", async () => {
-    let release: () => void = () => undefined;
-    const gate = new Promise<void>((resolve) => { release = resolve; });
-    await withHarness(async () => {
-      await gate;
-      return { ok: true, summary: "", filesChanged: [], testsRun: 0 };
-    }, async (base, harness) => {
-      const first = await jsonOf<{ taskId: string }>(await fetch(`${base}/agent/task`, {
-        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ prompt: "one" }),
-      }));
-      const second = await fetch(`${base}/agent/task`, {
-        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ prompt: "two" }),
-      });
-      expect(second.status).toBe(409);
-      release();
-      await harness.taskPromise(first.taskId);
-    });
-  });
-
-  it("rejects a task with no prompt", async () => {
-    await withHarness(async () => ({ ok: true, summary: "", filesChanged: [], testsRun: 0 }), async (base) => {
-      const response = await fetch(`${base}/agent/task`, {
-        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ prompt: "" }),
-      });
-      expect(response.status).toBe(400);
-    });
-  });
-
-  it("persists re-injected env and exposes it to the next task (grant-flip restart loop)", async () => {
-    const envSeen: Array<string | undefined> = [];
-    await withHarness(async (input) => {
-      envSeen.push(input.env.RESEND_API_KEY);
-      return { ok: true, summary: "", filesChanged: [], testsRun: 0 };
-    }, async (base, harness) => {
-      // First task: no secret granted yet.
-      const t1 = await jsonOf<{ taskId: string }>(await fetch(`${base}/agent/task`, {
-        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ prompt: "one" }),
-      }));
-      await harness.taskPromise(t1.taskId);
-      // Grant flips: host re-injects env (Lane E commitExposure → box restart loop).
-      const env = await fetch(`${base}/agent/env`, {
-        method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ env: { RESEND_API_KEY: "granted-value" } }),
-      });
-      expect(env.status).toBe(200);
-      const t2 = await jsonOf<{ taskId: string }>(await fetch(`${base}/agent/task`, {
-        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ prompt: "two" }),
-      }));
-      await harness.taskPromise(t2.taskId);
-      expect(envSeen[0]).toBeUndefined();
-      expect(envSeen[1]).toBe("granted-value");
-    });
-  });
-
   it("supervises the app from the .vendo/run Procfile entry", async () => {
     const appDir = boxDir("vendo-box-");
     const marker = path.join(appDir, "started.txt");
     // createHarness() creates .vendo/; write the Procfile entry before start().
-    const harness = createHarness({ appDir, controlPort: 0, runTask: (async () => ({ ok: true, summary: "", filesChanged: [], testsRun: 0 })) as never });
+    const harness = createHarness({ appDir, controlPort: 0 });
     cleanups.push(() => harness.stop());
     writeFileSync(path.join(appDir, ".vendo", "run"), `printf ran > ${JSON.stringify(marker)}; sleep 30`);
     await harness.start();
@@ -190,12 +102,7 @@ describe("box control-port protocol", () => {
       `export VENDO_PROFILE_LEAK=yes\ntouch ${JSON.stringify(profileRan)}\n`,
     );
     const marker = path.join(appDir, "started.txt");
-    const harness = createHarness({
-      appDir,
-      controlPort: 0,
-      runTask: (async () => ({ ok: true, summary: "", filesChanged: [], testsRun: 0 })) as never,
-      baseEnv: { HOME: home },
-    });
+    const harness = createHarness({ appDir, controlPort: 0, baseEnv: { HOME: home } });
     cleanups.push(() => harness.stop());
     writeFileSync(path.join(appDir, ".vendo", "run"), `printf %s "$VENDO_PROFILE_LEAK" > ${JSON.stringify(marker)}; sleep 30`);
     await harness.start();

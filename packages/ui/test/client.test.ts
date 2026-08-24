@@ -68,7 +68,6 @@ describe("createVendoClient", () => {
     expect((await client.apps.seedFrom({ component: "hero2", slot: "hero2", instruction: "make it blue" })).seed?.component).toBe("hero2");
     // Re-seeding moves the app onto the host's current version of that component.
     expect((await client.apps.reseed(seeded.id)).seed?.baseline).toBe("sha256:fixture-NEW");
-    expect(await client.apps.pingMachine("app_1")).toEqual({ state: "awake" });
     // Placement (2026-08-05): place → read back → evict → unplace → gone.
     // A slot of its own: the seed call above already placed its mint in "hero2".
     expect(await client.apps.place("app_1", "shelf")).toEqual({});
@@ -129,7 +128,6 @@ describe("createVendoClient", () => {
     exact("POST", "/apps/seed", { component: "hero", instruction: "make it blue" });
     exact("POST", "/apps/seed", { component: "hero2", slot: "hero2", instruction: "make it blue" });
     exact("POST", `/apps/${seeded.id}/reseed`, {});
-    exact("POST", "/apps/app_1/machine/ping", {});
     exact("GET", "/automations", undefined);
     exact("POST", "/automations/atm_auto/enable", {});
     exact("POST", "/automations/atm_auto/disable", {});

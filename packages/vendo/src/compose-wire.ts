@@ -26,7 +26,7 @@ const telemetryClient = (enabled: boolean | undefined): Telemetry | undefined =>
 
 /** Everything the wire handler reads off this composition. */
 export const wireDepsFor = (composition: VendoComposition): WireDeps => {
-  const { config, store, ops, guard, apps, actionsConfig, appTokens, automations } = composition;
+  const { config, store, ops, guard, apps, actionsConfig, automations } = composition;
   const { boundTools, byoApprovals, connections, sandbox, inference, doctor, door } = composition;
   const { resolvePrincipal, membershipsSeam, userFactsSeam, userPoolsSeam, ready } = composition;
   const { appsMounted, automationsMounted } = composition;
@@ -75,7 +75,6 @@ export const wireDepsFor = (composition: VendoComposition): WireDeps => {
     // execution-v2 Lane C — the /box surfaces: tool calls through the SAME
     // guard binding, bearer verification over the composed store.
     tools: boundTools,
-    appTokens,
     automations,
     byoApprovals,
     connections,

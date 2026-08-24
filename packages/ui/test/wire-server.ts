@@ -1253,12 +1253,6 @@ export async function createWireServer(options: WireServerOptions = {}) {
         response.end(Buffer.from([0, 1, 255]));
         return;
       }
-      const pingMatch = url.pathname.match(/^\/apps\/([^/]+)\/machine\/ping$/);
-      if (pingMatch && method === "POST") {
-        const id = decodeURIComponent(pingMatch[1] ?? "");
-        if (!state.apps.some(item => item.id === id)) return wireError(response, "not-found", "App not found", 404);
-        return json(response, { state: "awake" });
-      }
       // The ✦ share toggle's transport. The principal rides the path
       // percent-encoded, because `org:acme` carries a ":" and a team a "/".
       const grantsMatch = url.pathname.match(/^\/apps\/([^/]+)\/grants(?:\/(.+))?$/);

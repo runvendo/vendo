@@ -35,22 +35,6 @@ export type {
   SlotRegistry,
 } from "./persistence/slots.js";
 export type { SandboxAdapter, SandboxMachine, SandboxResumePolicy } from "./escalation/sandbox.js";
-// execution-v2 skin contract (Lane C): the per-app box token and the box env
-// assembly Lane B consumes at provision.
-export {
-  createAppTokens,
-  type AppTokens,
-} from "./persistence/app-token.js";
-export {
-  buildEnv,
-  type BuildEnvContext,
-  type BuiltBoxEnv,
-  type InferenceResolver,
-} from "./escalation/box-env.js";
-// The doctor's view of a machine-bearing app — what `AppsRuntime.machine.report`
-// answers with. The converter's own shapes stay internal to it: no public door
-// hands one out, and an export is additive the day one does.
-export type { AppMachineStatus } from "./escalation/manifest-triggers.js";
 export {
   shareSnapshotSchema,
   publishRecordSchema,

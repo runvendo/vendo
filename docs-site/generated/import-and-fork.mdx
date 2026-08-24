@@ -12,27 +12,24 @@ Export writes a `.vendoapp` archive. Import mints a fresh `app_` id before it ev
 
 `fork` does the same in one call and records `forkedFrom` so the lineage is readable. `share` and `publish` hand the copy to Vendo Cloud, and both need `VENDO_API_KEY`.
 
-<Frame caption="A copy re-approves its own egress before it can run anything.">
-  <svg viewBox="0 0 700 132" width="100%" role="img" aria-label="What travels with a copy: the document, the app.tsx screen, the declared secrets and egress domains. What stays behind: the machine, the owner's approved egress, and the conversation.">
+<Frame caption="Nothing about the original's authority crosses the line.">
+  <svg viewBox="0 0 700 132" width="100%" role="img" aria-label="What travels with a copy: the document, the app.tsx screen, the declared storage and secret names. What stays behind: every grant, and the owner's conversation.">
     <rect x="1" y="1" width="330" height="130" rx="10" fill="#6c3bff" fillOpacity="0.07" stroke="#6c3bff" strokeOpacity="0.35" />
     <text x="20" y="26" fontSize="8" letterSpacing="1.2" fill="#6c3bff" fillOpacity="0.85">TRAVELS</text>
-    <text x="20" y="50" fontSize="12" fill="currentColor">the document and its app.tsx screen</text>
-    <text x="20" y="73" fontSize="12" fill="currentColor">the storage the app declares</text>
-    <text x="20" y="96" fontSize="12" fill="currentColor">the secret names it declares</text>
-    <text x="20" y="119" fontSize="12" fill="currentColor">the egress domains it declares</text>
+    <text x="20" y="55" fontSize="12" fill="currentColor">the document and its app.tsx screen</text>
+    <text x="20" y="85" fontSize="12" fill="currentColor">the storage the app declares</text>
+    <text x="20" y="115" fontSize="12" fill="currentColor">the secret names it declares</text>
     <rect x="369" y="1" width="330" height="130" rx="10" fill="none" stroke="currentColor" strokeOpacity="0.22" strokeDasharray="4 3" />
     <text x="388" y="26" fontSize="8" letterSpacing="1.2" fill="currentColor" fillOpacity="0.5">STAYS BEHIND</text>
-    <text x="388" y="50" fontSize="12" fill="currentColor" fillOpacity="0.65">the machine, so the copy re-graduates</text>
-    <text x="388" y="73" fontSize="12" fill="currentColor" fillOpacity="0.65">the owner's approved egress</text>
-    <text x="388" y="96" fontSize="12" fill="currentColor" fillOpacity="0.65">every grant, which is keyed to the old id</text>
-    <text x="388" y="119" fontSize="12" fill="currentColor" fillOpacity="0.65">the owner's conversation</text>
+    <text x="388" y="55" fontSize="12" fill="currentColor" fillOpacity="0.65">every grant, which is keyed to the old id</text>
+    <text x="388" y="85" fontSize="12" fill="currentColor" fillOpacity="0.65">the owner's conversation</text>
   </svg>
 </Frame>
 
 Two copies are refused outright, and both refusals are loud.
 
 <Warning>
-  A served layer-3 app cannot be forked. Its whole surface lives in its machine, and machines never travel with a copy, so the fork would be an app that can never open.
+  A built app cannot be copied at all. Sharing, forking, exporting, and placing one are each refused server-side.
 
   An app forked from one of your host components cannot be exported at all. Captured baselines are written `exportable: false`, and the export fails with `baseline-forbids-export`.
 </Warning>

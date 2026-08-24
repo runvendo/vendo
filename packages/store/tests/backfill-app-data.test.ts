@@ -1,4 +1,3 @@
-import { createAppTokens } from "@vendoai/apps";
 import type { Principal } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
 import { backends, type MadeBackend } from "../src/backends.test-util.js";
@@ -270,25 +269,6 @@ for (const backend of backends()) {
         expect((await ops.appData.list(mine)).records).toEqual([]);
         expect(await ops.appData.getFile(mine, "report.txt")).toBeNull();
         expect(await ops.appData.listFiles(mine)).toEqual([]);
-      } finally {
-        await made.cleanup();
-      }
-    });
-
-    /** The seam, with no stub on either side: the producer is store's own
-        `lifecycle.promote`, the consumer is apps' `verify`, which reads the
-        subject straight off the token row's refs. A token left on the departed
-        personal subject would have the box writing appData nobody owns. */
-    it("moves the app token with the app, so the box's bearer verifies as the org", async () => {
-      const made = await make();
-      try {
-        await appStore(made.store).put(dana, appFixture("app_bearer"));
-        const token = await createAppTokens(createStoreOps(made.store).engine).mint("app_bearer", "dana");
-
-        await createStoreOps(made.store).lifecycle.promote("app_bearer", "acme");
-
-        expect(await createAppTokens(createStoreOps(made.store).engine).verify(token))
-          .toEqual({ appId: "app_bearer", subject: "acme" });
       } finally {
         await made.cleanup();
       }

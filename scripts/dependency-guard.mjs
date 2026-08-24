@@ -147,16 +147,6 @@ const LAYERS = {
     "@vendoai/mcp",
     "@vendoai/store",
   ],
-  // the universal box app template (blueprint §11): what every generated app is
-  // built FROM inside its box, baked once per Vendo release. Private, never
-  // published, and deliberately reaches ONLY the browser layer — it imports the
-  // code-land runtime through `@vendoai/ui/kit`, and an app in a box must never
-  // be able to import a server block.
-  // core joins for the DECLARED port contract (VENDO_DEV_PORT): the host that
-  // mints the preview URL and the template that binds the socket must read one
-  // constant, and they sit in different layers. core is the contract layer, not a
-  // server block, so this does not weaken "an app in a box imports no server".
-  "@vendoai/box-template": ["@vendoai/core", "@vendoai/ui"],
   // the canonical umbrella is the only package allowed to depend on every block
   "@vendoai/vendo": "*",
   // the unscoped compatibility package is a thin alias of the canonical umbrella

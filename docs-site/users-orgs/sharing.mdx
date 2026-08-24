@@ -80,13 +80,16 @@ grant or revoke. A caller who holds viewer or editor is told they need owner; a
 caller who cannot see the app at all gets not-found instead, which is the same
 answer a nonexistent app gives.
 
-Two refusals are worth knowing before you build a share UI, because both are about
-where the app lives rather than who you named:
+Three refusals are worth knowing before you build a share UI, because none of them
+is about who you named:
 
 - **An `org:` or `team:` grant naming a different org than the app's** is refused.
   Move the app into that org first.
 - **A still-personal app shared with anyone but its holder** is refused. Move it
   into a team first, or fork a copy for them.
+- **A built app** is refused whoever you name, and so are fork, export, and
+  placement. Its bundle would run someone else's code with the recipient's own
+  permissions, so only screens travel.
 
 A principal string that does not parse is refused too, naming the three shapes.
 

@@ -35,7 +35,7 @@ import type {
 } from "../../contract/index.js";
 // The screen engine, by its own path: the contract door does not carry it yet.
 import { SCREEN_FILE } from "../../contract/genui/component/index.js";
-import { wirePropNames } from "../escalation/prewired-schema.js";
+import { wirePropNames } from "./prewired-schema.js";
 import type { FloorDependencies } from "./deps.js";
 import { COMPONENT_SCREEN_LIB, componentScreenTypings, screenCatalog } from "./screen-typings.js";
 import { screenTscFindings } from "./screen-tsc.js";

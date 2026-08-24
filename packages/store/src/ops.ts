@@ -26,7 +26,7 @@ import { collectionFootprints } from "./footprint.js";
 import { harnessStateKey } from "./harness-state.js";
 import { appendThreadMessages, putStateRow, putThreadRow, THREAD_MESSAGES_AGGREGATE, threadFromRow } from "./helpers/rows.js";
 import { turnLoadOverOps } from "./helpers/turn.js";
-import { cursorMs, decodeCursor, encodeCursor, iso, jsonParam, pageLimit, text } from "./helpers/utils.js";
+import { cursorMs, decodeCursor, encodeCursor, iso, pageLimit, text } from "./helpers/utils.js";
 import { createRecordStore } from "./records.js";
 import { storeRetention } from "./retention.js";
 import { createReservedRecordStore, threadRecord, watermarkPage } from "./routing.js";
@@ -40,14 +40,6 @@ import { workspaceRows, type PreparedWrite } from "./workspace-rows.js";
  *  idempotency-key replay — no new table. Rows carry the workspace owner as a
  *  subject ref, so the erase cascade reaches them. */
 const WORKSPACE_COMMITS = "vendo_workspace_commits";
-
-/** The per-app bearer's collection in the generic records table: one row per
- *  live app token, `refs = { app_id, subject }`, minted and read by
- *  `packages/apps/src/server/persistence/app-token.ts` — the source of truth
- *  for this name. Spelled here rather than imported: `@vendoai/apps`'s entry is
- *  the whole apps server, and dragging it into this module's graph for one
- *  string costs the store its edge portability. */
-const APP_TOKENS = "vendo_app_tokens";
 
 interface WorkspaceEntry {
   path: string;
@@ -971,15 +963,6 @@ export function createStoreOps(
           // primary-key collision here throws and rolls the whole promote back
           // — §9.5 is all-or-nothing, and there is no resolution to invent.
           await reownAppData(tdb, appId, from, orgId);
-          // And so does the app's bearer. The box keeps calling back with the
-          // token it already holds; left on the departed personal subject it
-          // would keep writing rows stamped with a subject that no longer owns
-          // the app (`refs.subject` is exactly what apps' `verify` returns).
-          await q(
-            `UPDATE vendo_records SET refs = refs || $2::jsonb
-             WHERE collection = $1 AND refs @> $3::jsonb`,
-            [APP_TOKENS, jsonParam({ subject: orgId }), jsonParam({ app_id: appId })],
-          );
         });
       },
     },
