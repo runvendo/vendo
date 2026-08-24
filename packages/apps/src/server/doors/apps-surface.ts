@@ -181,6 +181,7 @@ const createAppCopyDoors = (
 
     async publish(appId, ctx) {
       const app = await requireOwned(appId, ctx, "owner");
+      refuseBundleArtifact(app, "published");
       if (config.cloud === undefined) {
         throw new VendoError("cloud-required", "Vendo Cloud requires VENDO_API_KEY");
       }

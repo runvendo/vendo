@@ -15,6 +15,7 @@ import { createApps, type AppsRuntime } from "../src/server/index.js";
 import { guardFixture } from "../src/server/testing/guard-fixture.js";
 import { memoryStore } from "../src/server/testing/memory-store.js";
 import { seedAppRow } from "../src/server/testing/seed-app-row.js";
+import { storeAccessFixture } from "./app-access-fixture.js";
 
 const ctx: RunContext = {
   principal: { kind: "user", subject: "user_ada" },
@@ -55,16 +56,39 @@ const runtimeWith = async (...docs: AppDocument[]): Promise<AppsRuntime> => {
   });
 };
 
-/** The four shipped server-side doors, each named the way the refusal names it. */
+/**
+ * The path a PERSON's share actually takes: the ✦ toggle calls
+ * `client.apps.share` → `PUT /apps/:id/grants/:principal` → `access.grant`,
+ * never `AppsRuntime.share`. Org-held with an admin caller because core refuses
+ * a person-to-person grant on a still-personal app, so that is the only world
+ * in which the allowed half can land.
+ */
+const grantWorld = async (document: AppDocument): Promise<{ apps: AppsRuntime; admin: RunContext }> => {
+  const store = memoryStore();
+  await seedAppRow(engineOverAdapter(store), document, "acme");
+  return {
+    apps: createApps({
+      store,
+      guard: guardFixture(),
+      tools,
+      catalog: [],
+      appAccess: storeAccessFixture(store),
+    }),
+    admin: { ...ctx, memberships: [{ org: "acme", admin: true }] },
+  };
+};
+
+/** The shipped server-side doors, each named the way the refusal names it. */
 const doors = (apps: AppsRuntime, appId: string) => ({
   shared: () => apps.share(appId, ctx),
+  published: () => apps.publish(appId, ctx),
   forked: () => apps.fork(appId, ctx),
   exported: () => apps.exportApp(appId, ctx),
   "placed in a slot": () => apps.place({ app: appId, slot: "home-hero" }, ctx),
 });
 
 describe("a built app is not shareable", () => {
-  it("refuses share, fork, export and place for a sealed bundle", async () => {
+  it("refuses share, publish, fork, export and place for a sealed bundle", async () => {
     const apps = await runtimeWith(built);
 
     for (const [operation, attempt] of Object.entries(doors(apps, "app_built"))) {
@@ -87,6 +111,17 @@ describe("a built app is not shareable", () => {
     await expect(noSeal.fork("app_no_seal", ctx)).rejects.toMatchObject({ code: "blocked" });
   });
 
+  it("refuses the ✦ share toggle, which is a grant and not `share`", async () => {
+    const { apps, admin } = await grantWorld(built);
+
+    await expect(apps.access.grant("app_built", "user:bob", "viewer", admin)).rejects.toMatchObject({
+      code: "blocked",
+      message: expect.stringContaining("a built app cannot be shared"),
+    });
+    // Refused BEFORE the write: no grant row reached the seam.
+    expect(await apps.access.list("app_built", admin)).toEqual([]);
+  });
+
   it("still shares, forks, exports and places a tree app", async () => {
     const apps = await runtimeWith(tree);
 
@@ -97,5 +132,12 @@ describe("a built app is not shareable", () => {
     expect(await apps.placements({}, ctx)).toEqual([
       { slot: "home-hero", app: "app_tree", title: "Spending", status: "ready" },
     ]);
+  });
+
+  it("still grants a tree app to another principal", async () => {
+    const { apps, admin } = await grantWorld(tree);
+
+    await expect(apps.access.grant("app_tree", "user:bob", "viewer", admin))
+      .resolves.toMatchObject([{ principal: "user:bob", level: "viewer" }]);
   });
 });
