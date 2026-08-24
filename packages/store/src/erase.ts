@@ -113,6 +113,17 @@ export function eraseStore(store: VendoStore, options: { files: FilesAdapter }):
       DIFFERENT cascade (`transcripts.deleteThread`, one transaction) — this is
       only the half that lives in the workspace and behind the files adapter. */
   byThread(threadId: string): Promise<EraseReport>;
+  /** Erase ONE workspace path and everything under it, for ONE owner: the live
+      rows, their history, and the blobs those rows were the only pointer to.
+      The owner is required because `/user/**` means a different file in every
+      subject's workspace — the other selectors here carry the tenant in the path
+      (`/user/threads/<id>`, `/user/apps/<id>`) and this one cannot.
+
+      It exists for the staging waypoint (`/user/uploads/**`), which is neither a
+      thread nor an app and so is reachable by no other axis, while both ways a
+      file leaves staging — the turn's re-home and the janitor's sweep — only
+      tombstone it, leaving the object behind under that unreachable address. */
+  byWorkspacePath(owner: string, path: string): Promise<EraseReport>;
 } {
   const db = dbFor(store);
   // Workspace content past the inline cap lives behind the files adapter, and
@@ -358,6 +369,28 @@ export function eraseStore(store: VendoStore, options: { files: FilesAdapter }):
       const where = anchors.map((_, index) => `path LIKE $${index + 1} ESCAPE '\\'`).join(" OR ");
       await delWorkspace(report, "vendo_workspace_files", where, anchors);
       await delWorkspace(report, "vendo_workspace_history", where, anchors);
+      return report;
+    },
+
+    async byWorkspacePath(owner, path) {
+      if (typeof owner !== "string" || owner === "") {
+        invalid("erase workspace owner must be a non-empty string");
+      }
+      if (typeof path !== "string" || !path.startsWith("/")) {
+        invalid("erase workspace path must be absolute");
+      }
+      const report = emptyReport();
+      // Two patterns, for `byApp`'s reason: the subtree, and a row at exactly
+      // the prefix. The trailing slash is what keeps `/user/uploads-archive`
+      // out of a sweep of `/user/uploads`.
+      const root = escapeLike(path);
+      const anchors = [`${root}/%`, root];
+      const where = `owner = $1 AND (`
+        + anchors.map((_, index) => `path LIKE $${index + 2} ESCAPE '\\'`).join(" OR ")
+        + `)`;
+      const params = [owner, ...anchors];
+      await delWorkspace(report, "vendo_workspace_files", where, params);
+      await delWorkspace(report, "vendo_workspace_history", where, params);
       return report;
     },
   };

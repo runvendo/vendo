@@ -443,6 +443,25 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
     repairInstruction,
   });
 
+  /** A file that LEAVES staging must leave the bucket with it.
+   *
+   *  Both exits — the re-home's `mv` and the janitor's `rm` — only tombstone:
+   *  the `/user/uploads/…` row moves to history with its `blob_ref` intact and
+   *  the object is deliberately kept (store/workspace-rows.ts: "the history row
+   *  is its pointer now"). Staging is neither a thread nor an app, so no other
+   *  erase axis reaches that address, and the object outlived deleting the
+   *  conversation — and would have outlived an erasure request.
+   *
+   *  Deliberately not wrapped: a bucket that refuses the delete is the leak
+   *  coming back, so it fails the turn rather than passing quietly. A store with
+   *  no SQL backend has no erase path at all — the same gap `sweepThreadFiles`
+   *  documents below. */
+  const eraseStagedFile = async (ctx: RunContext, path: string): Promise<void> => {
+    if (maybeDbFor(config.store) === undefined) return;
+    await eraseStore(config.store, { files: config.files })
+      .byWorkspacePath(ctx.principal.subject, path);
+  };
+
   /**
    * A dropped file belongs to the CONVERSATION, so the turn that receives it
    * moves it there and rewrites the part it arrived on.
@@ -476,6 +495,7 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
       homes.set(from, to);
     }
     await workspace.commit();
+    for (const from of homes.keys()) await eraseStagedFile(ctx, from);
     return {
       ...message,
       parts: message.parts.map((part) =>
@@ -494,14 +514,17 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
   /** Staging is a waypoint, so nothing may live there. Every turn sweeps what
    *  this person left behind — a drop whose message was never sent, or one whose
    *  turn died between the write and the move. Reads the path index the turn's
-   *  workspace already built, so it costs no round trip; the removals ride the
-   *  turn's own commit. */
-  const sweepStagedStrays = async (workspace: WorkspaceFs): Promise<void> => {
+   *  workspace already built, so FINDING a stray costs no round trip, and the
+   *  removals ride the turn's own commit; only a turn that actually sweeps
+   *  something pays for the erase that frees its object. */
+  const sweepStagedStrays = async (workspace: WorkspaceFs, ctx: RunContext): Promise<void> => {
     if (!await workspace.exists(USER_UPLOADS)) return;
     const cutoff = Date.now() - STRAY_MAX_AGE_MS;
     for (const name of await workspace.readdir(USER_UPLOADS)) {
       const path = `${USER_UPLOADS}/${name}`;
-      if ((await workspace.stat(path)).mtime.getTime() < cutoff) await workspace.rm(path);
+      if ((await workspace.stat(path)).mtime.getTime() >= cutoff) continue;
+      await workspace.rm(path);
+      await eraseStagedFile(ctx, path);
     }
   };
 
@@ -791,8 +814,9 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
       ]);
       timings.add("store", Date.now() - storeAt);
       // §6 — the janitor for the waypoint. On the turn's own workspace and its
-      // own commit, so a sweep costs no extra open and no extra write.
-      await sweepStagedStrays(workspace);
+      // own commit, so a turn with nothing to sweep costs no extra open and no
+      // extra write.
+      await sweepStagedStrays(workspace, input.ctx);
       // §1.6 — the render seam, built for THIS turn's ctx and handed to the
       // runtime's generic `wrapWorkspace` slot: the runtime owns WHERE the wrap
       // happens and what `emit` writes to; composition owns WHAT wraps.

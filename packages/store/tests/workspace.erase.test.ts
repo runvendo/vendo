@@ -172,6 +172,64 @@ for (const backend of backends()) {
       expect(await workspaceBlobs()).toBe(before);
     });
 
+    // The staging waypoint (`/user/uploads/**`) is neither a thread nor an app,
+    // so no other axis here reaches it — and both ways a file LEAVES staging
+    // only tombstone it: the row moves to history with its `blob_ref` intact and
+    // the object stays. Without a path axis the bucket keeps that object forever.
+    it("erases one workspace path, its history and its blobs, for that owner only", async () => {
+      const mine: Principal = { kind: "user", subject: "user_ws_path" };
+      const theirs: Principal = { kind: "user", subject: "user_ws_path_other" };
+      const path = "/user/uploads/abcd1234-scan.pdf";
+      const big = "z".repeat(WORKSPACE_INLINE_MAX_BYTES + 1);
+      // Two revisions, so a history row holds a blob ref as well as the live one.
+      await seed(made.store, mine, path, [big, `${big}!`]);
+      // The SAME path in another subject's workspace. `/user/**` is per-owner, so
+      // a path-keyed erase that ignored the owner would cross tenants.
+      await seed(made.store, theirs, path, [big]);
+      const before = await workspaceBlobs();
+
+      const report = await eraseStore(made.store, { files: storeFiles(made.store) })
+        .byWorkspacePath(mine.subject, path);
+
+      expect(report.vendo_workspace_files).toBe(1);
+      expect(report.vendo_workspace_history).toBe(1);
+      expect(await count("vendo_workspace_files", "owner = $1", [mine.subject])).toBe(0);
+      expect(await count("vendo_workspace_history", "owner = $1", [mine.subject])).toBe(0);
+      // The live object and the superseded one both go.
+      expect(await workspaceBlobs()).toBe(before - 2);
+      // ...and the other subject's identical path is untouched.
+      expect(await count("vendo_workspace_files", "owner = $1", [theirs.subject])).toBe(1);
+    });
+
+    it("erases everything under a workspace path, and the path's own row", async () => {
+      // Two anchors, for `byThread`'s reason: the subtree, and a row at exactly
+      // the prefix. A slash-suffixed LIKE alone never matches the second.
+      const owner: Principal = { kind: "user", subject: "user_ws_path_tree" };
+      await seed(made.store, owner, "/user/uploads/one.csv", ["first"]);
+      await seed(made.store, owner, "/user/uploads/nested/two.csv", ["second"]);
+      // A sibling whose name merely STARTS with the prefix must survive.
+      await seed(made.store, owner, "/user/uploads-archive/three.csv", ["spared"]);
+      // The prefix's own row goes in behind the façade, which refuses to write
+      // through a path that is already a directory.
+      await made.sql(
+        "INSERT INTO vendo_workspace_files (path, owner, content, bytes) VALUES ($1, $2, $3, $4)",
+        ["/user/uploads", owner.subject, "the prefix, as a row", 20],
+      );
+
+      const report = await eraseStore(made.store, { files: storeFiles(made.store) })
+        .byWorkspacePath(owner.subject, "/user/uploads");
+
+      expect(report.vendo_workspace_files).toBe(3);
+      expect(await count("vendo_workspace_files", "path = '/user/uploads-archive/three.csv'", [])).toBe(1);
+    });
+
+    it("refuses a workspace path that is not absolute", async () => {
+      const erase = eraseStore(made.store, { files: storeFiles(made.store) });
+      for (const path of ["", "user/uploads", "relative.csv"]) {
+        await expect(erase.byWorkspacePath("user_ws_path_bad", path)).rejects.toThrow(/absolute/);
+      }
+    });
+
     // F15 (verifier): keys derived from owner+path+revision were guessable
     // across tenants. A blob key is now a random id; the row is the only pointer.
     it("mints unguessable blob keys that carry no owner or path", async () => {

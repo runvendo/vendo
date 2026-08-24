@@ -116,6 +116,21 @@ const post = (vendo: Vendo, body: unknown, headers: Record<string, string>): Pro
 
 const bytes = (text: string): Uint8Array => new TextEncoder().encode(text);
 
+/** A host's own bucket, in memory — a REAL FilesAdapter, so what the bucket
+    still holds is observed rather than assumed. */
+function bucket(): FilesAdapter & { keys: () => string[] } {
+  const blobs = new Map<string, Uint8Array>();
+  return {
+    put: async (key, value) => void blobs.set(key, value),
+    get: async (key) => {
+      const value = blobs.get(key);
+      return value === undefined ? undefined : { bytes: value };
+    },
+    delete: async (key) => void blobs.delete(key),
+    keys: () => [...blobs.keys()],
+  };
+}
+
 describe("a turn takes its files home", () => {
   it("moves a staged drop under the thread and rewrites the part BEFORE it is stored", async () => {
     const { vendo } = await compose();
@@ -208,6 +223,34 @@ describe("staging does not accumulate", () => {
 
     await expect(readBack(vendo, stale)).rejects.toThrow();
     expect(await readBack(vendo, fresh)).toBe("y");
+  });
+
+  // The sweep removed the ROW and kept the OBJECT: `workspace.rm` tombstones,
+  // so the row moved to history with its `blob_ref` intact, under an address no
+  // erase axis reaches. An upload nobody ever sent leaked its bytes forever.
+  it("frees the stale stray's object, not just its row", async () => {
+    const files = bucket();
+    const { vendo, store } = await compose(files);
+    const headers = await bearer();
+    // Past the inline cap, so the content is a real object in the host's bucket.
+    const big = new Uint8Array(200_000).fill(65);
+    const { path: stale } = await (await upload(vendo, "abandoned.pdf", big, headers, "application/pdf"))
+      .json() as { path: string };
+    expect(files.keys()).toHaveLength(1);
+
+    await (store.raw() as { query: (q: string, p: unknown[]) => Promise<unknown> })
+      .query("UPDATE vendo_workspace_files SET updated_at = $2 WHERE path = $1", [
+        stale,
+        new Date(Date.now() - 7 * 60 * 60 * 1000).toISOString(),
+      ]);
+
+    await (await post(vendo, {
+      threadId: "thr_sweep_object",
+      message: { id: "m1", role: "user", parts: [{ type: "text", text: "hello" }] },
+    }, headers)).text();
+
+    await expect(readBack(vendo, stale)).rejects.toThrow();
+    expect(files.keys()).toHaveLength(0);
   });
 });
 
