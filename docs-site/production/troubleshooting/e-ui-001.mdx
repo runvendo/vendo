@@ -1,42 +1,36 @@
 ---
 title: "E-UI-001"
 sidebarTitle: "E-UI-001"
-description: "Doctor warns when an ejected surface came from an older @vendoai/ui than the one currently installed."
+description: "Retired: vendo eject was removed, so no copied surface can drift from the installed @vendoai/ui."
 ---
 
-```text eject/<surface>
-warning: ejected <surface> came from @vendoai/ui v<ejectedVersion> but
-v<installedVersion> is installed — review the changelog
-(https://github.com/runvendo/vendo/releases) and `vendo eject <surface>
---force` if you want the new presentation
+```text retired
+E-UI-001 — retired, doctor no longer emits this code
 ```
 
-`<surface>` is the ejected component (for example `overlay` or `thread`),
-and the two versions are what your manifest recorded against what's actually
-installed now.
-
-`check: eject/<surface>` · `error_code: E-UI-001` · `doctor exits: 0`
+`error_code: E-UI-001` · `status: retired`
 
 ## What you're seeing
 
-This is a warning, not a failure; doctor still exits 0. Nothing is broken.
+Nothing: `npx vendo doctor` cannot print this code anymore. You are reading
+it from an older run's output, or a saved report.
 
 ## Why
 
-You ejected a chrome surface, then upgraded `@vendoai/ui`. The ejected
-pixels are your code now, so nothing runs differently. You're just missing
-whatever presentation changes shipped since you ejected.
+This code fired when a surface copied into your repo by `vendo eject` came
+from an older `@vendoai/ui` than the one installed. That command was
+removed, so there is no copied surface for doctor to compare.
 
 ## The fix
 
-Review the release notes, then re-eject with `--force` if you want the
-newer presentation.
+Nothing to fix. If your repo still holds a surface you ejected before the
+command was removed, those files are yours — they keep working, and their
+data and wire logic still come from `@vendoai/ui`. Delete the leftover
+`.vendo-eject.json` manifest beside them; nothing reads it now.
 
-```bash
-npx vendo eject <surface> --force
-```
-
-Leaving the ejected surface as-is is also valid; this never blocks doctor.
+To restyle a shipped surface without forking it, theme it with
+`<VendoProvider theme={...}>` and the CSS variables in
+[Theming](/customize/theming).
 
 ## Related errors
 

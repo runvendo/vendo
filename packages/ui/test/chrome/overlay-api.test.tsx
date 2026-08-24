@@ -231,9 +231,9 @@ describe("VendoOverlay supported entry API", () => {
     expect((posts[1]!.body as { threadId?: string }).threadId).toBeUndefined();
   });
 
-  it("renders a supplied thread component in place of the built-in VendoThread (eject seam)", () => {
+  it("renders a supplied thread component in place of the built-in VendoThread", () => {
     function CustomThread() {
-      return <div data-testid="custom-thread">ejected thread</div>;
+      return <div data-testid="custom-thread">custom thread</div>;
     }
     render(<VendoProvider client={client}><VendoOverlay defaultOpen thread={CustomThread} /></VendoProvider>);
     expect(screen.getByTestId("custom-thread")).toBeTruthy();

@@ -5,7 +5,7 @@ import { CLI_VERSION } from "./shared.js";
  * registry. Every failure mode doctor can report has one stable, grep-able
  * code here: E-<AREA>-<NNN>, where the area groups related checks (WIRE
  * wiring, CFG config files, STORE store persistence, DEP host dependency
- * versions, UI eject drift, MCP door, CLOUD key, TOOLS catalog). Codes are
+ * versions, MCP door, CLOUD key, TOOLS catalog). Codes are
  * append-only: never renumber or reuse one — the verify page anchors
  * (`fix_ref`) and agents' remediation notes depend on them staying put. A
  * check that goes away leaves its entry behind, marked RETIRED, for the same
@@ -42,7 +42,7 @@ export const DOCTOR_ERROR_CODES = {
   "E-DEP-001": "the installed ai package is a major version @vendoai/vendo does not support",
   "E-DEP-002": "RETIRED — doctor no longer reads a running wire's version",
   "E-DEP-003": "the installed zod predates the zod/v3 + zod/v4 subpaths the AI SDK imports (zod < 3.25)",
-  "E-UI-001": "an ejected surface predates the installed @vendoai/ui",
+  "E-UI-001": "RETIRED — `vendo eject` was removed, so no surface can drift from the installed @vendoai/ui",
   "E-DEV-001": "RETIRED — doctor no longer starts a dev server",
   "E-LIVE-001": "RETIRED — doctor no longer reads /status",
   "E-LIVE-002": "RETIRED — doctor no longer reads /status",

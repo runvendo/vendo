@@ -11,8 +11,8 @@ export { useAutomations } from "./use-automations.js";
 export { useConnections } from "./use-connections.js";
 export { useConnectorCatalog } from "./use-connector-catalog.js";
 export { useGrants } from "./use-grants.js";
-// Deliberately public: the ejected thread surface imports it,
-// and hosts placing their own approval chrome need the same breakpoint truth.
+// Deliberately public: hosts placing their own approval chrome need the same
+// breakpoint truth.
 export { useApprovalSheetPresentation, useMobileTakeover, type MobileTakeover } from "./use-mobile-takeover.js";
 export { type PollOptions } from "./use-resource.js";
 export { useSlotApp } from "./use-slot-app.js";

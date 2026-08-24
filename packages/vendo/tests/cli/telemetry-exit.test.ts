@@ -52,7 +52,7 @@ it("exits promptly when the telemetry endpoint accepts the connection and never 
   const home = await mkdtemp(join(tmpdir(), "vendo-telemetry-exit-"));
   try {
     const started = Date.now();
-    const child = spawn(process.execPath, [BIN, "eject", "--list", home], {
+    const child = spawn(process.execPath, [BIN, "knowledge", "list", home], {
       // A bare env on purpose: CI / DO_NOT_TRACK / VENDO_TELEMETRY_DISABLED
       // would opt out and the run would prove nothing. HOME points the
       // anonymous-id file at a throwaway dir.
@@ -78,7 +78,7 @@ it("exits promptly when the telemetry endpoint accepts the connection and never 
     expect(exited.code).toBe(0);
     expect(exited.ms).toBeLessThan(EXIT_BUDGET_MS);
     // The command really ran (an exit that skipped the work would prove nothing).
-    expect(stdout).toContain("Ejectable surfaces");
+    expect(stdout).toContain("No knowledge sources configured");
   } finally {
     await rm(home, { recursive: true, force: true });
   }

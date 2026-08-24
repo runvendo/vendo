@@ -176,9 +176,9 @@ function ThreadFormingCard() {
         <span className="fl-boot-hairline" aria-hidden="true" />
       </div>
       <div className="fl-appcard-body">
-        {/* The renderer's own placeholder skin (`Skeleton`), written out: this
-            directory ships as an eject template and may only import the public
-            surface, which a loading placeholder is deliberately not on. */}
+        {/* The renderer's own placeholder skin (`Skeleton`), written out rather
+            than imported: a loading placeholder is deliberately not on the
+            public surface. */}
         <span className="fl-glass fl-glass-shimmer" data-skeleton="" aria-hidden="true"
           style={{ display: "block", height: 72 }} />
       </div>

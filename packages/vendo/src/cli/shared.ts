@@ -179,7 +179,6 @@ export type CommandName =
   | "login"
   | "extract"
   | "theme"
-  | "eject"
   | "sync"
   | "cloud-init"
   | "mcp"

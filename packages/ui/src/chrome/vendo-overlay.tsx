@@ -75,12 +75,11 @@ export interface VendoOverlayProps {
    */
   conversationKey?: string | number;
   /**
-   * The one sanctioned component-injection point (the eject seam): a thread
-   * component the panel renders in place of the built-in `VendoThread`. The
-   * overlay stays the positioning shell — portal, scrim, focus, mobile sheet —
-   * while an ejected (or fully custom) thread supplies the conversation
-   * pixels. It receives `VendoThreadProps` (all optional), so a plain
-   * zero-prop component works too.
+   * The one sanctioned component-injection point: a thread component the panel
+   * renders in place of the built-in `VendoThread`. The overlay stays the
+   * positioning shell — portal, scrim, focus, mobile sheet — while a custom
+   * thread supplies the conversation pixels. It receives `VendoThreadProps`
+   * (all optional), so a plain zero-prop component works too.
    */
   thread?: ComponentType<VendoThreadProps>;
   /**

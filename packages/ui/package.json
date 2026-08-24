@@ -52,7 +52,6 @@
   "scripts": {
     "prebuild": "pnpm run check:icons",
     "build": "tsc -p tsconfig.json",
-    "postbuild": "node scripts/build-eject-templates.mjs",
     "pretest": "pnpm run check:icons",
     "test": "vitest run",
     "pretypecheck": "pnpm run check:icons",

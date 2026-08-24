@@ -1,7 +1,7 @@
 ---
 title: "vendo CLI"
 sidebarTitle: "vendo CLI"
-description: "Every vendo command and every flag it accepts: init, login, doctor, sync, eject, knowledge, mcp, cloud, and config."
+description: "Every vendo command and every flag it accepts: init, login, doctor, sync, knowledge, mcp, cloud, and config."
 ---
 
 The `@vendoai/vendo` package owns the `vendo` bin. `vendo --version` prints the version, `vendo --help` the command list.
@@ -12,13 +12,12 @@ The `@vendoai/vendo` package owns the `vendo` bin. `vendo --version` prints the 
 | [`login`](#vendo-login) | Claim a Vendo Cloud key; it lands in `.env.local` |
 | [`doctor [dir]`](#vendo-doctor) | Verify the install from the files on disk: wiring, config, tools, deps |
 | [`sync [dir]`](#vendo-sync) | Re-extract tools and baselines, then judge what moved |
-| [`eject <surface> [dir]`](#vendo-eject) | Copy a shipped chrome surface's source into your repo |
 | [`knowledge <verb>`](#vendo-knowledge) | Sync local docs into the product knowledge base |
 | [`mcp <command>`](#vendo-mcp) | Generate MCP registry discovery and domain-verification files |
 | [`cloud <command>`](#vendo-cloud) | Use the public Vendo Cloud API |
 | [`config <command>`](#vendo-config) | Show which layer owns each `.vendo` config surface |
 
-`init`, `login`, `doctor`, `sync`, and `knowledge` reject an option they do not recognize and exit `1` before doing anything; a value flag missing its value fails the same way. `eject`, `mcp`, `cloud`, and `config` do not check their flags — an unrecognized option is ignored there, though an unrecognized sub-command still exits `1`.
+`init`, `login`, `doctor`, `sync`, and `knowledge` reject an option they do not recognize and exit `1` before doing anything; a value flag missing its value fails the same way. `mcp`, `cloud`, and `config` do not check their flags — an unrecognized option is ignored there, though an unrecognized sub-command still exits `1`.
 
 ## `vendo init` {#vendo-init-dir}
 
@@ -91,7 +90,7 @@ The pending claim persists to `~/.vendo/pending-claims/<hash>.json` (mode `0600`
 
 ## `vendo doctor`
 
-Reads the repo and reports what is wired and what is missing: wiring markers, the `.vendo/` files, store persistence, surface ownership, the model credential in your environment, the tool catalog, ejected-surface drift, installed `ai` and `zod` versions, and the MCP discovery files.
+Reads the repo and reports what is wired and what is missing: wiring markers, the `.vendo/` files, store persistence, surface ownership, the model credential in your environment, the tool catalog, installed `ai` and `zod` versions, and the MCP discovery files.
 
 Doctor never starts a server and never makes a request. Run it with your app stopped.
 
@@ -202,27 +201,6 @@ components → Vendo Cloud: 2 pushed, 0 pruned, 4 new modules (37 KB)
 breaking: host_listAccounts input-narrowed
 impact: host_listAccounts breaks 1 automation, 1 grant
 ```
-
-## `vendo eject`
-
-Copies a shipped chrome surface's presentation source out of the installed `@vendoai/ui` into your repo, shadcn-style. Pixels are copied; data and wire logic stay a package dependency.
-
-Package-internal imports are rewritten to the public `@vendoai/ui` subpaths, so protocol updates keep flowing to ejected code.
-
-| Surface | Component | Covers |
-| --- | --- | --- |
-| `thread` | `VendoThread` | The conversation thread: composer, message list, parts, scrolling |
-
-| Flag | Effect |
-| --- | --- |
-| `--list` | print the ejectable surfaces. With `--list`, the first positional is the target dir |
-| `--force` | overwrite an existing ejected directory |
-
-A `.vendo-eject.json` manifest in the ejected directory records the surface and package version, which doctor reads for its drift check.
-
-<Note>
-  `eject` is not an uninstall. Removal is a file-deletion checklist with no CLI verb: see [Uninstall](/reference/uninstall).
-</Note>
 
 ## `vendo knowledge`
 

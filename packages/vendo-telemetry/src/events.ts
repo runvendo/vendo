@@ -85,9 +85,9 @@ export const EVENT_ALLOWLIST: Record<EventName, ReadonlySet<string>> = {
   // One row per tracked CLI command run — each a standalone `vendo <command>`
   // except cloud-init, which fires from the cloud step inside `vendo init`
   // (the standalone run of the same claim ceremony is `login`).
-  // `command` is a closed enum: login | extract | theme | eject
-  // | sync | cloud-init | mcp | knowledge. (Retired values — playground,
-  // refine, try — survive only in historical rows.)
+  // `command` is a closed enum: login | extract | theme | sync | cloud-init
+  // | mcp | knowledge. (Retired values — playground, refine, try, eject —
+  // survive only in historical rows.)
   // failedStep/errorClass are short enums/class names, never message text.
   command_run: new Set([
     ...BASE_PROP_KEYS,

@@ -200,8 +200,8 @@ function recompute(): void {
 
 /**
  * One thread surface reporting its turn. Called from `useVendoThread`, so the
- * pill narrates whichever surface is actually running — panel, page, or an
- * ejected thread. `key` identifies the surface (a `Symbol` per hook instance),
+ * pill narrates whichever surface is actually running — panel, page, or a
+ * custom thread. `key` identifies the surface (a `Symbol` per hook instance),
  * so an idle surface can never clobber a running one.
  */
 export function publishThreadRun(key: symbol, snapshot: ThreadRunSnapshot): void {

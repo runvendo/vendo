@@ -69,7 +69,7 @@ describe("doctor error-code registry", () => {
         "E-TOOLS-005": "some extracted host tools are off, so the agent will never offer them (an audience grade or an explicit disable took them)",
         "E-TURN-001": "RETIRED — doctor no longer runs a model turn",
         "E-TURN-002": "RETIRED — doctor no longer runs a model turn",
-        "E-UI-001": "an ejected surface predates the installed @vendoai/ui",
+        "E-UI-001": "RETIRED — \`vendo eject\` was removed, so no surface can drift from the installed @vendoai/ui",
         "E-WIRE-001": "Express server is not wired with createVendo from @vendoai/vendo/server",
         "E-WIRE-002": "Express client is not wrapped in <VendoProvider>",
         "E-WIRE-003": "the Next.js catch-all handler app/api/vendo/[...vendo]/route.ts is missing",

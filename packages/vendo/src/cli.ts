@@ -5,7 +5,6 @@ import { runLoginCommand } from "./cli/cloud/device-login.js";
 import { runCloud } from "./cli/cloud/index.js";
 import { runConfig } from "./cli/config.js";
 import { runDoctor } from "./cli/doctor.js";
-import { runEject } from "./cli/eject.js";
 import { runInit, type InitOptions } from "./cli/init.js";
 import { SERVICE_KEY_ON_BROKER } from "./cli/init-mcp.js";
 import { runKnowledge } from "./cli/knowledge/index.js";
@@ -24,7 +23,6 @@ Commands:
 
 Advanced:
   sync [dir]      Re-extract tools and baselines, then judge what moved — evidence-backed grades, loosenings held for a human (keyless: structural only; --strict is the CI gate)
-  eject <surface> [dir]  Copy a shipped chrome surface's presentation source into your repo (--list to see surfaces)
   knowledge <verb> Sync local docs/glossary/API sources into the product knowledge base (add, list, remove, sync)
   mcp <command>   Generate MCP registry discovery and domain-verification files
   cloud <command> Use the public Vendo Cloud API
@@ -33,7 +31,7 @@ Advanced:
 Options:
   --agent                    Init only: ask first. Prints the open questions as JSON and writes nothing; re-run with the answers as flags and it writes, ending in a JSON receipt
   --yes                      Init: accept the detected auth preset, skip the cloud offer + AI polish + theme review, end with the agent tail
-  --force                    Init/server-json: overwrite owned or generated files; eject: overwrite an ejected dir
+  --force                    Init/server-json: overwrite owned or generated files
   --auth <preset>            Init only: wire this auth preset without asking (authJs, clerk, supabase, auth0, jwt, none)
   --framework <name>         Init only: override framework detection (next, express, custom) — required non-interactively when detection fails
   --cloud-key <key>          Init only: write this Vendo Cloud key to .env.local instead of the login offer
@@ -46,7 +44,6 @@ Options:
   --ai                       Init/sync: run the AI judgment pass without asking (works non-interactively)
   --engine <name>            Init/sync: pin the AI engine (claude, codex, npx) instead of first-available
   --theme <slot=value>       Init only: override a theme slot value directly (repeatable)
-  --list                     Eject only: show the ejectable surfaces
   --url <url>                Sync/server-json: mounted wire base or public MCP URL
   --strict                   Sync only: exit 2 on breaking changes, 3 when saved references are impacted
   --review                   Sync only: show the queued + new loosenings and confirm before writing
@@ -243,18 +240,6 @@ async function initCommand(args: string[]): Promise<number> {
   });
 }
 
-async function ejectCommand(args: string[]): Promise<number> {
-  const positional = args.filter((value) => !value.startsWith("--"));
-  const list = args.includes("--list");
-  // `eject --list [dir]` has no surface positional — the first one is the dir.
-  return runEject({
-    surface: list ? undefined : positional[0],
-    targetDir: (list ? positional[0] : positional[1]) ?? process.cwd(),
-    list,
-    force: args.includes("--force"),
-  });
-}
-
 async function doctorCommand(args: string[]): Promise<number> {
   const problems = optionErrors(args, DOCTOR_FLAGS, DOCTOR_VALUE_OPTIONS);
   if (problems.length > 0) {
@@ -307,7 +292,7 @@ async function syncCommand(args: string[]): Promise<number> {
     text — without this it reaches optionErrors and comes back as
     `unknown option: --help`, exit 1. The group commands (cloud/config/
     knowledge/mcp) print their own help, and an unknown command stays loud. */
-const HELP_COMMANDS = new Set(["login", "init", "eject", "doctor", "sync"]);
+const HELP_COMMANDS = new Set(["login", "init", "doctor", "sync"]);
 
 export async function main(argv: string[]): Promise<number> {
   const [command, ...args] = argv;
@@ -329,7 +314,6 @@ export async function main(argv: string[]): Promise<number> {
   if (command === "knowledge") return runKnowledge(args);
   if (command === "mcp") return runMcp(args);
   if (command === "init") return initCommand(args);
-  if (command === "eject") return ejectCommand(args);
   if (command === "doctor") return doctorCommand(args);
   if (command === "refine") {
     // Retired in #568 (format v3): `vendo sync` now owns AI enrichment of
