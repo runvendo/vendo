@@ -245,16 +245,20 @@ const capabilityAndCatalog = (composition: VendoComposition): Pick<VendoComposit
  * whose fork then refuses to build — the producer and the consumer each holding
  * their own catalog is exactly how that shipped green.
  *
- * Weakest because it is DERIVED, not declared: a name is all a hole carries, so
- * anything the host wrote about the same component — on disk or in
- * `createVendo({ catalog })` — describes it better and keeps its props schema.
+ * Weakest because it is DERIVED, not declared: a name is all a hole carries.
+ * However, since PR 1562, holes are namespaced by slot (e.g., `slotName:AreaChart`),
+ * meaning a host-declared entry (`AreaChart`) and a hole (`slotName:AreaChart`)
+ * coexist in the catalog rather than the host entry overwriting the hole. The
+ * client renderer strips the prefix and preserves host precedence during lookup.
  * Normalized through the shared normalizer so a hole faces the same /host
  * projection grammar every other entry does.
  */
 const remixHoles = (wiring: CreateVendoConfig["remixWiring"]): NormalizedCatalog =>
   normalizeCatalogConfig(
     Object.keys(Object.fromEntries(
-      Object.values(wiring ?? {}).flatMap(({ holes }) => Object.entries(holes ?? {})),
+      Object.entries(wiring ?? {}).flatMap(([slot, { holes }]) =>
+        Object.keys(holes ?? {}).map((name) => [`${slot}:${name}`, true] as const)
+      ),
     )).map((name) => ({ name, description: "A host component a ported remix screen renders." })),
     "createVendo({ remixWiring })",
   );
