@@ -304,9 +304,15 @@ export const createBuildDoor = (
       };
       if (!approved) return await refuse(BUILD_DECLINED);
       if (builder === undefined || !builder.available()) return await refuse(NO_MACHINE);
+      // `ui: "bundle"` is stamped HERE, not at the seal: from this line until the
+      // seal lands is minutes, and a row that declared its kind only at the end
+      // carried neither bundle signal for all of it — so every
+      // `refuseBundleArtifact` call site let a share through, and the grant
+      // survived the seal. The row declares what it is becoming from the first
+      // moment a box can be spent.
       const doc = await updateAppDocument(appId, (previous) => {
         const { proposal: _proposal, ...rest } = previous;
-        return { ...rest, building: new Date().toISOString() };
+        return { ...rest, ui: "bundle", building: new Date().toISOString() };
       });
       /**
        * "Progress = chat status lines only" (FINAL SPEC v1), and this is the

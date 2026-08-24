@@ -8,10 +8,10 @@
  * stay shareable exactly as before.
  */
 import { engineOverAdapter } from "@vendoai/core";
-import type { RunContext, ToolRegistry } from "@vendoai/core";
+import type { FilesAdapter, RunContext, ToolRegistry } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
-import type { AppDocument } from "../src/contract/index.js";
-import { createApps, type AppsRuntime } from "../src/server/index.js";
+import type { AppBuilder, AppDocument } from "../src/contract/index.js";
+import { createApps, type AppsConfig, type AppsRuntime } from "../src/server/index.js";
 import { guardFixture } from "../src/server/testing/guard-fixture.js";
 import { memoryStore } from "../src/server/testing/memory-store.js";
 import { seedAppRow } from "../src/server/testing/seed-app-row.js";
@@ -63,18 +63,22 @@ const runtimeWith = async (...docs: AppDocument[]): Promise<AppsRuntime> => {
  * a person-to-person grant on a still-personal app, so that is the only world
  * in which the allowed half can land.
  */
-const grantWorld = async (document: AppDocument): Promise<{ apps: AppsRuntime; admin: RunContext }> => {
+const grantWorld = async (document: AppDocument, extra: Partial<AppsConfig> = {}) => {
   const store = memoryStore();
+  const guard = guardFixture();
   await seedAppRow(engineOverAdapter(store), document, "acme");
   return {
+    store,
+    guard,
     apps: createApps({
       store,
-      guard: guardFixture(),
+      guard,
       tools,
       catalog: [],
       appAccess: storeAccessFixture(store),
+      ...extra,
     }),
-    admin: { ...ctx, memberships: [{ org: "acme", admin: true }] },
+    admin: { ...ctx, memberships: [{ org: "acme", admin: true }] } satisfies RunContext,
   };
 };
 
@@ -136,6 +140,82 @@ describe("a built app is not shareable", () => {
 
   it("still grants a tree app to another principal", async () => {
     const { apps, admin } = await grantWorld(tree);
+
+    await expect(apps.access.grant("app_tree", "user:bob", "viewer", admin))
+      .resolves.toMatchObject([{ principal: "user:bob", level: "viewer" }]);
+  });
+});
+
+/**
+ * The window between the person's yes and the seal — minutes, and observed real
+ * builds ran 229–450s. A row that declared itself a bundle only AT the seal
+ * carried neither signal for all of it, so every refusal above let a grant
+ * through, and the grant survived the seal.
+ *
+ * Real all the way down: the real propose door, the real guard decision, the
+ * real `onApprovalDecision` resume, the real row, and the real grant seam
+ * `PUT /apps/:id/grants/:principal` calls. Only the box stands in — and it never
+ * comes back, which IS the window.
+ */
+describe("a build that has started is already a built app", () => {
+  const files: FilesAdapter = {
+    async put() {},
+    async get() { return undefined; },
+    async delete() {},
+  };
+  /** The box, still working. Nothing ever resolves this. */
+  const stillInTheBox: AppBuilder = { available: () => true, build: () => new Promise(() => {}) };
+
+  /** One consented build, driven to whatever the box does next. */
+  const consented = async (appId: string, build: AppBuilder) => {
+    const world = await grantWorld({ ...tree, id: "app_seed" }, { files, build });
+    const proposed = await world.apps.build.propose(
+      { appId, name: "Sequencer", prompt: "a step sequencer", why: "needs a real audio library" },
+      world.admin,
+    );
+    if (!("approvalId" in proposed)) throw new Error(`the build was declined: ${proposed.declined}`);
+    world.guard.decide(proposed.approvalId, true);
+    await new Promise((resolve) => setImmediate(resolve));
+    const row = await world.store.records("vendo_apps").get(appId);
+    return { ...world, doc: (row?.data as { doc: AppDocument } | undefined)?.doc };
+  };
+
+  it("refuses the ✦ share toggle while the consented build is still in the box", async () => {
+    const { apps, admin, doc } = await consented("app_seed", stillInTheBox);
+
+    // The window, observed on the row: a box is being spent right now, and
+    // nothing is sealed yet.
+    expect(doc?.building).toEqual(expect.any(String));
+    expect(doc?.bundle).toBeUndefined();
+
+    await expect(apps.access.grant("app_seed", "user:bob", "viewer", admin)).rejects.toMatchObject({
+      code: "blocked",
+      message: expect.stringContaining("a built app cannot be shared"),
+    });
+    // Refused BEFORE the write: no grant row reached the seam, so there is
+    // nothing for the seal to hand over minutes later.
+    expect(await apps.access.list("app_seed", admin)).toEqual([]);
+  });
+
+  it("strands no row claiming to be a bundle when the first build fails", async () => {
+    const { doc } = await consented("app_first_build", {
+      available: () => true,
+      build: async () => ({ kind: "failed", why: "the box died" }),
+    });
+
+    // `markUnbuilt` REPLACES the row, so the kind stamped on the way in goes
+    // with it: a failed first build leaves the honest failure card, never an app
+    // that says it is a bundle and has none.
+    expect(doc?.ui).toBeUndefined();
+    expect(doc?.bundle).toBeUndefined();
+    expect(doc?.buildFailed).toMatchObject({ reason: "the box died" });
+  });
+
+  it("still grants a tree app whose SCREEN build is mid-flight", async () => {
+    // The row a screen save writes while its assembler is still running
+    // (write-surface.ts:228 stamps `building` onto the `ui: "tree"` it writes at
+    // :231) — normal screens, and refusing on `building` alone would take them.
+    const { apps, admin } = await grantWorld({ ...tree, building: "2026-08-24T00:00:00.000Z" });
 
     await expect(apps.access.grant("app_tree", "user:bob", "viewer", admin))
       .resolves.toMatchObject([{ principal: "user:bob", level: "viewer" }]);
