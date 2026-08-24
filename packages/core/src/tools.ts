@@ -127,6 +127,7 @@ export const VENDO_TOOL_TITLES: Readonly<Record<string, string>> = {
   vendo_user_files_list: "See the files you shared",
   vendo_user_files_read: "Read a file you shared",
   vendo_user_files_put: "Save a file to your files",
+  bash: "Work on your files",
   vendo_text_me: "Text me",
   // The verbs and `ask_user` authored these titles inline first; they moved here
   // verbatim so the CLIENT can say them too — a live browser proof caught a verb
@@ -213,6 +214,20 @@ export type GradedRiskLabel = "read" | "write" | "destructive";
  *  The name lives in core because two sides read it and a security-relevant
  *  name with two definitions drifts silently: the registry that implements it,
  *  and the loop that ends a turn on it. */
+/** The agent's hands over the user's own files: one shell, in this process,
+ *  over the workspace (spec 2026-08-23 §1). Named here for `ASK_USER_TOOL`'s
+ *  reason — the registry that implements it lives in `@vendoai/harnesses` and the
+ *  composition that mounts it lives in `@vendoai/vendo`, and a tool name with two
+ *  spellings is a tool the guard grades under one and the loadout exempts under
+ *  the other.
+ *
+ *  Deliberately NOT `vendo_bash`: this is the same `bash` every model already
+ *  knows from every other agent harness, and the name is what teaches it. The
+ *  cost of leaving the `vendo_` prefix behind is that it is not covered by the
+ *  loadout's always-active exemption for our own tools, so composition names it
+ *  explicitly (`PROMPT_TAUGHT_TOOLS`). */
+export const VENDO_BASH_TOOL = "bash";
+
 export const ASK_USER_TOOL = "ask_user";
 
 /** The connector dispatcher — the one tool whose real action is an ARGUMENT
