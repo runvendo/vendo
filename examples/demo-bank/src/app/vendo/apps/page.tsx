@@ -2,92 +2,21 @@
 
 import { useState, type FormEvent } from "react";
 import type { AppId } from "@vendoai/core";
-import { createVendoClient, hostComponentMap, useApp, useApps, type ShipDiff } from "@vendoai/ui";
+import { createVendoClient, hostComponentMap, useApp, useApps } from "@vendoai/ui";
 import { AppFrame } from "@vendoai/ui/tree";
 import { VendoRoot } from "@/components/vendo/VendoRoot";
 import { withBasePath } from "@/lib/base-path";
 import { mapleRegistry } from "@/vendo/registry";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 
 // The same wire base the provider uses (08-ui §1); ship-diff and action calls
 // ride the identical client surface the hooks use internally.
 const client = createVendoClient({ baseUrl: withBasePath("/api/vendo") });
 
 /**
- * Maple's app workspace: apps open OUTSIDE the conversation, on the host page
- * (06-apps §9) — the venue where an in-client approval can mount a reviewed
- * version natively and where a version change drops it back to the sandbox.
- * The ship review panel surfaces `GET /apps/:id/ship-diff`, the exact delta an
- * approval would pin (approvals themselves are minted by the Cloud review
- * console; locally via the dev route documented at
- * https://docs.vendo.run/concepts/in-client-venue).
+ * Maple's app workspace: apps open OUTSIDE the conversation, on the host page,
+ * rendered in the sandboxed brand-native surface.
  */
-
-function ShipReview({ appId }: { appId: AppId }) {
-  const [diff, setDiff] = useState<ShipDiff>();
-  const [error, setError] = useState<string>();
-  const load = async () => {
-    setError(undefined);
-    try {
-      setDiff(await client.apps.shipDiff(appId));
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
-    }
-  };
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Ship review</CardTitle>
-        <button
-          type="button"
-          onClick={() => void load()}
-          className="rounded-md border border-border bg-surface px-2.5 py-1 text-[13px] font-medium text-ink hover:bg-hover"
-        >
-          Load ship-diff
-        </button>
-      </CardHeader>
-      <CardContent>
-        {error ? <p role="alert" className="text-sm text-neg">{error}</p> : null}
-        {diff ? (
-          <div className="space-y-3" data-ship-diff>
-            <p className="text-[13px] text-muted">
-              Version <code className="text-ink">{diff.versionHash.slice(0, 22)}…</code> — an
-              in-client approval pins exactly this hash.
-            </p>
-            {diff.pins.map((pin) => (
-              <div key={pin.slot}>
-                <p className="text-[13px] font-medium text-ink">
-                  Forked host slot <code>{pin.slot}</code> → <code>{pin.component}</code>
-                  {pin.drifted ? " (DRIFTED — review fails closed)" : null}
-                </p>
-                <pre className="mt-1 max-h-56 overflow-auto rounded-lg border border-border bg-hover p-3 text-[11px] leading-relaxed">
-                  {pin.diff}
-                </pre>
-              </div>
-            ))}
-            {diff.generated.map((component) => (
-              <div key={component.component}>
-                <p className="text-[13px] font-medium text-ink">
-                  Generated component <code>{component.component}</code>
-                </p>
-                <pre className="mt-1 max-h-56 overflow-auto rounded-lg border border-border bg-hover p-3 text-[11px] leading-relaxed">
-                  {component.diff}
-                </pre>
-              </div>
-            ))}
-            {diff.pins.length === 0 && diff.generated.length === 0 ? (
-              <p className="text-sm text-muted">No forked or generated components to review.</p>
-            ) : null}
-          </div>
-        ) : (
-          <p className="text-sm text-muted">
-            The reviewable delta between captured host source and what this app ships.
-          </p>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
 
 function OpenApp({ appId }: { appId: AppId }) {
   const { surface, edit, refresh } = useApp(appId);
@@ -149,7 +78,6 @@ function OpenApp({ appId }: { appId: AppId }) {
         </button>
       </form>
       {error ? <p role="alert" className="text-sm text-neg">{error}</p> : null}
-      <ShipReview appId={appId} />
     </div>
   );
 }

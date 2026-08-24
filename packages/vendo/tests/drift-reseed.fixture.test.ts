@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { vendoSync } from "@vendoai/actions/sync";
-import { appVersionHash, seedBaselineSchema } from "@vendoai/apps";
+import { seedBaselineSchema } from "@vendoai/apps";
 import {
   seedComponentName,
   type AppDocument,
@@ -172,7 +172,7 @@ const request = (method: string, path: string, body?: unknown): Request =>
   });
 
 describe.sequential("06-apps §8 — the drift→re-seed journey through the real umbrella", () => {
-  it("sync → seed → edit → host change + resync → loud drift → re-seed REPLACES → approval drops", async () => {
+  it("sync → seed → edit → host change + resync → loud drift → re-seed REPLACES", async () => {
     // A remixable host component, captured by the REAL sync.
     const root = await mkdtemp(join(tmpdir(), "vendo-drift-reseed-"));
     cleanups.push(async () => rm(root, { recursive: true, force: true }));
@@ -227,13 +227,6 @@ export default function Page() {
     expect(remixed.source?.["app.tsx"]?.text).toContain("— remixed");
     expect(remixed.components?.[componentName]).toBeUndefined();
 
-    // The pre-drift version gets an in-client approval (dev injection seam).
-    const approval = await (await vendo.handler(request("POST", "/dev/inclient-approval", {
-      appId,
-      approvedBy: "maple-security-review",
-    }))).json();
-    expect(approval.versionHash).toBe(appVersionHash(remixed));
-
     // The HOST changes the component and resyncs: the sync report says drifted.
     await writeFile(componentFile, hostSource.replace(
       "<article><span>Net worth</span>",
@@ -253,9 +246,7 @@ export default function Page() {
       development: true,
     });
 
-    // 1. open() rides the drift report on the payload (the renderer's notice)
-    //    while the untouched version keeps its hash-pinned approval. ONE seed,
-    //    ONE verdict — an object, never a row set.
+    // 1. open() rides the drift report on the payload (the renderer's notice).
     const drifted = await (await redeployed.handler(request("GET", `/apps/${appId}/open`))).json();
     expect(drifted.kind).toBe("tree");
     expect(drifted.payload.seedDrift).toEqual({
@@ -265,13 +256,8 @@ export default function Page() {
       current: newBaseline.hash,
       reason: "baseline-changed",
     });
-    expect(drifted.payload.inClient).toMatchObject({ granted: true });
 
-    // 2. The ship-diff fail-closes review with its drifted flag (M4).
-    const shipDiff = await (await redeployed.handler(request("GET", `/apps/${appId}/ship-diff`))).json();
-    expect(shipDiff.pins).toEqual([expect.objectContaining({ slot, drifted: true })]);
-
-    // 3. The re-seed REPLAYS the recorded instruction against the host's new
+    // 2. The re-seed REPLAYS the recorded instruction against the host's new
     //    baseline. That is the whole trade: it rebuilds, so whatever the person
     //    changed since the first edit is gone.
     const reseedResponse = await redeployed.handler(request("POST", `/apps/${appId}/reseed`));
@@ -285,18 +271,11 @@ export default function Page() {
     // A NEW screen: the instruction really ran again.
     expect(reseeded.source?.["app.tsx"]?.text).toContain("Total net worth");
 
-    // 4. Drift is gone — and the re-seed minted a NEW version, so the old
-    //    in-client approval no longer grants: back to the sandbox, loudly.
+    // 3. Drift is gone after the re-seed replays onto the new baseline.
     const afterReseed = await (await redeployed.handler(request("GET", `/apps/${appId}/open`))).json();
     expect(afterReseed.payload.seedDrift).toBeUndefined();
-    expect(afterReseed.payload.inClient).toEqual({
-      granted: false,
-      versionHash: appVersionHash(reseeded),
-      reason: "version-changed",
-    });
-    expect(afterReseed.payload.inClient.versionHash).not.toBe(approval.versionHash);
 
-    // 5. The re-seed sits on the public history like any edit — the version that
+    // 4. The re-seed sits on the public history like any edit — the version that
     //    moved the provenance, and the replay of the person's own words.
     const history = await (await redeployed.handler(request("GET", `/apps/${appId}/history`))).json();
     const intents = (history as Array<{ intent: string }>).map(({ intent }) => intent);

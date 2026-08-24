@@ -27,7 +27,6 @@ import { createContextResolver } from "./wire/context.js";
 import { doctorBaseUrlRoutes, doctorRoutes } from "./wire/doctor.js";
 import {
   activityRoutes,
-  devRoutes,
   orgsRoutes,
   statusRoutes,
   syncImpactRoutes,
@@ -264,7 +263,6 @@ function jsonMutationRequired(request: Request, path: string): boolean {
     handlers keep the old chain's method/operation fall-out), and no match at
     all answers not-found. */
 const wireRoutesFor = (deps: WireDeps): readonly RouteEntry[] => [
-  ...devRoutes,
   // Mounted everywhere on purpose — it reports a PRODUCTION misconfiguration.
   ...doctorBaseUrlRoutes,
   // The doctor probes take no principal, and one of them (POST /doctor/act-as)

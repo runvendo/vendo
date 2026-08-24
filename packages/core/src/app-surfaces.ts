@@ -12,7 +12,7 @@
  * Only the shapes BOTH sides speak move here. An apps-internal shape (the
  * placement STORAGE row, say) stays in apps.
  */
-import type { AppId, IsoDateTime } from "./ids.js";
+import type { AppId } from "./ids.js";
 
 /**
  * One slot's answer — what is in it, and where that app's build stands. `status`
@@ -27,13 +27,3 @@ export interface PlacementEntry {
   title: string;
   status: "ready" | "building" | "failed";
 }
-
-/**
- * Remix final shape (2026-08-02) — where the CURRENT version of a review-kind
- * app stands with the host reviewer, riding the in-client venue state so the
- * user's panel can say "sent for review" or surface the rejection note.
- * Server-authoritative, like the rest of the venue field.
- */
-export type ReviewStanding =
-  | { status: "pending"; versionHash: string }
-  | { status: "rejected"; versionHash: string; note: string; by: string; at: IsoDateTime };

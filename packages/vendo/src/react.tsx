@@ -97,9 +97,7 @@ export {
   themeCssVariables,
   // wire-types.ts
   type OpenSurface,
-  type InClientVenue,
   type SeedDrift,
-  type ShipDiff,
   type EditResult,
   type VersionEntry,
   type ConnectionAccount,

@@ -145,11 +145,10 @@ export const vendo = createVendo({
   // `vendo()` serves the chat route. `MAPLE_HARNESS` names a specialist
   // instead; fixtures/context-e2e is the only caller (see ./proof-harness.ts).
   ...namedHarness(),
-  // The remix review seam (/apps/review-queue, /apps/:id/reject-review, and
-  // the /dev/inclient-approval door) rides the development composition only.
-  // `next start` runs production NODE_ENV, so a local session that drives a
-  // real review (the W1e E2E) opts in explicitly; unset, the environment
-  // default stands and no deployed surface composes the seam.
+  // The development-only surfaces (POST /sync/impact, the /doctor probes) ride
+  // the development composition only. `next start` runs production NODE_ENV, so
+  // a local session that needs them opts in explicitly; unset, the environment
+  // default stands and no deployed surface composes them.
   ...(process.env.MAPLE_DEV_SEAMS === "1" ? { development: true } : {}),
   // The shared registry (01 §14): the server reads only the data fields;
   // <VendoRoot> takes the same object and reads only component references.
@@ -171,13 +170,6 @@ export const vendo = createVendo({
   // above and nothing else: configure one and Maple can build boxes, leave it
   // out and it cannot. There is no flag here to flip.
   apps: {
-    // Remix review (round-2 hardening 2026-08-02): Mia is Maple's host
-    // reviewer — this assertion is what lets her read the full review queue,
-    // reject, and approve review-kind remixes; a user can never approve
-    // their own, so the two-user demo demonstrates the real boundary.
-    review: {
-      reviewer: (ctx) => resolveMapleSubject(ctx.principal.subject)?.email === "mia@maple.com",
-    },
     // There is ONE generation pipeline now (the 2026-07-28 rebuild), so the
     // speed-core knobs this demo used to amend — regionParallel off, endPass on
     // — no longer exist: the lanes they chose between are deleted. The island

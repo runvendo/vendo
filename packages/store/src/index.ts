@@ -33,7 +33,6 @@ export {
 // The one-shot migration for appData that predates the owner stamp: without it
 // every such row goes invisible the moment a door flips onto the family.
 export { backfillAppDataStamps, type AppDataBackfillReport } from "./backfill-app-data.js";
-export { backfillAppRefKey, type AppRefKeyBackfillReport } from "./backfill-app-data.js";
 // The reserved-collection map (02-store §2): exported so remote StoreAdapters
 // (`hostedStore` below) can mirror this engine's per-collection
 // capability shape — claim on non-routed collections, atomic on generic

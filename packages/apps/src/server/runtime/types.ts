@@ -54,11 +54,8 @@ import type { CloudAppsClient, PublishRecord, ShareSnapshot } from "../persisten
 import type { GenerationDependencies } from "../generation/engine.js";
 import type { BuildMachineEnv, LifecycleClock } from "../escalation/machine-lifecycle.js";
 import type { AppMachineStatus } from "../escalation/manifest-triggers.js";
-import type { InClientApproval } from "../remix/inclient.js";
 import type { SeedBaseline, SeedDrift } from "../../contract/index.js";
-import type { RemixRejection, ReviewQueueEntry } from "../remix/review.js";
 import type { SandboxAdapter } from "../escalation/sandbox.js";
-import type { ShipDiff } from "../remix/ship-diff.js";
 import type { SlotRegistry } from "../persistence/slots.js";
 
 /**
@@ -237,15 +234,6 @@ export interface AppsConfig {
    */
   briefing?: (ctx: RunContext) => Promise<BriefingPack>;
   seedBaselines?: SeedBaseline[];
-  /** Remix review (round-2 hardening 2026-08-02) — the host's reviewer
-   *  assertion for the review-kind lifecycle. Reviewing crosses owner
-   *  boundaries, so it is never inferred from a principal alone: `reviewer`
-   *  answers whether THIS caller may read the full queue, reject, and approve
-   *  review-kind remixes. Unset, the queue serves only the caller's own
-   *  submissions and reject/approve-as-reviewer refuse, naming this hook. */
-  review?: {
-    reviewer?(ctx: RunContext): boolean | Promise<boolean>;
-  };
   /** ADAPTER RULE — the share/publish seam (see cloud.ts): the umbrella wires
    * the Cloud console client when VENDO_API_KEY fills the unset slot; this
    * block never reads the environment. Unset → share/publish fail with
@@ -812,43 +800,8 @@ export interface AppsRuntime {
     redact(appId: AppId, value: Json): Promise<Json>;
   };
   /**
-   * 06-apps §9 — additive trust-axis surface (like `proxy`/`agentToolRisk`,
-   * not part of the frozen §1 method table). OSS carries the enforcement
-   * machinery: the ship-diff a reviewer reads, the stored approval records,
-   * and the hash-pin verdict `open()` rides to the client. Cloud's review
-   * console MINTS approvals in production; `approve` is the documented local
-   * injection seam (demos, dev, host-built review flows).
-   */
-  inClient: {
-    shipDiff(appId: AppId, ctx: RunContext): Promise<ShipDiff>;
-    approve(input: { appId: AppId; approvedBy: string }, ctx: RunContext): Promise<InClientApproval>;
-  };
-  /**
-   * Remix final shape (2026-08-02) — additive review-kind lifecycle surface
-   * (same additive precedent as `inClient`/`seed`). A review-kind remix (an
-   * app forked from a baseline captured with `review: true`) is invisible to
-   * its own user until a host reviewer approves; the approved version then
-   * mounts natively in place, riding the §9 hash-pin machinery. These two
-   * methods are the reviewer's side and cross owner boundaries BY DESIGN
-   * (the reviewer is not the remixing user), so both are gated on the host's
-   * reviewer assertion ({@link AppsConfig.review} `reviewer`): this is the
-   * production path — a self-hoster mounts their own admin-authenticated
-   * route over it (Cloud's console is the hosted equivalent). Without the
-   * hook, `queue` serves only the caller's own submissions and `reject`
-   * refuses, naming the hook.
-   */
-  review: {
-    /** Every review-kind version awaiting review, oldest submission first —
-     *  the full queue for an asserted reviewer, the caller's own items
-     *  otherwise. */
-    queue(ctx: RunContext): Promise<ReviewQueueEntry[]>;
-    /** Reject the app's CURRENT version with a note the user's panel surfaces.
-     *  The work is not deleted; a new version supersedes the rejection. */
-    reject(input: { appId: AppId; note: string }, ctx: RunContext): Promise<RemixRejection>;
-  };
-  /**
-   * 06-apps §8 — additive remix surface (same additive precedent as `inClient`,
-   * not part of the frozen §1 method table).
+   * 06-apps §8 — additive remix surface (not part of the frozen §1 method
+   * table).
    *
    * `from` is the ✦ gesture: fork and first edit as ONE operation, producing an
    * ordinary screen app that carries a `seed`. `drift` reports that the host

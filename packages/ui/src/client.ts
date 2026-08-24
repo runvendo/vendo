@@ -38,7 +38,6 @@ import type {
   RunPlan,
   RunRecord,
   RunStatus,
-  ShipDiff,
   SlotEntry,
   Thread,
   ThreadSummary,
@@ -138,8 +137,6 @@ export interface VendoClient {
     }>;
     share(id: AppId, principal: string, level: AccessLevel): Promise<{ grants: AppGrantRecord[] }>;
     unshare(id: AppId, principal: string): Promise<{ grants: AppGrantRecord[] }>;
-    /** GET /apps/:id/ship-diff — the reviewable diff vs the captured host baselines (06 §8–§9). */
-    shipDiff(id: AppId): Promise<ShipDiff>;
     /** POST /apps/:id/reseed — rebuild the remix against the host's current
      *  version of the component (06 §8) by replaying EVERY wish the seed
      *  recorded, oldest first. A wish the new version cannot take is kept and

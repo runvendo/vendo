@@ -56,13 +56,10 @@ export type {
 export type {
   AppsRuntime,
   EditResult,
-  InClientApproval,
-  InClientVerdict,
   OpenSurface,
   SeedDrift,
   SandboxAdapter,
   SandboxMachine,
-  ShipDiff,
   VersionEntry,
 } from "@vendoai/apps";
 export type {

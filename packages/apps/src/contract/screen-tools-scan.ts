@@ -4,7 +4,44 @@
  * walk may leave uncaptured because the render venue answers it itself
  * (`@vendoai/actions` sync/capture.ts).
  */
-import { IN_CLIENT_ALLOWED_MODULES, IN_CLIENT_BUNDLED_PACKAGES } from "./inclient-modules.js";
+
+/** The module specifiers the sandboxed render venue resolves for a ported
+ *  screen without a capture: React and its runtimes. */
+export const IN_CLIENT_ALLOWED_MODULES = [
+  "react",
+  "react-dom",
+  "react-dom/client",
+  "react/jsx-runtime",
+  "react/jsx-dev-runtime",
+] as const;
+
+/**
+ * Third-party packages the render venue resolves for a captured host component,
+ * so a ported screen that imports them renders at all:
+ *   - `clsx` + `tailwind-merge`: the shadcn `lib/cn.ts` default, which almost
+ *     every registered component imports transitively.
+ *   - `zod`: hosts declare `props:` schemas next to the component, so the
+ *     component's own module imports zod (Vendo's documented registry pattern).
+ *
+ * Deliberately hard to grow: a charting or data library is large, a
+ * version-compatibility hazard, and a host importing one still gets an honest
+ * "cannot render" instead of a bundle nobody asked for. The venue answers with
+ * OUR pinned copy, so a host on a different major can see behaviour that differs.
+ */
+export const IN_CLIENT_BUNDLED_PACKAGES = [
+  "clsx",
+  "tailwind-merge",
+  "zod",
+] as const;
+
+/** `<name>@<exact version>` plus an optional subpath — never a range, never a
+ *  tag. `vendo sync` writes the version the host actually has installed; a
+ *  version it cannot resolve exactly is an honest skip, not a guess. */
+// The per-segment lookahead is load-bearing: `[\w.-]+` alone admits `..`, so a
+// pin could walk out of the package (`recharts@3.9.2/../../etc/passwd`).
+const PINNED_PACKAGE = /^(?:@[a-z0-9][\w.-]*\/)?[a-z0-9][\w.-]*@\d[\w.+-]*(?:\/(?!\.\.?(?:\/|$))[\w.-]+)*$/u;
+
+export const isPinnedPackage = (pin: string): boolean => PINNED_PACKAGE.test(pin);
 
 /** Import specifiers the render venue resolves without a capture: react, the
  *  kit-ish names a model reaches for out of habit, and the packages the mount

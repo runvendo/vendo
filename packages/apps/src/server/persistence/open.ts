@@ -19,7 +19,6 @@ import {
 // The screen engine, by its own path: the contract door does not carry it yet.
 import { SCREEN_FILE } from "../../contract/genui/component/index.js";
 import { formingTreeOf } from "./forming.js";
-import type { InClientVenueState } from "../remix/inclient.js";
 import { bundleOf, seedDrift, type SeedBaseline } from "../../contract/index.js";
 import type { OpenSurface } from "../runtime/runtime.js";
 
@@ -67,7 +66,6 @@ export interface ServedSurface {
 /** The seams an open reads a venue verdict through, passed as one so the two
  *  artifact paths can share them without a five-argument call. */
 interface VenueSeams {
-  inClient: ((app: AppDocument) => Promise<InClientVenueState | undefined>) | undefined;
   venueState: ((app: AppDocument, ctx: RunContext) => Promise<Record<string, unknown> | undefined>) | undefined;
   seedBaselines: readonly SeedBaseline[];
 }
@@ -77,8 +75,7 @@ interface VenueSeams {
  *
  * Its own function because it carries the SAME venue states the tree path does —
  * they are facts about the app and its viewer, not about which artifact the app
- * happens to be written in, and a screen that skipped them opened a review-kind
- * remix with no verdict on it at all.
+ * happens to be written in.
  */
 const paintedScreenSurface = async (
   app: AppDocument,
@@ -94,11 +91,8 @@ const paintedScreenSurface = async (
     root: painted.root,
     nodes: Object.values(painted.nodes) as unknown as Json,
   };
-  // Written HERE, after the render, so nothing a screen produced can forge one.
-  const inClient = await seams.inClient?.(app);
-  if (inClient !== undefined) payload.inClient = inClient as unknown as Json;
   for (const [key, value] of Object.entries(await additionalVenueState(seams.venueState, app, ctx))) {
-    if (key === "inClient" || key === "data" || key === "seedDrift" || key === "seedUnapplied"
+    if (key === "data" || key === "seedDrift" || key === "seedUnapplied"
       || key === "dataUnavailable") continue;
     payload[key] = value as Json;
   }
@@ -111,14 +105,6 @@ const paintedScreenSurface = async (
   // does not ride it reaches nobody, and a change the person asked for goes
   // missing in silence.
   if (app.seed?.unapplied !== undefined) payload.seedUnapplied = [...app.seed.unapplied];
-  // The review-kind gate, for the same reason and with the same teeth as the
-  // tree path's: an unapproved review-kind version ships NO executable source.
-  // A screen's `interactive` half IS that source — the compiled module plus the
-  // query answers it rendered on — so it is what must not leave here. The client
-  // keeps the ORIGINAL host component and surfaces the standing `inClient`.
-  if (inClient?.granted === false && inClient.reason === "pending-review") {
-    return { kind: "tree", payload: payload as unknown as UIPayload };
-  }
   payload.interactive = painted.interactive as unknown as Json;
   attachSeedFurnishings(payload as unknown as Tree, app);
   return app.components === undefined
@@ -150,7 +136,6 @@ const additionalVenueState = async (
  *  `createAppOpener` below is what callers get; this is its servable half. */
 const serveOpenApp = (
   seedBaselines: readonly SeedBaseline[] = [],
-  inClientVenue: ((app: AppDocument) => Promise<InClientVenueState | undefined>) | undefined,
   served: ServedSurface,
   /**
    * The COMPONENT screen half of an open: the app's own `app.tsx`, RUN.
@@ -164,7 +149,7 @@ const serveOpenApp = (
   /**
    * Build contract §9.9 — the ADDITIVE venue-state slot, ctx-aware because the
    * states that ride it are per-caller (lane H's adoption card is served only
-   * to `can(editor)`). Its keys spread onto the payload beside `inClient`; the
+   * to `can(editor)`). Its keys spread onto the payload; the
    * server-authoritative strip has already run, so nothing here can be forged
    * by a document. Composable by construction: a second additive state is
    * another key, not another parameter.
@@ -227,7 +212,6 @@ const serveOpenApp = (
     // The venue states this payload carries are the tree path's, on identical
     // terms (`paintedScreenSurface`).
     return await paintedScreenSurface(app, ctx, painted, {
-      inClient: inClientVenue,
       venueState,
       seedBaselines,
     });

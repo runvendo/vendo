@@ -271,7 +271,6 @@ describe("the shipped client against the shipped door", () => {
       ["apps.fork", () => client.apps.fork(app)],
       ["apps.seedFrom", () => client.apps.seedFrom({ component: "hero", slot: "hero", instruction: "make it blue" })],
       ["apps.seedFrom(no slot)", () => client.apps.seedFrom({ component: "hero", instruction: "make it blue" })],
-      ["apps.shipDiff", () => client.apps.shipDiff(app)],
       ["apps.reseed", () => client.apps.reseed(app)],
       ["apps.pingMachine", () => client.apps.pingMachine(app)],
       ["apps.place", () => client.apps.place(app, "hero")],

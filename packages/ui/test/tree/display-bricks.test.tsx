@@ -113,21 +113,6 @@ describe("display bricks", () => {
     expect(screen.getByText("Ported").closest("section")!.getAttribute("class")).toBe("maple-card");
   });
 
-  it("drops the class a GENERATED node carries", async () => {
-    // A generated node mounts its own approved source instead of a brick, so the
-    // class it carries reaches no element at all — the ported marker is the only
-    // thing that ever paints one.
-    const granted = {
-      ...tree([{ id: "root", component: "Editor", source: "generated", props: { className: "maple-card" } }]),
-      components: { Editor: "export default function Editor() { return <p>editor</p>; }" },
-      inClient: { granted: true as const, versionHash: "sha256:approved", approvedBy: "host-console", at: "2026-07-15T09:00:00.000Z" },
-    };
-    render(<TreeView tree={granted} components={{}} onAction={ok} />);
-
-    expect(await screen.findByText("editor")).toBeTruthy();
-    expect(document.querySelector(".maple-card")).toBeNull();
-  });
-
   it("keeps an allowlisted property whatever its value — no value is inspected", () => {
     // A themed fill rides `backgroundColor` (a color cannot fetch); the value is
     // passed straight through, never parsed.

@@ -36,13 +36,12 @@ import {
 } from "react";
 import { useVendoThemeOrDefault } from "../context.js";
 import { themeCssVariables } from "../theme.js";
-import type { InClientVenue, SeedDrift } from "../wire-types.js";
+import type { SeedDrift } from "../wire-types.js";
 import { resolvePointer } from "./bindings.js";
 import { DISPLAY_BRICKS, SURFACE_CONTAINMENT, safeProps } from "./display-bricks.js";
 import { NodeErrorBoundary } from "./error-boundary.js";
 import { FluidReveal } from "./fluid-reveal.js";
 import { deriveFormShape, FormingContext, FormingSkeleton, PendingLeaf } from "./forming-skeleton.js";
-import { InClientMount, type InClientFurnishing } from "./host-mount.js";
 import { ContainedNotice } from "./notice.js";
 import { playNodeMotion, useMotionLayoutEffect, useRepaintMotion, type NodeMark } from "./repaint-motion.js";
 import { KIT_COMPONENTS } from "../kit/registry.js";
@@ -488,9 +487,6 @@ interface NodeRendererProps {
   ancestry: ReadonlySet<string>;
   nodes: ReadonlyMap<string, TreeNode>;
   generated: Record<string, string>;
-  /** True ONLY when the payload's server-written verdict granted the venue. */
-  inClientGranted: boolean;
-  furnishings: Record<string, InClientFurnishing>;
   components: Record<string, ComponentType>;
   data: Record<string, Json>;
   state: Record<string, Json>;
@@ -572,34 +568,10 @@ interface NodeContent {
   handle: HandlerDispatch | undefined;
 }
 
-/** 06-apps §9 — the approved venue: this exact version's content hash matched a
- *  stored approval, so generated code mounts in the host page. */
-function inClientContent(
-  { props, node, children, invoke, handle }: NodeContent,
-  source: string,
-): ReactNode {
-  const { bound, mismatch } = bindProps(node.props, props.data, props.state, invoke, handle);
-  if (mismatch !== null) {
-    return <>{dataShapeNotice(mismatch, props.streaming, node.component)}{children}</>;
-  }
-  return (
-    <>
-      <InClientMount
-        name={node.component}
-        source={source}
-        props={bound}
-        furnishing={props.furnishings[node.component]}
-        onAction={invoke}
-        onStateSet={props.setViewState}
-      />
-      {children}
-    </>
-  );
-}
-
-/** The `source: "generated"` branch — human-approved code, mounted in the host
- *  page when the venue was granted. There is no second venue: an ungranted node
- *  drops back to a contained notice, never to a silent hole. */
+/** The `source: "generated"` branch. Generated component SOURCE no longer runs
+ *  natively in the host page (that venue is gone), so a defined-source node
+ *  fails soft to a contained notice rather than a silent hole; an instant remix
+ *  renders through the sandboxed screen VM, whose nodes are `ported`/built-in. */
 function generatedContent(context: NodeContent): ReactNode {
   const { props, node } = context;
   const source = props.generated[node.component];
@@ -615,12 +587,10 @@ function generatedContent(context: NodeContent): ReactNode {
         {`Generated component "${node.component}" has no source.`}
       </ContainedNotice>
     );
-  } else if (props.inClientGranted) {
-    content = inClientContent(context, source);
   } else {
     content = (
-      <ContainedNotice label="Not approved for this page" outcome="blocked">
-        {`"${node.component}" needs a host reviewer's approval before it can run here.`}
+      <ContainedNotice label="Can't render here" outcome="blocked">
+        {`"${node.component}" is generated code, which no longer runs in the host page.`}
       </ContainedNotice>
     );
   }
@@ -731,10 +701,7 @@ function builtinContent({ props, node, children, invoke, handle }: NodeContent):
   // lands in the host's own light DOM — that is how a port inherits the host's
   // stylesheet — so a class the model borrowed from elsewhere in the host renders
   // as real host chrome, not an imitation of it. A private view deceives only its
-  // author; the REVIEW path breaks that, because a second person is deciding
-  // whether to trust what they are shown. The levers, neither built and neither
-  // decided: render the review path in the sandboxed surface instead of the light
-  // DOM, or strip classes on that path alone.
+  // author.
   return mismatch !== null
     ? <>{dataShapeNotice(mismatch, props.streaming, node.component)}{children}</>
     : (
@@ -976,8 +943,6 @@ function StatefulTreeView({
   // already here rather than a second renderer for interactive trees.
   const tree = screen.tree ?? painted;
   const streaming = (tree as WalkTree & { streaming?: unknown }).streaming === true;
-  const furnishings = (tree as WalkTree & { furnishings?: Record<string, InClientFurnishing> }).furnishings ?? {};
-  const inClient = (tree as WalkTree & { inClient?: InClientVenue }).inClient;
   // Tolerate a malformed field (like every other payload extra): only an
   // array of well-formed entries renders the notice.
   const seedDriftRaw = (tree as WalkTree & { seedDrift?: unknown }).seedDrift;
@@ -985,9 +950,6 @@ function StatefulTreeView({
     && typeof (seedDriftRaw as SeedDrift).component === "string"
     ? seedDriftRaw as SeedDrift
     : null;
-  // The host-page mount unlocks on EXACTLY `granted === true` — the value only
-  // the server's hash-pin verification writes. Everything else stays unmounted.
-  const inClientGranted = inClient?.granted === true;
   // A partial stream may close a generated node before its top-level source
   // string closes. Supply validator-only placeholders, then keep the real map
   // empty so NodeRenderer paints a skeleton until the source arrives.
@@ -1015,29 +977,6 @@ function StatefulTreeView({
   // on a node this render mounts.
   const orphans = useMemo(() => orphanedOutcomes(outcomes, repaint.nodes), [outcomes, repaint.nodes]);
 
-  // A review-kind version awaiting the host reviewer renders NOTHING but its
-  // standing, checked BEFORE tree validation:
-  // the server ships no executable fork source with `pending-review` (its
-  // generated nodes have no components to validate against), so instead of an
-  // invalid-tree verdict or skeletons of stripped components
-  // the surface says "sent for review" — or carries the reviewer's rejection
-  // note back to the user.
-  if (inClient !== undefined && inClient.granted === false && inClient.reason === "pending-review") {
-    const standing = inClient.review;
-    if (standing?.status === "rejected") {
-      return (
-        <ContainedNotice label="Remix rejected" outcome="blocked">
-          {`The host reviewer rejected this remix — "${standing.note}". Edit the remix to resubmit it for review.`}
-        </ContainedNotice>
-      );
-    }
-    return (
-      <ContainedNotice label="Sent for review">
-        This remix was sent to the host for review. The original component stays in place until a reviewer approves it.
-      </ContainedNotice>
-    );
-  }
-
   if (!validation.ok) {
     return (
       <ContainedNotice label="Invalid UI tree" code={validation.error.code}>
@@ -1059,21 +998,6 @@ function StatefulTreeView({
       </ContainedNotice>
     );
   }
-
-  // 06-apps §9 — a version change under an existing approval must be LOUD: the
-  // surface says so, in-surface, above the tree. Every ungranted reason except
-  // review-kind's pending-review (returned above) keeps this notice, so an
-  // unknown future reason still says SOMETHING.
-  const dropBackNotice = inClient !== undefined && inClient.granted === false
-    // The payload is a wire value, so a FUTURE ungranted reason this union
-    // does not know yet must still drop back loudly, not silently.
-    && (inClient.reason as string) !== "pending-review"
-    ? (
-      <ContainedNotice label="In-client approval invalidated" outcome="blocked">
-        This app changed since it was approved for the host page. Its generated components stay unrendered until the new version is re-approved.
-      </ContainedNotice>
-    )
-    : null;
 
   // 06-apps §8 — the host moved on under a remix. This has to be LOUD and it has
   // to be HONEST: updating REPLAYS every change the person asked for onto the
@@ -1130,7 +1054,6 @@ function StatefulTreeView({
       <div data-vendo-surface="" style={{ ...themeCssVariables(theme), ...SURFACE_CONTAINMENT } as CSSProperties}>
         <NodeErrorBoundary nodeId={validation.tree.root} retryKey={data ?? validation.tree.data} streaming={streaming}>
           {dataNotice}
-          {dropBackNotice}
           {driftNotice}
           {unappliedNotice}
           <NodeRenderer
@@ -1139,8 +1062,6 @@ function StatefulTreeView({
             nodes={repaint.nodes}
             marks={repaint.marks}
             generated={streaming ? tree.components ?? {} : validation.tree.components ?? {}}
-            inClientGranted={inClientGranted}
-            furnishings={furnishings}
             components={components}
             data={data ?? validation.tree.data ?? {}}
             state={viewState}

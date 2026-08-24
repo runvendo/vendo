@@ -26,7 +26,6 @@ import type {
   LimitsCallback,
   Membership,
   Principal,
-  RunContext,
   RunId,
   SecretsProvider,
   Skill,
@@ -350,10 +349,10 @@ export interface CreateVendoConfig {
       wins; unset is today's console lines, unchanged. */
   logger?: VendoLogger;
   telemetry?: boolean;
-  /** Development-only surfaces: the injection seams (/dev/inclient-approval),
-      the `vendo sync` blast-radius probe (POST /sync/impact), and the
-      composition probes (/doctor/machines, /doctor/present, /doctor/act-as
-      and their echoes) — none of them even mounted without this.
+  /** Development-only surfaces: the `vendo sync` blast-radius probe
+      (POST /sync/impact), and the composition probes (/doctor/machines,
+      /doctor/present, /doctor/act-as and their echoes) — none of them even
+      mounted without this.
       NODE_ENV=development enables them; `false` disables the environment
       default. Unset with any other NODE_ENV — or none, or a runtime with no
       `process` at all — leaves them closed. /doctor/base-url is the one
@@ -509,19 +508,6 @@ export interface CreateVendoConfig {
       `vendo.apps` runtime handle stays: unmounting is about what the agent and
       the wire offer, never about taking your server code's API away. */
   apps?: false | {
-    /** Remix review (round-2 hardening 2026-08-02) — the host's reviewer
-        assertion for the review-kind remix lifecycle: whether THIS caller may
-        read the full review queue, reject, and approve review-kind remixes.
-        Reviewing crosses owner boundaries, so it is never inferred from a
-        principal alone. Unset, the dev review-queue route serves only the
-        caller's own submissions, reject refuses naming this hook, and a user
-        can never approve their own review-kind remix. The same gate rides the
-        runtime surface (`vendo.apps.review` / `vendo.apps.inClient.approve`)
-        — the production path a self-hoster mounts an admin-authenticated
-        route over; Cloud's console is the hosted equivalent. */
-    review?: {
-      reviewer?(ctx: RunContext): boolean | Promise<boolean>;
-    };
     /** The island smoke-render gate: every generated island renders once in a
         headless DOM before it can reach a screen. ON unless explicitly false. */
     pipeline?: AppsConfig["pipeline"];

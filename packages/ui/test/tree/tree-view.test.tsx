@@ -20,22 +20,6 @@ function tree(
   return { formatVersion: VENDO_TREE_FORMAT, root, nodes, components };
 }
 
-/** Only the server's hash-pin verdict unlocks the in-client mount. */
-const GRANTED = {
-  granted: true as const,
-  versionHash: "sha256:approved",
-  approvedBy: "host-console",
-  at: "2026-07-15T09:00:00.000Z",
-};
-
-/** An approved component that writes one `$state` key through the vendo bridge. */
-const setStateSource = (name: string, value: string) => `
-import { useEffect } from "react";
-export default function ${name}({ vendo }) {
-  useEffect(() => { vendo.setState("draft", ${JSON.stringify(value)}); }, []);
-  return <div>editor</div>;
-}`;
-
 describe("TreeView public surface", () => {
   it("renders the built-in Kit layout components", () => {
     render(
@@ -491,89 +475,6 @@ describe("TreeView bindings and outcomes", () => {
     expect(screen.getByText("Past due").getAttribute("data-kit")).toBe("EnumBadge");
   });
 
-  it("updates $state reads and reports an approved component's state writes", async () => {
-    const StateProbe: ComponentType<{ value?: unknown }> = ({ value }) => <output>{String(value)}</output>;
-    const onStateChange = vi.fn();
-    const granted = {
-      ...tree(
-        [
-          { id: "root", component: "Row", children: ["generated", "probe"] },
-          { id: "generated", component: "Editor", source: "generated" },
-          { id: "probe", component: "StateProbe", source: "host", props: { value: { $state: "draft" } } },
-        ],
-        "root",
-        { Editor: setStateSource("Editor", "saved locally") },
-      ),
-      inClient: GRANTED,
-    };
-    render(
-      <TreeView
-        tree={granted}
-        components={{ StateProbe }}
-        onAction={ok}
-        onStateChange={onStateChange}
-      />,
-    );
-
-    await waitFor(() => expect(screen.getByText("saved locally")).toBeTruthy());
-    expect(onStateChange).toHaveBeenLastCalledWith({ draft: "saved locally" });
-  });
-
-  it("resets $state when the tree root identity changes", async () => {
-    const StateProbe: ComponentType<{ value?: unknown }> = ({ value }) => <output>{String(value)}</output>;
-    const first = {
-      ...tree(
-        [
-          { id: "root-a", component: "Row", children: ["generated-a", "probe-a"] },
-          { id: "generated-a", component: "Editor", source: "generated" },
-          { id: "probe-a", component: "StateProbe", source: "host", props: { value: { $state: "draft" } } },
-        ],
-        "root-a",
-        { Editor: setStateSource("Editor", "belongs to app A") },
-      ),
-      inClient: GRANTED,
-    };
-    const second = tree(
-      [{ id: "root-b", component: "StateProbe", source: "host", props: { value: { $state: "draft" } } }],
-      "root-b",
-    );
-    const view = render(<TreeView tree={first} components={{ StateProbe }} onAction={ok} />);
-    await waitFor(() => expect(screen.getByText("belongs to app A")).toBeTruthy());
-
-    view.rerender(<TreeView tree={second} components={{ StateProbe }} onAction={ok} />);
-    expect(screen.queryByText("belongs to app A")).toBeNull();
-    expect(screen.getByText("undefined")).toBeTruthy();
-  });
-
-  it("does not carry one app's $state into the next app rendered in its place", async () => {
-    // Every compiled app is rooted at the SAME synthetic node id (the compiler
-    // emits `root: "root"` for all of them — core/genui/wire/compile.ts), so the
-    // root is not an app identity: `appId` is. Two real apps, same position.
-    const StateProbe: ComponentType<{ value?: unknown }> = ({ value }) => <output>{String(value)}</output>;
-    const appTree = (component: string, value: string) => ({
-      ...tree(
-        [
-          { id: "root", component: "Row", children: ["generated", "probe"] },
-          { id: "generated", component, source: "generated" },
-          { id: "probe", component: "StateProbe", source: "host", props: { value: { $state: "draft" } } },
-        ],
-        "root",
-        { [component]: setStateSource(component, value) },
-      ),
-      inClient: GRANTED,
-    });
-
-    const view = render(
-      <TreeView appId="app_a" tree={appTree("EditorA", "belongs to app A")} components={{ StateProbe }} onAction={ok} />,
-    );
-    await waitFor(() => expect(screen.getByText("belongs to app A")).toBeTruthy());
-
-    view.rerender(
-      <TreeView appId="app_b" tree={appTree("EditorB", "belongs to app B")} components={{ StateProbe }} onAction={ok} />,
-    );
-    expect(screen.queryByText("belongs to app A")).toBeNull();
-    await waitFor(() => expect(screen.getByText("belongs to app B")).toBeTruthy());
-  });
 
   it("turns $action props into callbacks and marks pending approval", async () => {
     const ActionButton: ComponentType<{ run?: () => Promise<ToolOutcome> }> = ({ run }) => (

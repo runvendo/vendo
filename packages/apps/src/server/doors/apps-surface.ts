@@ -20,10 +20,10 @@ import type { AppsRuntime } from "../runtime/types.js";
 
 const createAppReadDoors = (
   deps: Pick<AppsRuntimeContext,
-    "config" | "engine" | "caller" | "history" | "review" | "opener" | "owned" | "requireOwned"
+    "config" | "engine" | "caller" | "history" | "opener" | "owned" | "requireOwned"
     | "grantedRecords">,
 ): Pick<AppsRuntime, "get" | "list" | "history" | "open" | "call" | "seen"> => {
-  const { config, engine, caller, history, review, opener, owned, requireOwned } = deps;
+  const { config, engine, caller, history, opener, owned, requireOwned } = deps;
   const { grantedRecords } = deps;
   const appSeen = appSeenStore(engine);
   return {
@@ -89,11 +89,7 @@ const createAppReadDoors = (
       // automation resolves a surface, and neither is a person looking at a
       // screen — marking here cleared a human's dot for an app only Claude ever
       // saw. The person's own render route does the marking (wire/apps.ts).
-      // Review-kind (2026-08-02): an unapproved current version is invisible —
-      // open() serves the newest APPROVED version from the existing history
-      // instead (or the pending state when none was ever approved). Instant
-      // kind passes through untouched.
-      return opener(await review.serveDocFor(app), ctx, options);
+      return opener(app, ctx, options);
     },
 
     async call(appId, ref, args, ctx) {
@@ -195,15 +191,15 @@ const createAppCopyDoors = (
 /** The app-record slice of `AppsRuntime`. */
 export const createAppsSurface = (
   deps: Pick<AppsRuntimeContext,
-    "config" | "engine" | "caller" | "data" | "history" | "review" | "opener" | "interchange"
-    | "inClientApprovals" | "egressApprovals" | "parkedActions" | "placementRows"
+    "config" | "engine" | "caller" | "data" | "history" | "opener" | "interchange"
+    | "egressApprovals" | "parkedActions" | "placementRows"
     | "lifecycle" | "owned" | "requireOwned"
     | "grantedRecords" | "reportLifecycle" | "claimSlot" | "markUnbuilt"
     | "runtime">,
 ): Pick<AppsRuntime,
   "get" | "list" | "delete" | "fork" | "share" | "publish" | "seen"
   | "exportApp" | "importApp" | "history" | "open" | "call" | "agentTools"> => {
-  const { config, engine, data, history, review, inClientApprovals } = deps;
+  const { config, engine, data, history } = deps;
   const { egressApprovals, parkedActions, placementRows, lifecycle } = deps;
   const { requireOwned, reportLifecycle, claimSlot, markUnbuilt, runtime } = deps;
   return {
@@ -218,8 +214,6 @@ export const createAppsSurface = (
       await lifecycle.destroyResources(app);
       await data.clear(app, ctx.principal.subject, await history.documents(appId));
       await history.clear(appId);
-      await inClientApprovals.clear(appId);
-      await review.clear(appId);
       await egressApprovals.clearForApp(appId);
       await parkedActions.clearForApp(appId);
       await engine.delete(APPS_COLLECTION, appId);

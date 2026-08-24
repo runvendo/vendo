@@ -18,14 +18,6 @@ afterEach(() => {
 
 const ok = async (): Promise<ToolOutcome> => ({ status: "ok", output: null });
 
-/** Only the server's hash-pin verdict unlocks the in-client mount. */
-const GRANTED = {
-  granted: true as const,
-  versionHash: "sha256:approved",
-  approvedBy: "host-console",
-  at: "2026-07-15T09:00:00.000Z",
-};
-
 function treePayload(
   nodes: Tree["nodes"],
   extras: Partial<Omit<Tree, "formatVersion" | "nodes">> & { components?: Record<string, string> } = {},
@@ -124,35 +116,6 @@ describe("vendo-genui/v2 bindings and data residency", () => {
     expect(output.textContent).toContain('"currency":"USD"');
   });
 
-  it("updates $state reads from an approved component's state writes", async () => {
-    const StateProbe: ComponentType<{ value?: unknown }> = ({ value }) => <output>{String(value)}</output>;
-    render(
-      <PayloadView
-        payload={treePayload(
-          [
-            { id: "root", component: "Row", children: ["editor-1", "stateprobe-1"] },
-            { id: "editor-1", component: "Editor", source: "generated" },
-            { id: "stateprobe-1", component: "StateProbe", source: "host", props: { value: { $state: "draft" } } },
-          ],
-          {
-            root: "root",
-            components: {
-              Editor: `import { useEffect } from "react";
-export default function Editor({ vendo }) {
-  useEffect(() => { vendo.setState("draft", "saved in v2"); }, []);
-  return <div>editor</div>;
-}`,
-            },
-            inClient: GRANTED,
-          } as never,
-        )}
-        components={{ StateProbe }}
-        onAction={ok}
-      />,
-    );
-
-    await waitFor(() => expect(screen.getByText("saved in v2")).toBeTruthy());
-  });
 });
 
 describe("vendo-genui/v2 actions", () => {
@@ -217,24 +180,6 @@ describe("vendo-genui/v2 component source resolution", () => {
     expect(screen.queryByText("Host card: built-in wins")).toBeNull();
   });
 
-  it("mounts an APPROVED generated component in the host page with its payload-carried source", async () => {
-    render(
-      <PayloadView
-        payload={treePayload(
-          [{ id: "revenuenote-1", component: "RevenueNote", source: "generated" }],
-          {
-            components: { RevenueNote: "export default function RevenueNote() { return <p>note</p> }" },
-            inClient: GRANTED,
-          } as never,
-        )}
-        components={{}}
-        onAction={ok}
-      />,
-    );
-
-    expect(await screen.findByText("note")).toBeTruthy();
-    expect(document.querySelector('[data-vendo-inclient-mount="RevenueNote"]')).not.toBeNull();
-  });
 });
 
 describe("v1 walk regression", () => {

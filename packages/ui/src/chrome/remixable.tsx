@@ -6,7 +6,6 @@ import { useAppSharing } from "../hooks/use-app-sharing.js";
 import { useResource } from "../hooks/use-resource.js";
 import { FluidReveal } from "../tree/fluid-reveal.js";
 import { AppFrame, PinMount } from "../tree/frames.js";
-import type { InClientVenue } from "../wire-types.js";
 import { useApprovalModal } from "./approval-modal.js";
 import { ChromeRoot } from "./chrome-root.js";
 import { developmentMode } from "./dev-mode.js";
@@ -45,13 +44,6 @@ import { vendoToast } from "./vendo-toasts.js";
 const DISCOVERY_POLL_MS = 5000;
 
 export interface RemixableProps {
-  /** The review-kind flag (capture metadata — sync writes it into the
-   *  baseline). Review buys the venue, never visibility: a reviewed
-   *  component's approved fork mounts natively; an instant (default) one
-   *  renders sandboxed, forever, with no review process at all. The gating
-   *  itself is server-side — here it only holds the host's own component on
-   *  the page until the verdict arrives. */
-  review?: boolean;
   children: ReactNode;
 }
 
@@ -130,10 +122,9 @@ function useRemixFork(slot: string | null) {
   return { appId: fork?.id, build: buildMark(fork), refresh };
 }
 
-function RemixedFork({ appId, slot, review, build, liveProps, original, onReverted }: {
+function RemixedFork({ appId, slot, build, liveProps, original, onReverted }: {
   appId: string;
   slot: string;
-  review: boolean;
   build: string;
   liveProps: Record<string, Json>;
   original: ReactNode;
@@ -214,16 +205,6 @@ function RemixedFork({ appId, slot, review, build, liveProps, original, onRevert
     return () => { live = false; };
   }, [client, appId, livePropsKey, refresh]);
 
-  // The founder's binding rule (2026-08-02): until a reviewer approves, the
-  // ORIGINAL host component stays rendered, untouched. A pending or rejected
-  // review-kind remix mounts NOTHING here — no AppFrame, no notice in the
-  // page; its status lives in the conversation that asked for it. The venue
-  // verdict is server-authoritative ("pending-review" ships no executable
-  // source); the wrapper's own `review` flag covers a payload with no venue.
-  const venue = surface?.kind === "tree" ? (surface.payload as { inClient?: InClientVenue }).inClient : undefined;
-  const underReview = venue?.granted !== true
-    && (review || (venue !== undefined && !venue.granted && venue.reason === "pending-review"));
-
   // Until the fork's surface arrives (or if it never does), the original child
   // is the honest content — the wrapper never trades working host markup for
   // a skeleton, and a crashing fork drops back to it (PinMount). A remix that
@@ -277,7 +258,7 @@ function RemixedFork({ appId, slot, review, build, liveProps, original, onRevert
         onRefresh={update}
         onRevert={() => client.apps.delete(appId).then(onReverted)}
       >
-        {surface?.kind === "tree" && !underReview ? (
+        {surface?.kind === "tree" ? (
           <FluidReveal stateKey={`fork:${appId}`} initialExit={original}>
             <PinMount slot={slot} fallback={Original}>
               <AppFrame
@@ -295,7 +276,7 @@ function RemixedFork({ appId, slot, review, build, liveProps, original, onRevert
   );
 }
 
-export function Remixable({ review = false, children }: RemixableProps) {
+export function Remixable({ children }: RemixableProps) {
   const { remixSlots } = useVendoProvider();
   const [revealed, setRevealed] = useState(false);
   const root = useMenuDismiss(revealed, setRevealed);
@@ -369,7 +350,6 @@ export function Remixable({ review = false, children }: RemixableProps) {
         <RemixedFork
           appId={appId}
           slot={slot}
-          review={review}
           build={build}
           liveProps={serializableProps(children)}
           original={children}

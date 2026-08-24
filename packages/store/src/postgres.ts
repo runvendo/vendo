@@ -47,7 +47,6 @@ export {
   APP_DATA_OWNER_REF,
 } from "./app-data-rows.js";
 export { backfillAppDataStamps, type AppDataBackfillReport } from "./backfill-app-data.js";
-export { backfillAppRefKey, type AppRefKeyBackfillReport } from "./backfill-app-data.js";
 export {
   DEDICATED_RECORD_COLLECTIONS,
   RESERVED_COLLECTIONS,

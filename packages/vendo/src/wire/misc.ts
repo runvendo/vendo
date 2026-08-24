@@ -10,7 +10,6 @@ import {
   prefixRoute,
   requestJson,
   route,
-  string,
   type RouteEntry,
 } from "./shared.js";
 
@@ -97,39 +96,6 @@ async function tickAuthorized(request: Request): Promise<boolean> {
   return await timingSafeEqual(request.headers.get("authorization") ?? "", `Bearer ${secret}`)
     || await tickSignatureValid(request, secret);
 }
-
-/** The development-only injection seams. Each handler guards on its composed
-    dependency and falls through otherwise: production handlers receive no
-    development flag, so these answer the ordinary 404 — there is no
-    guarded-but-mounted production endpoint. */
-export const devRoutes: RouteEntry[] = [
-  // 06-apps §9 — the documented LOCAL injection seam for in-client approval
-  // records (demos and dev; Cloud's review console mints these in
-  // production). Development compositions only: production handlers fall
-  // through to the ordinary 404, so no production surface can self-approve
-  // an app into the host page. For a REVIEW-KIND remix the runtime refuses
-  // the app's own user even here (round-2 hardening): approval IS the
-  // review, so it takes the composition's reviewer assertion
-  // (apps.review.reviewer) — which also lets an asserted reviewer approve
-  // across the owner boundary.
-  route("POST", "/dev/inclient-approval", async ({ request, deps, context }) => {
-    if (!deps.development) return undefined;
-    const body = await requestJson(request);
-    // Approving a host-page mount is a HOST trust decision — an ephemeral
-    // principal is not enough, even in dev.
-    const approvalContext = await context("app");
-    if (approvalContext.principal.ephemeral === true) {
-      return json({ error: { code: "blocked", message: "in-client approval injection requires a host-resolved principal" } }, 401);
-    }
-    const approvedBy = body["approvedBy"] === undefined
-      ? "local-dev"
-      : string(body["approvedBy"], "approvedBy");
-    return json(await deps.apps.inClient.approve({
-      appId: string(body["appId"], "appId"),
-      approvedBy,
-    }, approvalContext));
-  }),
-];
 
 /** External-event ingress. Mounted with the automations subsystem, and absent
     without it — a delivery to a deployment that does not run automations is a

@@ -252,7 +252,6 @@ export function createVendoClient(config: VendoClientConfig): VendoClient {
       share: (id, principal, level) =>
         json(`/apps/${idPath(id)}/grants/${idPath(principal)}`, "PUT", { level }),
       unshare: (id, principal) => json(`/apps/${idPath(id)}/grants/${idPath(principal)}`, "DELETE"),
-      shipDiff: id => readJson(`/apps/${idPath(id)}/ship-diff`),
       reseed: id => json(`/apps/${idPath(id)}/reseed`, "POST"),
       seedFrom: body => json("/apps/seed", "POST", body),
       courierProps: (id, props) => json(`/apps/${idPath(id)}/props`, "POST", { props }),

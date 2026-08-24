@@ -81,8 +81,6 @@ export const ENGINE_COLLECTION_REGISTRY = {
   vendo_app_tokens: { kind: "storage" }, // APP_TOKEN_COLLECTION, packages/apps/src/server/persistence/app-token.ts:12
   vendo_parked_action: { kind: "storage" }, // COLLECTION, packages/apps/src/server/persistence/parked-action.ts:50
   vendo_egress_approval: { kind: "storage" }, // COLLECTION, packages/apps/src/server/escalation/egress-approval.ts:96
-  vendo_inclient_approvals: { kind: "storage" }, // COLLECTION, packages/apps/src/server/remix/inclient.ts:76
-  vendo_remix_rejections: { kind: "storage" }, // COLLECTION, packages/apps/src/server/remix/review.ts:65
   vendo_slots: { kind: "storage" }, // SLOTS_COLLECTION, packages/apps/src/server/persistence/slots.ts:24
   vendo_app_seen: { kind: "storage" }, // APP_SEEN_COLLECTION, packages/apps/src/server/persistence/app-seen.ts:26
   vendo_workspace_commits: { kind: "storage" }, // WORKSPACE_COMMITS, packages/store/src/ops.ts:27

@@ -48,7 +48,6 @@ export {
 } from "@vendoai/core";
 export type { PathBinding, ReshapeStep, StateBinding, TreeNode, UIPayload } from "@vendoai/core";
 export * from "./screen-tools-scan.js";
-export * from "./inclient-modules.js";
 // genui/tree — the compiled tree
 export * from "./genui/tree.js";
 export { checkBindingShapes, type BindingShapeError } from "./genui/shape-check.js";

@@ -14,12 +14,6 @@ type Payload = WalkTree & { formatVersion: typeof VENDO_TREE_FORMAT };
 
 const ok = async (): Promise<ToolOutcome> => ({ status: "ok", output: null });
 
-const CARD_SOURCE = `
-export default function PinnedCard() {
-  return <strong>Remixed net worth</strong>;
-}
-`;
-
 const DRIFT: SeedDrift = {
   component: "net-worth-card",
   componentName: "PinnedCard",
@@ -31,20 +25,13 @@ const DRIFT: SeedDrift = {
 const NOTICE = "Newer version available";
 
 function driftedTree(seedDrift?: SeedDrift): Payload {
-  const tree: Payload & { seedDrift?: SeedDrift; inClient?: unknown } = {
+  const tree: Payload & { seedDrift?: SeedDrift } = {
     formatVersion: VENDO_TREE_FORMAT,
     root: "root",
     nodes: [
       { id: "root", component: "Stack", children: ["card"] },
-      { id: "card", component: "PinnedCard", source: "generated" },
+      { id: "card", component: "Text", props: { text: "Remixed net worth" } },
     ],
-    components: { PinnedCard: CARD_SOURCE },
-    inClient: {
-      granted: true,
-      versionHash: "sha256:approved",
-      approvedBy: "host-console",
-      at: "2026-07-15T09:00:00.000Z",
-    },
   };
   if (seedDrift !== undefined) tree.seedDrift = seedDrift;
   return tree;
@@ -66,9 +53,9 @@ describe("seed drift notice (06-apps §8)", () => {
     expect(notice.textContent).toContain("replays every change you asked for");
     expect(notice.textContent).toContain("no longer fit");
     expect(notice.textContent).toContain("Nothing happens until you ask for it.");
-    // Informational only: nothing is mutated without the user — the remixed
-    // component still renders below the notice.
-    expect(document.querySelector('[data-vendo-inclient-mount="PinnedCard"]')).not.toBeNull();
+    // Informational only: nothing is mutated without the user — the app's own
+    // content still renders below the notice.
+    expect(screen.getByText("Remixed net worth")).toBeTruthy();
   });
 
   it("tolerates a malformed drift field without breaking the surface", () => {
@@ -80,7 +67,7 @@ describe("seed drift notice (06-apps §8)", () => {
       />,
     );
     expect(screen.queryByRole("note", { name: NOTICE })).toBeNull();
-    expect(document.querySelector('[data-vendo-inclient-mount="PinnedCard"]')).not.toBeNull();
+    expect(screen.getByText("Remixed net worth")).toBeTruthy();
 
     // ONE seed, ONE report: a LIST is not a drift report, so the pre-seed
     // payload shape reads as no drift rather than rendering a broken notice.

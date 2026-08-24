@@ -20,9 +20,7 @@
 import type { SeedDrift } from "./seed.js";
 import {
   type AppDocument,
-  type AppId,
   type IsoDateTime,
-  type ReviewStanding,
   type UIPayload,
 } from "@vendoai/core";
 
@@ -74,38 +72,6 @@ export interface PendingSurface {
    * beat bar, which is exactly the behaviour that shipped before it existed.
    */
   tree?: UIPayload;
-}
-
-/**
- * 06-apps §9 — the additive in-client venue verdict riding a tree payload
- * (`payload.inClient`). SERVER-AUTHORITATIVE: only the runtime's hash-pin
- * verification writes it. `granted: true` is the ONLY state that lets the
- * renderer mount generated code in the host page; a missing field and every
- * other state stay in the sandboxed iframe jail — except review-kind's
- * `reason: "pending-review"` (2026-08-02), which must render the ORIGINAL
- * host component: the server ships no executable fork source with it, so a
- * jailed fork render cannot occur. A granted verdict's `review` rider means
- * an OLDER approved version is being served while the current one awaits
- * review.
- */
-export type InClientVenue =
-  | { granted: true; versionHash: string; approvedBy: string; at: IsoDateTime; review?: ReviewStanding }
-  | { granted: false; versionHash: string; reason: "version-changed" }
-  | { granted: false; versionHash: string; reason: "pending-review"; review: ReviewStanding };
-
-/** 06-apps §8–§9 — what `GET /apps/:id/ship-diff` returns. */
-export interface ShipDiff {
-  appId: AppId;
-  versionHash: string;
-  pins: Array<{
-    slot: string;
-    component: string;
-    baseHash: string;
-    baselineHash?: string;
-    drifted: boolean;
-    diff: string;
-  }>;
-  generated: Array<{ component: string; diff: string }>;
 }
 
 /** 06-apps §1 — what `POST /apps/:id/edit` returns. */

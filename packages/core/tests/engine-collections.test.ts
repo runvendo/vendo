@@ -29,10 +29,10 @@ function messageOf(run: () => unknown): string {
 }
 
 describe("engine allowlist", () => {
-  it("holds 39 distinct static collections", () => {
+  it("holds 37 distinct static collections", () => {
     expect(ENGINE_ALLOWLIST_VERSION).toBe(6);
-    expect(ENGINE_COLLECTIONS).toHaveLength(39);
-    expect(new Set(ENGINE_COLLECTIONS).size).toBe(39);
+    expect(ENGINE_COLLECTIONS).toHaveLength(37);
+    expect(new Set(ENGINE_COLLECTIONS).size).toBe(37);
   });
 
   it("admits one name from each group and refuses host/app data", () => {

@@ -40,7 +40,6 @@ import { createFnCaller, type FnCaller } from "../escalation/fn.js";
 import { createGenerationContext } from "./generation-context.js";
 import { resolveProvider } from "./generation-context.js";
 import { createAppHistory, type AppHistoryAccess } from "../persistence/history.js";
-import { createInClientApprovals, type InClientApprovalAccess } from "../remix/inclient.js";
 import { createAppInterchange, type AppInterchange } from "../persistence/interchange.js";
 import type { MachineLifecycle } from "../escalation/machine-lifecycle.js";
 import { createManifestTriggers } from "../escalation/manifest-triggers.js";
@@ -51,7 +50,6 @@ import { updateAppRow } from "../persistence/persistence.js";
 import { placementStore, type PlacementRow, type PlacementStore } from "../persistence/placements.js";
 import { createPlacementRows } from "../doors/placement-surface.js";
 import { createEgressApprovals } from "../escalation/egress-approval.js";
-import { createReviewLifecycle, type ReviewLifecycle } from "../remix/review.js";
 import { createSlotRegistry, type SlotRegistry } from "../persistence/slots.js";
 import type {
   AppsConfig,
@@ -81,10 +79,6 @@ export interface AppsRuntimeContext {
   egressApprovals: EgressApprovals;
   /** W0 — the undecided in-app actions the guard parked (parked-action.ts). */
   parkedActions: ParkedActions;
-  /** The stored in-client approvals (inclient.ts). */
-  inClientApprovals: InClientApprovalAccess;
-  /** The review-kind remix lifecycle (review.ts). */
-  review: ReviewLifecycle;
   /** execution-v2 — provision/wake/sleep/destroy (machine-lifecycle.ts). */
   lifecycle: MachineLifecycle;
   /** The box manifest's schedules, folded into automation records. */
@@ -118,8 +112,6 @@ export interface AppsRuntimeContext {
   requireOwned(appId: AppId, ctx: RunContext, level?: AccessLevel): Promise<AppDocument>;
   /** The app rows this caller reaches WITHOUT owning them (§9.3). */
   grantedRecords(ctx: RunContext, already: Set<string>): Promise<VendoRecord[]>;
-  /** Whether the host's `apps.review.reviewer` assertion covers this caller. */
-  reviewerAsserted(ctx: RunContext): Promise<boolean>;
 
   // ── audit-reports.ts ───────────────────────────────────────────────────────
   /** An app-lifecycle audit event under an explicit subject. */
@@ -261,7 +253,7 @@ const createStores = (
   config: AppsConfig,
 ): Pick<AppsRuntimeContext,
   "engine" | "placementRows" | "slots" | "data" | "history" | "egressApprovals"
-  | "parkedActions" | "inClientApprovals"> => {
+  | "parkedActions"> => {
   const engine = engineOf(config.ops, config.store);
   const placementRows = placementStore(engine);
   const slots = createSlotRegistry(engine);
@@ -275,19 +267,18 @@ const createStores = (
   // re-dispatch the exact call the instant the owner approves. Holds only
   // undecided actions; both decisions clear it.
   const parkedActions = createParkedActions(engine);
-  const inClientApprovals = createInClientApprovals(engine);
-  return { engine, placementRows, slots, data, history, egressApprovals, parkedActions, inClientApprovals };
+  return { engine, placementRows, slots, data, history, egressApprovals, parkedActions };
 };
 
 /** The composed seams the doors call through: interchange, the review-kind
  *  lifecycle, the box-aware caller, and the one opener. */
 const createDoors = (
   deps: Pick<AppsRuntimeContext,
-    "config" | "engine" | "history" | "inClientApprovals" | "parkedActions" | "lifecycle"
+    "config" | "engine" | "parkedActions" | "lifecycle"
     | "requireOwned" | "updateAppDocument" | "runtime">,
 ): Pick<AppsRuntimeContext,
-  "review" | "reviewerAsserted" | "interchange" | "fnCaller" | "manifestTriggers" | "caller" | "opener"> => {
-  const { config, history, inClientApprovals, parkedActions, lifecycle } = deps;
+  "interchange" | "fnCaller" | "manifestTriggers" | "caller" | "opener"> => {
+  const { config, parkedActions, lifecycle } = deps;
   const { requireOwned, updateAppDocument } = deps;
   const interchange = createAppInterchange({
     engine: deps.engine,
@@ -296,21 +287,6 @@ const createDoors = (
     requireOwned,
   });
 
-  // Remix final shape (2026-08-02) — review-kind gating over the §9 hash-pin
-  // machinery: which document open() serves and the venue vocabulary the
-  // client resolves ("pending-review" = show the ORIGINAL, never a jailed
-  // fork; a served older approved version carries the current standing).
-  const review = createReviewLifecycle({
-    engine: deps.engine,
-    baselines: config.seedBaselines,
-    approvals: inClientApprovals,
-    history,
-  });
-  // Round-2 hardening (2026-08-02) — reviewing is a HOST trust decision, so
-  // it only ever comes from the composition's explicit assertion; no hook
-  // means no caller is a reviewer, ever.
-  const reviewerAsserted = async (ctx: RunContext): Promise<boolean> =>
-    config.review?.reviewer !== undefined && await config.review.reviewer(ctx) === true;
   // execution-v2 Lane D — fn: refs on a machine-bearing app resolve over the
   // v2 box door (the same wake Lane C's wire proxy rides); the wrap leaves
   // every other ref on the existing caller. Queries hit this at open(),
@@ -330,9 +306,6 @@ const createDoors = (
   }));
   const opener = createAppOpener(
     config.seedBaselines,
-    // Review-aware venue: instant-kind answers exactly the plain hash-pin
-    // venue; review-kind never answers a jail state (review.ts).
-    (doc) => review.venueStateFor(doc),
     // Wave 4 (layer 3) — the served surface: wake-on-open over the machine
     // lifecycle, the provider's public ingress URL for $PORT, and the theming
     // handoff (host theme tokens as a query param the served app MAY consume).
@@ -397,7 +370,7 @@ const createDoors = (
     // rides. Forwarded straight through; the runtime never interprets it.
     config.venueState,
   );
-  return { review, reviewerAsserted, interchange, fnCaller, manifestTriggers, caller, opener };
+  return { interchange, fnCaller, manifestTriggers, caller, opener };
 };
 
 /**

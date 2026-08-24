@@ -2,7 +2,6 @@ import type {
   AppDocument,
   SeedPort,
 } from "../src/contract/index.js";
-import { inClientApprovalSchema } from "../src/server/index.js";
 import { describe, expect, it } from "vitest";
 import {
   seedBaselineSchema,
@@ -16,7 +15,7 @@ import {
 const capturedAt = "2026-07-11T12:00:00.000Z";
 
 describe("seed contract shapes", () => {
-  it("validates the frozen baseline and in-client approval shapes", () => {
+  it("validates the frozen baseline shape", () => {
     expect(seedBaselineSchema.parse({
       slot: "invoice-card",
       source: "export function InvoiceCard() {}",
@@ -24,12 +23,6 @@ describe("seed contract shapes", () => {
       exportable: true,
       capturedAt,
     })).toMatchObject({ slot: "invoice-card", exportable: true });
-    expect(inClientApprovalSchema.parse({
-      appId: "app_invoice",
-      versionHash: "sha256:z",
-      approvedBy: "user_admin",
-      at: capturedAt,
-    })).toMatchObject({ versionHash: "sha256:z" });
   });
 
   it("carries the splitter's ported half, and reads a baseline without one", () => {

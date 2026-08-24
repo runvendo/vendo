@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import type { ComponentType } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { VENDO_TREE_FORMAT, type ToolOutcome } from "@vendoai/core";
 import { AppFrame, PinMount } from "../../src/tree/index.js";
 
@@ -12,22 +12,6 @@ afterEach(() => {
 });
 
 const ok = async (): Promise<ToolOutcome> => ({ status: "ok", output: null });
-
-/** Only the server's hash-pin verdict unlocks the in-client mount. */
-const GRANTED = {
-  granted: true as const,
-  versionHash: "sha256:approved",
-  approvedBy: "host-console",
-  at: "2026-07-15T09:00:00.000Z",
-};
-
-/** An approved component that writes one `$state` key through the vendo bridge. */
-const setStateSource = (name: string, value: string) => `
-import { useEffect } from "react";
-export default function ${name}({ vendo }) {
-  useEffect(() => { vendo.setState("draft", ${JSON.stringify(value)}); }, []);
-  return <div>editor</div>;
-}`;
 
 describe("AppFrame", () => {
   it("grants same-origin privilege only to a cross-origin machine url", () => {
@@ -181,45 +165,6 @@ describe("AppFrame", () => {
       />,
     );
     expect(screen.getByText("Instant app")).toBeTruthy();
-  });
-
-  it("does not carry one app's $state into the next app mounted in its place", async () => {
-    // The same leak as the TreeView case, through the surface a host actually
-    // renders: both apps carry the compiler's synthetic `root`, so only `appId`
-    // separates them.
-    const StateProbe: ComponentType<{ value?: unknown }> = ({ value }) => <output>{String(value)}</output>;
-    const payload = (component: string, value: string) => ({
-      formatVersion: VENDO_TREE_FORMAT,
-      root: "root",
-      nodes: [
-        { id: "root", component: "Row", children: ["generated", "probe"] },
-        { id: "generated", component, source: "generated" as const },
-        { id: "probe", component: "StateProbe", source: "host" as const, props: { value: { $state: "draft" } } },
-      ],
-      components: { [component]: setStateSource(component, value) },
-      inClient: GRANTED,
-    });
-
-    const view = render(
-      <AppFrame
-        appId="app_a"
-        surface={{ kind: "tree", payload: payload("EditorA", "belongs to app A") }}
-        components={{ StateProbe }}
-        onAction={ok}
-      />,
-    );
-    await waitFor(() => expect(screen.getByText("belongs to app A")).toBeTruthy());
-
-    view.rerender(
-      <AppFrame
-        appId="app_b"
-        surface={{ kind: "tree", payload: payload("EditorB", "belongs to app B") }}
-        components={{ StateProbe }}
-        onAction={ok}
-      />,
-    );
-    expect(screen.queryByText("belongs to app A")).toBeNull();
-    await waitFor(() => expect(screen.getByText("belongs to app B")).toBeTruthy());
   });
 
   it("contains unknown surface kinds", () => {

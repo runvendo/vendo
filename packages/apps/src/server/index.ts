@@ -58,11 +58,9 @@ export {
   type PublishRecord,
   type ShareSnapshot,
 } from "./persistence/cloud.js";
-export { inClientApprovalSchema, type InClientApproval } from "./remix/inclient.js";
-// The two app-scoped persistence doors, exported so `@vendoai/store` — a
-// declared consumer of this package — can prove its erase cascade against the
-// REAL writers instead of a hand-rolled copy of the rows they produce.
-export { createInClientApprovals, type InClientApprovalAccess } from "./remix/inclient.js";
+// The app-history persistence door, exported so `@vendoai/store` — a declared
+// consumer of this package — can prove its erase cascade against the REAL
+// writer instead of a hand-rolled copy of the rows it produces.
 export { createAppHistory, type AppHistoryAccess } from "./persistence/history.js";
 export {
   seedBaselineSchema,
@@ -71,24 +69,6 @@ export {
   type SeedBaseline,
   type SeedDrift,
 } from "../contract/index.js";
-export { appVersionHash } from "./remix/version-hash.js";
-export {
-  type InClientVenueState,
-  type InClientVerdict,
-  type ReviewStanding,
-} from "./remix/inclient.js";
-// The review-kind lifecycle vocabulary: the queue entry the console seam lists
-// and the rejection record the note surfaces from (AppsRuntime.review is the
-// behavior surface).
-export type {
-  RemixRejection,
-  ReviewQueueEntry,
-} from "./remix/review.js";
-export {
-  type ShipDiff,
-  type ShipDiffGenerated,
-  type ShipDiffPin,
-} from "./remix/ship-diff.js";
 // HostToolInfo is the tool slice GenerationDependencies (and external
 // harnesses) speak.
 export type { HostToolInfo } from "./generation/engine.js";

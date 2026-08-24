@@ -282,9 +282,6 @@ const appsTailSeams = (composition: VendoComposition, seams: AppsSeams): Partial
   const { secrets, sandbox } = composition;
   const { appsCloud, machineEnv, boxTemplate, boxEditTimeoutMs, boxEditPollMs } = seams;
   return {
-    // Round-2 hardening — the host's reviewer assertion for the review-kind
-    // remix lifecycle, threaded verbatim (see the CreateVendoConfig comment).
-    ...(config.apps?.review === undefined ? {} : { review: config.apps.review }),
     // The four verbs this block may ask of the automations engine: THE one create
     // operation (`vendo_automate`, `vendo_make`'s auto-arm sugar, the vendo.json
     // fold-in), the arm/disarm pair, and the resolve an app page reads its own

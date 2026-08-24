@@ -4,14 +4,6 @@
 export { resolvePointer } from "./bindings.js";
 export { AppFrame, PinMount, type AppFrameKeepalive, type AppFrameProps } from "./frames.js";
 export {
-  InClientMount,
-  evaluateApprovedComponent,
-  type InClientFurnishing,
-  type InClientMountProps,
-  type InClientStyle,
-  type InClientSubSource,
-} from "./host-mount.js";
-export {
   PayloadView,
   TreeView,
   isActionBinding,

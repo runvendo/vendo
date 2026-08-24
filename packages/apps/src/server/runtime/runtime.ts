@@ -2,11 +2,9 @@ import { createAccessSurface } from "../doors/access-surface.js";
 import { createAutomationDoor } from "../automation/lane.js";
 import { createAppsSurface } from "../doors/apps-surface.js";
 import { createBuildSurface } from "../doors/build-surface.js";
-import { createInClientSurface } from "../doors/inclient-surface.js";
 import { createMachineSurface, createServedDoors } from "../doors/machine-surface.js";
 import { createSeedSurface } from "../remix/seed-surface.js";
 import { createPlacementSurface } from "../doors/placement-surface.js";
-import { createReviewSurface } from "../doors/review-surface.js";
 import { createRuntimeContext } from "./runtime-context.js";
 import { createWriteSurface } from "../doors/write-surface.js";
 import type { AppsConfig, AppsRuntime } from "./types.js";
@@ -51,8 +49,6 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     automation: createAutomationDoor(ctx),
     slots: ctx.slots,
     takeReplaySource: ctx.takeReplaySource,
-    inClient: createInClientSurface(ctx),
-    review: createReviewSurface(ctx),
     seed: createSeedSurface(ctx),
     machine: createMachineSurface(ctx),
   };
