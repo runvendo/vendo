@@ -73,7 +73,7 @@ async function bearer(): Promise<Record<string, string>> {
   return (await mint(principal, grant))!.headers;
 }
 
-async function compose(files?: FilesAdapter): Promise<{ vendo: Vendo; seen: string[] }> {
+async function compose(files?: FilesAdapter): Promise<{ vendo: Vendo; seen: string[]; store: VendoStore }> {
   const dataDir = await mkdtemp(join(tmpdir(), "vendo-rehome-uploads-"));
   const store: VendoStore = createStore({ dataDir });
   cleanups.push(async () => {
@@ -87,7 +87,7 @@ async function compose(files?: FilesAdapter): Promise<{ vendo: Vendo; seen: stri
     store,
     ...(files === undefined ? {} : { files }),
   });
-  return { vendo, seen };
+  return { vendo, seen, store };
 }
 
 const upload = (
@@ -182,5 +182,31 @@ describe("a turn takes its files home", () => {
     }, headers)).text();
 
     expect(await readBack(vendo, "/user/files/kept.csv")).toBe("jan,31000\n");
+  });
+});
+
+describe("staging does not accumulate", () => {
+  it("sweeps a stale stray the user never sent, and spares a fresh one", async () => {
+    const { vendo, store } = await compose();
+    const headers = await bearer();
+    const { path: stale } = await (await upload(vendo, "abandoned.csv", bytes("x"), headers)).json() as { path: string };
+    // Age it past the window in the REAL row the sweep's `stat` reads. It cannot
+    // be done through `utimes`: the façade stages an mtime, and `commit` writes
+    // `updated_at = now` over it (store/workspace-rows.ts), so a staged mtime
+    // never survives the commit. Nothing else here is reached around.
+    await (store.raw() as { query: (q: string, p: unknown[]) => Promise<unknown> })
+      .query("UPDATE vendo_workspace_files SET updated_at = $2 WHERE path = $1", [
+        stale,
+        new Date(Date.now() - 7 * 60 * 60 * 1000).toISOString(),
+      ]);
+    const { path: fresh } = await (await upload(vendo, "pending.csv", bytes("y"), headers)).json() as { path: string };
+
+    await (await post(vendo, {
+      threadId: "thr_sweep",
+      message: { id: "m1", role: "user", parts: [{ type: "text", text: "hello" }] },
+    }, headers)).text();
+
+    await expect(readBack(vendo, stale)).rejects.toThrow();
+    expect(await readBack(vendo, fresh)).toBe("y");
   });
 });

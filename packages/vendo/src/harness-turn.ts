@@ -478,6 +478,26 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
     } as UIMessage;
   };
 
+  /** How long a staged file may sit unclaimed. A person can upload, get
+   *  distracted, and send an hour later; six hours is far past that and far
+   *  short of storage anyone would notice. This is not retention — it is the
+   *  janitor for an address that is only ever a waypoint. */
+  const STRAY_MAX_AGE_MS = 6 * 60 * 60 * 1000;
+
+  /** Staging is a waypoint, so nothing may live there. Every turn sweeps what
+   *  this person left behind — a drop whose message was never sent, or one whose
+   *  turn died between the write and the move. Reads the path index the turn's
+   *  workspace already built, so it costs no round trip; the removals ride the
+   *  turn's own commit. */
+  const sweepStagedStrays = async (workspace: WorkspaceFs): Promise<void> => {
+    if (!await workspace.exists(USER_UPLOADS)) return;
+    const cutoff = Date.now() - STRAY_MAX_AGE_MS;
+    for (const name of await workspace.readdir(USER_UPLOADS)) {
+      const path = `${USER_UPLOADS}/${name}`;
+      if ((await workspace.stat(path)).mtime.getTime() < cutoff) await workspace.rm(path);
+    }
+  };
+
   /** The thread's harness-state slot, when this store can hold one. The slot
    *  carries a native session ref and vendo()'s searched-in loadout, so it has
    *  to die with the thread — a reused id must never inherit either (the
@@ -730,6 +750,9 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
         }),
       ]);
       timings.add("store", Date.now() - storeAt);
+      // §6 — the janitor for the waypoint. On the turn's own workspace and its
+      // own commit, so a sweep costs no extra open and no extra write.
+      await sweepStagedStrays(workspace);
       // §1.6 — the render seam, built for THIS turn's ctx and handed to the
       // runtime's generic `wrapWorkspace` slot: the runtime owns WHERE the wrap
       // happens and what `emit` writes to; composition owns WHAT wraps.
