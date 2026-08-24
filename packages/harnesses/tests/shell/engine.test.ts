@@ -128,3 +128,40 @@ describe("one shell session over the workspace", () => {
     expect(result.stdout.length).toBeLessThan(4096);
   });
 });
+
+describe("the JavaScript hand", () => {
+  it("runs a script that reads the workspace and writes back to it", async () => {
+    const workspace = await disk({
+      "/user/threads/thr_1/files/rows.json": JSON.stringify([{ n: 3 }, { n: 4 }, { n: 5 }]),
+    });
+    const session = createShellSession({ workspace, javascript: true });
+
+    const result = await session.exec(
+      `js-exec -c 'const fs = require("node:fs");
+        const rows = JSON.parse(fs.readFileSync("/user/threads/thr_1/files/rows.json", "utf8"));
+        fs.writeFileSync("/user/threads/thr_1/files/total.txt", String(rows.reduce((a, r) => a + r.n, 0)));
+        console.log("done");'`,
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain("done");
+    expect(await workspace.readFile("/user/threads/thr_1/files/total.txt")).toBe("12");
+  });
+
+  it("has no network inside the script", async () => {
+    const session = createShellSession({ workspace: await disk({}), javascript: true });
+
+    const result = await session.exec(`js-exec -c 'fetch("https://example.com").then(() => console.log("reached"))'`);
+
+    expect(result.stdout).not.toContain("reached");
+  });
+
+  it("has no js-exec at all when it was not asked for", async () => {
+    const session = createShellSession({ workspace: await disk({}) });
+
+    const result = await session.exec(`js-exec -c 'console.log(1)'`);
+
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr).toContain("js-exec");
+  });
+});
