@@ -219,7 +219,7 @@ function MountedApp({ appId, placement, onParked }: { appId: string; placement?:
     if (error && !isLoading) return <SlotLoadFailed reason={error} onRetry={() => void refresh()} />;
     return <SlotGhost label="Loading app…" loading appId={appId} />;
   }
-  return <AppFrame key={appId} surface={surface} components={components} keepalive={keepalive} onParked={onParked} onAction={({ action, payload }) => client.apps.call(appId, action, payload ?? {})} />;
+  return <AppFrame key={appId} appId={appId} surface={surface} components={components} keepalive={keepalive} onParked={onParked} onAction={({ action, payload }) => client.apps.call(appId, action, payload ?? {})} />;
 }
 
 /** A generated view pinned into a slot (08-ui §4 — "or a pinned component").

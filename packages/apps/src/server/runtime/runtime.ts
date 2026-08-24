@@ -51,6 +51,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     takeReplaySource: ctx.takeReplaySource,
     seed: createSeedSurface(ctx),
     build: ctx.build,
+    bundleDocument: ctx.build.bundleDocument,
     machine: createMachineSurface(ctx),
   };
   return runtime;

@@ -171,6 +171,16 @@ export interface VendoClient {
      */
     pingMachine(id: AppId): Promise<{ state: "awake" | "woke" }>;
     /**
+     * `GET /apps/:id/bundle/:entry` — where a SEALED bundle's document lives.
+     *
+     * A url rather than a fetch, because the browser is what asks: it is an
+     * iframe's `src`, so the response's own CSP header (`default-src 'none'`,
+     * `frame-ancestors 'self'`) is what governs the document — which is exactly
+     * why the bundle is not inlined as `srcdoc`. `entry` is the content hash, so
+     * the url never goes stale.
+     */
+    bundleUrl(id: AppId, entry: string): string;
+    /**
      * Placement (2026-08-05) — "show this app in that slot". `POST
      * /apps/:id/place`; one app per slot, so the answer names whatever the
      * write displaced (`evicted`).

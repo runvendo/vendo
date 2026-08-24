@@ -28,7 +28,7 @@ import {
   buildWatchdogMs,
   fallbackAppName,
 } from "./build-messages.js";
-import { sealBundleBlobs } from "../persistence/app-source.js";
+import { readBundleBlob, sealBundleBlobs } from "../persistence/app-source.js";
 import { APPS_COLLECTION, appRecordInput } from "../persistence/persistence.js";
 import type { AppsRuntimeContext } from "../runtime/runtime-context.js";
 import type { AppsRuntime } from "../runtime/types.js";
@@ -68,9 +68,53 @@ export interface SealInput {
   base?: string;
 }
 
-/** The public door (`AppsRuntime.build`) plus the two hooks only the runtime's
- *  own seams reach: the decision subscriber's, and the build lane's. */
-export type BuildDoor = AppsRuntime["build"] & {
+/**
+ * THE ENFORCER a sealed bundle renders behind, and the reason the frame needs no
+ * trust: `default-src 'none'` is zero network — the bundle was sealed with
+ * everything it needs, so it has nothing to fetch and nowhere to phone home to.
+ * The two `'unsafe-inline'`s are what let the document carry its own script and
+ * styles at all, which is the point: nothing is loaded, so nothing can be
+ * injected from outside.
+ *
+ * It is a HEADER and never a `<meta>` tag, because `frame-ancestors` — the half
+ * that says only the host's own page may frame this — is ignored in meta.
+ */
+export const BUNDLE_CSP = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline';"
+  + " img-src data:; frame-ancestors 'self'";
+
+export const BUNDLE_HEADERS: Readonly<Record<string, string>> = {
+  "content-type": "text/html; charset=utf-8",
+  "content-security-policy": BUNDLE_CSP,
+  // The url IS the content's hash, so these bytes can never become stale.
+  // `private` because the answer is viewer-scoped: a shared cache must not hand
+  // one person's app to the next request for the same url.
+  "cache-control": "private, max-age=31536000, immutable",
+  "x-content-type-options": "nosniff",
+};
+
+const encoder = new TextEncoder();
+const decoder = new TextDecoder();
+
+/**
+ * The frame's whole document: the sealed entry INLINE, and nothing else to
+ * fetch. Brand tokens and fonts are not in here — they arrive by postMessage at
+ * render (`sendFrameTheme`), so one seal follows the host's palette instead of
+ * pinning the palette it was built under.
+ */
+export function bundleDocument(entry: Uint8Array): Uint8Array {
+  // A bundle carries markup in its own strings, and a raw `</script` inside an
+  // inline script ends the script early — the app that renders HTML snippets
+  // would ship broken.
+  const script = decoder.decode(entry).split("</script").join("<\\/script");
+  return encoder.encode('<!doctype html><meta charset="utf-8">'
+    + "<style>html,body{margin:0;background:transparent}</style>"
+    + '<div id="root"></div>'
+    + `<script type="module">${script}</script>`);
+}
+
+/** The public door (`AppsRuntime.build`) plus the hooks only the runtime's
+ *  own seams reach: the decision subscriber's, the build lane's, and the wire's. */
+export type BuildDoor = AppsRuntime["build"] & Pick<AppsRuntime, "bundleDocument"> & {
   /** THE resume hook: what `onApprovalDecision` fires into, and the only caller
    *  of the builder there is. */
   resume(approvalId: ApprovalId, approved: boolean): Promise<void>;
@@ -82,10 +126,10 @@ export type BuildDoor = AppsRuntime["build"] & {
 export const createBuildDoor = (
   deps: Pick<AppsRuntimeContext,
     "config" | "engine" | "parkedBuilds" | "updateAppDocument" | "history" | "pruneHistory"
-    | "markUnbuilt" | "rungFor">,
+    | "markUnbuilt" | "rungFor" | "requireOwned">,
 ): BuildDoor => {
   const { config, engine, parkedBuilds, updateAppDocument, history, pruneHistory } = deps;
-  const { markUnbuilt, rungFor } = deps;
+  const { markUnbuilt, rungFor, requireOwned } = deps;
   const builder = config.build;
 
   /**
@@ -141,8 +185,27 @@ export const createBuildDoor = (
     return bundle;
   };
 
+  /**
+   * The render read. `viewer` is the level, exactly as the served door's was: a
+   * person who may SEE a shared app may render it, and one who may not is
+   * masked with the not-found every other app door gives them.
+   *
+   * The hash is checked against its own shape before it becomes a blob key —
+   * it arrives from a URL path segment, and a key is not a place to discover
+   * what "`..`" means.
+   */
+  const serveBundle: BuildDoor["bundleDocument"] = async (appId, hex, ctx) => {
+    await requireOwned(appId, ctx, "viewer");
+    const bytes = config.files === undefined || !/^[0-9a-f]{64}$/.test(hex)
+      ? null
+      : await readBundleBlob(appId, hex, config.files);
+    if (bytes === null) throw new VendoError("not-found", `app ${appId} has no sealed file ${hex}`);
+    return bundleDocument(bytes);
+  };
+
   return {
     available: () => builder?.available() ?? false,
+    bundleDocument: serveBundle,
 
     async propose(input, ctx) {
       const guardCtx: RunContext = { ...ctx, appId: input.appId };

@@ -36,6 +36,10 @@ export interface AppListRow extends AppDocument {
 export type OpenSurface =
   | { kind: "tree"; payload: UIPayload; components?: Record<string, string> }
   | { kind: "http"; url: string }
+  /** A SEALED bundle. `entry` is the content hash of the file the frame boots,
+   *  so it is both the address to fetch (`GET /apps/:id/bundle/:hash`) and the
+   *  frame's remount key. */
+  | { kind: "bundle"; entry: string }
   | { kind: "resuming"; cover?: string }
   /**
    * The build turn terminally FAILED (model error, quota, timeout): the app

@@ -115,6 +115,10 @@ export { updateAppRow } from "./persistence/persistence.js";
 // same failures — and would surface the provider's raw words, which this one
 // deliberately never does.
 export { buildFailureReason } from "./doors/build-messages.js";
+// The sealed bundle's response headers. Public because the ROUTE that serves
+// them lives in the umbrella (`wire/apps.ts`), and a wire that restated the CSP
+// would be a second copy of the one enforcer a rendered bundle has.
+export { BUNDLE_CSP, BUNDLE_HEADERS } from "./doors/build-door.js";
 // The hot-path render seam (§1.6) — the commit-intercepting wrap that paints a
 // landing `app.tsx`. Public because the workspace it wraps lives
 // outside this package: composition fills the harness runtime's `wrapWorkspace`

@@ -444,6 +444,9 @@ export function VendoAppEmbed({ refValue }: VendoAppEmbedProps) {
           ) : shown !== undefined ? (
             <AppFrame
               surface={shown}
+              // A sealed bundle is addressed by app — its frame's src is
+              // `/apps/<id>/bundle/<hash>`, so the id is not optional here.
+              appId={activeAppId}
               components={components}
               onParked={approval.onParked}
               // Actions bind to the app actually being SHOWN: after a retry

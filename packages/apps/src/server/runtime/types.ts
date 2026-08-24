@@ -371,6 +371,9 @@ export interface VersionEntry {
 export type OpenSurface =
   | { kind: "tree"; payload: UIPayload; components?: Record<string, string> }
   | { kind: "http"; url: string }
+  /** A SEALED bundle. `entry` is the content hash of the file the frame boots,
+   *  so it is both the address to fetch and the frame's remount key. */
+  | { kind: "bundle"; entry: string }
   | { kind: "resuming"; cover?: string }
   /**
    * The build turn terminally FAILED (model error, quota, timeout): the app
@@ -719,6 +722,13 @@ export interface AppsRuntime {
    * every other caller gets. The pending kind is reachable only through it.
    */
   open(appId: AppId, ctx: RunContext, options?: { pending?: boolean }): Promise<OpenSurface | PendingSurface>;
+  /**
+   * FINAL SPEC v1 — the other half of a `{kind:"bundle"}` open: the sealed file
+   * named by `hash`, wrapped in the document the frame renders it as. Served
+   * behind {@link BUNDLE_CSP} (doors/build-door.ts), and viewer-scoped like
+   * every other read of an app.
+   */
+  bundleDocument(appId: AppId, hash: string, ctx: RunContext): Promise<Uint8Array>;
   call(appId: AppId, ref: string, args: Json, ctx: RunContext): Promise<ToolOutcome>;
   exportApp(appId: AppId, ctx: RunContext): Promise<Uint8Array>;
   importApp(source: Uint8Array | AppDocument, ctx: RunContext): Promise<AppDocument>;

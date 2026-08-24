@@ -172,6 +172,12 @@ const serveOpenApp = (
       ...(app.buildFailed.prompt === undefined ? {} : { prompt: app.buildFailed.prompt }),
     };
   }
+  // FINAL SPEC v1 — a sealed bundle IS the app: the hash is all the surface
+  // needs, because the bytes are immutable and the frame fetches them itself
+  // (`GET /apps/:id/bundle/:hash`, behind BUNDLE_CSP).
+  if (app.ui === "bundle" && app.bundle !== undefined) {
+    return { kind: "bundle", entry: app.bundle.entry };
+  }
   if (app.ui === "http") {
     // A served document without a machine has NO surface anywhere (a v1-era
     // import or a de-graduated doc): say so instead of a confusing wake error.

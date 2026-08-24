@@ -1,3 +1,4 @@
+import { BUNDLE_HEADERS } from "@vendoai/apps";
 import { isVendoError, VendoError, type AccessLevel, type Json, type RunContext, type StoreOps } from "@vendoai/core";
 import { json, object, requestJson, route, string, type RouteEntry, type WireContext } from "./shared.js";
 
@@ -351,6 +352,13 @@ export const appRoutes: RouteEntry[] = [
     // the idle timer); "woke" tells the embed its URL is stale — re-open.
     if (op(wire, "POST", "machine", 4) && segments[3] === "ping") {
       return json(await deps.apps.machine.ping(appId, ctx));
+    }
+    // FINAL SPEC v1 — the sealed bundle's bytes, as the document the frame
+    // renders. `BUNDLE_HEADERS` carries the CSP that IS the frame's enforcer
+    // (zero network), so this route never assembles a header set of its own.
+    if (op(wire, "GET", "bundle", 4)) {
+      const bytes = await deps.apps.bundleDocument(appId, string(segments[3], "hash"), ctx);
+      return new Response(bytes as BodyInit, { headers: BUNDLE_HEADERS });
     }
     if (op(wire, "GET", "export")) {
       const bytes = await deps.apps.exportApp(appId, ctx);

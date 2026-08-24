@@ -46,6 +46,7 @@ function OpenApp({ appId }: { appId: AppId }) {
           {surface ? (
             <AppFrame
               key={appId}
+              appId={appId}
               surface={surface}
               components={hostComponentMap(mapleRegistry)}
               onAction={({ action, payload }) => client.apps.call(appId, action, payload ?? {})}

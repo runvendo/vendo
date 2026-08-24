@@ -1,7 +1,10 @@
-import { Component, useEffect, useRef, type ComponentType, type ErrorInfo, type ReactNode } from "react";
+import { Component, useEffect, useMemo, useRef, type ComponentType, type ErrorInfo, type ReactNode } from "react";
 import type { Json, ToolOutcome, UIPayload } from "@vendoai/core";
 import type { OpenSurface } from "../wire-types.js";
-import { applyFrameResize, FRAME_MAX_HEIGHT_CSS } from "./frame-resize.js";
+import { useVendoProvider } from "../context.js";
+import { themeCssVariables } from "../theme.js";
+import { applyFrameResize, isFromFrame, FRAME_MAX_HEIGHT_CSS } from "./frame-resize.js";
+import { readFrameCall, replyToFrame, sendFrameTheme } from "./frame-bridge.js";
 import { ContainedNotice } from "./notice.js";
 import { PayloadView, type ParkedPress } from "./renderer.js";
 import { Skeleton } from "./forming-skeleton.js";
@@ -165,10 +168,74 @@ function HttpFrame({ url, keepalive }: { url: string; keepalive?: AppFrameKeepal
   );
 }
 
+/**
+ * A SEALED bundle (FINAL SPEC v1) — the app's own document, served by
+ * `GET /apps/:id/bundle/:hash` behind `default-src 'none'`.
+ *
+ * `allow-scripts` WITHOUT `allow-same-origin` is the enforcer: it gives the
+ * frame an opaque origin, so the app runs in nobody's origin, reaches no host
+ * storage or cookie, and — with the route's CSP — makes no request at all. Host
+ * data reaches it through one door only, the postMessage bridge below, which
+ * lands on the same guarded `onAction` a tree surface's press does.
+ *
+ * The seal is content, never brand: the tokens are posted in at boot, so the
+ * same bytes follow whatever palette the host is wearing today.
+ */
+function BundleFrame({ appId, entry, onAction }: {
+  appId: string;
+  entry: string;
+  onAction: NonNullable<AppFrameProps["onAction"]>;
+}) {
+  const { client, theme } = useVendoProvider();
+  const frameRef = useRef<HTMLIFrameElement | null>(null);
+  const vars = useMemo(() => themeCssVariables(theme), [theme]);
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const onMessage = (event: MessageEvent) => {
+      const frame = frameRef.current;
+      if (applyFrameResize(frame, event)) return;
+      // The handshake: a frame that has not booted has no listener yet, so the
+      // tokens would land on nobody.
+      if ((event.data as { vendo?: unknown; kind?: unknown } | null)?.kind === "booted" && isFromFrame(frame, event)) {
+        sendFrameTheme(frame, vars);
+        return;
+      }
+      const call = readFrameCall(frame, event);
+      if (call === undefined) return;
+      void onAction({ nodeId: call.id, action: call.ref, payload: call.args })
+        .then((outcome) => replyToFrame(frame, call.id, outcome));
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [onAction, vars]);
+  return (
+    <iframe
+      // The entry IS the content hash, so fresh bytes are a fresh frame.
+      key={entry}
+      ref={frameRef}
+      title="Vendo app"
+      src={client.apps.bundleUrl(appId, entry)}
+      sandbox="allow-scripts"
+      style={{
+        width: "100%",
+        minHeight: "var(--vendo-app-frame-height, 320px)",
+        maxHeight: FRAME_MAX_HEIGHT_CSS,
+        border: 0,
+      }}
+    />
+  );
+}
+
 /** 08-ui §5; 06-apps §1 — render every app execution plane fail-soft. */
 export function AppFrame({ surface, appId, components = {}, data, onAction = unavailableAction, onParked, onStateChange, keepalive }: AppFrameProps) {
   if (surface.kind === "http") {
     return <HttpFrame url={surface.url} keepalive={keepalive} />;
+  }
+
+  // A bundle is addressed by app: without one there is no url to open, and a
+  // frame pointed at a guess is worse than an honest "unsupported" below.
+  if (surface.kind === "bundle" && appId !== undefined) {
+    return <BundleFrame appId={appId} entry={surface.entry} onAction={onAction} />;
   }
 
   if (surface.kind === "resuming") {
