@@ -97,10 +97,18 @@ export { buildingAppsSkill } from "./skills/building-apps.js";
 // it lives outside this package: a sandboxed harness holds a `WorkspaceFs` and
 // never a store, so composition binds the store side once and hands these to
 // whoever is materializing an app.
+// The seal door beside it, plus the app row's compare-and-swap writer, exported
+// for the same reason `createAppHistory` is: `@vendoai/store` holds both the
+// bytes and the row revision a seal depends on, so it proves the whole seal —
+// content-addressed blobs, last-CAS-wins, loser kept as a version — against the
+// REAL writers rather than a hand-rolled copy of what they produce.
 export {
   commitApp,
+  readBundleBlob,
+  sealBundleBlobs,
   type AppSourceSeam,
 } from "./persistence/app-source.js";
+export { updateAppRow } from "./persistence/persistence.js";
 // The hot-path render seam (§1.6) — the commit-intercepting wrap that paints a
 // landing `app.tsx`. Public because the workspace it wraps lives
 // outside this package: composition fills the harness runtime's `wrapWorkspace`

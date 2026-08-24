@@ -16,12 +16,14 @@
  *   untouched, along with storage, machine, pins, placements and grants — a
  *   commit is not a generation.
  */
+import { createHash } from "node:crypto";
 import {
   VendoError,
   WORKSPACE_INLINE_MAX_BYTES,
   appRootPath,
   safeErrorMessage,
   sha256Hex,
+  type AppBundle,
   type AppId,
   type AppMount,
   type FilesAdapter,
@@ -95,6 +97,58 @@ export const appMountFor = (owner: string, ctx: RunContext): AppMount =>
  * the prerequisite for reaping them.
  */
 const blobKey = (appId: AppId, path: string): string => `apps/${appId}/${sha256Hex(path)}`;
+
+/**
+ * A SEALED bundle's namespace beside it — keyed by the CONTENT's hash, never by
+ * a path. That is what makes a seal immutable: a reseal mints fresh keys, so it
+ * cannot overwrite the bytes an open tab is still rendering, two concurrent
+ * seals cannot collide, and the loser of the row's compare-and-swap stays
+ * readable as a history version.
+ */
+const bundleKey = (appId: AppId, hex: string): string => `apps/${appId}/bundle/${hex}`;
+
+/**
+ * Freeze one build's output into that namespace and describe it.
+ *
+ * `entry` names which of `files` the frame boots; everything else lands in
+ * `assets` under the path the entry imports it by. Hashing goes over the BYTES
+ * (`node:crypto`, as `@vendoai/harnesses`' materialize seam does) rather than
+ * over text, because a bundle carries fonts and images that no string
+ * round-trip survives.
+ */
+export const sealBundleBlobs = async (
+  appId: AppId,
+  files: readonly { path: string; bytes: Uint8Array }[],
+  entry: string,
+  blobs: FilesAdapter,
+): Promise<AppBundle> => {
+  const assets: Record<string, string> = {};
+  let entryHash: string | undefined;
+  let bytes = 0;
+  for (const file of files) {
+    const hex = createHash("sha256").update(file.bytes).digest("hex");
+    await blobs.put(bundleKey(appId, hex), file.bytes);
+    bytes += file.bytes.byteLength;
+    if (file.path === entry) entryHash = hex;
+    else assets[file.path] = hex;
+  }
+  if (entryHash === undefined) {
+    throw new VendoError("validation", `the entry "${entry}" is not among ${appId}'s built files`);
+  }
+  return {
+    entry: entryHash,
+    ...(Object.keys(assets).length === 0 ? {} : { assets }),
+    bytes,
+    sealedAt: new Date().toISOString(),
+  };
+};
+
+/** One sealed file back, by the hash that IS its key. */
+export const readBundleBlob = async (
+  appId: AppId,
+  hex: string,
+  blobs: FilesAdapter,
+): Promise<Uint8Array | null> => (await blobs.get(bundleKey(appId, hex)))?.bytes ?? null;
 
 const encoder = new TextEncoder();
 const contentHash = (text: string): string => `sha256:${sha256Hex(text)}`;
