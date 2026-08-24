@@ -107,3 +107,35 @@ describe("a very talkative command", () => {
     expect(JSON.stringify((outcome as { output: unknown }).output).length).toBeLessThan(32_000);
   });
 });
+
+describe("the session's lifetime", () => {
+  it("keeps /tmp across calls in ONE turn", async () => {
+    const workspace = workspaceDouble();
+    const registry = createShellTools(async () => workspace);
+    const turn = ctx({ turnId: "trn_same" });
+
+    await registry.execute({ id: "c5", tool: VENDO_BASH_TOOL, args: { command: "echo kept > /tmp/note" } }, turn);
+    const second = await registry.execute(
+      { id: "c6", tool: VENDO_BASH_TOOL, args: { command: "cat /tmp/note" } },
+      turn,
+    );
+
+    expect((second as { output: { stdout: string } }).output.stdout).toBe("kept\n");
+  });
+
+  it("does NOT carry /tmp into another turn", async () => {
+    const workspace = workspaceDouble();
+    const registry = createShellTools(async () => workspace);
+
+    await registry.execute(
+      { id: "c7", tool: VENDO_BASH_TOOL, args: { command: "echo leaked > /tmp/note" } },
+      ctx({ turnId: "trn_one" }),
+    );
+    const other = await registry.execute(
+      { id: "c8", tool: VENDO_BASH_TOOL, args: { command: "cat /tmp/note" } },
+      ctx({ turnId: "trn_two" }),
+    );
+
+    expect((other as { output: { exitCode: number } }).output.exitCode).not.toBe(0);
+  });
+});

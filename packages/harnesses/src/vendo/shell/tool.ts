@@ -67,10 +67,17 @@ const clip = (text: string): string => {
   return note(text.length - kept) + text.slice(text.length - kept);
 };
 
+/** Sessions outlive a call and nothing here is told a turn ended, so the cache is
+ *  BOUNDED rather than swept: the oldest entry leaves when a new one would be the
+ *  33rd. A turn evicted early re-opens on its next call and loses only `/tmp`,
+ *  which is the one thing in the session that was never durable anyway. */
+const MAX_LIVE_SESSIONS = 32;
+
 export function createShellTools(
   open: (principal: Principal) => Promise<WorkspaceFs>,
   config: { limits?: ShellLimits } = {},
 ): ToolRegistry {
+  const live = new Map<string, { session: ShellSession; workspace: WorkspaceFs }>();
   return {
     async descriptors() {
       return structuredClone(descriptors);
@@ -81,13 +88,28 @@ export function createShellTools(
       if (typeof args.command !== "string" || args.command.trim() === "") {
         return fail("validation", "command must be the shell command to run, as a single string");
       }
-      const workspace = await open(ctx.principal);
-      const session: ShellSession = createShellSession({
-        workspace,
-        ...(config.limits === undefined ? {} : { limits: config.limits }),
-      });
-      const result = await session.exec(args.command);
-      await workspace.commit();
+      // ONE session per TURN: `/tmp` is where a multi-step script keeps its
+      // intermediates, and a fresh interpreter per call would throw them away
+      // between `sort > /tmp/x` and `cat /tmp/x`. Keyed on `turnId` because that
+      // is the only thing a tool call carries meaning "same conversation, still
+      // going"; a run with no turn (a webhook, a schedule fire) falls back to its
+      // session so it is at least not sharing with anyone else.
+      const key = ctx.turnId ?? `session:${ctx.principal.subject}:${ctx.sessionId}`;
+      let held = live.get(key);
+      if (held === undefined) {
+        if (live.size >= MAX_LIVE_SESSIONS) live.delete(live.keys().next().value!);
+        const workspace = await open(ctx.principal);
+        held = {
+          workspace,
+          session: createShellSession({
+            workspace,
+            ...(config.limits === undefined ? {} : { limits: config.limits }),
+          }),
+        };
+        live.set(key, held);
+      }
+      const result = await held.session.exec(args.command);
+      await held.workspace.commit();
       return ok({ stdout: clip(result.stdout), stderr: clip(result.stderr), exitCode: result.exitCode });
     },
   };
