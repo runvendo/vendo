@@ -13,6 +13,7 @@ import {
   VendoError,
   VENDO_TOOL_TITLES,
   type Principal,
+  type ThreadId,
   type ToolDescriptor,
   type ToolOutcome,
   type ToolRegistry,
@@ -25,21 +26,38 @@ import type { CreateVendoConfig } from "./types.js";
 /** §3.1's frozen drawer: per subject, and outliving every conversation. */
 export const USER_FILES = "/user/files";
 
-/** Does this message part address the drawer rather than carry bytes? */
-export const isUserFilePath = (path: string): boolean => path.startsWith(`${USER_FILES}/`);
+/** Where a dropped file LANDS, for the moments between `POST /files` and the
+    turn that claims it. A drop finishes before the conversation it belongs to
+    exists (the composer uploads pre-send, and a first turn's thread id is minted
+    server-side), so there has to be an address that means "received, not yet
+    homed". Nothing but the re-homer and its sweep ever reads it. */
+export const USER_UPLOADS = "/user/uploads";
+
+/** Where a file BELONGS once a turn has claimed it: with the conversation, like
+    a Claude Code project — so it is in reach of every later turn on that thread,
+    and it dies when the thread does. */
+export const USER_THREADS = "/user/threads";
+
+/** Does this message part address bytes the SERVER holds, rather than carry
+    them? All three addresses answer yes: the shelf, a staged drop, and a
+    conversation's own files. */
+export const isUserFilePath = (path: string): boolean =>
+  path.startsWith(`${USER_FILES}/`)
+  || path.startsWith(`${USER_UPLOADS}/`)
+  || path.startsWith(`${USER_THREADS}/`);
 
 /**
- * The ONE name check every door into the drawer shares, so a file lands and is
- * fetched at the same address by the same rule.
+ * The ONE name check every door into a user's files shares, so a file lands and
+ * is fetched at the same address by the same rule.
  *
  * A name is a FILE name, never a path. Refusing `/`, `\` and the `.`/`..`
- * dot-segments AT THE SOURCE is what contains the whole feature — the path is
- * built below from a name that provably carries no separator, so there is
+ * dot-segments AT THE SOURCE is what contains the whole feature — every path
+ * below is BUILT from a name that provably carries no separator, so there is
  * nothing to escape with. Same posture as the route-tool traversal fix
  * (b9392b92c): reject the segment rather than sanitize it, because the values
  * reaching here are steerable by end-user chat.
  */
-export function userFilePath(name: string): string {
+function leafName(name: string): string {
   const bad = name.length === 0 || name.length > 200
     || /[/\\]/.test(name) || name === "." || name === ".."
     || [...name].some((char) => char < " ");
@@ -49,8 +67,28 @@ export function userFilePath(name: string): string {
       `${JSON.stringify(name)} is not a file name. Send one name — no slashes, no control characters, at most 200 characters — and it lands in the user's files as exactly that.`,
     );
   }
-  return `${USER_FILES}/${name}`;
+  return name;
 }
+
+/** The keep-shelf's address. */
+export function userFilePath(name: string): string {
+  return `${USER_FILES}/${leafName(name)}`;
+}
+
+/** A staged drop's address. The random prefix is OURS, never the caller's: two
+    conversations may drop `report.pdf` in the same second and neither may
+    overwrite the other before its turn claims it. */
+export function uploadStagingPath(name: string): string {
+  return `${USER_UPLOADS}/${globalThis.crypto.randomUUID().slice(0, 8)}-${leafName(name)}`;
+}
+
+/** Everything one conversation owns. The delete cascade sweeps this whole
+    subtree, so nothing may live under it that should outlive the thread. */
+export const threadFilesDir = (threadId: ThreadId): string => `${USER_THREADS}/${threadId}`;
+
+/** One file, homed with its conversation. */
+export const threadFilePath = (threadId: ThreadId, name: string): string =>
+  `${threadFilesDir(threadId)}/files/${leafName(name)}`;
 
 /** What one caller may push into the drawer in one go by DEFAULT, and the same
     number at every door into it; `createVendo({ uploadMaxBytes })` moves it. It
