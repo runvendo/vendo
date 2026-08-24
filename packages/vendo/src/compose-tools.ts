@@ -5,6 +5,7 @@
  */
 import type { Connector } from "@vendoai/actions";
 import { consoleLogger, emitUsage, setLogger, setUsageSink, type Json } from "@vendoai/core";
+import { createShellTools } from "@vendoai/harnesses/vendo";
 import { createKnowledgeTools, knowledgeIndexResolver } from "@vendoai/knowledge";
 import { workspaceStore } from "@vendoai/store";
 import {
@@ -133,7 +134,7 @@ export const emitDeploymentBoot = (composition: VendoComposition): void => {
 export const composeTools = (composition: VendoComposition): Pick<VendoComposition,
   "toolOutputCap" | "catalogConnectors" | "serviceCatalog" | "knowledgeIndex"
   | "missSurface" | "missCapture"> => {
-  const { config, actions, store, resolvedConnectors, surfaceRoot } = composition;
+  const { config, actions, store, resolvedConnectors, surfaceRoot, composed } = composition;
   // One value, three readers: the agent's context, the harness bridge, and the
   // discovery registry — which bounds its own search under it rather than being
   // cut by it (the cap slices serialized JSON, so a search that reaches it loses
@@ -183,6 +184,26 @@ export const composeTools = (composition: VendoComposition): Pick<VendoCompositi
     async (principal) => await (drawer ??= workspaceStore(store, { files: composition.files })).open(principal),
     uploadCapOf(config),
   ));
+
+  // The shell (spec 2026-08-23 §1) — the RESIDENT brain's hands, on the same
+  // registry, guarded and audited like everything else.
+  //
+  // The condition is WHO THINKS, resolved from the same two slots
+  // compose-harness.ts resolves it from (`composed?.harness ?? config.harness`,
+  // then the `vendo()` default). It is re-derived here rather than read off
+  // `composition.harness` because this phase runs BEFORE composeHarness
+  // (compose-context.ts:323 vs :325) — and a brain that thinks on a MACHINE
+  // already has a real disk, so handing it a second, virtual one would be two
+  // filesystems disagreeing about the same files.
+  const brain = composed?.harness ?? config.harness;
+  const residentBrain = brain === undefined || brain.name === "vendo";
+  const shellLimits = typeof config.shell === "object" ? config.shell.limits : undefined;
+  if (config.shell !== false && residentBrain) {
+    actions.add(createShellTools(
+      async (principal) => await (drawer ??= workspaceStore(store, { files: composition.files })).open(principal),
+      shellLimits === undefined ? {} : { limits: shellLimits },
+    ));
+  }
 
   // Knowledge K1 — the tool exists exactly when an adapter is configured;
   // no adapter, no `vendo_knowledge_search` in any descriptor surface.
