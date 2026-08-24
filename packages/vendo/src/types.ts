@@ -42,6 +42,7 @@ import type {
   VendoTheme,
 } from "@vendoai/apps/contract";
 import type { GuardRules, PolicyFile, VendoGuard } from "@vendoai/guard";
+import type { ShellLimits } from "@vendoai/harnesses/vendo";
 import type { HostOAuthAdapter } from "@vendoai/mcp";
 import type { VendoStore } from "@vendoai/store";
 import type { VendoAgentTools } from "./agent-tools.js";
@@ -423,6 +424,23 @@ export interface CreateVendoConfig {
       exchanges one of these keys plus a user id for a short-lived user-bound
       token at the door's token endpoint (rotation is listing both keys until
       the old one is out of use). */
+  /** The agent's hands over the user's own files (spec 2026-08-23 §1): one
+      in-process `bash` over the workspace, on the same guarded registry as
+      everything else. ON by default — a deployment's users drop files into chat
+      whether or not anyone configured anything, and an agent that cannot open
+      them is the whole problem this exists to fix.
+
+      `false` withholds the tool entirely. The object form keeps it and moves its
+      ceilings: `limits.maxExecutionTimeMs` (default 30 000) is one call's wall
+      clock, `limits.maxOutputBytes` (default 1 000 000) is how much one call may
+      produce before the shell stops it.
+
+      It rides the RESIDENT BRAIN, not the deployment: `vendo()` runs in this
+      process and has the workspace in hand, so the tool composes for it and for
+      an `agent()` that adopted it. A harness that thinks on a MACHINE
+      (`claudeCode()`) already has a real disk and reaches it its own way, so this
+      flag is silently irrelevant there rather than half-wired. */
+  shell?: boolean | { limits?: ShellLimits };
   mcp?: boolean | {
     baseUrl?: string;
     remoteAs?: { issuer: string; jwksUri?: string; audience: string };
