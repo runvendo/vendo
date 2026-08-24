@@ -125,3 +125,56 @@ describe("xlsx2csv", () => {
     expect(result.stderr).toContain("not a readable spreadsheet");
   });
 });
+
+describe("docx2txt", () => {
+  /** A real .docx: a zip carrying the three parts Word requires. */
+  const document = async (paragraphs: string[]): Promise<Uint8Array> => {
+    const { zipSync, strToU8 } = await import("fflate");
+    const body = paragraphs
+      .map((text) => `<w:p><w:r><w:t xml:space="preserve">${text}</w:t></w:r></w:p>`)
+      .join("");
+    return zipSync({
+      "[Content_Types].xml":
+        strToU8(`<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>`),
+      "_rels/.rels":
+        strToU8(`<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>`),
+      "word/document.xml":
+        strToU8(`<?xml version="1.0" encoding="UTF-8"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>${body}</w:body></w:document>`),
+    });
+  };
+
+  it("reads the paragraphs out of a real .docx, one per line", async () => {
+    const workspace = await diskWith({
+      "/user/files/brief.docx": await document(["Quarterly brief", "Revenue rose 26% to 98,000."]),
+    });
+    const session = createShellSession({ workspace });
+
+    const result = await session.exec("docx2txt files/brief.docx");
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toBe("Quarterly brief\nRevenue rose 26% to 98,000.\n");
+  });
+
+  it("keeps a paragraph whole when Word split it into runs", async () => {
+    const { zipSync, strToU8 } = await import("fflate");
+    const split = zipSync({
+      "word/document.xml": strToU8(
+        `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>`
+        + `<w:p><w:r><w:t xml:space="preserve">Revenue rose </w:t></w:r><w:r><w:t>26%</w:t></w:r></w:p>`
+        + `</w:body></w:document>`,
+      ),
+    });
+    const session = createShellSession({ workspace: await diskWith({ "/user/files/split.docx": split }) });
+
+    expect((await session.exec("docx2txt files/split.docx")).stdout).toBe("Revenue rose 26%\n");
+  });
+
+  it("says so when the file is not a .docx", async () => {
+    const session = createShellSession({ workspace: await diskWith({ "/user/files/notes.txt": "just words\n" }) });
+
+    const result = await session.exec("docx2txt files/notes.txt");
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("not a readable Word document");
+  });
+});

@@ -11,6 +11,7 @@
  */
 import type { IFileSystem } from "@vendoai/core";
 import type { Bash as BashInstance } from "just-bash";
+import { docx2txt } from "./parsers/docx2txt.js";
 import { pdftotext } from "./parsers/pdftotext.js";
 import { xlsx2csv } from "./parsers/xlsx2csv.js";
 
@@ -90,7 +91,7 @@ export function createShellSession(opts: {
       // The binary formats a person actually drops into chat, as ordinary
       // commands: they pipe, they redirect, and the agent needs no special
       // vocabulary for them. Lazy, so their libraries load on first use.
-      customCommands: [pdftotext, xlsx2csv],
+      customCommands: [pdftotext, xlsx2csv, docx2txt],
       executionLimits: {
         maxExecutionTimeMs: opts.limits?.maxExecutionTimeMs ?? DEFAULT_MAX_EXECUTION_TIME_MS,
         maxOutputSize: opts.limits?.maxOutputBytes ?? DEFAULT_MAX_OUTPUT_BYTES,
