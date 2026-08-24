@@ -283,6 +283,10 @@ export const createAppOpener = (...args: Parameters<typeof serveOpenApp>): (
       throw new VendoError("not-found", `app ${app.id} is still being built`, { appId: app.id });
     }
     const tree = formingTreeOf(app.id);
-    return tree === undefined ? { kind: "pending" } : { kind: "pending", tree };
+    return {
+      kind: "pending",
+      ...(app.buildStatus === undefined ? {} : { status: app.buildStatus }),
+      ...(tree === undefined ? {} : { tree }),
+    };
   };
 };

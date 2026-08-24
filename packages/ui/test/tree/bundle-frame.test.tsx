@@ -11,6 +11,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, screen } from "@testing-library/react";
 import type { ToolOutcome } from "@vendoai/core";
+import { VendoProvider } from "../../src/context.js";
 import { AppFrame } from "../../src/tree/index.js";
 import { readFrameCall, replyToFrame, sendFrameTheme } from "../../src/tree/frame-bridge.js";
 
@@ -32,6 +33,8 @@ const posted = (source: Window | null, data: unknown) =>
 
 const CALL = { vendo: true, kind: "call", id: "c1", ref: "listAccounts", args: { limit: 2 } };
 const OK: ToolOutcome = { status: "ok", output: { rows: [] } };
+/** One `.vendo/fonts.css` face, as `vendo sync` inlines it. */
+const FACE = "@font-face{font-family:'Maple';src:url(data:font/woff2;base64,d09GMg==) format('woff2')}";
 
 describe("the frame bridge", () => {
   it("reads a well-formed call from the frame itself", () => {
@@ -111,6 +114,22 @@ describe("BundleFrame", () => {
     // Injected AT RENDER, never baked into the seal.
     expect(theme.vars["--vendo-font-family"]).toBeTypeOf("string");
     expect(Object.keys(theme.vars).every((name) => name.startsWith("--vendo-"))).toBe(true);
+  });
+
+  it("sends the host's own font faces with them, straight off the provider", () => {
+    render(
+      <VendoProvider fonts={FACE}>
+        <AppFrame surface={surface} appId="app_built" />
+      </VendoProvider>,
+    );
+    const frame = screen.getByTitle("Vendo app") as HTMLIFrameElement;
+    const post = vi.spyOn(frame.contentWindow!, "postMessage");
+
+    window.dispatchEvent(posted(frame.contentWindow, { vendo: true, kind: "booted" }));
+
+    const [theme] = post.mock.calls[0] as [{ fonts?: string }];
+    // `.vendo/fonts.css`, at render — the seal holds none of it.
+    expect(theme.fonts).toBe(FACE);
   });
 
   it("routes a frame call through onAction and posts the outcome back", async () => {

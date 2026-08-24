@@ -23,7 +23,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createVendo, type Vendo } from "../src/server.js";
 
 const CSP = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline';"
-  + " img-src data:; frame-ancestors 'self'";
+  + " img-src data:; font-src data:; frame-ancestors 'self'";
 
 const ADA: Principal = { kind: "user", subject: "user_ada" };
 const APP = "app_built" as AppId;
@@ -97,6 +97,25 @@ describe("the sealed bundle's render seam", () => {
     expect(document_).not.toContain("<script src");
     // …and the bundle's own `</script>` did not end the script tag early.
     expect(document_.split("</script>")).toHaveLength(2);
+  });
+
+  it("lets a data: font face in and still no network out, and bakes no font into the seal", async () => {
+    const { vendo, bundle } = await setup();
+    const response = await get(vendo, `/apps/${APP}/bundle/${bundle.entry}`, ADA.subject);
+    const policy = response.headers.get("content-security-policy") ?? "";
+
+    // Brand fonts are injected AT RENDER as `data:` faces, which `default-src
+    // 'none'` blocks outright — so the policy has to name them, and inline is
+    // the only spelling it may name. A scheme or an origin here would hand the
+    // frame back the network the whole seal rests on not having.
+    expect(policy).toContain("font-src data:");
+    expect(policy).not.toMatch(/https?:|\/\//u);
+
+    // Nothing font-related is in the sealed bytes: the seal is content, the
+    // face is brand, and the two must never meet.
+    const document_ = await response.text();
+    expect(document_).not.toContain("@font-face");
+    expect(document_).not.toContain("font-family");
   });
 
   it("is viewer-scoped: a stranger gets not-found, never the bytes", async () => {

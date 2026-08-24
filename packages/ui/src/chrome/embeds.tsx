@@ -289,6 +289,10 @@ export function VendoAppEmbed({ refValue }: VendoAppEmbedProps) {
   // across polls that carry none, so a draft that stops painting for a beat
   // leaves the silhouette up instead of snapping back to the bare skeleton.
   const [forming, setForming] = useState<UIPayload>();
+  // "Progress = chat status lines only" (FINAL SPEC v1) — the build's own latest
+  // line, off the SAME poll. Held like the silhouette: a poll that carries none
+  // leaves the last line up rather than snapping back to the generic bar.
+  const [status, setStatus] = useState<string>();
 
   useEffect(() => {
     setActiveAppId(appId);
@@ -298,6 +302,7 @@ export function VendoAppEmbed({ refValue }: VendoAppEmbedProps) {
     setSurface(undefined);
     setFailed(undefined);
     setForming(undefined);
+    setStatus(undefined);
     const startedAt = Date.now();
     let cancelled = false;
     let done = false;
@@ -347,6 +352,7 @@ export function VendoAppEmbed({ refValue }: VendoAppEmbedProps) {
           resolveSurface(next);
           return;
         }
+        if (next.status !== undefined) setStatus(next.status);
         // Geometry only — the server ships no figure a repair round could
         // change (apps wire-types.ts), so this paints assembly, never a draft.
         if (next.tree !== undefined) setForming(next.tree);
@@ -380,6 +386,7 @@ export function VendoAppEmbed({ refValue }: VendoAppEmbedProps) {
     setSurface(undefined);
     setFailed(undefined);
     setForming(undefined);
+    setStatus(undefined);
     try {
       const created = await client.apps.create({ prompt });
       setActiveAppId(created.id);
@@ -403,7 +410,9 @@ export function VendoAppEmbed({ refValue }: VendoAppEmbedProps) {
         <div className="fl-appcard-bar" data-state={building ? "building" : "ready"}>
           <span className="fl-appcard-dot" aria-hidden="true" />
           <span className="fl-boot-labels fl-appcard-name">
-            <span className="fl-boot-building" aria-hidden={!building}>Building {title}…</span>
+            {/* The build's own line when it has one — same slot, same type, so
+                a status is a change of words and never of geometry. */}
+            <span className="fl-boot-building" aria-hidden={!building}>{status ?? `Building ${title}…`}</span>
             <span className="fl-boot-ready" aria-hidden={building}>{title}</span>
           </span>
           {/* The placement affordance, only once the view is READY — the same

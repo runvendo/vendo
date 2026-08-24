@@ -43,7 +43,7 @@ import {
 import { createStore, type VendoStore } from "@vendoai/store";
 import * as kit from "@vendoai/ui/kit";
 import { afterEach, describe, expect, it } from "vitest";
-import { appBuilder, BUILD_ALLOWED_DOMAINS } from "../src/build-agent.js";
+import { appBuilder, BUILD_ALLOWED_DOMAINS, BUILD_STATUS_LINES } from "../src/build-agent.js";
 import { createVendo } from "../src/server.js";
 
 const encoder = new TextEncoder();
@@ -366,6 +366,106 @@ describe("approving comes straight back", () => {
 
     release();
     expect((await settled(harness))["ui"]).toBe("bundle");
+  });
+});
+
+describe("progress is chat status lines, and nothing more", () => {
+  /** Poll the REAL pending answer until the lane has said something. The write
+   *  is fire-and-forget by design, so it lands a beat after the label. */
+  const labelled = async (harness: Harness): Promise<Record<string, unknown>> => {
+    for (let attempt = 0; attempt < 400; attempt += 1) {
+      const surface = await harness.runtime.open(APP, ctx, { pending: true }) as Record<string, unknown>;
+      if (surface["status"] !== undefined) return surface;
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    throw new Error("the pending poll never carried a status");
+  };
+
+  const heldBox = () => {
+    let started: () => void = () => undefined;
+    const inTheBox = new Promise<void>((resolve) => { started = resolve; });
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    const sandbox = scriptedSandbox(async (input) => {
+      started();
+      await held;
+      buildsFine(input);
+    });
+    return { sandbox, inTheBox, release: () => release() };
+  };
+
+  it("the lane's own label reaches the pending poll, one line at a time", async () => {
+    const { sandbox, inTheBox, release } = heldBox();
+    const harness = setup(sandbox);
+
+    await decide(harness, await propose(harness));
+    await inTheBox;
+
+    // THE SEAM. `BuildRequest.onStatus` shipped emitted and unread: the real
+    // lane says these, the real row holds one, and the real pending answer —
+    // the one the embed already polls — is what carries it out.
+    const surface = await labelled(harness);
+    // ONE LABEL FIELD, not a log: a scalar `status` and nothing beside it.
+    expect(Object.keys(surface).sort()).toEqual(["kind", "status"]);
+    // …and the words are the LANE'S OWN, read off the lane rather than copied
+    // here: a rename there is a red test, never a build narrating a line
+    // nobody writes any more. Either of them, because the two writes are
+    // deliberately independent (build-door.ts) and race by design.
+    expect(BUILD_STATUS_LINES as readonly string[]).toContain(surface["status"]);
+
+    release();
+    // A label is build state, not app content: the seal takes it with the rest.
+    expect((await settled(harness))["buildStatus"]).toBeUndefined();
+  });
+
+  it("a status write the store refuses still leaves the build succeeding", async () => {
+    // Progress is cosmetic; the build is not. Only the status write is refused
+    // — the same row's own writes go through, so what is on trial is the
+    // failure of THIS write and nothing else.
+    const backing = memoryStoreAdapter();
+    let refused = 0;
+    const refusesLabels: StoreAdapter = {
+      ...backing,
+      records: (collection) => {
+        const records = backing.records(collection);
+        // The label write is the ONLY one refused, and it is told apart by the
+        // field it carries — so the row's own writes (`building`, the seal) land
+        // exactly as they always do.
+        if (collection !== "vendo_apps" || records.atomic === undefined) return records;
+        const atomic = records.atomic;
+        return {
+          ...records,
+          atomic: {
+            ...atomic,
+            compareAndSwap: async (input, revision) => {
+              if ((input.data as { doc?: { buildStatus?: unknown } }).doc?.buildStatus === undefined) {
+                return await atomic.compareAndSwap(input, revision);
+              }
+              refused += 1;
+              throw new Error("the store refused this write");
+            },
+          },
+        };
+      },
+    };
+    const { sandbox, inTheBox, release } = heldBox();
+    const harness = setup(sandbox, refusesLabels);
+
+    await decide(harness, await propose(harness));
+    // Held in the box, so the labels are written while the build is still
+    // running — a build that has already sealed writes no label at all, and
+    // this case would then pass on a lane that never tried.
+    await inTheBox;
+    for (let attempt = 0; refused === 0 && attempt < 400; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    expect(refused).toBeGreaterThan(0);
+
+    release();
+    const row = await settled(harness);
+    expect(row["ui"]).toBe("bundle");
+    expect(row["buildFailed"]).toBeUndefined();
+    expect(row["buildStatus"]).toBeUndefined();
   });
 });
 

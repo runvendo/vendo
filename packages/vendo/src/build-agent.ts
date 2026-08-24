@@ -71,6 +71,14 @@ const diskDirectory = (appId: AppId): string => `${BOX_WORKSPACE_ROOT}${appDirec
  *  the brief tells the box to remove it if its own test does not pass. */
 const ENTRY = "dist/app.js";
 
+/** Everything this lane ever says about itself, in order — "progress = chat
+ *  status lines only" (FINAL SPEC v1). Named so the seam that reads them back
+ *  off the app row reads THESE rather than a copy of them. */
+export const BUILD_STATUS_LINES = [
+  "Starting a build machine…",
+  "Writing the code, installing what it needs, and testing it…",
+] as const;
+
 /** The one capability gap that is this seam's own to report, in the person's
  *  terms. Third person: it surfaces as a system notice. */
 const NO_SANDBOX = "This needs a real build machine, and this deployment has no sandbox adapter to boot one from.";
@@ -145,7 +153,7 @@ export function appBuilder(deps: AppBuilderDeps): AppBuilder {
       // Declared out here so the box is handed back even when the lane throws.
       let machine: Awaited<ReturnType<typeof boxMachine>> | undefined;
       try {
-        request.onStatus?.("Starting a build machine…");
+        request.onStatus?.(BUILD_STATUS_LINES[0]);
         machine = await boxMachine({
           sandbox,
           threadId: `build_${request.appId}`,
@@ -154,7 +162,7 @@ export function appBuilder(deps: AppBuilderDeps): AppBuilder {
           ...(deps.template === undefined ? {} : { template: deps.template }),
         });
         await machine.materialize(checkoutOf(request.source, directory));
-        request.onStatus?.("Writing the code, installing what it needs, and testing it…");
+        request.onStatus?.(BUILD_STATUS_LINES[1]);
         // No `toolDoor`: this box reaches none of the host's tools, so there is
         // nothing for it to act with and no credential to act under.
         await machine.send({

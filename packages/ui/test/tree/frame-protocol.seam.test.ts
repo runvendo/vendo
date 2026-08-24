@@ -17,10 +17,13 @@ import { readFrameCall, replyToFrame, sendFrameTheme } from "../../src/tree/fram
 afterEach(() => {
   document.body.innerHTML = "";
   document.documentElement.removeAttribute("style");
+  document.querySelector("style[data-vendo-fonts]")?.remove();
   vi.restoreAllMocks();
 });
 
 const OK: ToolOutcome = { status: "ok", output: { balance: 12 } };
+/** One `.vendo/fonts.css` face, as `vendo sync` inlines it. */
+const FACE = "@font-face{font-family:'Maple';src:url(data:font/woff2;base64,d09GMg==) format('woff2')}";
 
 /** jsdom's top window IS its own `parent`, so the inner half's listener accepts
  *  what this document dispatches — which is what a real host posts in. */
@@ -61,5 +64,35 @@ describe("the frame protocol, both real halves", () => {
 
     expect(document.documentElement.style.getPropertyValue("--vendo-color-accent")).toBe("#0a7");
     expect(document.documentElement.style.getPropertyValue("--host-private")).toBe("");
+  });
+
+  it("installs the host's data: font faces at render, beside the family token", () => {
+    startFrameProtocol(document.createElement("div"));
+    const frame = document.createElement("iframe");
+    document.body.appendChild(frame);
+    const out = vi.spyOn(frame.contentWindow!, "postMessage");
+
+    sendFrameTheme(frame, { "--vendo-font-family": "Maple, sans-serif" }, FACE);
+    toFrame(out.mock.calls[0]![0]);
+
+    // The BYTES, not the name: a sealed bundle renders in an opaque origin the
+    // host's own stylesheet never reaches, so "Maple" resolves to nothing
+    // unless the face travels with the token.
+    expect(document.querySelector("style[data-vendo-fonts]")?.textContent).toBe(FACE);
+    expect(document.body.style.fontFamily).toBe("var(--vendo-font-family, system-ui, sans-serif)");
+  });
+
+  it("falls back to the family token when the host has no face to send", () => {
+    startFrameProtocol(document.createElement("div"));
+    const frame = document.createElement("iframe");
+    document.body.appendChild(frame);
+    const out = vi.spyOn(frame.contentWindow!, "postMessage");
+
+    sendFrameTheme(frame, { "--vendo-font-family": "Maple, sans-serif" });
+    toFrame(out.mock.calls[0]![0]);
+
+    // No empty face and no broken load — the token is the whole answer.
+    expect(document.querySelector("style[data-vendo-fonts]")).toBeNull();
+    expect(document.documentElement.style.getPropertyValue("--vendo-font-family")).toBe("Maple, sans-serif");
   });
 });

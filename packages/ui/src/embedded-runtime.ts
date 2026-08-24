@@ -20,6 +20,7 @@
  * host configured.
  */
 import type { Json, ToolOutcome } from "@vendoai/core";
+import { ensureThemeFontStyles } from "./chrome/theme-fonts.js";
 import { normalizeViewportBlockCss } from "./tree/viewport-css.js";
 
 /** Post one message to the embedding host. Every message is stamped `vendo: true`
@@ -71,9 +72,16 @@ export function callHost(ref: string, args: Json = null): Promise<ToolOutcome> {
  */
 function receiveFromHost(event: MessageEvent): void {
   if (event.source !== parent) return;
-  const message = event.data as { vendo?: unknown; kind?: unknown; vars?: unknown; id?: unknown; outcome?: unknown } | null;
+  const message = event.data as
+    { vendo?: unknown; kind?: unknown; vars?: unknown; fonts?: unknown; id?: unknown; outcome?: unknown } | null;
   if (typeof message !== "object" || message === null || message.vendo !== true) return;
-  if (message.kind === "theme") applyThemeVars(message.vars);
+  if (message.kind === "theme") {
+    applyThemeVars(message.vars);
+    // The brand's own faces, as `data:` URIs — the family token names a font
+    // this document would otherwise have no bytes for. Same installer the
+    // chrome uses, so a surface that is its own document gets its own sheet.
+    if (typeof message.fonts === "string") ensureThemeFontStyles(message.fonts);
+  }
   if (message.kind === "result" && typeof message.id === "string") {
     awaiting.get(message.id)?.(message.outcome as ToolOutcome);
     awaiting.delete(message.id);

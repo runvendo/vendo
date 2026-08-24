@@ -445,6 +445,13 @@ export interface AppDocument {
    */
   building?: IsoDateTime;
   /**
+   * The one line the build lane last said about itself, in the person's terms.
+   * A LABEL, never a log: the latest replaces the previous, because progress is
+   * chat status lines and the only reader is the pending poll's answer. Written
+   * only while `building` is set, and cleared with it.
+   */
+  buildStatus?: string;
+  /**
    * `building`'s half-step back: a build that has been OFFERED and not yet
    * answered. Server-written by the propose path and cleared by the decision,
    * so a document can never carry both this and `building`.
@@ -486,6 +493,7 @@ export const appDocumentSchema = z.object({
   forkedFrom: appIdSchema.optional(),
   buildFailed: appBuildFailureSchema.optional(),
   building: isoDateTimeSchema.optional(),
+  buildStatus: z.string().optional(),
   proposal: appBuildProposalSchema.optional(),
   memory: appMemorySchema.optional(),
   // Input widened for the same reason as {@link appSeedSchema}'s: a defaulted

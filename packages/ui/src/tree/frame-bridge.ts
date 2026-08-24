@@ -60,11 +60,22 @@ export function replyToFrame(frame: HTMLIFrameElement | null, id: string, outcom
   postToFrame(frame, { kind: "result", id, outcome });
 }
 
-/** The host's brand tokens, injected AT RENDER — never baked into the seal, so
- *  one sealed bundle follows whatever palette the host is wearing today. */
-export function sendFrameTheme(frame: HTMLIFrameElement | null, vars: Record<string, string>): void {
+/**
+ * The host's brand tokens and font faces, injected AT RENDER — never baked into
+ * the seal, so one sealed bundle follows whatever palette the host is wearing
+ * today.
+ *
+ * `fonts` is the host's `.vendo/fonts.css` (`VendoContextValue.fonts`), whose
+ * faces sync already inlined as `data:` URIs. The family NAME alone is useless
+ * here: the frame has an opaque origin the host's stylesheet never reaches, so
+ * without the bytes the token resolves to whatever the frame happens to have.
+ * Absent, the token's own fallback stack is the whole answer — the route's CSP
+ * (`font-src data:`) blocks any face that would try to fetch anything.
+ */
+export function sendFrameTheme(frame: HTMLIFrameElement | null, vars: Record<string, string>, fonts?: string): void {
   postToFrame(frame, {
     kind: "theme",
     vars: Object.fromEntries(Object.entries(vars).filter(([name]) => VENDO_VAR.test(name))),
+    ...(fonts === undefined || fonts === "" ? {} : { fonts }),
   });
 }

@@ -186,7 +186,7 @@ function BundleFrame({ appId, entry, onAction }: {
   entry: string;
   onAction: NonNullable<AppFrameProps["onAction"]>;
 }) {
-  const { client, theme } = useVendoProvider();
+  const { client, theme, fonts } = useVendoProvider();
   const frameRef = useRef<HTMLIFrameElement | null>(null);
   const vars = useMemo(() => themeCssVariables(theme), [theme]);
   useEffect(() => {
@@ -197,7 +197,7 @@ function BundleFrame({ appId, entry, onAction }: {
       // The handshake: a frame that has not booted has no listener yet, so the
       // tokens would land on nobody.
       if ((event.data as { vendo?: unknown; kind?: unknown } | null)?.kind === "booted" && isFromFrame(frame, event)) {
-        sendFrameTheme(frame, vars);
+        sendFrameTheme(frame, vars, fonts);
         return;
       }
       const call = readFrameCall(frame, event);
@@ -207,7 +207,7 @@ function BundleFrame({ appId, entry, onAction }: {
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [onAction, vars]);
+  }, [onAction, vars, fonts]);
   return (
     <iframe
       // The entry IS the content hash, so fresh bytes are a fresh frame.

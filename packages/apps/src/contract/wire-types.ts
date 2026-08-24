@@ -58,6 +58,14 @@ export type OpenSurface =
 export interface PendingSurface {
   kind: "pending";
   /**
+   * What the build last said about itself (`AppDocument.buildStatus`) — one
+   * line, replaced each time, and the WHOLE of the progress channel FINAL SPEC
+   * v1 allows: no stream, no subscription, nothing held open. Absent until the
+   * lane speaks, and absent for a build that never does, in which case the
+   * embed keeps the label it already had.
+   */
+  status?: string;
+  /**
    * The app's tree AS IT FORMS, so the embed's existing poll paints stepped
    * assembly instead of a blind bar. GEOMETRY ONLY — node ids, component names
    * and nesting, tagged `streaming` — because a build's draft carries figures it

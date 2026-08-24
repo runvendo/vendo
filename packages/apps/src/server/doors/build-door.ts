@@ -76,11 +76,16 @@ export interface SealInput {
  * styles at all, which is the point: nothing is loaded, so nothing can be
  * injected from outside.
  *
+ * `font-src data:` is `img-src`'s trade, made twice for the same reason: brand
+ * fonts are injected AT RENDER as `data:` faces (`sendFrameTheme`), and a data
+ * URI is inline — it costs no request, so the zero-network guarantee is
+ * untouched. A scheme or an origin here would hand that guarantee back.
+ *
  * It is a HEADER and never a `<meta>` tag, because `frame-ancestors` — the half
  * that says only the host's own page may frame this — is ignored in meta.
  */
 export const BUNDLE_CSP = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline';"
-  + " img-src data:; frame-ancestors 'self'";
+  + " img-src data:; font-src data:; frame-ancestors 'self'";
 
 export const BUNDLE_HEADERS: Readonly<Record<string, string>> = {
   "content-type": "text/html; charset=utf-8",
@@ -172,7 +177,7 @@ export const createBuildDoor = (
     // existing compare-and-swap picks the head. The loser survives as the
     // history version appended below.
     const doc = await updateAppDocument(input.appId, (previous) => {
-      const { building: _building, proposal: _proposal, ...rest } = previous;
+      const { building: _building, buildStatus: _status, proposal: _proposal, ...rest } = previous;
       return { ...rest, ui: "bundle", bundle };
     });
     await history.append(input.appId, doc, {
@@ -271,7 +276,8 @@ export const createBuildDoor = (
         if (!alreadySealed) {
           return await markUnbuilt(appId, existing?.name ?? fallbackAppName(prompt), reason, ctx);
         }
-        await updateAppDocument(appId, ({ building: _building, proposal: _proposal, ...rest }) => rest);
+        await updateAppDocument(appId,
+          ({ building: _building, buildStatus: _status, proposal: _proposal, ...rest }) => rest);
       };
       if (!approved) return await refuse(BUILD_DECLINED);
       if (builder === undefined || !builder.available()) return await refuse(NO_MACHINE);
@@ -279,6 +285,35 @@ export const createBuildDoor = (
         const { proposal: _proposal, ...rest } = previous;
         return { ...rest, building: new Date().toISOString() };
       });
+      /**
+       * "Progress = chat status lines only" (FINAL SPEC v1), and this is the
+       * whole channel: the lane's latest line onto the row the poll already
+       * reads. No stream, no subscription, nothing held open.
+       *
+       * DETACHED AND INDEPENDENT — each label its own write, never chained
+       * behind the one before it. Chaining is the obvious way to guarantee the
+       * newest line wins, and it deadlocks: it moves the second write into the
+       * middle of the box's in-flight turn, where PGlite's single connection
+       * queues it forever (the deadlock `ops.ts`'s `txDb` note names). The
+       * order two labels seconds apart land in is worth nothing next to that,
+       * and the next label overwrites either way.
+       *
+       * It cannot fight the seal or a tombstone. Those bracket the build in
+       * time — `building` is stamped above and cleared by whichever of them
+       * lands — so a label that arrives after one of them finds `building`
+       * gone and writes nothing; `updateAppRow`'s own compare-and-swap
+       * arbitrates anything closer than that.
+       *
+       * And it cannot fail the build: a status is cosmetic, a build is not, so
+       * the write is detached and its failure swallowed. (`onStatus` is called
+       * unawaited by the lane but inside its try — a synchronous throw here
+       * WOULD be read as a failed build.)
+       */
+      const noteStatus = (label: string): void => {
+        void updateAppDocument(appId, (previous) => previous.building === undefined
+          ? previous
+          : { ...previous, buildStatus: label }).catch(() => undefined);
+      };
       /**
        * FROM HERE THE BUILD IS ON ITS OWN, and it has to be.
        *
@@ -306,6 +341,7 @@ export const createBuildDoor = (
           why,
           // Present on a RESEAL: the box starts from what this app already is.
           ...(doc.source === undefined ? {} : { source: doc.source }),
+          onStatus: noteStatus,
         }, ctx);
         if (outcome.kind === "failed") await refuse(outcome.why);
         else await seal({ appId, files: outcome.files, entry: outcome.entry });
