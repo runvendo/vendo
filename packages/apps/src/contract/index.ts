@@ -16,6 +16,8 @@
 // (`core/src/conformance/memory-store.ts`), and core may not reach upward. The
 // door is what matters, so it is re-exported here and consumers read one place.
 export {
+  appBuildProposalSchema,
+  appBundleSchema,
   appDocumentSchema,
   appMemorySchema,
   appSourceFileSchema,
@@ -23,6 +25,8 @@ export {
   seedComponentName,
   storageDeclSchema,
   type AppBuildFailure,
+  type AppBuildProposal,
+  type AppBundle,
   type AppDocument,
   type AppMemory,
   type AppSeed,

@@ -305,10 +305,12 @@ const appMachineSchema = z.object({
 
 /**
  * A SEALED bundle — the app's built client code, frozen as content-addressed
- * blobs. Every key here is a hash, never a path: the entry hash IS the version
- * and the blob key, so a reseal can never overwrite the bytes an open tab is
- * still rendering, and the loser of a concurrent seal stays readable as a
- * history version.
+ * blobs. Every hash BELOW is a blob key, and a blob is only ever stored under
+ * its own hash, never under a path (`assets` is keyed by path because that is
+ * how the entry names its imports — the path is a lookup, never a location):
+ * the entry hash IS the version and the blob key, so a reseal can never
+ * overwrite the bytes an open tab is still rendering, and the loser of a
+ * concurrent seal stays readable as a history version.
  *
  * Brand tokens and fonts are injected AT RENDER and are deliberately not baked
  * in, so one seal follows a host's palette instead of pinning the palette it
