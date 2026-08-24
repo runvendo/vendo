@@ -84,7 +84,7 @@ describe("pdftotext", () => {
 describe("xlsx2csv", () => {
   /** A real workbook, written by the same library that will read it back. */
   const workbook = async (): Promise<Uint8Array> => {
-    const XLSX = await import("xlsx");
+    const XLSX = await import("@e965/xlsx");
     const book = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(
       book,

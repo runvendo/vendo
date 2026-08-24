@@ -88,8 +88,7 @@
     "@types/node": "^22.0.0",
     "ai": "6.0.28",
     "typescript": "^5.6.0",
-    "vitest": "^3.2.6",
-    "xlsx": "npm:@e965/xlsx@0.20.3"
+    "vitest": "^3.2.6"
   },
   "peerDependenciesMeta": {
     "@anthropic-ai/claude-agent-sdk": {
