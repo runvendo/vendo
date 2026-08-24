@@ -7,7 +7,9 @@ import { VendoError } from "./errors.js";
 // refusal still quoting v5 would be describing a build without that entry.
 // 7: dropped `vendo_inclient_approvals` and `vendo_remix_rejections` with the
 // removal of in-client native execution and the remix review flow.
-export const ENGINE_ALLOWLIST_VERSION = 7;
+// 8: added `vendo_parked_build`, the approval-keyed record of a build nobody
+// has consented to yet.
+export const ENGINE_ALLOWLIST_VERSION = 8;
 
 /** What a collection HOLDS. `knowledge` is the retrieval corpus — documents and
     the chunks an engine mints from them; everything else is `storage`.
@@ -82,6 +84,7 @@ export const ENGINE_COLLECTION_REGISTRY = {
   vendo_placement_slots: { kind: "storage" }, // PLACEMENT_SLOTS_COLLECTION, packages/apps/src/server/persistence/placements.ts:54
   vendo_app_tokens: { kind: "storage" }, // APP_TOKEN_COLLECTION, packages/apps/src/server/persistence/app-token.ts:12
   vendo_parked_action: { kind: "storage" }, // COLLECTION, packages/apps/src/server/persistence/parked-action.ts:50
+  vendo_parked_build: { kind: "storage" }, // COLLECTION, packages/apps/src/server/persistence/parked-build.ts
   vendo_egress_approval: { kind: "storage" }, // COLLECTION, packages/apps/src/server/escalation/egress-approval.ts:96
   vendo_slots: { kind: "storage" }, // SLOTS_COLLECTION, packages/apps/src/server/persistence/slots.ts:24
   vendo_app_seen: { kind: "storage" }, // APP_SEEN_COLLECTION, packages/apps/src/server/persistence/app-seen.ts:26

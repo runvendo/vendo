@@ -28,6 +28,19 @@ export const PARKED_CALL_OUTCOME_COLLECTION = "vendo_parked_call_outcome";
  */
 export const PARKED_ACTION_COLLECTION = "vendo_parked_action";
 
+/**
+ * The build lane's record, keyed by approval — the ask and the context a build
+ * the person has NOT consented to yet would run with, written when the make
+ * tool raises the standing build card and removed by the decision, either way.
+ *
+ * Unlike the two above, nothing was called: the record exists precisely so the
+ * yes can arrive long after the turn that asked is gone, and until it does no
+ * box has been claimed. Here for the same reason they are — the door that
+ * writes it (`packages/apps/src/server/persistence/parked-build.ts`) and the
+ * decision seam that reads it may not import each other.
+ */
+export const PARKED_BUILD_COLLECTION = "vendo_parked_build";
+
 export interface ParkedCallOutcome {
   approvalId: ApprovalId;
   /** The parking principal's subject — the only principal who may read it. */
