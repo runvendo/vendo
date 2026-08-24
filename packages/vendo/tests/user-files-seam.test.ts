@@ -187,6 +187,7 @@ describe("the user's file drawer — real doors, real workspace", () => {
 
     expect(response.status).toBe(200);
     const { path } = await response.json() as { path: string };
+    expect(path).toMatch(/^\/user\/uploads\/[0-9a-f]{8}-notes\.txt$/);
     expect(await readBack(vendo, path)).toBe("hello");
   });
 
