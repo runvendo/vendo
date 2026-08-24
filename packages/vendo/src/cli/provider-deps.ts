@@ -225,14 +225,27 @@ export function installStderrTail(): string {
     Windows takes the whole line as ONE string rather than command + args:
     passing an array alongside `shell: true` is DEP0190, and Node prints that
     deprecation warning to the CLI's own stderr on every install — so the user
-    saw a security warning about our spawn in the middle of `vendo` output. */
+    saw a security warning about our spawn in the middle of `vendo` output.
+
+    An arg carrying a `"` of its own is REFUSED rather than escaped. cmd.exe has
+    no escaping story worth trusting — the rules differ between the shell and
+    the callee's own argv parser — and this builds a command line for a shell,
+    so a wrong guess is a command injection, not a typo. Nothing calls it with
+    one (specs, flags, relative paths), which is exactly why the day something
+    does should be a loud stop rather than a quiet best effort. */
 export function installSpawnPlan(
   command: string,
   args: readonly string[],
   platform: NodeJS.Platform = process.platform,
 ): { command: string; args: readonly string[] | undefined; shell: boolean } {
   if (platform !== "win32") return { command, args, shell: false };
-  return { command: [command, ...args.map((arg) => `"${arg}"`)].join(" "), args: undefined, shell: true };
+  const quoted = args.map((arg) => {
+    if (arg.includes('"')) {
+      throw new Error(`install argument cannot be quoted safely for cmd.exe (it contains a double quote): ${arg}`);
+    }
+    return `"${arg}"`;
+  });
+  return { command: [command, ...quoted].join(" "), args: undefined, shell: true };
 }
 
 export const defaultRunner: InstallRunner = (command, args, cwd) =>

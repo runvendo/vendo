@@ -791,6 +791,15 @@ describe("installSpawnPlan", () => {
     expect(installSpawnPlan("npm", ["install", "ai@^6.1"], "win32").command).toContain('"ai@^6.1"');
   });
 
+  it("refuses an arg it cannot quote safely rather than guessing", () => {
+    // cmd.exe has no escaping story worth trusting, and this builds a line for
+    // a shell — a wrong guess is a command injection, not a typo. Nothing calls
+    // it with a quote today, which is why the day something does must be loud.
+    expect(() => installSpawnPlan("npm", ["install", 'a" & calc "'], "win32")).toThrow(/double quote/);
+    // Only Windows quotes at all, so the argv path is unaffected.
+    expect(installSpawnPlan("npm", ["install", 'a"b'], "linux").args).toEqual(["install", 'a"b']);
+  });
+
   it("leaves every other platform on the shell-less argv spawn", () => {
     const plan = installSpawnPlan("pnpm", ["add", "ai@^6"], "linux");
     expect(plan).toEqual({ command: "pnpm", args: ["add", "ai@^6"], shell: false });

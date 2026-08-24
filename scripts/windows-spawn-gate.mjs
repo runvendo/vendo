@@ -23,10 +23,13 @@
  *      `typescript/bin/tsc`): no shell, no quoting, one code path on both
  *      platforms. See fixtures/integration/src/global-setup.ts.
  *
- *  The check is per FILE, not per line, because a correct fix keeps the POSIX
- *  spawn verbatim in the else branch — a line-level scan would flag the fix it
- *  is asking for. A file that spawns one of these and never names `win32` has
- *  not been through this; a file that does is taken at its word.
+ *  The check is not per LINE, because a correct fix keeps the POSIX spawn
+ *  verbatim in its else branch — a line-level scan would flag the very shape it
+ *  is asking for. It is not per FILE either: a long file can carry a `win32`
+ *  for something unrelated (a path separator, a temp dir) and that would vouch
+ *  for an unguarded spawn hundreds of lines away. So each hazard is judged in
+ *  its own NEIGHBOURHOOD — `win32` has to appear within PROXIMITY_CHARS of the
+ *  spawn itself, which is where the branch that fixes it would be.
  *
  *  Run: node scripts/windows-spawn-gate.mjs  (wired into `pnpm lint`). */
 import { readFile, readdir } from "node:fs/promises";
@@ -52,16 +55,34 @@ const ALLOWED = new Map([
   ],
 ]);
 
-const PACKAGE_MANAGER_SPAWN = /spawn(?:Sync)?\s*\(\s*["'](?:npm|pnpm|npx|yarn|bun)["']\s*,\s*\[/;
-const DOT_BIN_PATH = /["']node_modules["']\s*,\s*["']\.bin["']|node_modules\/\.bin\//;
+const PACKAGE_MANAGER_SPAWN = /spawn(?:Sync)?\s*\(\s*["'](?:npm|pnpm|npx|yarn|bun)["']\s*,\s*\[/g;
+const DOT_BIN_PATH = /["']node_modules["']\s*,\s*["']\.bin["']|node_modules\/\.bin\//g;
 const ANY_SPAWN = /\bspawn(?:Sync)?\s*\(/;
 const HAS_PLATFORM_BRANCH = /win32/;
 
+/** How far from a hazard the platform branch may sit and still be believed.
+ *  Generous — a `const WINDOWS = …` at the top of a helper and the spawn it
+ *  guards are usually a few lines apart, and the fixes in this repo run to a
+ *  paragraph of comment — but far short of vouching for a whole file. */
+const PROXIMITY_CHARS = 1_200;
+
+/** Is there a `win32` close enough to this hazard to be about it? */
+function guarded(code, index) {
+  return HAS_PLATFORM_BRANCH.test(code.slice(Math.max(0, index - PROXIMITY_CHARS), index + PROXIMITY_CHARS));
+}
+
 /** Comments carry the explanation of the very patterns banned here, so they are
  *  removed before matching — otherwise every correct fix flags itself. Strings
- *  are left alone: a path built in a string IS the hazard. */
+ *  are left alone: a path built in a string IS the hazard.
+ *
+ *  Blanked rather than deleted, so every offset and line number below still
+ *  points at the real file — a gate that reports the wrong line sends whoever
+ *  hit it to the wrong place. */
 function stripComments(source) {
-  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+  const blank = (text) => text.replace(/[^\n]/g, " ");
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, blank)
+    .replace(/(^|[^:])(\/\/[^\n]*)/g, (_, before, comment) => before + blank(comment));
 }
 
 async function* sourceFiles(dir) {
@@ -88,19 +109,24 @@ for (const tree of SCANNED) {
     if (rel === "scripts/windows-spawn-gate.mjs" || ALLOWED.has(rel)) continue;
     scanned += 1;
     const code = stripComments(await readFile(file, "utf8"));
-    if (HAS_PLATFORM_BRANCH.test(code)) continue;
-    if (PACKAGE_MANAGER_SPAWN.test(code)) {
-      failures.push([rel, 'spawns a package manager with no `win32` branch — it is a .cmd shim there and ENOENTs without a shell. Give Windows ONE command string with `shell: true`.']);
-    }
-    if (DOT_BIN_PATH.test(code) && ANY_SPAWN.test(code)) {
-      failures.push([rel, "spawns a node_modules/.bin/* entry — extensionless on POSIX, a .cmd/.ps1 pair on Windows. Spawn process.execPath against the tool's real JS entry instead."]);
+    const spawns = ANY_SPAWN.test(code);
+    for (const [pattern, applies, message] of [
+      [PACKAGE_MANAGER_SPAWN, true, "spawns a package manager with no `win32` branch beside it — it is a .cmd shim there and ENOENTs without a shell. Give Windows ONE command string with `shell: true`."],
+      [DOT_BIN_PATH, spawns, "spawns a node_modules/.bin/* entry — extensionless on POSIX, a .cmd/.ps1 pair on Windows. Spawn process.execPath against the tool's real JS entry instead."],
+    ]) {
+      if (!applies) continue;
+      pattern.lastIndex = 0;
+      for (let match = pattern.exec(code); match !== null; match = pattern.exec(code)) {
+        if (guarded(code, match.index)) continue;
+        failures.push([`${rel}:${code.slice(0, match.index).split("\n").length}`, message]);
+      }
     }
   }
 }
 
 for (const [file, message] of failures) console.error(`windows-spawn-gate: ${file} — ${message}`);
 if (failures.length > 0) {
-  console.error(`\nwindows-spawn-gate: ${failures.length} file${failures.length === 1 ? "" : "s"} of ${scanned} scanned.`);
+  console.error(`\nwindows-spawn-gate: ${failures.length} hazard${failures.length === 1 ? "" : "s"} across ${scanned} files scanned.`);
   process.exit(1);
 }
 console.log(`windows-spawn-gate: ok (${scanned} files, ${ALLOWED.size} documented exception${ALLOWED.size === 1 ? "" : "s"})`);
