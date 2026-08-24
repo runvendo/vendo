@@ -169,6 +169,25 @@ export const SAVE_APP_TOOL = "save_app";
 export const EDIT_APP_TOOL = "edit_app";
 
 /**
+ * The door out of assembly (§4.5) — and it opens onto a QUESTION, never onto a
+ * machine.
+ *
+ * PR #1407 took this hand off the loadout so that the model could not spend a
+ * box by reaching for it, and that principle is untouched: all this hand does
+ * now is record one line, which the front door turns into a standing approval
+ * card (`build.propose`). The person's yes, whenever it lands, is still the only
+ * thing that starts a build. Without the hand the loop had no word for "this ask
+ * is bigger than a screen", so a real build was unreachable from chat at all —
+ * measured live 2026-08-24, an ask needing npm packages got a degraded screen
+ * and an apology.
+ *
+ * Never `vendo_`-prefixed: the loadout's `isAlwaysActive` would make it
+ * un-gateable, and this tool is the screen agent's own, not a product capability
+ * anybody else may reach.
+ */
+export const ESCALATE_TOOL = "escalate";
+
+/**
  * The two verbs that read an app which ALREADY EXISTS — on an EDIT and nowhere
  * else, because the loadout follows the task.
  *
@@ -306,6 +325,11 @@ export interface ScreenInput {
    *  row, `replayFrom` only for a re-seed). Absent on every other edit, whose
    *  first message stays the ask alone. See {@link startingSource}. */
   source?: string;
+  /** Is there a builder behind an escalation ({@link ScreenAssemblerDeps.canBuild})?
+   *  The door out is equipped only where the answer is yes: a deployment with no
+   *  sandbox cannot honour the offer, and `vendo_make` would answer the
+   *  escalation with a failed receipt naming the gap. Absent is no. */
+  canBuild?: boolean;
 }
 
 /** What one assembly run answers. `ScreenOutcome` plus the title an assembled
@@ -685,6 +709,25 @@ const surfaceNote = (viewport: ScreenInput["viewport"]): string => {
   cells truncate, a narrow frame keeps columns by \`priority\`, panes stack.`;
 };
 
+/** The door out, said only where a build could really follow it ({@link
+ *  ScreenInput.canBuild}) — an offer this deployment cannot honour would end in
+ *  a failed receipt naming a machine it has not got, which is worse than never
+ *  offering. The hand is equipped under exactly the same condition. */
+const doorOut = (input: ScreenInput): string => {
+  if (input.canBuild !== true) return "";
+  return `
+- **\`${ESCALATE_TOOL}\`** is the one door out. Writing one screen out of this
+  product's components is all you can do here; an ask that needs real code, its
+  own server, a package to install, or a surface these components cannot express
+  goes through it instead.
+  - It builds nothing by itself. It ASKS the person whether to have this built
+    for real, and their yes — whenever it comes — is what starts it.
+  - A view you could assemble does not keep an ask here: if part of it needs real
+    code, escalate the WHOLE ask.
+  - The builder gets the person's own words, so all you write is one plain
+    sentence saying what assembly cannot do.`;
+};
+
 /**
  * The environment correction, and only that.
  *
@@ -706,7 +749,7 @@ const environmentNote = (input: ScreenInput, wireable: readonly ToolListing[]): 
 - Never look for a tool that builds the app for you. There isn't one, and that is
   deliberate.${surfaceNote(input.viewport)}
 
-## Your two hands
+## Your hands
 
 - **\`${SAVE_APP_TOOL}\`** saves this app's whole file.
   - Every save that parses repaints the person's screen, so save as you go — a
@@ -726,7 +769,7 @@ const environmentNote = (input: ScreenInput, wireable: readonly ToolListing[]): 
   - Quote the text that goes in each \`find\`, write what replaces it in
     \`replace\`, and quote enough of it to match in exactly one place —
     everything the person is already looking at then stays where it is.
-  - It lands and is checked exactly like a save.
+  - It lands and is checked exactly like a save.${doorOut(input)}
 
 ## Your last words are what the person is told
 
@@ -1139,6 +1182,32 @@ export async function assembleScreen(
     },
   };
 
+  const escalate: HarnessHand = {
+    name: ESCALATE_TOOL,
+    description:
+      "Ask for this to be BUILT for real — a machine that installs packages, writes code and tests it. Use it "
+      + "when assembling a screen out of this product's components genuinely cannot serve the ask. It spends "
+      + "nothing and builds nothing by itself: the person is asked, and their yes is what starts the build. "
+      + "Their own ask is the builder's brief — say only why assembly cannot serve it. This ends your turn.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        why: { type: "string", description: "One plain sentence: what assembly cannot do here." },
+      },
+      required: ["why"],
+      additionalProperties: false,
+    },
+    execute: async (args) => {
+      const { why } = args as { why: string };
+      // The whole of the hand: one line recorded. What it becomes — a standing
+      // approval card, and a build only if the person says yes — is the front
+      // door's business (`make-tool.ts`'s escalate arm), which is what keeps
+      // this loop unable to spend a machine.
+      record.escalated = why;
+      return { asked: true };
+    },
+  };
+
   // The small loadout, resolved where the listings are: the assembly verbs by
   // name, plus the host's read tools so a query's real values can be learned when
   // a tool declares no shape. `vendo_make` is excluded by name — it is what called
@@ -1180,6 +1249,7 @@ export async function assembleScreen(
     },
   });
   loadout.push(acting(saveApp), acting(editApp));
+  if (input.canBuild === true) loadout.push(acting(escalate));
 
   const turn: Turn<VendoHarnessOptions> = {
     messages: [{
@@ -1467,6 +1537,16 @@ export interface ScreenAssemblerDeps {
    * write is never worth failing a screen the person can already see.
    */
   remember?: (appId: AppId, decisions: string, ctx: RunContext) => Promise<void>;
+  /**
+   * Is there a builder behind an escalation — `AppBuilder.available`, handed
+   * over by the composition that fills BOTH slots.
+   *
+   * Availability by construction, exactly as `servedProxyPath`'s presence used
+   * to say it (compose-apps.ts): the loop is offered the door out only where a
+   * box could really be claimed after the person's yes. Unfilled reads as no,
+   * which is what a deployment with no sandbox is.
+   */
+  canBuild?: () => boolean;
 }
 
 /**
@@ -1605,6 +1685,7 @@ export function screenAssembler(deps: ScreenAssemblerDeps): ScreenAssembler {
           ...(request.viewport === undefined ? {} : { viewport: request.viewport }),
           ...(pack === undefined ? {} : { briefing: renderBriefingPack(pack) }),
           ...(starting === undefined ? {} : { source: starting }),
+          ...(deps.canBuild?.() === true ? { canBuild: true } : {}),
         },
       );
       if (result.kind !== "assembled") return result;

@@ -221,10 +221,18 @@ const appsHostSeams = (composition: VendoComposition): Partial<AppsConfig> => {
 
 /** THE SEAM (blueprint §1 point 2) — the screen agent in front of the
  *  conductor, joined here because composition is what holds every half. */
-const appsScreenSeam = (composition: VendoComposition, seams: AppsSeams): AppsConfig["screen"] => {
+const appsScreenSeam = (
+  composition: VendoComposition,
+  seams: AppsSeams,
+  build: NonNullable<AppsConfig["build"]>,
+): AppsConfig["screen"] => {
   const { inference, boundTools, briefing } = composition;
   const { screenWorkspace } = seams;
   return screenAssembler({
+      // The door out, from the very thing that would have to honour it: the
+      // loop is offered `escalate` only where a box can really be claimed after
+      // the person's yes, so an escalation never ends in "no build machine".
+      canBuild: build.available,
       // The SAME seats every other thinker runs on.
       models: inference.seats,
       // The SAME guard-bound registry. There is no second choke point.
@@ -280,7 +288,7 @@ const appsScreenSeam = (composition: VendoComposition, seams: AppsSeams): AppsCo
 
 /** THE OTHER SEAM — the build lane behind the escalations the screen agent
  *  refuses, joined here for the same reason and on the same terms. */
-const appsBuildSeam = (composition: VendoComposition, seams: AppsSeams): AppsConfig["build"] =>
+const appsBuildSeam = (composition: VendoComposition, seams: AppsSeams): NonNullable<AppsConfig["build"]> =>
   appBuilder({
     sandbox: composition.sandbox.adapter,
     // The SAME env a session box gets, and deliberately not `machineEnv`: that
@@ -421,11 +429,12 @@ export const composeApps = (composition: VendoComposition): Pick<VendoCompositio
     screenWorkspace,
     access,
   };
+  const build = appsBuildSeam(composition, seams);
   const apps = createApps({
     ...appsStoreSeams(composition, seams),
     ...appsHostSeams(composition),
-    screen: appsScreenSeam(composition, seams),
-    build: appsBuildSeam(composition, seams),
+    screen: appsScreenSeam(composition, seams, build),
+    build,
     ...appsTailSeams(composition, seams),
   } as AppsConfig);
   // Every contributed tool reaches the ONE registry here — the same `add` the
