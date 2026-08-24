@@ -436,6 +436,48 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
     repairInstruction,
   });
 
+  /**
+   * A dropped file belongs to the CONVERSATION, so the turn that receives it
+   * moves it there and rewrites the part it arrived on.
+   *
+   * It happens HERE, server-side at turn start, because this is the first moment
+   * both halves exist at once: the composer uploads before it sends (so a first
+   * turn's file is staged before any thread does), and the thread id is minted
+   * in this function. And it happens BEFORE the message is persisted, because a
+   * transcript that recorded the staging path would hold a pill pointing at
+   * something the next turn's sweep deletes.
+   *
+   * Identity is preserved when there is nothing to do: the overwhelming majority
+   * of turns carry no staged part, and they must cost exactly nothing.
+   */
+  const rehomeStagedFiles = async (
+    message: UIMessage,
+    threadId: ThreadId,
+    ctx: RunContext,
+  ): Promise<UIMessage> => {
+    const staged = message.parts.filter((part) =>
+      part.type === "file" && part.url.startsWith(`${USER_UPLOADS}/`));
+    if (staged.length === 0) return message;
+    const workspace = await sqlDoors().workspaces.open(ctx.principal);
+    const homes = new Map<string, string>();
+    for (const part of staged) {
+      const from = (part as { url: string }).url;
+      // The NAME is the part's, and it goes through the same leaf rule every
+      // other door uses (`threadFilePath` throws on anything that is not one).
+      const to = threadFilePath(threadId, (part as { filename?: string }).filename ?? from.slice(from.indexOf("-") + 1));
+      await workspace.mv(from, to);
+      homes.set(from, to);
+    }
+    await workspace.commit();
+    return {
+      ...message,
+      parts: message.parts.map((part) =>
+        part.type === "file" && homes.has(part.url)
+          ? { ...part, url: homes.get(part.url)! }
+          : part),
+    } as UIMessage;
+  };
+
   /** The thread's harness-state slot, when this store can hold one. The slot
    *  carries a native session ref and vendo()'s searched-in loadout, so it has
    *  to die with the thread — a reused id must never inherit either (the
@@ -559,6 +601,8 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
       // here exactly as it always was. Below the turn level there is no round
       // trip worth saving, so the old order stands.
       const opening = input[SERVER_AUTHORED] === true && given !== undefined && batched
+        // No re-home applies here: the only SERVER_AUTHORED caller (channel-turn)
+        // builds a message of text parts alone, so it can carry no staged drop.
         ? sqlDoors().transcript.upsertMany?.(input.ctx.principal, given, [input.message], {})
         : undefined;
       // A rejection is delivered where it is awaited below; this only keeps a
@@ -579,6 +623,11 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
       // derivation — and `thread.messages` is the canonical transcript read back
       // from `vendo_thread_messages`.
       const thread = await threads.resolve(batched ? threadId : given, input.ctx, loaded?.thread);
+      // §6 — the drop comes home before anything records where it was. Keyed on
+      // the RESOLVED id, not the speculatively minted one: unbatched, `resolve`
+      // mints the thread's real id itself, and a file homed under the other id
+      // would belong to no conversation at all.
+      const message = await rehomeStagedFiles(input.message, thread.id, input.ctx);
 
       // THE CONSTRAINT (lane A's verifier): `TurnRunInput.messages` is
       // STORE-SOURCED. The client contributes at most this one message, and
@@ -600,8 +649,8 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
       // carries a message this process authored, so there is no client copy to
       // check it against — and a gate run after the write could only report a
       // rewrite it had already let through.
-      if (opening === undefined) validateUpsert(thread.messages, input.message);
-      upsertMessage(thread.messages, input.message);
+      if (opening === undefined) validateUpsert(thread.messages, message);
+      upsertMessage(thread.messages, message);
 
       // Before the FIRST write, not after it. `threads.persist` goes through the
       // adapter seam and so succeeds even on a store that can keep neither the
@@ -656,7 +705,7 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
         // Already in flight since before the read, where it was allowed to be.
         opening
         ?? (fresh || batchAppend === undefined
-          ? threads.persist(thread, [input.message], { fresh })
+          ? threads.persist(thread, [message], { fresh })
           // No position is passed: the store assigns one while it holds the
           // thread row, so two turns racing on this conversation cannot claim
           // the same slot. An answer to a pending approval matches an existing
@@ -664,7 +713,7 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
           : transcript.upsertMany(
             input.ctx.principal,
             thread.id,
-            [input.message],
+            [message],
             { title: deriveTitle(thread.messages) },
           )),
         // §9.7 — the turn's façade mounts every org the wire asserted for this
