@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { effectiveAppBuildUiDeadlineMs } from "@vendoai/apps/contract";
 import type { VendoAppRef, VendoApprovalRef } from "@vendoai/core";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -428,7 +429,7 @@ describe("existing-agents embeds", () => {
           </VendoProvider>,
         );
         await act(async () => {
-          await vi.advanceTimersByTimeAsync(5 * 60_000 + 2_000);
+          await vi.advanceTimersByTimeAsync(effectiveAppBuildUiDeadlineMs() + 2_000);
         });
         expect(screen.getByText(/— couldn't finish/)).toBeDefined();
         // The deadline's own reason (embeds.tsx), since the wire gave none.
@@ -459,9 +460,9 @@ describe("existing-agents embeds", () => {
           </VendoProvider>,
         );
         expect(screen.getByText(/Building/)).toBeDefined();
-        // Well past APP_BUILD_DEADLINE_MS (5 min) — no poll ever settles.
+        // Well past APP_BUILD_DEADLINE_MS — no poll ever settles.
         await act(async () => {
-          await vi.advanceTimersByTimeAsync(5 * 60_000 + 2_000);
+          await vi.advanceTimersByTimeAsync(effectiveAppBuildUiDeadlineMs() + 2_000);
         });
         expect(screen.getByText(/— couldn't finish/)).toBeDefined();
         expect(screen.getByText("the build never finished")).toBeDefined();
