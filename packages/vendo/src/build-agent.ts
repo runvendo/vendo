@@ -22,21 +22,27 @@ import {
   isVendoError,
   type AppId,
   type AppSourceFile,
+  type RunContext,
 } from "@vendoai/core";
 import { buildFailureReason } from "@vendoai/apps";
-import type { AppBuilder, BuildOutcome, BuildRequest, BuiltFile } from "@vendoai/apps/contract";
+import { renderBriefingPack } from "@vendoai/apps/contract";
+import type { AppBuilder, BriefingPack, BuildOutcome, BuildRequest, BuiltFile } from "@vendoai/apps/contract";
 import {
   BOX_WORKSPACE_ROOT,
   boxEgress,
   boxMachine,
   type SandboxAdapterLike,
 } from "@vendoai/harnesses/claude-code/box";
+import { BRIEF_SECTION } from "./screen-agent.js";
 
 export interface AppBuilderDeps {
   sandbox: SandboxAdapterLike | undefined;
   /** The same env the session boxes get (`inferenceEnv`) — the box's model door,
    *  and deliberately nothing else. */
   boxEnv: () => Record<string, string>;
+  /** THE briefing pack (`compose-surfaces.ts`), assembled once for both rungs.
+   *  Absent only where nothing composed one, which is no deployment. */
+  briefing?: (ctx: RunContext) => Promise<BriefingPack>;
   template?: string;
 }
 
@@ -100,9 +106,13 @@ const checkoutOf = (source: Record<string, AppSourceFile> | undefined, directory
     ? []
     : [{ path: `${directory}/${path}`, bytes: encoder.encode(file.text), readOnly: false }]);
 
-/** `directory` is the DISK spelling — this text is read by a shell. */
-const briefFor = (request: BuildRequest, directory: string): string =>
-  `Build this for real, in ${directory}.
+/** `directory` is the DISK spelling — this text is read by a shell.
+ *
+ *  `briefing` is the rendered pack, appended as its own SECTION on the same join
+ *  the screen agent's brief uses: the instructions above it are this rung's own,
+ *  the product knowledge below it is the bytes the other rung read. */
+const briefFor = (request: BuildRequest, directory: string, briefing: string | undefined): string =>
+  [`Build this for real, in ${directory}.
 
 WHAT THE PERSON ASKED FOR, verbatim:
 ${request.prompt}
@@ -125,7 +135,9 @@ HOW IT SHIPS
 - Test what you built against reality, and fix what fails.
 - If your own test does not pass, DELETE ${directory}/${ENTRY} and stop. Its
   absence is how this host is told the build did not work; a broken one left
-  behind is shipped to the person as if it worked.`;
+  behind is shipped to the person as if it worked.`, briefing]
+    .filter((section): section is string => section !== undefined)
+    .join(BRIEF_SECTION);
 
 /** How a throw out of the box becomes the sentence on the person's failure card.
  *  `buildFailureReason` is the one classifier this record has (quota, timeout,
@@ -145,7 +157,7 @@ export function appBuilder(deps: AppBuilderDeps): AppBuilder {
     // The ONE gate: a composed sandbox adapter, and nothing else.
     available: () => deps.sandbox !== undefined,
 
-    async build(request) {
+    async build(request, ctx) {
       const { sandbox } = deps;
       if (sandbox === undefined) return { kind: "failed", why: NO_SANDBOX };
       const env = deps.boxEnv();
@@ -163,10 +175,12 @@ export function appBuilder(deps: AppBuilderDeps): AppBuilder {
         });
         await machine.materialize(checkoutOf(request.source, directory));
         request.onStatus?.(BUILD_STATUS_LINES[1]);
+        const pack = await deps.briefing?.(ctx);
         // No `toolDoor`: this box reaches none of the host's tools, so there is
         // nothing for it to act with and no credential to act under.
         await machine.send({
-          prompt: briefFor(request, diskDirectory(request.appId)),
+          prompt: briefFor(request, diskDirectory(request.appId),
+            pack === undefined ? undefined : renderBriefingPack(pack)),
           emit: () => undefined,
         });
         const collected = await machine.collect([

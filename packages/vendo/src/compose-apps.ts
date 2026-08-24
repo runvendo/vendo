@@ -148,6 +148,9 @@ const appsBuildSeam = (composition: VendoComposition, seams: AppsSeams): NonNull
     // The SAME env a session box gets. A build box holds ZERO store
     // credentials (FINAL SPEC v1): it returns files, and the host seals them.
     boxEnv: inferenceEnv,
+    // …and the SAME briefing pack the screen agent above is handed: this rung
+    // writes for the same product, so it is told about it in the same bytes.
+    briefing: composition.briefing,
     ...(seams.boxTemplate === undefined ? {} : { template: seams.boxTemplate }),
   });
 

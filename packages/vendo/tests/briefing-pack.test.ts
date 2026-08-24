@@ -10,12 +10,12 @@
  * exactly why it survived.
  *
  * So this measures the two prompts THEMSELVES, on one real composed deployment:
- * a real `createVendo`, the real screen agent behind `vendo_make`, the real
- * `create` door for the box rung, and a box that behaves like a box (a control
- * port answering the `/agent/task` long-poll). The scripted model and the sandbox
- * PROVIDER are the only two things faked, and neither of them is a side of the
- * seam under test — the producer (`compose-surfaces.ts`) and both consumers are
- * real.
+ * a real `createVendo`, the real screen agent behind `vendo_make`, and — for the
+ * box rung — the real consented build lane, from the person's yes on the standing
+ * card to the brief the REAL box session door opens a message with. The scripted
+ * model and the sandbox PROVIDER are the only two things faked, and neither of
+ * them is a side of the seam under test — the producer (`compose-surfaces.ts`)
+ * and both consumers are real.
  *
  * Two assertions carry it, and they pull in opposite directions on purpose:
  *   - the briefing pack is byte-identical in both prompts (`toBe`), and
@@ -28,11 +28,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   VENDO_MAKE_TOOL,
+  type AppId,
   type Principal,
+  type RunContext,
 } from "@vendoai/core";
-import type { SandboxAdapter, SandboxMachine } from "@vendoai/apps";
+import type { SandboxAdapter } from "@vendoai/apps";
 import type { ComponentRegistry, VendoRouteMap, VendoTheme } from "@vendoai/apps/contract";
 import { defineHarness } from "@vendoai/harnesses";
+import { createSessionRoutes } from "@vendoai/harnesses/box-door";
+import { disposeSessionMachines } from "@vendoai/harnesses/claude-code/box";
 import { createStore, type VendoStore } from "@vendoai/store";
 import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -40,11 +44,17 @@ import { createVendo } from "../src/server.js";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
+  // The box pool is module-scoped: without this, one case's box is the next
+  // case's thread-reuse.
+  await disposeSessionMachines();
   vi.unstubAllEnvs();
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 });
 
 const principal: Principal = { kind: "user", subject: "user_briefing" };
+const ctx: RunContext = { principal, venue: "chat", presence: "present", sessionId: "ses_briefing" };
+const ASK = "match my invoices against payments";
+const WHY = "this needs real matching code";
 
 // ── the host's `.vendo` configuration, with token values that appear nowhere
 //    else, so no assertion below can be satisfied by shipped engine text ──────
@@ -92,70 +102,59 @@ const TOOLS_FILE = JSON.stringify({
 });
 
 // ── the fake box ─────────────────────────────────────────────────────────────
-// The control port 8811 and the `/agent/task` long-poll, and nothing more than
-// this test reads: the TASK it was handed. Same shape as `box-wire.test.ts`'s —
-// `@vendoai/apps`' box substrate is not on that package's exports map.
+// A stand-in PROVIDER whose `request()` is a transport over the ACTUAL box
+// session door, so the brief this test reads is the brief a real box is opened
+// with. Same shape as `build-lane.test.ts`'s, minus its in-box agent: nothing
+// here reads the files a build leaves behind, only the words it was sent.
 
-const BOX_CONTROL_PORT = 8811;
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
 interface BoxLog {
-  /** The `context` of every task the in-box builder was handed — where its half
-   *  of the briefing pack lands. */
-  contexts: string[];
+  /** Every brief the in-box builder was opened with — where its half of the
+   *  briefing pack lands. */
+  briefs: string[];
 }
 
 function fakeBox(log: BoxLog): SandboxAdapter {
-  const tasks = new Map<string, { status: "done"; result: unknown }>();
-  const json = (status: number, value: unknown) => ({
-    status,
-    headers: { "content-type": "application/json" },
-    body: encoder.encode(JSON.stringify(value)),
-  });
-  const machine: SandboxMachine = {
-    id: "briefing_box",
-    async request(req) {
-      const body = req.body === undefined
-        ? ""
-        : typeof req.body === "string" ? req.body : decoder.decode(req.body);
-      if ((req.port ?? 8080) === BOX_CONTROL_PORT) {
-        if (req.method === "POST" && req.path === "/agent/task") {
-          const task = JSON.parse(body) as { context?: string };
-          log.contexts.push(task.context ?? "");
-          const taskId = `boxtask_${tasks.size}`;
-          tasks.set(taskId, {
-            status: "done",
-            result: { ok: true, summary: "wrote the matcher", filesChanged: [], testsRun: 0, fns: [] },
-          });
-          return json(202, { taskId });
-        }
-        if (req.method === "GET" && req.path.startsWith("/agent/task/")) {
-          const entry = tasks.get(req.path.slice("/agent/task/".length));
-          return entry === undefined ? json(404, { error: "unknown task" }) : json(200, entry);
-        }
-        return json(200, { ok: true });
-      }
-      if (req.method === "GET" && req.path === "/vendo.json") return json(404, { error: "no manifest" });
-      return json(200, { ok: true });
-    },
-    async url(port) {
-      return `https://${port ?? 8080}-briefing.fake.test`;
-    },
-    files: {
-      async read() { throw new Error("no file"); },
-      async write() { /* the builder wrote nothing this test reads */ },
-      async list() { return []; },
-    },
-    async snapshot() { return "fakebox:snap"; },
-    async stop() { /* sleep */ },
-    async destroy() { /* gone */ },
-  };
   return {
-    async create() { return machine; },
-    async resume() { return machine; },
+    async create(spec: unknown) {
+      const { env } = spec as { env: Record<string, string> };
+      const disk = await mkdtemp(join(tmpdir(), "vendo-briefing-box-"));
+      const root = join(disk, env["VENDO_WORKSPACE_ROOT"] ?? "");
+      await mkdir(root, { recursive: true });
+      cleanups.push(async () => { await rm(disk, { recursive: true, force: true }); });
+      const routes = createSessionRoutes({
+        root,
+        // Unclaimed, so the host's first `/session/hello` claims it.
+        token: "",
+        env: {},
+        openSession: (input: { emit: (event: Record<string, unknown>) => void }) => ({
+          async send(prompt: string) {
+            log.briefs.push(prompt);
+            input.emit({ type: "text", delta: "done." });
+          },
+          async interrupt() { /* the turn stops; the session lives */ },
+          async end() { /* the box is going away */ },
+        }),
+      }) as {
+        handle: (method: string, pathname: string, headers: Record<string, string>, payload: unknown)
+          => Promise<{ status: number; body: unknown }>;
+      };
+      return {
+        id: "briefing_box",
+        async request(req: { method: string; path: string; headers?: Record<string, string>; body?: Uint8Array | string }) {
+          const payload = req.body === undefined
+            ? {}
+            : JSON.parse(typeof req.body === "string" ? req.body : decoder.decode(req.body)) as unknown;
+          const answer = await routes.handle(req.method, req.path, req.headers ?? {}, payload);
+          return { status: answer.status, headers: {}, body: encoder.encode(JSON.stringify(answer.body)) };
+        },
+        async destroy() { /* gone */ },
+      };
+    },
     async destroy() { /* released */ },
-  };
+  } as unknown as SandboxAdapter;
 }
 
 // ── the scripted model ───────────────────────────────────────────────────────
@@ -214,14 +213,18 @@ function scripted(): Scripted {
   return { model: model as unknown as LanguageModel, systemPrompts };
 }
 
-// ── one real walk: ask → screen agent, and `create` → box ────────────────────
+// ── one real walk: ask → screen agent, and a consented build → box ───────────
 
 interface Walked {
   /** The screen agent's whole system prompt. */
   screenPrompt: string;
-  /** The in-box builder's whole task context. */
-  boxContext: string;
+  /** The in-box builder's whole brief. */
+  boxBrief: string;
 }
+
+/** The box pool is keyed by the app id, so two walks in one case must not share
+ *  one — the second would be handed the first's warm box and never be briefed. */
+let walks = 0;
 
 async function tempStore(dir: string): Promise<VendoStore> {
   const store = createStore({ dataDir: dir });
@@ -249,7 +252,7 @@ async function walk(options: { brief?: string; routes?: VendoRouteMap } = {}): P
   });
 
   const { model, systemPrompts } = scripted();
-  const box: BoxLog = { contexts: [] };
+  const box: BoxLog = { briefs: [] };
   const vendo = createVendo({
     models: { default: model },
     principal: async () => principal,
@@ -261,7 +264,7 @@ async function walk(options: { brief?: string; routes?: VendoRouteMap } = {}): P
     harness: defineHarness({
       name: "briefing-probe",
       async *run(turn) {
-        await turn.tools.call(VENDO_MAKE_TOOL, { request: "match my invoices against payments" });
+        await turn.tools.call(VENDO_MAKE_TOOL, { request: ASK });
         yield { type: "text", delta: "ok" };
       },
     }) as never,
@@ -277,18 +280,24 @@ async function walk(options: { brief?: string; routes?: VendoRouteMap } = {}): P
   }));
   expect(response.status).toBe(200);
   await response.text();
-  // The box rung, through the door that hands it a brief: `create` with a §4.5
-  // `why` already in hand skips the assembler by design (`build-surface.ts`), so
-  // this is the shipped path to the in-box builder with nothing doubled on it.
-  await vendo.apps.create(
-    { prompt: "match my invoices against payments", why: "this needs real matching code" },
-    { principal, venue: "chat", presence: "present", sessionId: "ses_briefing" },
-  );
+  // The box rung, through the ONE door that reaches it: the standing card an
+  // escalation raises, and the person's yes to it (`build-lane.test.ts`).
+  const appId = `app_briefing_${walks += 1}` as AppId;
+  const proposed = await vendo.apps.build.propose({ appId, name: "Invoice matcher", prompt: ASK, why: WHY }, ctx);
+  if (!("approvalId" in proposed)) throw new Error(`expected a card, got ${JSON.stringify(proposed)}`);
+  await vendo.guard.approvals.decide(proposed.approvalId, { approve: true }, principal);
+  // The lane is DETACHED — the walk ends when the row does. This box builds
+  // nothing, so the lane lands on "its own test did not pass"; what it was TOLD
+  // is the only thing read here.
+  for (let attempt = 0; attempt < 400; attempt += 1) {
+    if ((await vendo.apps.get(appId, ctx))?.building === undefined) break;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
 
   const screenPrompt = systemPrompts.find((prompt) => prompt.includes(SCREEN_MARKER));
   expect(screenPrompt, "the screen agent never ran").toBeDefined();
-  expect(box.contexts, "the box rung never ran").toHaveLength(1);
-  return { screenPrompt: screenPrompt ?? "", boxContext: box.contexts[0] ?? "" };
+  expect(box.briefs, "the box rung never ran").toHaveLength(1);
+  return { screenPrompt: screenPrompt ?? "", boxBrief: box.briefs[0] ?? "" };
 }
 
 /** Both rungs join their prompt SECTIONS with the same rule, so the pack is one
@@ -305,7 +314,7 @@ describe("the briefing pack reaches both rungs", () => {
     const walked = await walk({ brief: BRIEF });
 
     const fromScreen = briefingSection(walked.screenPrompt);
-    const fromBox = briefingSection(walked.boxContext);
+    const fromBox = briefingSection(walked.boxBrief);
 
     // THE assertion. Not "both are defined", not "both mention the brief" — the
     // same string, or the two writers know different products.
@@ -332,14 +341,14 @@ describe("the briefing pack reaches both rungs", () => {
     });
 
     const fromScreen = briefingSection(walked.screenPrompt);
-    expect(fromScreen).toBe(briefingSection(walked.boxContext));
+    expect(fromScreen).toBe(briefingSection(walked.boxBrief));
     expect(fromScreen).toContain("ROUTES (this product's own pages");
     expect(fromScreen).toContain("- accounts: Every account, with its balance.");
     // THE security property. A writer picks a page by what it IS; the address is
     // the host's alone, spelled by its own router in `onNavigate`. A path in the
     // prompt is a URL for a model to copy, so no prompt on either rung carries one.
     expect(walked.screenPrompt).not.toContain("/accounts");
-    expect(walked.boxContext).not.toContain("/accounts");
+    expect(walked.boxBrief).not.toContain("/accounts");
   }, 60_000);
 
   it("says nothing about routes when the host registered none", async () => {
@@ -350,31 +359,32 @@ describe("the briefing pack reaches both rungs", () => {
     const walked = await walk({ brief: BRIEF });
 
     // The screen agent reads the dialect manual and an environment note about a
-    // loop with no disk. The box has a disk, a shell and a skin contract.
+    // loop with no disk. The box has a disk, a shell and a bundle to ship.
     expect(walked.screenPrompt).toContain("# Components (generated from the component schemas)");
     expect(walked.screenPrompt).toContain(SCREEN_MARKER);
-    expect(walked.boxContext).not.toContain("# Components (generated from the component schemas)");
-    expect(walked.boxContext).not.toContain(SCREEN_MARKER);
+    expect(walked.boxBrief).not.toContain("# Components (generated from the component schemas)");
+    expect(walked.boxBrief).not.toContain(SCREEN_MARKER);
 
-    expect(walked.boxContext).toContain("SKIN CONTRACT (the box boundary you build against):");
-    expect(walked.screenPrompt).not.toContain("SKIN CONTRACT (the box boundary you build against):");
+    // The build lane's own instructions, which only a rung with a disk can read.
+    expect(walked.boxBrief).toContain("HOW IT SHIPS");
+    expect(walked.screenPrompt).not.toContain("HOW IT SHIPS");
 
     // Belt and braces: whole prompts that were equal would mean one rung is
     // reading the other's job description.
-    expect(walked.screenPrompt).not.toBe(walked.boxContext);
+    expect(walked.screenPrompt).not.toBe(walked.boxBrief);
   }, 60_000);
 
   it("carries `.vendo/brief.md` to the screen agent, and loses it when the file is gone", async () => {
     const withBrief = await walk({ brief: BRIEF });
     expect(withBrief.screenPrompt).toContain(BRIEF.trim());
-    expect(withBrief.boxContext).toContain(BRIEF.trim());
+    expect(withBrief.boxBrief).toContain(BRIEF.trim());
 
     // The same deployment with no `brief.md` on disk: the prompt loses exactly
     // that text and nothing else invents it.
     const withoutBrief = await walk();
     expect(withoutBrief.screenPrompt).not.toContain(BRIEF.trim());
-    expect(withoutBrief.boxContext).not.toContain(BRIEF.trim());
+    expect(withoutBrief.boxBrief).not.toContain(BRIEF.trim());
     // Still a pack, still identical — the brief is the only thing that moved.
-    expect(briefingSection(withoutBrief.screenPrompt)).toBe(briefingSection(withoutBrief.boxContext));
+    expect(briefingSection(withoutBrief.screenPrompt)).toBe(briefingSection(withoutBrief.boxBrief));
   }, 60_000);
 });

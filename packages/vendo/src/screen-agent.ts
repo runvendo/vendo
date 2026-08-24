@@ -792,6 +792,11 @@ const environmentNote = (input: ScreenInput, wireable: readonly ToolListing[]): 
 
 ${toolBrief(wireable)}`;
 
+/** How a rung's brief joins its SECTIONS. Exported because the box's brief
+ *  (`build-agent.ts`) joins its own the same way: the pack is one section on
+ *  either side, so a reader can find it without counting positions. */
+export const BRIEF_SECTION = "\n\n---\n\n";
+
 /** The full brief: the shipped job description, the shipped file manual, the
  *  briefing pack, then what is different here. The manual and the environment
  *  note are this rung's own INSTRUCTIONS — the box is told a different job in
@@ -810,7 +815,7 @@ function screenBrief(input: ScreenInput, wireable: readonly ToolListing[]): stri
     environmentNote(input, wireable),
   ]
     .filter((section): section is string => section !== undefined && section.trim().length > 0)
-    .join("\n\n---\n\n");
+    .join(BRIEF_SECTION);
 }
 
 /** What the two hands recorded, for THIS run. A collector on the run rather than
