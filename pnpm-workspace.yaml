@@ -7,9 +7,10 @@ packages:
   - "genbench"
 
 # pnpm 9 ran every dependency build script; pnpm 11 (strictDepBuilds) requires
-# an explicit allowlist. These five are the deps with build scripts in the
-# tree — all allowed, preserving pnpm 9 behavior. workerd is miniflare's
-# runtime for the portability gate (scripts/portability-gate.mjs).
+# an explicit allowlist. These eight are the deps with build scripts in the
+# tree — six allowed, preserving pnpm 9 behavior, two denied (see below).
+# workerd is miniflare's runtime for the portability gate
+# (scripts/portability-gate.mjs).
 allowBuilds:
   # zstd + lzma are just-bash's OPTIONAL native backends for its compressed-tar
   # commands. just-bash is a runtime dependency of @vendoai/harnesses (the shell
