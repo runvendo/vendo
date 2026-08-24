@@ -448,6 +448,10 @@ export class WorkspaceStoreFs implements WorkspaceFs {
   async mv(src: string, dest: string): Promise<void> {
     const from = normalizePath(src);
     this.assertWritable("rename", from);
+    // Moving a path onto itself is a no-op, and it has to be checked here: the
+    // copy below stages the bytes at `from`, and the delete then drops the very
+    // path the copy just staged, so the file would disappear.
+    if (from === normalizePath(dest)) return;
     await this.cp(src, dest, { recursive: true });
     await this.rm(from, { recursive: true });
   }
