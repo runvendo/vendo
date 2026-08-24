@@ -84,6 +84,13 @@ ${request.why}
 
 HOW IT SHIPS
 - Write the source under ${directory}/src and install whatever npm packages it needs.
+- The document that serves your bundle is one <div id="root"></div>: mount into
+  that element, and once your first render is really in the DOM (an empty mount
+  measures as height 0, which the host renders as a collapsed frame) call
+  startFrameProtocol(mount) from @vendoai/ui/kit — install it like any other
+  package. That is what sizes the frame and applies the host's brand tokens, and
+  callHost(tool, args) from the same module is the only way to reach the host's
+  data.
 - Bundle it with esbuild to ${directory}/${ENTRY}: ONE self-contained file, no
   imports left at runtime and no network calls at all — the sealed bundle renders
   in an iframe where every request is blocked.

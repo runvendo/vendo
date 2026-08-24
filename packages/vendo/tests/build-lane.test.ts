@@ -33,6 +33,7 @@ import { createGuard } from "@vendoai/guard";
 import { createSessionRoutes } from "@vendoai/harnesses/box-door";
 import { disposeSessionMachines, inferenceEnv } from "@vendoai/harnesses/claude-code/box";
 import { createStore, type VendoStore } from "@vendoai/store";
+import * as kit from "@vendoai/ui/kit";
 import { afterEach, describe, expect, it } from "vitest";
 import { appBuilder, BUILD_ALLOWED_DOMAINS } from "../src/build-agent.js";
 import { createVendo } from "../src/server.js";
@@ -44,6 +45,9 @@ const principal: Principal = { kind: "user", subject: "user_builder" };
 const ctx: RunContext = { principal, venue: "chat", presence: "present", sessionId: "session_builder" };
 
 const APP = "app_build_lane" as AppId;
+/** Where the brief sends the box for the frame protocol. This file imports it,
+ *  so a specifier that stopped resolving fails before any assertion runs. */
+const KIT_SPECIFIER = "@vendoai/ui/kit";
 const ASK = "a photo editor that crops and rotates";
 const WHY = "this needs a real image library";
 
@@ -247,6 +251,32 @@ describe("a consented build runs the box and seals what it made", () => {
     // The source and the lockfile came home beside it.
     expect(Object.keys(bundle.assets).sort()).toEqual(["package-lock.json", "src/index.ts"]);
     expect(row["buildFailed"]).toBeUndefined();
+  });
+
+  it("briefs the box to speak the frame protocol the served shell and the host half define", async () => {
+    // The seam this closes: the brief is the ONLY thing that tells the in-box
+    // agent to mount where the shell mounts and to start the protocol the host
+    // is already listening to. Both sides are read from the real thing — the
+    // mount point off the document the door really serves, the two entry points
+    // off the module the box really installs — so a rename on either side is a
+    // red test and not a bundle that renders and then sits there.
+    const sandbox = scriptedSandbox(buildsFine);
+    const harness = setup(sandbox);
+    await decide(harness, await propose(harness));
+    const row = await settled(harness);
+
+    const brief = sandbox.boxes[0]!.prompts[0] ?? "";
+    const shell = decoder.decode(await harness.runtime.bundleDocument(
+      APP, (row["bundle"] as { entry: string }).entry, ctx));
+    const mountId = /id="([^"]+)"/u.exec(shell)?.[1] ?? "";
+    expect(mountId).not.toBe("");
+    expect(brief).toContain(mountId);
+
+    for (const name of ["startFrameProtocol", "callHost"] as const) {
+      expect(kit[name]).toBeTypeOf("function");
+      expect(brief).toContain(name);
+    }
+    expect(brief).toContain(KIT_SPECIFIER);
   });
 
   it("hands the box ZERO store credentials and only the registry to reach", async () => {
