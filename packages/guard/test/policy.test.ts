@@ -195,7 +195,7 @@ describe("policy files, rules, directions, and code", () => {
   it("resolves contextual risk before policy rules without weakening unrelated writes", async () => {
     const apps = new Map([
       ["app_tree", { ui: "tree" as const }],
-      ["app_http", { ui: "http" as const }],
+      ["app_bundle", { ui: "bundle" as const }],
     ]);
     // ONE tool now, so the shape of the CALL is what says whether this is a
     // change to an existing app: `app` present is the edit path, absent is the
@@ -236,7 +236,7 @@ describe("policy files, rules, directions, and code", () => {
       approval: { descriptor: { risk: "write" } },
     });
     await expect(guard.check(call(make.name, {
-      app: "app_http",
+      app: "app_bundle",
       request: "Change the heading",
     }), make, context())).resolves.toMatchObject({ action: "ask" });
     await expect(guard.check(call(hostWrite.name), hostWrite, context())).resolves.toMatchObject({ action: "ask" });

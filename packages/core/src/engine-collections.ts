@@ -11,7 +11,9 @@ import { VendoError } from "./errors.js";
 // has consented to yet.
 // 9: dropped `vendo_app_tokens` with the per-app box bearer — a sealed bundle
 // is served by the host and holds no store credential of its own.
-export const ENGINE_ALLOWLIST_VERSION = 9;
+// 10: dropped `vendo_egress_approval` with the persistent-machine egress flow —
+// a build box's registry egress is granted for the build minute, not stored.
+export const ENGINE_ALLOWLIST_VERSION = 10;
 
 /** What a collection HOLDS. `knowledge` is the retrieval corpus — documents and
     the chunks an engine mints from them; everything else is `storage`.
@@ -86,7 +88,6 @@ export const ENGINE_COLLECTION_REGISTRY = {
   vendo_placement_slots: { kind: "storage" }, // PLACEMENT_SLOTS_COLLECTION, packages/apps/src/server/persistence/placements.ts:54
   vendo_parked_action: { kind: "storage" }, // COLLECTION, packages/apps/src/server/persistence/parked-action.ts:50
   vendo_parked_build: { kind: "storage" }, // COLLECTION, packages/apps/src/server/persistence/parked-build.ts
-  vendo_egress_approval: { kind: "storage" }, // COLLECTION, packages/apps/src/server/escalation/egress-approval.ts:96
   vendo_slots: { kind: "storage" }, // SLOTS_COLLECTION, packages/apps/src/server/persistence/slots.ts:24
   vendo_app_seen: { kind: "storage" }, // APP_SEEN_COLLECTION, packages/apps/src/server/persistence/app-seen.ts:26
   vendo_workspace_commits: { kind: "storage" }, // WORKSPACE_COMMITS, packages/store/src/ops.ts:27

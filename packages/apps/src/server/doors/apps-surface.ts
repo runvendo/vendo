@@ -126,26 +126,11 @@ const createAppCopyDoors = (
     async fork(appId, ctx) {
       const source = await requireOwned(appId, ctx, "viewer");
       refuseBundleArtifact(source, "forked");
-      // Wave 4 — a served (layer-3) app's ENTIRE surface lives in its machine,
-      // and machines never travel with a copy: the fork would be an app that
-      // can never open (ui: http, no tree, no machine). Refuse loudly instead
-      // of minting a broken document. Scoped to machine-backed docs — a
-      // retired v1 `server`-ref doc keeps its established fork semantics (the
-      // copy drops the dead ref; see the 09 §3 wire test).
-      if (source.ui === "http" && source.machine !== undefined) {
-        throw new VendoError(
-          "conflict",
-          "a served (layer-3) app cannot be forked: its surface lives in its machine, which never travels with a copy — create a new app instead",
-        );
-      }
       const fork: AppDocument = {
         ...structuredClone(source),
         id: `app_${globalThis.crypto.randomUUID()}`,
         forkedFrom: source.id,
       };
-      // execution-v2 — a fork never carries the machine; the copy re-graduates
-      // on its own.
-      delete fork.machine;
       // Lane E grant hygiene — egress approval never travels with a copy; the
       // fork re-approves its declaration.
       delete fork.egressApproved;
@@ -196,29 +181,22 @@ const createAppCopyDoors = (
 export const createAppsSurface = (
   deps: Pick<AppsRuntimeContext,
     "config" | "engine" | "caller" | "data" | "history" | "opener" | "interchange"
-    | "egressApprovals" | "parkedActions" | "parkedBuilds" | "placementRows"
-    | "lifecycle" | "owned" | "requireOwned"
+    | "parkedActions" | "parkedBuilds" | "placementRows" | "owned" | "requireOwned"
     | "grantedRecords" | "reportLifecycle" | "claimSlot" | "markUnbuilt"
     | "runtime">,
 ): Pick<AppsRuntime,
   "get" | "list" | "delete" | "fork" | "share" | "publish" | "seen"
   | "exportApp" | "importApp" | "history" | "open" | "call" | "agentTools"> => {
   const { config, engine, data, history } = deps;
-  const { egressApprovals, parkedActions, parkedBuilds, placementRows, lifecycle } = deps;
+  const { parkedActions, parkedBuilds, placementRows } = deps;
   const { requireOwned, reportLifecycle, claimSlot, markUnbuilt, runtime } = deps;
   return {
     ...createAppReadDoors(deps),
     ...createAppCopyDoors(deps),
     async delete(appId, ctx) {
       const app = await requireOwned(appId, ctx, "owner");
-      // execution-v2 — deleting the app reaps its machine (live sandbox +
-      // stored snapshot) directly, without rewriting the doomed document: a
-      // graduated tree's fn: refs would fail a machine-cleared re-validation
-      // and otherwise strand the provider snapshot.
-      await lifecycle.destroyResources(app);
       await data.clear(app, ctx.principal.subject, await history.documents(appId));
       await history.clear(appId);
-      await egressApprovals.clearForApp(appId);
       await parkedActions.clearForApp(appId);
       await parkedBuilds.clearForApp(appId);
       await engine.delete(APPS_COLLECTION, appId);

@@ -23,70 +23,16 @@ import {
 import { appAccess } from "@vendoai/store";
 import { askUserRegistry } from "./ask-user.js";
 import { cloudApps } from "./cloud-apps.js";
-import { cloudKeyOptions, positiveIntegerEnv } from "./compose-selection.js";
+import { cloudKeyOptions } from "./compose-selection.js";
 import type { VendoComposition } from "./compose-context.js";
 import { vendoVerbsRegistry } from "./vendo-verbs.js";
 import { environment } from "./wire/shared.js";
-
-// execution-v2 Wave 3 — the box's inference door (the in-box coding agent's
-// model). SELECTION LAW: the explicit VENDO_INFERENCE_URL+KEY pair wins;
-// otherwise VENDO_API_KEY rides the console's Anthropic-compatible model gateway
-// — the same key that provisions the Cloud machine funds its model (chat
-// inference already does, via vendoModel's vendo-cloud rung; a machine without
-// this rung fails every in-box task); otherwise the box gets no inference door
-// and says so.
-//
-// There is deliberately no ANTHROPIC_API_KEY rung: a provider key in the
-// deployment's environment used to point every box at api.anthropic.com and bill
-// that account, chosen by nothing anyone wrote down. A host who wants their own
-// endpoint names it — both halves of the pair, explicitly.
-const boxInference = (): { url: string; key: string; model?: string } | undefined => {
-  const url = environment("VENDO_INFERENCE_URL");
-  const key = environment("VENDO_INFERENCE_KEY");
-  const model = environment("VENDO_INFERENCE_MODEL");
-  if (url !== undefined && key !== undefined) {
-    return { url, key, ...(model === undefined ? {} : { model }) };
-  }
-  const cloud = cloudKeyOptions();
-  if (cloud !== undefined) {
-    // The gateway base mirrors vendoModel's vendo-cloud rung: `<console>/api/v1`.
-    const base = (cloud.baseUrl ?? "https://console.vendo.run").replace(/\/+$/, "");
-    // The gateway serves the vendo model family as literal ids (`vendo` is
-    // the flagship); the box harness's own default is a raw claude-* id the
-    // gateway would grace-remap, so pin the family name unless the operator
-    // chose a model via VENDO_INFERENCE_MODEL.
-    return {
-      url: base.endsWith("/api/v1") ? base : `${base}/api/v1`,
-      key: cloud.apiKey,
-      model: model ?? "vendo",
-    };
-  }
-  return undefined;
-};
-
-// Lane E — the implicit skin domains for the machine egress allowlist: the
-// box must always reach its own boundary (store + host-callback surface on
-// the deployment origin, and — Wave 3 — the inference endpoint host), never
-// subject to declaration or approval. Assembled here because this file owns
-// the same URLs it injects as VENDO_STORE_URL / VENDO_HOST_URL / inference.
-const implicitMachineDomains = (configuredBaseUrl: string | undefined): string[] => {
-  const domains = new Set<string>();
-  const add = (value: string | undefined): void => {
-    if (value === undefined) return;
-    try { domains.add(new URL(value).hostname); } catch { /* not a URL */ }
-  };
-  add(configuredBaseUrl);
-  add(boxInference()?.url);
-  return [...domains];
-};
 
 /** The seams composition assembles for the apps runtime, in the order the one
  *  function assembled them (the env knobs THROW on a typo, so they are read
  *  where they were read). */
 interface AppsSeams {
   boxTemplate: string | undefined;
-  boxEditTimeoutMs: number | undefined;
-  boxEditPollMs: number | undefined;
   appsCloud: ReturnType<typeof cloudKeyOptions>;
   screenWorkspace: (screenCtx: RunContext) => Promise<WorkspaceFs>;
   access: ReturnType<typeof appAccess>;
@@ -205,11 +151,11 @@ const appsBuildSeam = (composition: VendoComposition, seams: AppsSeams): NonNull
     ...(seams.boxTemplate === undefined ? {} : { template: seams.boxTemplate }),
   });
 
-/** The host's own knobs, the config-surface providers, and the machine lane. */
+/** The host's own knobs and the config-surface providers. */
 const appsTailSeams = (composition: VendoComposition, seams: AppsSeams): Partial<AppsConfig> => {
   const { config, automationsMounted, themeProvider, briefing, hostSemanticsProvider } = composition;
-  const { secrets, sandbox } = composition;
-  const { appsCloud, boxTemplate, boxEditTimeoutMs, boxEditPollMs } = seams;
+  const { secrets } = composition;
+  const { appsCloud } = seams;
   return {
     // The four verbs this block may ask of the automations engine: THE one create
     // operation (`vendo_automate`, `vendo_make`'s auto-arm sugar, the vendo.json
@@ -259,26 +205,11 @@ const appsTailSeams = (composition: VendoComposition, seams: AppsSeams): Partial
     // `theme` here is the SERVED-app handoff (the `?vendoTheme=` query param);
     // what a writer is told about the brand rides the briefing pack below.
     theme: themeProvider,
-    // THE briefing pack, for the OTHER rung: the in-box builder reads it through
-    // `box-lane.ts`, in the same bytes the screen agent above is handed.
+    // THE briefing pack, in the same bytes the screen agent above is handed.
     briefing,
     ...(appsCloud === undefined ? {} : { cloud: cloudApps(appsCloud) }),
     semantics: hostSemanticsProvider,
     secrets,
-    // execution-v2 — the machine lifecycle's seams: the selected v2 adapter
-    // (every provider speaks the canonical seam since the Wave 5 Cloud port).
-    // The box template (Node + the in-box agent harness) is set by
-    // VENDO_BOX_TEMPLATE.
-    machine: {
-      ...(sandbox.adapter === undefined ? {} : { sandbox: sandbox.adapter }),
-      implicitDomains: implicitMachineDomains(composition.configuredBaseUrl),
-      ...(boxTemplate === undefined ? {} : { template: boxTemplate }),
-      // The in-box agent edit is a minutes-long loop; operators tune its
-      // long-poll budget when a base image or task needs longer than the
-      // 8-minute default.
-      ...(boxEditTimeoutMs === undefined ? {} : { boxEditTimeoutMs }),
-      ...(boxEditPollMs === undefined ? {} : { boxEditPollMs }),
-    },
   };
 };
 
@@ -288,8 +219,6 @@ export const composeApps = (composition: VendoComposition): Pick<VendoCompositio
   "access" | "apps" | "appsRuntime" | "resolveAppToolRisk"> => {
   const { store, actions, capability } = composition;
   const boxTemplate = environment("VENDO_BOX_TEMPLATE");
-  const boxEditTimeoutMs = positiveIntegerEnv("VENDO_BOX_EDIT_TIMEOUT_MS");
-  const boxEditPollMs = positiveIntegerEnv("VENDO_BOX_EDIT_POLL_MS");
   // ADAPTER RULE, share/publish seam: the apps block never reads the
   // environment — VENDO_API_KEY fills its CloudAppsClient slot HERE, at the
   // composition seam; unfilled, share/publish refuse with cloud-required.
@@ -320,8 +249,6 @@ export const composeApps = (composition: VendoComposition): Pick<VendoCompositio
   const access = appAccess(store);
   const seams: AppsSeams = {
     boxTemplate,
-    boxEditTimeoutMs,
-    boxEditPollMs,
     appsCloud,
     screenWorkspace,
     access,

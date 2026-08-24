@@ -22,7 +22,6 @@ export type AppDocumentValidation =
   | { ok: true; app: AppDocument }
   | { ok: false; error: { code: string; message: string } };
 
-const SERVER_REFERENCE_PATTERN = /^[a-z0-9][a-z0-9+.-]*:.+$/;
 const HOST_REFERENCE_PATTERN = /^host\.[A-Za-z0-9_][A-Za-z0-9_.-]*$/;
 
 const fail = (code: string, message: string): AppDocumentValidation => ({
@@ -90,12 +89,8 @@ const storageError = (app: AppDocument): AppDocumentValidation | null => {
   return null;
 };
 
-/** The reference-shaped fields: the box the app runs on and its fork
- *  provenance. */
+/** The reference-shaped fields: the app's fork provenance. */
 const referenceFieldsError = (app: AppDocument): AppDocumentValidation | null => {
-  if (app.machine !== undefined && !SERVER_REFERENCE_PATTERN.test(app.machine.snapshotRef)) {
-    return fail("validation", `invalid machine snapshot reference "${app.machine.snapshotRef}"`);
-  }
   if (app.seed !== undefined) {
     if (app.seed.component.length === 0) {
       return fail("validation", "seed component must be non-empty");

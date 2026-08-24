@@ -717,51 +717,6 @@ describe("09 §3 public wire", () => {
     expect(custom.resume).not.toHaveBeenCalled();
   });
 
-  it("fork never touches the Cloud sandbox: the copy carries no machine", async () => {
-    // execution-v2 Wave 1.5 — the v1 fork path (resume → snapshot → stop
-    // through config.sandbox) is deleted: a fork carries no machine, so even
-    // with the Cloud sandbox selected the console sees no traffic.
-    vi.stubEnv("E2B_API_KEY", "");
-    vi.stubEnv("MODAL_TOKEN_ID", "");
-    vi.stubEnv("MODAL_TOKEN_SECRET", "");
-    vi.stubEnv("VENDO_API_KEY", "vnd_cloud_key");
-    vi.stubEnv("VENDO_CLOUD_URL", "https://cloud-rung.test");
-    const machineId = `m_${"a".repeat(24)}`;
-    const consoleCalls: Array<{ url: string; method: string; authorization: string | null }> = [];
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const sent = new Request(input, init);
-      consoleCalls.push({
-        url: sent.url,
-        method: sent.method,
-        authorization: sent.headers.get("authorization"),
-      });
-      const url = new URL(sent.url);
-      if (url.pathname === "/api/v1/sandboxes/resume") {
-        return Response.json({ id: machineId, url: `https://m-${machineId}.vendo.run` });
-      }
-      if (url.pathname.endsWith("/snapshot")) {
-        return Response.json({ ref: `vendo:snap_${"b".repeat(40)}` });
-      }
-      return Response.json({ ok: true });
-    }));
-
-    const { vendo } = await setup();
-    expect((await vendo.handler(request("GET", "/status"))).status).toBe(200);
-    await vendo.store.records("vendo_apps").put({
-      id: "app_cloud",
-      data: {
-        subject: principal.subject,
-        enabled: true,
-        doc: { ...app("app_cloud"), ui: "http" },
-      },
-      refs: { subject: principal.subject },
-    });
-
-    const fork = await vendo.apps.fork("app_cloud", ctx);
-    expect(fork).not.toHaveProperty("machine");
-    expect(consoleCalls.filter((call) => call.url.includes("/api/v1/sandboxes"))).toEqual([]);
-  });
-
   it("selects the connections adapter with the adapter-rule precedence", async () => {
     // Adapter rule (2026-07-17 cloud definition): explicit adapter → BYO
     // brokers → VENDO_API_KEY defaults the Cloud adapter → unconfigured.
@@ -1472,15 +1427,6 @@ describe("09 §2 composition", () => {
       data: { subject: principal.subject, enabled: true, doc: app() },
       refs: { subject: principal.subject },
     });
-    await vendo.store.records("vendo_apps").put({
-      id: "app_http",
-      data: {
-        subject: principal.subject,
-        enabled: true,
-        doc: { ...app("app_http"), ui: "http" },
-      },
-      refs: { subject: principal.subject },
-    });
     const byName = new Map((await vendo.actions.descriptors()).map((descriptor) => [descriptor.name, descriptor]));
     // Yousef's ruling (2026-07-28): an app edit does not need approval. Editing
     // your own view is the same act as creating it, so it runs — in EVERY venue,
@@ -1498,14 +1444,6 @@ describe("09 §2 composition", () => {
         args: { app: "app_wire", request: "Persist this to the database" },
       }, edit, venue)).resolves.toMatchObject({ action: "run" });
     }
-    // Including an edit of an already-served app: the request rides the box,
-    // and what the BOX then does is gated on its own terms (egress approval,
-    // per-tool risk), never by a prompt about rearranging a view.
-    await expect(vendo.guard.check({
-      id: "call_http",
-      tool: edit.name,
-      args: { app: "app_http", request: "Make the heading blue" },
-    }, edit, chat)).resolves.toMatchObject({ action: "run" });
     // The ceremony stays where it belongs: writing the app's stored rows asks.
     const dataPut = byName.get("vendo_apps_data_put")!;
     expect(dataPut.risk).toBe("write");
@@ -3737,37 +3675,6 @@ describe("unified try surface (Task 15a) — in-memory profile", () => {
       profile: { tools: [profileTool("host_invoices_list")] },
     });
     expect(unset.guard.status().posture).toBe("unconfigured");
-  });
-});
-
-describe("execution-v2 — box-edit env knobs", () => {
-  it("rejects malformed VENDO_BOX_EDIT_TIMEOUT_MS/POLL_MS at compose time instead of passing NaN into the machine config", async () => {
-    // A units-suffixed operator value like "8m" would flow as NaN into
-    // runBoxEdit, where NaN defeats the ?? defaults: deadline = NaN makes
-    // every box edit "time out after NaNs" instantly (and roll the edit
-    // back), and pollIntervalMs = NaN hot-polls the box control port. Same
-    // posture as validateSweepConfig: fail loudly at compose time.
-    const store = await tempStore("vendo-box-env-");
-    const identity = { principal: async () => principal };
-    vi.stubEnv("VENDO_BOX_EDIT_TIMEOUT_MS", "8m");
-    let thrown: unknown;
-    try {
-      createVendo({ models: { default: {} as LanguageModel }, store, ...identity });
-    } catch (error) {
-      thrown = error;
-    }
-    expect(thrown).toBeInstanceOf(VendoError);
-    expect((thrown as VendoError).code).toBe("validation");
-    expect((thrown as VendoError).message).toContain("VENDO_BOX_EDIT_TIMEOUT_MS");
-
-    vi.stubEnv("VENDO_BOX_EDIT_TIMEOUT_MS", "480000");
-    vi.stubEnv("VENDO_BOX_EDIT_POLL_MS", "0");
-    expect(() => createVendo({ models: { default: {} as LanguageModel }, store, ...identity }))
-      .toThrowError(/VENDO_BOX_EDIT_POLL_MS/);
-
-    // Valid positive-integer values still compose.
-    vi.stubEnv("VENDO_BOX_EDIT_POLL_MS", "2500");
-    expect(() => createVendo({ models: { default: {} as LanguageModel }, store, ...identity })).not.toThrow();
   });
 });
 

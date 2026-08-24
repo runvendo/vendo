@@ -1,12 +1,9 @@
 /**
  * The rebuildability proof — contract §2.2/§2.3, Track B's done bar.
  *
- * "The code lives in your database like everything else, and the box is
- * disposable." Before this, an app built in a box existed only inside the E2B
- * snapshot behind `machine.snapshotRef`: lose the snapshot and the customer's app
- * is gone, because the store never had it. `doc.source` demotes that ref to a
- * CACHE — and the only way to know it really is one is to DELETE the snapshot and
- * rebuild the app without it.
+ * "The code lives in your database like everything else." `doc.source` is the
+ * app's only home, and the way to know it really is one is to rebuild the app
+ * from a store that has never held its files.
  *
  * So this is a seam test with no stub on either side (repo CLAUDE.md's testing
  * law). Every piece is the shipped one:
@@ -16,11 +13,6 @@
  *     `server.ts` wires it: `commitSource: (input) => apps.commitSource(input, ctx)`
  *   - the real `createApps` runtime behind that verb, so ownership, the
  *     compare-and-swap update and the blob spill are the production ones
- *   - a fake `SandboxAdapter` whose snapshot is genuinely destroyed, so `resume`
- *     genuinely fails and the test cannot pass on a snapshot that is still there
- *
- * The live-box half of the bar (a real E2B box, really re-served) belongs to the
- * builder track; this half proves the STORAGE: what a rebuild has to read.
  */
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -28,10 +20,7 @@ import { join } from "node:path";
 import {
   createApps,
   type AppSourceSeam,
-  type SandboxAdapter,
-  type SandboxMachine,
 } from "@vendoai/apps";
-import { inMemoryBoxFiles } from "@vendoai/apps/testing";
 import {
   VENDO_APP_FORMAT,
   WORKSPACE_INLINE_MAX_BYTES,
@@ -105,47 +94,6 @@ function memoryBlobs(): FilesAdapter & { keys(): string[]; failRowReads: boolean
   return adapter;
 }
 
-/**
- * A provider that really HOLDS its snapshots, so destroying one is observable —
- * the only property this test needs from a box, and the one a returns-the-same-
- * machine-forever double cannot give. Local to this file, like every other
- * `SandboxAdapter` double in this package.
- */
-function snapshotHoldingSandbox(): SandboxAdapter & { snapshots: Set<string> } {
-  const snapshots = new Set<string>();
-  let next = 1;
-  const boot = (): SandboxMachine => {
-    const id = `rebuild_box_${next++}`;
-    return {
-      id,
-      async request() { return { status: 200, headers: {}, body: new Uint8Array() }; },
-      async url(port?: number) { return `https://${port ?? 8080}-${id}.rebuild.test`; },
-      async snapshot() {
-        const ref = `fake:${id}_snap`;
-        snapshots.add(ref);
-        return ref;
-      },
-      async stop() { /* sleep */ },
-      async destroy() { /* gone; taken refs stay valid */ },
-      // The seam's ONE in-memory implementation (@vendoai/apps/testing), so no
-      // two fakes can drift over what reading a box file means.
-      files: inMemoryBoxFiles(new Map()),
-    };
-  };
-  return {
-    snapshots,
-    async create() { return boot(); },
-    async resume(snapshotRef) {
-      // The seam's own word: after `destroy`, "the provider holds no state for it".
-      if (!snapshots.has(snapshotRef)) throw new Error(`unknown snapshot: ${snapshotRef}`);
-      return boot();
-    },
-    async destroy(snapshotRef) {
-      snapshots.delete(snapshotRef);
-    },
-  };
-}
-
 /** The READ half's seam, bound over the REAL row exactly as composition does —
  *  the assertion side of this test. The WRITE side goes through
  *  `apps.commitSource`, which is the production verb under test. */
@@ -195,7 +143,6 @@ async function harness() {
   const store = await freshStore();
   const guard = createGuard({ store, policy: "autopilot" });
   const blobs = memoryBlobs();
-  const sandbox = snapshotHoldingSandbox();
   // The ONE `AppAccess` this harness has: the runtime resolves levels through
   // it, and the grant whose survival this test asserts is written through it.
   const access = appAccess(store);
@@ -208,7 +155,6 @@ async function harness() {
     catalog: [],
     files: blobs,
     appAccess: access,
-    machine: { sandbox },
   });
 
   /** The composition line from `packages/vendo/src/server.ts`, verbatim in shape:
@@ -224,11 +170,11 @@ async function harness() {
     },
   );
 
-  return { store, apps, access, blobs, sandbox, open };
+  return { store, apps, access, blobs, open };
 }
 
 /** A stored app carrying everything §2.4 promises survives an escalation: a
- *  placement, and — once the box exists — a machine ref.
+ *  placement.
  *
  *  `owner` is the row's subject, which IS the app's address (§9.7 — owner and path
  *  prefix always travel together): a person's subject, or an org id verbatim. */
@@ -246,7 +192,7 @@ async function seedApp(store: VendoStore, owner: string = principal.subject): Pr
   });
 }
 
-describe.sequential("an app rebuilds from its row alone, with its snapshot deleted", () => {
+describe.sequential("an app rebuilds from its row alone", () => {
   /**
    * The app is ORG-OWNED, which is the harder address and the only one that can be
    * SHARED: a personal app refuses a grant outright ("move it into a team first"),
@@ -255,14 +201,12 @@ describe.sequential("an app rebuilds from its row alone, with its snapshot delet
    * permission instead of ownership used to drop every edit silently.
    */
   it("comes back byte for byte — inline files and the blob-spilled one alike", async () => {
-    const { store, apps, access, sandbox, blobs, open } = await harness();
+    const { store, apps, access, blobs, open } = await harness();
     await seedApp(store, ORG);
     const root = `/orgs/${ORG}/apps/${APP}`;
 
     // ── 1. BUILD. The builder's writes reach the store through the ONE
-    // interception point: this façade's `commit()`. That is the same door the
-    // sandbox sync-back path uses (`materialize.ts` writes then commits here), so
-    // this is the real write path whether the hands were in-process or in a box.
+    // interception point: this façade's `commit()` — the real write path.
     const building = await open(orgCtx);
     for (const [path, text] of Object.entries(SOURCE)) {
       await building.writeFile(`${root}/${path}`, text);
@@ -280,32 +224,7 @@ describe.sequential("an app rebuilds from its row alone, with its snapshot delet
     // A grant, so the rebuild can be asked whether sharing survived it.
     await access.grant(orgCtx, APP, `user:${READER.subject}`, "viewer");
 
-    // ── 2. THE BOX. A machine is minted and its ref stored, which is the state
-    // that used to be the app's ONLY home. Written onto the row directly rather
-    // than through `provision`: what is under test is whether the ref is a cache,
-    // not how it is taken.
-    const machine = await sandbox.create({ env: { PORT: "8080" } });
-    const snapshotRef = await machine.snapshot();
-    await store.records("vendo_apps").put({
-      id: APP,
-      data: {
-        subject: ORG,
-        enabled: false,
-        doc: { ...(await apps.get(APP, orgCtx))!, machine: { snapshotRef, provisionedAt: new Date().toISOString() } },
-      },
-      refs: { subject: ORG },
-    });
-    await expect(sandbox.resume(snapshotRef)).resolves.toBeDefined();
-
-    // ── 3. DELETE THE SNAPSHOT. `destroy` is documented as exactly this:
-    // "afterwards resume(snapshotRef) fails and the provider holds no state for
-    // it." Asserting the failure is what stops this test passing by accident on a
-    // snapshot that is quietly still there.
-    await sandbox.destroy(snapshotRef);
-    await expect(sandbox.resume(snapshotRef)).rejects.toThrow(/unknown snapshot/);
-    expect(sandbox.snapshots.has(snapshotRef)).toBe(false);
-
-    // ── 4. REBUILD. An EMPTY store that has never held these files — the app's
+    // ── 2. REBUILD. An EMPTY store that has never held these files — the app's
     // ROW is the only thing carried across, plus the blobs its row points at.
     // Reading it back out of the SAME store would prove nothing: those file rows
     // are the working copy the build left behind, so the read-backs would pass
@@ -323,7 +242,7 @@ describe.sequential("an app rebuilds from its row alone, with its snapshot delet
       expect(bytes).toBe(text);
     }
 
-    // ── 5. AND THE APP IS STILL THE SAME APP. §2.4: escalation is no longer a
+    // ── 3. AND THE APP IS STILL THE SAME APP. §2.4: escalation is no longer a
     // migration, so nothing but `source` may have moved.
     const after = await apps.get(APP, orgCtx);
     expect(after!.id).toBe(APP);

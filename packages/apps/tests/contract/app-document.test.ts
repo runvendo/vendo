@@ -27,7 +27,6 @@ const invoiceChaser = () => ({
     },
     attachments: { about: "Supporting documents", kind: "files" as const },
   },
-  machine: { snapshotRef: "e2b:v2:snap_x91", provisionedAt: "2026-07-19T12:00:00.000Z" },
   automations: ["atm_chase"],
   egress: ["api.stripe.com", "api.resend.com"],
   secrets: ["RESEND_API_KEY"],
@@ -143,46 +142,6 @@ describe("appDocumentSchema and validateAppDocument", () => {
     const result = validateAppDocument(hostile);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.code).toBe("validation");
-  });
-});
-
-describe("appDocumentSchema machine field (execution-v2)", () => {
-  const withMachine = () => ({
-    ...minimal(),
-    machine: { snapshotRef: "e2b:snap_42", provisionedAt: "2026-07-19T12:00:00.000Z" },
-  });
-
-  it("round-trips a document with a machine reference", () => {
-    const document = withMachine();
-    expect(appDocumentSchema.parse(document)).toEqual(document);
-    expect(validateAppDocument(document)).toEqual({ ok: true, app: document });
-  });
-
-  it("keeps the machine optional: an app without one is a layer-1 tree app", () => {
-    const result = validateAppDocument(minimal());
-    expect(result.ok).toBe(true);
-    if (result.ok) expect(result.app.machine).toBeUndefined();
-  });
-
-  it("rejects a machine snapshotRef without a provider prefix", () => {
-    expectValidation({
-      ...minimal(),
-      machine: { snapshotRef: "snap_42", provisionedAt: "2026-07-19T12:00:00.000Z" },
-    });
-  });
-
-  it("rejects a machine with a malformed provisionedAt", () => {
-    expectValidation({
-      ...minimal(),
-      machine: { snapshotRef: "e2b:snap_42", provisionedAt: "yesterday" },
-    });
-  });
-
-  it("rejects a machine missing its snapshotRef", () => {
-    expectValidation({
-      ...minimal(),
-      machine: { provisionedAt: "2026-07-19T12:00:00.000Z" },
-    });
   });
 });
 

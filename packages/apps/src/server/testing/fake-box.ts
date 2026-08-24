@@ -1,6 +1,19 @@
 import type { SandboxAdapter, SandboxMachine } from "../escalation/sandbox.js";
-import type { BoxEditResult } from "../escalation/box-agent.js";
-import { BOX_CONTROL_PORT } from "../escalation/box-agent.js";
+
+/** The in-box agent's control port and its task result. The agent door itself
+ *  is gone with the persistent-machine machinery; this substrate keeps the two
+ *  shapes so the tests that only need a SANDBOX ADAPTER present still have a
+ *  faithful box to run against. */
+const BOX_CONTROL_PORT = 8811;
+
+export interface BoxEditResult {
+  ok: boolean;
+  summary: string;
+  filesChanged: string[];
+  testsRun: number;
+  fns?: string[];
+  servesUi?: boolean;
+}
 import { inMemoryBoxFiles } from "./box-files.js";
 
 /**

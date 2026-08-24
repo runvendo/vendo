@@ -14,7 +14,6 @@ import { describe, expect, it } from "vitest";
 import { agentToolDescriptors } from "../src/server/doors/agent-tools.js";
 import { createApps, type AppsRuntime, type PlacementEntry } from "../src/server/index.js";
 import { authoringAssembler, scriptedAssembler } from "../src/server/testing/screen-assembler.js";
-import { fakeBoxSandbox } from "../src/server/testing/fake-box.js";
 import { bindTools, guardFixture } from "../src/server/testing/guard-fixture.js";
 import { memoryStore } from "../src/server/testing/memory-store.js";
 import { basicLanguageModel, scriptedLanguageModel } from "../src/server/testing/scripted-model.js";
@@ -622,7 +621,6 @@ describe("vendo_make — the slot a new app lands in", () => {
     tools: hostTools,
     catalog: [],
     model: basicLanguageModel(),
-    machine: { sandbox: fakeBoxSandbox(), buildEnv: () => ({ PORT: "8080" }), boxEditPollMs: 5 },
     screen: { async assemble() { return { kind: "escalate", why: "this needs real code" }; } },
     // S3 — an escalation now ASKS before it builds, so the deployment needs a
     // builder for the ask to be honest. What it never reaches is this stub's

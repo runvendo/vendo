@@ -26,7 +26,6 @@ import {
 import { runMakeTool } from "../src/server/doors/make-tool.js";
 import { readBundleBlob } from "../src/server/persistence/app-source.js";
 import { createApps, type AppsConfig } from "../src/server/index.js";
-import { fakeStatefulSandbox } from "../src/server/testing/fake-sandbox-stateful.js";
 import { guardFixture } from "../src/server/testing/guard-fixture.js";
 import { memoryStore } from "../src/server/testing/memory-store.js";
 import type { AgentToolsDataDependencies } from "../src/server/doors/agent-tools.js";
@@ -94,10 +93,6 @@ const setup = (options: { build?: AppBuilder } = {}) => {
     catalog: [],
     screen,
     files,
-    // A sandbox IS composed: this slice's law is that a composed sandbox is
-    // still not spent until the person says yes, which a missing one would
-    // prove nothing about.
-    machine: { sandbox: fakeStatefulSandbox(), buildEnv: () => ({ PORT: "8080" }) },
     ...(options.build === undefined ? {} : { build: options.build }),
   };
   const runtime = createApps(config);

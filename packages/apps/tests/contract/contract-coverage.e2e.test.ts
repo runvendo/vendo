@@ -9,10 +9,8 @@
 import { describe, expect, it } from "vitest";
 import * as contract from "../../src/contract/index.js";
 import {
-  appDocumentSchema,
   treeQuerySchema,
   treeSchema,
-  validateAppDocument,
   validateTree,
   vendoThemeSchema,
 } from "../../src/contract/index.js";
@@ -128,16 +126,6 @@ describe("§8 — UIPayload is the format-tag dispatch surface; unknown tags are
     const result = validateTree(unknown);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.code).toBe("version");
-  });
-});
-
-describe("§9 — app document plane values and sub-schemas", () => {
-  it("accepts the http plane (keeps the last payload as a cover)", () => {
-    const httpApp = {
-      format: "vendo/app@1", id: "app_http", name: "Server App", ui: "http" as const,
-    };
-    expect(appDocumentSchema.safeParse(httpApp).success).toBe(true);
-    expect(validateAppDocument(httpApp).ok).toBe(true);
   });
 });
 

@@ -8,7 +8,6 @@ import type {
 import { zipSync } from "fflate";
 import { describe, expect, it } from "vitest";
 import { createApps } from "../../src/server/index.js";
-import { fakeSandbox } from "../../src/server/testing/fake-sandbox.js";
 import { guardFixture } from "../../src/server/testing/guard-fixture.js";
 import { memoryStore } from "../../src/server/testing/memory-store.js";
 import { scriptedLanguageModel } from "../../src/server/testing/scripted-model.js";
@@ -52,7 +51,6 @@ const newRuntime = () => createApps({
   store: memoryStore(),
   guard: guardFixture(),
   tools: { async descriptors() { return []; }, async execute() { return { status: "error", error: { code: "not-found", message: "x" } }; } },
-  machine: { sandbox: fakeSandbox() },
   catalog: [],
   model: scriptedLanguageModel("{}"),
 });
@@ -64,8 +62,7 @@ describe("interchange authority forgery", () => {
       store,
       guard: guardFixture(),
       tools: { async descriptors() { return []; }, async execute() { return { status: "error", error: { code: "not-found", message: "x" } }; } },
-      machine: { sandbox: fakeSandbox() },
-      catalog: [],
+          catalog: [],
       model: scriptedLanguageModel("{}"),
     });
 

@@ -287,23 +287,6 @@ export const seedComponentName = (slot: string): string => {
 };
 
 /**
- * execution-v2 — the app's persistent machine. Presence means layer 2+; an app
- * with no machine is a layer-1 tree app. The layer itself is always derived
- * from presence (and, for layer 3, from what the box serves), never stored.
- */
-interface AppMachine {
-  /** Provider-prefixed snapshot reference (e.g. "e2b:snap_x91"), opaque past the colon. */
-  snapshotRef: string;
-  provisionedAt: IsoDateTime;
-}
-
-/** execution-v2 */
-const appMachineSchema = z.object({
-  snapshotRef: z.string(),
-  provisionedAt: isoDateTimeSchema,
-}).passthrough() satisfies z.ZodType<AppMachine>;
-
-/**
  * A SEALED bundle — the app's built client code, frozen as content-addressed
  * blobs. Every hash BELOW is a blob key, and a blob is only ever stored under
  * its own hash, never under a path (`assets` is keyed by path because that is
@@ -375,7 +358,7 @@ export interface AppDocument {
   id: AppId;
   name: string;
   description?: string;
-  ui?: "tree" | "http" | "bundle";
+  ui?: "tree" | "bundle";
   components?: Record<string, ComponentEntry>;
   /**
    * W4b — the compiler-stamped per-island tool manifest: for each generated
@@ -391,12 +374,10 @@ export interface AppDocument {
    * inside the app directory ("src/App.tsx", "vendo.json"), the app's own
    * screen (`app.tsx`) included.
    *
-   * With this present, `machine.snapshotRef` is a CACHE: an app can always be
-   * rebuilt from here onto a fresh box, and nothing may read a snapshot to
-   * recover source.
+   * This is what a RESEAL starts from: a bundle is rebuilt from here in a fresh
+   * box, so no sealed artifact is ever the only copy of an app's own code.
    */
   source?: Record<string, AppSourceFile>;
-  machine?: AppMachine;
   /** The seal a `ui: "bundle"` app renders — the one field that says which
    *  bytes this app IS right now. */
   bundle?: AppBundle;
@@ -478,12 +459,11 @@ export const appDocumentSchema = z.object({
   id: appIdSchema,
   name: z.string(),
   description: z.string().optional(),
-  ui: z.enum(["tree", "http", "bundle"]).optional(),
+  ui: z.enum(["tree", "bundle"]).optional(),
   components: z.record(componentEntrySchema).optional(),
   componentTools: z.record(z.array(z.string())).optional(),
   storage: z.record(storageDeclSchema).optional(),
   source: z.record(appSourceFileSchema).optional(),
-  machine: appMachineSchema.optional(),
   bundle: appBundleSchema.optional(),
   automations: z.array(z.string()).optional(),
   egress: z.array(z.string()).optional(),

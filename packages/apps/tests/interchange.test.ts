@@ -86,16 +86,15 @@ describe(".vendoapp interchange through createApps", () => {
     expect(guard.audit.filter((event) => operationOf(event) === "import")).toHaveLength(2);
   });
 
-  it("exports only the document, without identity, lineage, or machine state", async () => {
+  it("exports only the document, without identity or lineage", async () => {
     const store = memoryStore();
     const runtime = createApps({ store, guard: guardFixture(), tools, catalog: [] });
     const ctx = context("user_ada");
-    // Export is document-only: it never writes identity, lineage, machine state
-    // (or any app/ directory).
+    // Export is document-only: it never writes identity, lineage (or any app/
+    // directory).
     const legacy = document({
       id: "app_legacy",
       forkedFrom: "app_template",
-      machine: { snapshotRef: "fake:snap_legacy", provisionedAt: "2026-07-19T00:00:00.000Z" },
     });
     await seedAppRow(engineOverAdapter(store), legacy, "user_ada");
 
@@ -103,7 +102,6 @@ describe(".vendoapp interchange through createApps", () => {
     expect(Object.keys(archive)).toEqual(["app.json"]);
     const exported = JSON.parse(decoder.decode(archive["app.json"])) as Record<string, unknown>;
     expect(exported).not.toHaveProperty("id");
-    expect(exported).not.toHaveProperty("machine");
     expect(exported).not.toHaveProperty("forkedFrom");
     expect(exported.storage).toEqual(legacy.storage);
   });
@@ -242,9 +240,8 @@ describe(".vendoapp interchange through createApps", () => {
       "app/server.js": encoder.encode("export const ready = true;"),
     });
 
-    const imported = await runtime.importApp(archive, context("user_ada"));
+    await runtime.importApp(archive, context("user_ada"));
 
-    expect(imported.machine).toBeUndefined();
     expect(guard.audit.at(-1)?.detail).toMatchObject({
       operation: "import",
       appDirectory: "ignored",

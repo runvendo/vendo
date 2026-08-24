@@ -50,19 +50,6 @@ const attachSeedFurnishings = (tree: Tree, app: AppDocument): void => {
   }
 };
 
-/**
- * execution-v2 Wave 4 — the layer-3 served surface seam the runtime injects:
- * `enabled` mirrors the host's experimental flag, and `urlFor` wakes the app's
- * machine (wake-on-open) and resolves its public ingress URL for $PORT.
- */
-export interface ServedSurface {
-  /** Build contract §9.8 — EVERY served app is answered with this deployment's
-      authenticated proxy url, re-checked per request. It takes no ctx because
-      there is nothing left to decide per caller: a second answer for a second
-      kind of caller is exactly the door that leaked. */
-  urlFor(app: AppDocument): Promise<string>;
-}
-
 /** The seams an open reads a venue verdict through, passed as one so the two
  *  artifact paths can share them without a five-argument call. */
 interface VenueSeams {
@@ -139,7 +126,6 @@ const additionalVenueState = async (
  *  `createAppOpener` below is what callers get; this is its servable half. */
 const serveOpenApp = (
   seedBaselines: readonly SeedBaseline[] = [],
-  served: ServedSurface,
   /**
    * The COMPONENT screen half of an open: the app's own `app.tsx`, RUN.
    *
@@ -178,23 +164,6 @@ const serveOpenApp = (
   if (app.ui === "bundle" && app.bundle !== undefined) {
     return { kind: "bundle", entry: app.bundle.entry };
   }
-  if (app.ui === "http") {
-    // A served document without a machine has NO surface anywhere (a v1-era
-    // import or a de-graduated doc): say so instead of a confusing wake error.
-    if (app.machine === undefined) {
-      throw new VendoError(
-        "validation",
-        "this served app has no machine — its surface is gone; re-graduate it with an edit or re-create the app",
-      );
-    }
-    // No wake on open: the URL is this deployment's proxy, and the proxy wakes
-    // the machine on the first forwarded request — after it has re-checked
-    // access. The host shows its ordinary loading state for that wake latency
-    // (no v1 cover or screenshot machinery); the embed's keepalive ping is what
-    // notices a machine that went back to sleep.
-    return { kind: "http", url: await served.urlFor(app) };
-  }
-
   // A COMPONENT screen (`app.tsx`) is the whole artifact: a screen's tree is what
   // RENDERING it produces, so the screen is re-run HERE, on every open — its
   // queries resolve against the world as it is this instant and the payload

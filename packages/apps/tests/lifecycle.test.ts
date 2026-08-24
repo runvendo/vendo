@@ -128,23 +128,6 @@ describe("apps lifecycle", () => {
     expect(await runtime.history(fork.id, ctx).list()).toEqual([]);
   });
 
-  it("a fork never carries a machine", async () => {
-    const store = memoryStore();
-    const runtime = createApps({ store, guard: guardFixture(), tools, catalog: [] });
-    const source: AppDocument = {
-      format: VENDO_APP_FORMAT,
-      id: "app_machine_source",
-      name: "Machine source",
-      machine: { snapshotRef: "fake:snap_legacy", provisionedAt: "2026-07-19T00:00:00.000Z" },
-    };
-    await seedAppRow(engineOverAdapter(store), source, "user_ada");
-
-    const fork = await runtime.fork(source.id, context("user_ada"));
-
-    expect(fork).not.toHaveProperty("machine");
-    expect(fork.forkedFrom).toBe(source.id);
-  });
-
   it("emits one scoped lifecycle audit event for each lifecycle mutation", async () => {
     const { runtime, guard } = setup();
     const ctx = { ...context("user_ada"), venue: "chat" as const, presence: "away" as const };

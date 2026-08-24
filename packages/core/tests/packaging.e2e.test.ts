@@ -90,7 +90,7 @@ describe("packaging e2e — the artifact blocks will install", () => {
     // core still owns stands in for it — the subject is the packed artifact, not
     // which validator it carries.
     const parsed = core.appDocumentSchema.safeParse({
-      format: "vendo/app@1", id: "app_a", name: "A", ui: "http",
+      format: "vendo/app@1", id: "app_a", name: "A", ui: "tree",
     });
     expect(parsed.success).toBe(true);
     const err = new core.VendoError("not-found", "missing");
@@ -165,7 +165,7 @@ describe("packaging e2e — the artifact blocks will install", () => {
     const script = `
       const core = await import(${JSON.stringify(pathToFileURL(packed.resolve(".")).href)});
       const conf = await import(${JSON.stringify(pathToFileURL(packed.resolve("./conformance")).href)});
-      const parsed = core.appDocumentSchema.safeParse({ format: "vendo/app@1", id: "app_a", name: "A", ui: "http" });
+      const parsed = core.appDocumentSchema.safeParse({ format: "vendo/app@1", id: "app_a", name: "A", ui: "tree" });
       const hash = core.descriptorHash({ name: "t", description: "", inputSchema: {}, risk: "read" });
       const report = await conf.runConformance(conf.storeAdapterConformance({ makeAdapter: async () => ({ adapter: conf.memoryStoreAdapter() }) }));
       if (!parsed.success || !hash.startsWith("sha256:") || !report.ok) throw new Error("bun leg failed");

@@ -7,8 +7,8 @@
  *    authoring door this package owns reaches `AutomationsSeam.create` and
  *    nothing else — `vendo_automate`, the chat lane behind
  *    `runtime.automation.author` (which is where `vendo_make`'s compound half
- *    enters, at `make-tool.ts`'s single `runtime.automation` call), the
- *    `vendo.json` fold-in, and the reschedule door. A door that grew a create
+ *    enters, at `make-tool.ts`'s single `runtime.automation` call), and the
+ *    reschedule door. A door that grew a create
  *    path of its own would still report a record, so the census below is over
  *    `creates`: a record can only exist by passing through the one operation,
  *    which makes that list the whole proof.
@@ -38,9 +38,6 @@ import {
   type ToolRegistry,
 } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
-import { createManifestTriggers } from "../src/server/escalation/manifest-triggers.js";
-import type { MachineLifecycle } from "../src/server/escalation/machine-lifecycle.js";
-import type { EngineOps } from "../src/server/persistence/engine.js";
 import { createApps } from "../src/server/index.js";
 import { guardFixture } from "../src/server/testing/guard-fixture.js";
 import { memoryStore } from "../src/server/testing/memory-store.js";
@@ -104,29 +101,6 @@ const hostWith = async (engine: ReturnType<typeof fakeAutomations>, automations?
   return runtime;
 };
 
-/** A box serving one `vendo.json`, for the fold-in door. */
-const boxServing = (manifest: unknown): MachineLifecycle => ({
-  async wake() {
-    return {
-      async request() {
-        return {
-          status: 200,
-          headers: { "content-type": "application/json" },
-          body: new TextEncoder().encode(JSON.stringify(manifest)),
-        };
-      },
-    };
-  },
-} as unknown as MachineLifecycle);
-
-const boxedApp: AppDocument = {
-  format: VENDO_APP_FORMAT,
-  id: "app_boxed",
-  name: "Invoice box",
-  ui: "http",
-  machine: { snapshotRef: "e2b:snap_1", provisionedAt: "2026-08-17T00:00:00.000Z" },
-};
-
 const errorOf = (outcome: ToolOutcome): { code: string; message: string } => {
   if (outcome.status !== "error") throw new Error(`expected an error outcome, got ${JSON.stringify(outcome)}`);
   return outcome.error;
@@ -154,27 +128,15 @@ describe("the one create operation", () => {
     // Door 3 — the reschedule door, changing when that same record runs.
     await runtime.schedule(APP_ID, "0 6 * * *", ctx);
 
-    // Door 4 — the `vendo.json` fold-in, against the SAME engine.
-    const folded = await createManifestTriggers({
-      engine: {} as unknown as EngineOps,
-      lifecycle: boxServing({ schedules: [{ cron: "0 8 * * *", fn: "chaseInvoices" }] }),
-      updateDocument: async (_appId, mutate) => mutate(boxedApp) as AppDocument,
-      automations: engine.seam,
-    }).sync(boxedApp, ctx);
-
-    // Four authoring acts, four trips through the one operation — and the
-    // authors they declare are the four the model allows.
-    expect(engine.creates.map(({ authoredBy }) => authoredBy)).toEqual(["chat", "chat", "chat", "manifest"]);
+    // Three authoring acts, three trips through the one operation — and the
+    // authors they declare are the ones the model allows.
+    expect(engine.creates.map(({ authoredBy }) => authoredBy)).toEqual(["chat", "chat", "chat"]);
     // Every record any door reported is a record that came through it.
-    const reported = [
-      authored.record.id,
-      folded.automations[0]?.id as string,
-    ];
-    for (const id of reported) expect(engine.records.has(id)).toBe(true);
+    expect(engine.records.has(authored.record.id)).toBe(true);
     // The reschedule was a REPLACE of the lane's record, not a second one: three
     // creates, but only two records, because it carried the id it was changing.
     expect(engine.creates[2]?.id).toBe(authored.record.id);
-    expect(engine.records.size).toBe(3);
+    expect(engine.records.size).toBe(2);
   });
 });
 

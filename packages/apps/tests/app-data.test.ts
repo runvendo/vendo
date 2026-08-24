@@ -220,7 +220,6 @@ describe("app data persistence", () => {
       storage: {
         notes: { about: "comments pinned to invoices", refs: { invoice_id: "host.invoice" } },
       },
-      machine: { snapshotRef: "e2b:v2:snap_x91", provisionedAt: "2026-07-19T00:00:00.000Z" },
       // The format spec's {schedule: "mon 9:00"} is illustrative: what an app
       // carries is a LIST OF IDS naming automations that are records of their own.
       automations: ["atm_7f3kchase"],

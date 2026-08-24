@@ -53,9 +53,7 @@ import type { ScreenToolchain } from "../checking/toolchain.js";
 import type { Check, Finding } from "../checking/types.js";
 import type { CloudAppsClient, PublishRecord, ShareSnapshot } from "../persistence/cloud.js";
 import type { GenerationDependencies } from "../generation/engine.js";
-import type { BuildMachineEnv, LifecycleClock } from "../escalation/machine-lifecycle.js";
 import type { SeedBaseline, SeedDrift } from "../../contract/index.js";
-import type { SandboxAdapter } from "../escalation/sandbox.js";
 import type { SlotRegistry } from "../persistence/slots.js";
 
 /**
@@ -101,35 +99,6 @@ export interface AppsConfig {
   ops?: StoreOps;
   guard: Guard;
   tools: ToolRegistry;
-  /**
-   * execution-v2 — machine lifecycle seams. `sandbox` is the sandbox adapter
-   * (Lane A's shrunk seam); `buildEnv` is Lane C's env assembly, injected so
-   * the lanes do not collide. No adapter → layer-2 lifecycle operations fail
-   * with the existing sandbox-unavailable VendoError; layer-1 apps are
-   * unaffected.
-   */
-  machine?: {
-    sandbox?: SandboxAdapter;
-    buildEnv?: BuildMachineEnv;
-    /**
-     * Lane E — the implicit skin domains merged into every machine's egress
-     * allowlist (the box must always reach its own boundary: store surface,
-     * host-callback surface, inference endpoint). The host assembles them
-     * from the same origins it injects as VENDO_STORE_URL / VENDO_HOST_URL /
-     * VENDO_INFERENCE_URL. They are never subject to declaration or approval.
-     */
-    implicitDomains?: string[];
-    template?: string;
-    idleMs?: number;
-    clock?: LifecycleClock;
-    /**
-     * execution-v2 Wave 3 — the in-box agent edit is a minutes-long loop the
-     * host long-polls. These tune that poll; defaults suit a live box (8-min
-     * budget). Tests shrink them to run without real time.
-     */
-    boxEditPollMs?: number;
-    boxEditTimeoutMs?: number;
-  };
   /**
    * Build contract §9.2–§9.4 — `can()` over whatever store the host wired (the
    * umbrella composes it at the composition seam). OSS and NEVER

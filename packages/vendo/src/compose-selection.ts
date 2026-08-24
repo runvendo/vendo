@@ -7,7 +7,6 @@
  */
 import type { Connector } from "@vendoai/actions";
 import {
-  VendoError,
   type KnowledgeAdapter,
   type SecretsProvider,
   type StoreAdapter,
@@ -24,21 +23,6 @@ import {
   type ConnectionsService,
 } from "./connections.js";
 import { environment } from "./wire/shared.js";
-
-/** Operator-tuned env knobs must be positive integer milliseconds. A typo
-    like "8m" fails loudly here (validateSessionsConfig's posture) instead of
-    flowing as NaN into the machine config, where NaN defeats runBoxEdit's
-    `??` defaults — every box edit would time out instantly and hot-poll the
-    box control port. */
-export function positiveIntegerEnv(name: string): number | undefined {
-  const raw = environment(name);
-  if (raw === undefined) return undefined;
-  const value = Number(raw);
-  if (!Number.isInteger(value) || value < 1) {
-    throw new VendoError("validation", `${name} must be a positive integer of milliseconds, got ${JSON.stringify(raw)}`);
-  }
-  return value;
-}
 
 /** Default char cap on a single tool result before it reaches the model (03-agent §2).
     Generous enough for normal host responses, small enough that a runaway payload is
