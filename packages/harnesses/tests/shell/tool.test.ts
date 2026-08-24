@@ -225,3 +225,19 @@ describe("the session's lifetime", () => {
     expect((second as { output: { stdout: string } }).output.stdout).toBe("recovered\n");
   });
 });
+
+describe("the JavaScript hand, through the tool", () => {
+  it("is on under Node, and the description says so", async () => {
+    const workspace = workspaceDouble();
+    const registry = createShellTools(async () => workspace);
+
+    const [descriptor] = await registry.descriptors();
+    expect(descriptor?.description).toContain("js-exec");
+
+    const outcome = await registry.execute(
+      { id: "c9", tool: VENDO_BASH_TOOL, args: { command: `js-exec -c 'console.log(6 * 7)'` } },
+      ctx({ turnId: "trn_js" }),
+    );
+    expect((outcome as { output: { stdout: string } }).output.stdout).toContain("42");
+  });
+});

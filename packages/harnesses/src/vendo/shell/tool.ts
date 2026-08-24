@@ -16,21 +16,32 @@ import {
   type WorkspaceFs,
 } from "@vendoai/core";
 import { createShellSession, type ShellLimits, type ShellSession } from "./engine.js";
+import { workerThreadsAvailable } from "./runtime.js";
 
 const DRAFT_2020_12 = "https://json-schema.org/draft/2020-12/schema";
+
+/** Told once per process: the answer cannot change while it runs, and a probe
+ *  per descriptor call would be asked on every listing. */
+const JAVASCRIPT = workerThreadsAvailable();
+
+const DESCRIPTION =
+  "Run a bash command over this user's own files. You have a real shell — grep, sed, awk, jq, sort, "
+  + "cut, head, tail, wc, find, pipes and redirection all work — and the filesystem IS the user's "
+  + "workspace: /user/threads/<thread>/files holds what they dropped in THIS conversation, "
+  + "/user/apps/<app> holds an app's files, and /user/files is the shelf of things they asked you to "
+  + "keep. /tmp is scratch that lasts this conversation and is never saved. "
+  + (JAVASCRIPT
+    ? "For anything bash is awkward at, write JavaScript: `js-exec -c '<code>'` runs it in a sandbox with "
+      + "require(\"node:fs\") bound to this same filesystem. "
+    : "")
+  + "There is no network and no package manager: everything you need is already here. "
+  + "Prefer this over reading a file line by line — one command answers what twenty reads would.";
 
 const descriptors: ToolDescriptor[] = [
   {
     name: VENDO_BASH_TOOL,
     title: VENDO_TOOL_TITLES[VENDO_BASH_TOOL]!,
-    description:
-      "Run a bash command over this user's own files. You have a real shell — grep, sed, awk, jq, sort, "
-      + "cut, head, tail, wc, find, pipes and redirection all work — and the filesystem IS the user's "
-      + "workspace: /user/threads/<thread>/files holds what they dropped in THIS conversation, "
-      + "/user/apps/<app> holds an app's files, and /user/files is the shelf of things they asked you to "
-      + "keep. /tmp is scratch that lasts this conversation and is never saved. "
-      + "There is no network and no package manager: everything you need is already here. "
-      + "Prefer this over reading a file line by line — one command answers what twenty reads would.",
+    description: DESCRIPTION,
     inputSchema: {
       $schema: DRAFT_2020_12,
       type: "object",
@@ -126,6 +137,7 @@ export function createShellTools(
       workspace,
       session: createShellSession({
         workspace,
+        javascript: JAVASCRIPT,
         ...(config.limits === undefined ? {} : { limits: config.limits }),
       }),
       queue: Promise.resolve(),
