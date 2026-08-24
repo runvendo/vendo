@@ -1,4 +1,4 @@
-import { CONNECTOR_DISCOVERY_TOOLS, type ToolRegistry } from "@vendoai/core";
+import { CONNECTOR_DISCOVERY_TOOLS, VENDO_BASH_TOOL, type ToolRegistry } from "@vendoai/core";
 import { VENDO_TOOL_PACK_PREFIX } from "./tool-pack.js";
 
 /**
@@ -56,12 +56,18 @@ export function memoizedSurfaceMenu(
  * four carry no prefix while the system prompt teaches them by name — filtering
  * them out is the uiaudit-2026-08-06 regression (a curated host lost
  * `request_connection` while the prompt kept teaching it).
+ *
+ * `bash` is exempt for exactly that second reason, and named for exactly that
+ * reason too: it is Vendo's own, the prompt teaches it, and it deliberately
+ * carries no `vendo_` prefix, so the prefix cannot cover it (the same gap
+ * `PROMPT_TAUGHT_TOOLS` closes on the loadout side). A deployment that does not
+ * want the shell says `shell: false`; a curated menu is not where it goes.
  */
 export function withAgentMenu(
   tools: ToolRegistry,
   menu: () => Promise<ReadonlySet<string> | undefined>,
 ): ToolRegistry {
-  const exempt: ReadonlySet<string> = new Set(CONNECTOR_DISCOVERY_TOOLS);
+  const exempt: ReadonlySet<string> = new Set([...CONNECTOR_DISCOVERY_TOOLS, VENDO_BASH_TOOL]);
   return {
     ...tools,
     async descriptors(ctx) {

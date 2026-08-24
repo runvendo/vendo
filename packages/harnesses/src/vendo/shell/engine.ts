@@ -33,6 +33,13 @@ export const DEFAULT_MAX_EXECUTION_TIME_MS = 30_000;
  *  a script may legitimately produce a lot and pipe it into `tail`; the cap is
  *  what the MODEL sees, this is what the SHELL may make. */
 export const DEFAULT_MAX_OUTPUT_BYTES = 1_000_000;
+/** What the whole session's `/tmp` may hold. `maxOutputBytes` bounds ONE
+ *  redirect and nothing bounded the session, so a turn that kept appending grew
+ *  this in-process filesystem without limit. Not a `ShellLimits` knob: it is
+ *  memory this process has to survive, not a ceiling a deployment tunes — 32× the
+ *  default per-call output, and 6× the 5 MB an upload may be, so a script can
+ *  still hold several copies of the largest file a person can drop. */
+const TMP_MAX_BYTES = 32 * 1024 * 1024;
 
 /** Routed through a mutable binding so NO bundler ever statically resolves the
  *  interpreter. just-bash's graph reaches `node:worker_threads`, `undici` and
@@ -69,7 +76,7 @@ export function createShellSession(opts: {
     // an intermediate is a shell that can only run one-liners. In memory, and
     // owned by the session, so it lasts exactly as long as the turn does.
     const fs = new MountableFs({ base: opts.workspace });
-    fs.mount("/tmp", new InMemoryFs());
+    fs.mount("/tmp", new InMemoryFs(undefined, { maxTotalBytes: TMP_MAX_BYTES }));
     return new Bash({
       fs,
       // The person's own mount, so the paths the agent types are the paths the

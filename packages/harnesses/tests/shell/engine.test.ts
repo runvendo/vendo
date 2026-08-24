@@ -75,6 +75,32 @@ describe("one shell session over the workspace", () => {
     const result = await createShellSession({ workspace }).exec("echo pwned > /etc/passwd");
 
     expect(result.exitCode).not.toBe(0);
+    // The workspace's OWN sentence, verbatim — a non-zero exit alone would also
+    // be satisfied by an engine that swallowed the EACCES and failed some other
+    // way, which is the opposite of the non-interference this proves.
+    expect(result.stderr).toContain("EACCES: permission denied, open '/etc/passwd'");
+  });
+
+  it("bounds that /tmp across the whole session, not just one call", async () => {
+    // `maxOutputBytes` bounds ONE redirect (`redirection: total output size
+    // exceeded`); nothing bounded the SESSION, so a turn that kept appending grew
+    // `/tmp` without limit — 200 MB over 400 calls, measured. Raised here so the
+    // ceiling is reached in a handful of copies rather than sixty appends.
+    const session = createShellSession({ workspace: await disk({}), limits: { maxOutputBytes: 8_000_000 } });
+    const repeat = (path: string, times: number): string => Array.from({ length: times }, () => path).join(" ");
+    expect((await session.exec(`printf 'x%.0s' $(seq 1 100000) > /tmp/kb100`)).exitCode).toBe(0);
+    expect((await session.exec(`cat ${repeat("/tmp/kb100", 10)} > /tmp/mb1`)).exitCode).toBe(0);
+    expect((await session.exec(`cat ${repeat("/tmp/mb1", 5)} > /tmp/mb5`)).exitCode).toBe(0);
+
+    let last = { exitCode: 0, stderr: "" };
+    for (let copy = 0; copy < 8 && last.exitCode === 0; copy += 1) {
+      // Each copy has to be its OWN bytes: `cp` alone shares one hard-link
+      // buffer, so eight identical copies retain what one does.
+      last = await session.exec(`cp /tmp/mb5 /tmp/copy${copy} && echo ${copy} >> /tmp/copy${copy}`);
+    }
+
+    expect(last.exitCode).not.toBe(0);
+    expect(last.stderr).toContain("ENOSPC");
   });
 
   it("stops a command that will not stop", async () => {

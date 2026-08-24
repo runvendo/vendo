@@ -87,6 +87,20 @@ describe("the shell tool's hands", () => {
     expect(await workspace.readFile("/user/files/out.csv")).toBe("jan,31000\n");
     expect(workspace.commits).toBe(1);
   });
+
+  it("says the write did NOT land when the workspace answers conflict", async () => {
+    const workspace = workspaceDouble();
+    workspace.commit = async () => ({ status: "conflict", paths: ["/orgs/acme/files/ledger.csv"] });
+    const registry = createShellTools(async () => workspace);
+
+    const outcome = await registry.execute(
+      { id: "c9", tool: VENDO_BASH_TOOL, args: { command: "echo 'jan,31000' > /tmp/out.csv" } },
+      ctx(),
+    );
+
+    expect(outcome).toMatchObject({ status: "error", error: { code: "conflict" } });
+    expect((outcome as { error: { message: string } }).error.message).toContain("/orgs/acme/files/ledger.csv");
+  });
 });
 
 describe("a very talkative command", () => {
@@ -95,7 +109,7 @@ describe("a very talkative command", () => {
     const registry = createShellTools(async () => workspace);
 
     // `seq`, not `yes`: just-bash 3.4.2 ships no `yes`. ~48 900 chars — well over
-    // the 16 000-char clip, well under the 1 MB default output ceiling.
+    // the clip, well under the 1 MB default output ceiling.
     const outcome = await registry.execute(
       { id: "c4", tool: VENDO_BASH_TOOL, args: { command: "seq 1 10000" } },
       ctx(),
@@ -105,6 +119,25 @@ describe("a very talkative command", () => {
     expect(stdout.length).toBeLessThanOrEqual(16_000);
     expect(stdout).toContain("[clipped]");
     expect(JSON.stringify((outcome as { output: unknown }).output).length).toBeLessThan(32_000);
+  });
+
+  it("keeps stdout AND stderr together under the bridge's cap, escaping and all", async () => {
+    const workspace = workspaceDouble();
+    const registry = createShellTools(async () => workspace);
+
+    // Both streams full of the one character JSON doubles. Raw, each is 30 000
+    // characters; in the JSON `capOutcome` weighs, each is 60 000, so a
+    // raw-character budget hands the bridge far more than it caps at.
+    const blanks = `awk 'BEGIN{for(i=0;i<30000;i++)print ""}'`;
+    const outcome = await registry.execute(
+      { id: "c10", tool: VENDO_BASH_TOOL, args: { command: `${blanks}; ${blanks} >&2` } },
+      ctx(),
+    );
+
+    const { stdout, stderr } = (outcome as { output: { stdout: string; stderr: string } }).output;
+    expect(stdout).toContain("[clipped]");
+    expect(stderr).toContain("[clipped]");
+    expect(JSON.stringify((outcome as { output: unknown }).output).length).toBeLessThanOrEqual(32_000);
   });
 });
 
@@ -127,7 +160,7 @@ describe("the session's lifetime", () => {
     const workspace = workspaceDouble();
     const registry = createShellTools(async () => workspace);
 
-    await registry.execute(
+    const wrote = await registry.execute(
       { id: "c7", tool: VENDO_BASH_TOOL, args: { command: "echo leaked > /tmp/note" } },
       ctx({ turnId: "trn_one" }),
     );
@@ -136,6 +169,28 @@ describe("the session's lifetime", () => {
       ctx({ turnId: "trn_two" }),
     );
 
+    // The write has to have LANDED, or the second turn's failure proves nothing
+    // but that nobody ever wrote the file.
+    expect((wrote as { output: { exitCode: number } }).output.exitCode).toBe(0);
     expect((other as { output: { exitCode: number } }).output.exitCode).not.toBe(0);
+  });
+
+  it("opens ONE workspace for a turn whose two calls arrive together", async () => {
+    const workspace = workspaceDouble();
+    let opened = 0;
+    const registry = createShellTools(async () => {
+      opened += 1;
+      return workspace;
+    });
+    const turn = ctx({ turnId: "trn_parallel" });
+
+    // What the AI SDK does with two tool calls in one step: both at once.
+    const [, second] = await Promise.all([
+      registry.execute({ id: "c11", tool: VENDO_BASH_TOOL, args: { command: "echo one > /tmp/shared" } }, turn),
+      registry.execute({ id: "c12", tool: VENDO_BASH_TOOL, args: { command: "cat /tmp/shared" } }, turn),
+    ]);
+
+    expect(opened).toBe(1);
+    expect((second as { output: { stdout: string } }).output.stdout).toBe("one\n");
   });
 });

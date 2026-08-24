@@ -424,6 +424,12 @@ export interface CreateVendoConfig {
       exchanges one of these keys plus a user id for a short-lived user-bound
       token at the door's token endpoint (rotation is listing both keys until
       the old one is out of use). */
+  mcp?: boolean | {
+    baseUrl?: string;
+    remoteAs?: { issuer: string; jwksUri?: string; audience: string };
+    federation?: { secret: string };
+    serviceAuth?: { keys: readonly string[] };
+  };
   /** The agent's hands over the user's own files (spec 2026-08-23 §1): one
       in-process `bash` over the workspace, on the same guarded registry as
       everything else. ON by default — a deployment's users drop files into chat
@@ -441,12 +447,6 @@ export interface CreateVendoConfig {
       (`claudeCode()`) already has a real disk and reaches it its own way, so this
       flag is silently irrelevant there rather than half-wired. */
   shell?: boolean | { limits?: ShellLimits };
-  mcp?: boolean | {
-    baseUrl?: string;
-    remoteAs?: { issuer: string; jwksUri?: string; audience: string };
-    federation?: { secret: string };
-    serviceAuth?: { keys: readonly string[] };
-  };
   /** 10-mcp §3 plus its additive prebuilt flow — the host's session + identity seam. Threaded top-level like
       `actAs`/`principal` (the door is agnostic; the umbrella owns the shape).
       REQUIRED when `mcp` is true: the door cannot mint principals without it. */

@@ -214,6 +214,8 @@ export type GradedRiskLabel = "read" | "write" | "destructive";
  *  The name lives in core because two sides read it and a security-relevant
  *  name with two definitions drifts silently: the registry that implements it,
  *  and the loop that ends a turn on it. */
+export const ASK_USER_TOOL = "ask_user";
+
 /** The agent's hands over the user's own files: one shell, in this process,
  *  over the workspace (spec 2026-08-23 §1). Named here for `ASK_USER_TOOL`'s
  *  reason — the registry that implements it lives in `@vendoai/harnesses` and the
@@ -225,10 +227,9 @@ export type GradedRiskLabel = "read" | "write" | "destructive";
  *  knows from every other agent harness, and the name is what teaches it. The
  *  cost of leaving the `vendo_` prefix behind is that it is not covered by the
  *  loadout's always-active exemption for our own tools, so composition names it
- *  explicitly (`PROMPT_TAUGHT_TOOLS`). */
+ *  explicitly (`PROMPT_TAUGHT_TOOLS`) and the agent-menu projection exempts it
+ *  beside the connector four (`withAgentMenu`). */
 export const VENDO_BASH_TOOL = "bash";
-
-export const ASK_USER_TOOL = "ask_user";
 
 /** The connector dispatcher — the one tool whose real action is an ARGUMENT
  *  rather than its name, because a single
