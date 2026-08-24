@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { withBasePath } from "@/lib/base-path";
 import { useVendoOverlay } from "@vendoai/ui";
-import { VendoOverlay, VendoPalette, VendoThread, type VendoCommand, type VendoThreadProps } from "@vendoai/ui/chrome";
+import { VendoOverlay, VendoPalette, VendoThread, VendoToasts, type VendoCommand, type VendoThreadProps } from "@vendoai/ui/chrome";
 import { MapleMark } from "@/components/ui/maple-mark";
 import { VendoWorkbench } from "@/components/vendo/workbench/VendoWorkbench";
 import { mapleScenarios } from "@/vendo/scenarios";
@@ -71,6 +71,12 @@ export function VendoLayer() {
         hotkey={(event) => (event.metaKey || event.ctrlKey) && !event.shiftKey && event.key.toLowerCase() === "j"}
         onCommand={onCommand}
       />
+      {/* An approval that parks outside a live turn — a standing build ask —
+          has no in-thread card to land on, so this is the surface that shows
+          it. Bottom-LEFT: the launcher pill is pinned bottom-right and the
+          toast stack outranks its z-index, so the default corner would cover
+          Maple's front door. */}
+      <VendoToasts approvals placement="bottom-left" />
       {/* The harness workbench: dev-only diagnostics, docked beside the
           overlay. Renders nothing outside `next dev`. */}
       <VendoWorkbench />
