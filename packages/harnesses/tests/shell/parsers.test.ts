@@ -80,3 +80,48 @@ describe("pdftotext", () => {
     expect(result.stderr).toContain("No such file or directory");
   });
 });
+
+describe("xlsx2csv", () => {
+  /** A real workbook, written by the same library that will read it back. */
+  const workbook = async (): Promise<Uint8Array> => {
+    const XLSX = await import("xlsx");
+    const book = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(
+      book,
+      XLSX.utils.aoa_to_sheet([["month", "revenue"], ["jan", 31000], ["feb", 39000]]),
+      "Revenue",
+    );
+    XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([["note"], ["draft"]]), "Notes");
+    return new Uint8Array(XLSX.write(book, { type: "array", bookType: "xlsx" }) as ArrayBuffer);
+  };
+
+  it("turns the first sheet into CSV on stdout", async () => {
+    const session = createShellSession({ workspace: await diskWith({ "/user/files/q1.xlsx": await workbook() }) });
+
+    const result = await session.exec("xlsx2csv files/q1.xlsx");
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout.trim().split("\n")).toEqual(["month,revenue", "jan,31000", "feb,39000"]);
+  });
+
+  it("takes a sheet by name, and lists them when the name is wrong", async () => {
+    const session = createShellSession({ workspace: await diskWith({ "/user/files/q1.xlsx": await workbook() }) });
+
+    expect((await session.exec("xlsx2csv files/q1.xlsx Notes")).stdout.trim().split("\n"))
+      .toEqual(["note", "draft"]);
+
+    const wrong = await session.exec("xlsx2csv files/q1.xlsx Nope");
+    expect(wrong.exitCode).toBe(1);
+    expect(wrong.stderr).toContain("Revenue");
+    expect(wrong.stderr).toContain("Notes");
+  });
+
+  it("says so when the file is not a workbook", async () => {
+    const session = createShellSession({ workspace: await diskWith({ "/user/files/notes.txt": "just words\n" }) });
+
+    const result = await session.exec("xlsx2csv files/notes.txt");
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("not a readable spreadsheet");
+  });
+});

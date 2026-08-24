@@ -1,0 +1,71 @@
+/**
+ * `xlsx2csv <file> [sheet]` — one sheet of a workbook, as CSV on stdout.
+ *
+ * CSV and not JSON because the rest of the shell speaks CSV: once it is on
+ * stdout, `cut`, `awk`, `sort` and `jq -R` all work on it, which is the whole
+ * reason the parsers are COMMANDS and not tools of their own.
+ *
+ * SheetJS Community Edition, pure JavaScript, synchronous, no native code. It
+ * comes from the SheetJS CDN rather than npm — the registry copy is years stale.
+ */
+import type { Command, LazyCommand } from "just-bash";
+import { inputBytes, notThisFormat } from "./input.js";
+
+let XLSX_SPECIFIER = "xlsx";
+
+type SheetJs = typeof import("xlsx");
+
+const NAME = "xlsx2csv";
+
+/** SheetJS never refuses. Handed bytes it does not recognise it falls back to
+    plain-text sniffing and hands back a one-cell "workbook", so `xlsx2csv
+    notes.txt` would exit 0 on nonsense — verified against 0.20.3, which even
+    accepts four random bytes. The gate is therefore ours, and it is the
+    container magic: every BINARY workbook SheetJS reads is a zip (xlsx, xlsb,
+    ods) or an OLE compound file (xls). The text formats it can also guess at
+    (csv, prn, sylk) are already the rest of the shell's job. */
+const WORKBOOK_MAGIC = [
+  [0x50, 0x4b], // "PK" — zip
+  [0xd0, 0xcf, 0x11, 0xe0], // OLE compound file
+];
+
+const isWorkbook = (bytes: Uint8Array): boolean =>
+  WORKBOOK_MAGIC.some((magic) => magic.every((byte, index) => bytes[index] === byte));
+
+export const xlsx2csv: LazyCommand = {
+  name: NAME,
+  trusted: true,
+  async load(): Promise<Command> {
+    const XLSX = await import(/* webpackIgnore: true */ /* turbopackIgnore: true */ /* @vite-ignore */ XLSX_SPECIFIER) as SheetJs;
+    return {
+      name: NAME,
+      trusted: true,
+      async execute(args, ctx) {
+        const input = await inputBytes(NAME, args, ctx);
+        if ("refusal" in input) return input.refusal;
+        if (!isWorkbook(input.bytes)) {
+          return notThisFormat(NAME, args[0]!, "spreadsheet", "not a zip or OLE workbook container");
+        }
+        let book: ReturnType<SheetJs["read"]>;
+        try {
+          book = XLSX.read(input.bytes, { type: "array" });
+        } catch (cause) {
+          return notThisFormat(NAME, args[0]!, "spreadsheet", cause);
+        }
+        const wanted = args[1] ?? book.SheetNames[0];
+        const sheet = wanted === undefined ? undefined : book.Sheets[wanted];
+        if (sheet === undefined) {
+          // Naming the sheets IS the fix: an agent told only "no" asks the user,
+          // an agent told what exists picks the right one and carries on.
+          return {
+            stdout: "",
+            stderr: `${NAME}: ${args[0]}: no sheet named ${JSON.stringify(wanted)};`
+              + ` this workbook has ${book.SheetNames.join(", ")}\n`,
+            exitCode: 1,
+          };
+        }
+        return { stdout: XLSX.utils.sheet_to_csv(sheet), stderr: "", exitCode: 0 };
+      },
+    };
+  },
+};

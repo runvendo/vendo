@@ -12,6 +12,7 @@
 import type { IFileSystem } from "@vendoai/core";
 import type { Bash as BashInstance } from "just-bash";
 import { pdftotext } from "./parsers/pdftotext.js";
+import { xlsx2csv } from "./parsers/xlsx2csv.js";
 
 /** One `bash` call's ceilings. Both map onto just-bash's own execution limits;
  *  everything else keeps just-bash's `normal` profile. */
@@ -89,7 +90,7 @@ export function createShellSession(opts: {
       // The binary formats a person actually drops into chat, as ordinary
       // commands: they pipe, they redirect, and the agent needs no special
       // vocabulary for them. Lazy, so their libraries load on first use.
-      customCommands: [pdftotext],
+      customCommands: [pdftotext, xlsx2csv],
       executionLimits: {
         maxExecutionTimeMs: opts.limits?.maxExecutionTimeMs ?? DEFAULT_MAX_EXECUTION_TIME_MS,
         maxOutputSize: opts.limits?.maxOutputBytes ?? DEFAULT_MAX_OUTPUT_BYTES,
