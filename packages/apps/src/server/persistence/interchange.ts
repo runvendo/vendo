@@ -8,6 +8,7 @@ import {
   type RunContext,
 } from "@vendoai/core";
 import {
+  refuseBundleArtifact,
   validateAppDocument,
   type AppDocument,
 } from "../../contract/index.js";
@@ -236,6 +237,7 @@ export const createAppInterchange = (
   return {
     async exportApp(appId, ctx) {
       const app = await dependencies.requireOwned(appId, ctx);
+      refuseBundleArtifact(app, "exported");
       assertSeedExportable(app, dependencies.seedBaselines ?? []);
       assertPortableSource(app);
       const archive: Zippable = {

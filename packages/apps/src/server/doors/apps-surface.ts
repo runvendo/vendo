@@ -9,6 +9,7 @@ import {
   VendoError,
 } from "@vendoai/core";
 import {
+  refuseBundleArtifact,
   type AppDocument,
 } from "../../contract/index.js";
 import { createAgentTools } from "./agent-tools.js";
@@ -124,6 +125,7 @@ const createAppCopyDoors = (
   return {
     async fork(appId, ctx) {
       const source = await requireOwned(appId, ctx, "viewer");
+      refuseBundleArtifact(source, "forked");
       // Wave 4 — a served (layer-3) app's ENTIRE surface lives in its machine,
       // and machines never travel with a copy: the fork would be an app that
       // can never open (ui: http, no tree, no machine). Refuse loudly instead
@@ -165,6 +167,7 @@ const createAppCopyDoors = (
 
     async share(appId, ctx) {
       const app = await requireOwned(appId, ctx, "owner");
+      refuseBundleArtifact(app, "shared");
       if (config.cloud === undefined) {
         throw new VendoError("cloud-required", "Vendo Cloud requires VENDO_API_KEY");
       }

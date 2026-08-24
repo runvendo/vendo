@@ -12,6 +12,7 @@ import {
   safeErrorMessage,
   TOOL_NAME_PATTERN,
   VENDO_APP_FORMAT,
+  VendoError,
   appDocumentSchema,
   type AppDocument,
 } from "@vendoai/core";
@@ -145,6 +146,28 @@ const validateAppDocumentUnsafe = (input: unknown): AppDocumentValidation => {
 
   return { ok: true, app };
 };
+
+/**
+ * FINAL SPEC v1 — a BUILT app never leaves its owner, refused at each of the
+ * four doors a copy travels through (share, fork, export, placement).
+ *
+ * The bundle is arbitrary code whose one door is the guarded tool bridge, so a
+ * copy would run its author's code with the recipient's own permissions. That
+ * seam ships with its own egress/consent story; screens are untouched.
+ *
+ * EITHER signal refuses. The two are written by one CAS, but a seal that dies
+ * between them — or the `ui: "bundle"` a build sets before its first seal —
+ * leaves a row carrying one and not the other, and both of those are still a
+ * built app.
+ */
+export function refuseBundleArtifact(doc: AppDocument, operation: string): void {
+  if (doc.ui !== "bundle" && doc.bundle === undefined) return;
+  throw new VendoError(
+    "blocked",
+    `a built app cannot be ${operation}: its bundle would run someone else's code with the recipient's`
+    + " own permissions, and that seam ships with its own consent story — only screens travel today",
+  );
+}
 
 /** 01-core §9 */
 export function validateAppDocument(input: unknown): AppDocumentValidation {

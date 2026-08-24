@@ -33,7 +33,7 @@ export {
   type AppSourceFile,
   type StorageDecl,
 } from "@vendoai/core";
-export { validateAppDocument, type AppDocumentValidation } from "./app-validation.js";
+export { refuseBundleArtifact, validateAppDocument, type AppDocumentValidation } from "./app-validation.js";
 // the one door in — every app write passes admission; validateAppDocument above
 // is its inner half
 export * from "./admission.js";
