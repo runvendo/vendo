@@ -217,6 +217,15 @@ export const createAppsSurface = (
       await egressApprovals.clearForApp(appId);
       await parkedActions.clearForApp(appId);
       await engine.delete(APPS_COLLECTION, appId);
+      // The app's workspace documents and the blobs behind them. Everything
+      // above this line clears a drawer this package owns; `/user/apps/<id>/…`
+      // and `/orgs/<org>/apps/<id>/…` belong to the WORKSPACE, and only the
+      // store's own cascade can reach the blobs those rows point at (a `rm`
+      // leaves them: history is append-only and becomes the pointer). Called
+      // after the row so the cascade's own "app row first, then its data" order
+      // is preserved — `eraseAppData` needs no app row and re-deleting an absent
+      // one is a zero-count no-op.
+      await config.ops?.lifecycle.erase({ appId });
       // A deleted app can never mount again, so its placement rows are dead
       // weight — and a row with no app record reads as a build in flight, which
       // would park a skeleton in the slot until the build window elapsed and
