@@ -71,6 +71,7 @@
     "@vendoai/apps": "workspace:*",
     "@vendoai/core": "workspace:*",
     "@vendoai/guard": "workspace:*",
+    "just-bash": "^3.4.2",
     "zod": "^3.25.0"
   },
   "peerDependencies": {
@@ -83,7 +84,6 @@
     "@ai-sdk/openai-compatible": "2.0.9",
     "@types/node": "^22.0.0",
     "ai": "6.0.28",
-    "just-bash": "^3.1.0",
     "typescript": "^5.6.0",
     "vitest": "^3.2.6"
   },
