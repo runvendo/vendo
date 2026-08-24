@@ -9,7 +9,9 @@
  * Between the two, the app row says "offered, unanswered" and no box exists.
  */
 import {
+  VENDO_APP_BUILD_TOOL,
   VENDO_APP_FORMAT,
+  VENDO_TOOL_TITLES,
   VendoError,
   type AppBuildProposal,
   type AppBundle,
@@ -39,9 +41,12 @@ import type { AppsRuntime } from "../runtime/types.js";
  * an approval and hands back its card. The card STANDS — this door never waits
  * on it, so the harness's 90-second approval wait is not in this path at all.
  */
-const BUILD_TOOL = "vendo_app_build";
+const BUILD_TOOL = VENDO_APP_BUILD_TOOL;
 const buildDescriptor = (): ToolDescriptor => ({
   name: BUILD_TOOL,
+  // §3 consumer voice — the shared table, like every other Vendo descriptor.
+  // Without it the card asked the person to authorize "Vendo app build".
+  title: VENDO_TOOL_TITLES[BUILD_TOOL],
   description: "Build this app for real: a sandbox installs the packages it needs, writes and tests the code,"
     + " and the result is sealed. It spends a build machine, so it needs the person's yes.",
   inputSchema: {

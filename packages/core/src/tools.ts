@@ -55,6 +55,17 @@ export const VENDO_AUTOMATE_TOOL = "vendo_automate";
 export const VENDO_APPS_PIN_TOOL = "vendo_apps_pin";
 export const VENDO_APPS_UNPIN_TOOL = "vendo_apps_unpin";
 
+/**
+ * The ask the BUILD door parks a standing card for (FINAL SPEC v1: no machine is
+ * spent without the person's explicit yes).
+ *
+ * No model is ever handed it — the door calls the guard with it directly — but
+ * the door that authors the descriptor and every surface that renders its card
+ * hold this string, and the card IS the consent moment, so it is named once here
+ * beside its title rather than spelled out on each side.
+ */
+export const VENDO_APP_BUILD_TOOL = "vendo_app_build";
+
 /** The read that makes those two callable: the slot ids the host's own pages
  *  have reported. Named here beside them because a model that invents a slot id
  *  aims a placement at a spot no page renders, and this is the only answer to
@@ -116,6 +127,10 @@ export const VENDO_TOOL_TITLES: Readonly<Record<string, string>> = {
   vendo_make: "Make you a screen",
   vendo_automate: "Set this to run on its own",
   vendo_apps_open: "Open the app",
+  // The one title a PERSON reads before anything is spent: this tool exists
+  // only to raise the consent card, and the card fell back to the prettified
+  // slug ("Vendo app build") on the one screen that has to be legible.
+  [VENDO_APP_BUILD_TOOL]: "Build this app for real",
   vendo_apps_reseed: "Refresh a remixed piece",
   vendo_apps_pin: "Pin the app to your page",
   vendo_apps_unpin: "Take the app off your page",

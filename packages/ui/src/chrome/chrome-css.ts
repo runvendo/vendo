@@ -1529,7 +1529,7 @@ html[data-vendo-dock] {
 .fl-toasts-view { border: 0; background: none; padding: 0; cursor: pointer;
   color: var(--vendo-accent); font: 600 12px/1.2 var(--vendo-font); }
 .fl-toasts-view:hover { text-decoration: underline; }
-.fl-toasts-hint { font-size: 11.5px; color: var(--vendo-fg-muted); }
+.fl-toasts-hint { font-size: 11.5px; line-height: 1.45; color: var(--vendo-fg-muted); }
 .fl-toasts-dismiss { margin-left: auto; border: 0; background: none; padding: 0 2px; cursor: pointer;
   color: var(--vendo-fg-muted); font: 600 12px/1 var(--vendo-font); }
 .fl-toasts-dismiss:hover { color: var(--vendo-fg); }
