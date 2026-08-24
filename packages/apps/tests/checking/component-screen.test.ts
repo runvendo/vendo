@@ -1060,6 +1060,85 @@ export default function S() {
     expect(result.issues).toEqual([]);
     expect(result.ok).toBe(true);
   });
+
+  /**
+   * A fault INSIDE a callback a prop CARRIES is not a fault in the value the
+   * prop IS. The walk that finds the enclosing attribute crosses function
+   * boundaries, so a bad tool argument deep in an `onClick` arrow was
+   * re-described as a mismatch of `onClick` itself — printing the declared
+   * handler type against an arrow that already matches it. A sentence that
+   * contradicts itself has no repair that satisfies it, which is a retry loop
+   * that never converges rather than one bad message.
+   */
+  it("names the fault inside a handler, not the handler prop's own type", async () => {
+    const argument = await refusal(`import { Button, tools } from "@vendo/screen";
+
+export default function S() {
+  return <Button label="Cancel" onClick={() => tools.cancel_transfer({ id: 7 })} />;
+}
+`);
+
+    expect(argument.codes).toEqual(["types"]);
+    expect(argument.text).toContain("not assignable to type 'string'");
+    expect(argument.text).not.toContain('prop "onClick" on <Button> takes');
+
+    // …and the same for a fault that never leaves the handler's own body.
+    const body = await refusal(`import { Button } from "@vendo/screen";
+
+export default function S() {
+  return <Button label="Count" onClick={() => { const n: number = "x"; }} />;
+}
+`);
+
+    expect(body.codes).toEqual(["types"]);
+    expect(body.text).toContain("not assignable to type 'number'");
+    expect(body.text).not.toContain('prop "onClick" on <Button> takes');
+  });
+
+  it("names the fault inside a slot arrow, not the slot prop's own type", async () => {
+    const result = await checkComponentScreen({
+      source: `import { DataTable, Text, useQuery } from "@vendo/screen";
+
+export default function Ledger() {
+  const pending = useQuery("list_pending_transfers");
+  return (
+    <DataTable
+      rows={pending.data}
+      columns={[{ key: "recipient", label: "To", cell: (row) => { const cents: number = "x"; return <Text text={row.recipient + cents} />; } }]}
+    />
+  );
+}
+`,
+      hostTools: tools,
+      catalog: [...catalog, "DataTable"],
+      runQuery: async () => ROWS,
+    });
+
+    const text = result.issues.map(({ message }) => message).join("\n");
+    expect(text).toContain("not assignable to type 'number'");
+    expect(text).not.toContain('prop "columns" on <DataTable> takes');
+  });
+
+  /** The boundary of that rule. A member of an inline object or array literal
+   *  the prop IS also anchors below the attribute, and there the prop-shaped
+   *  sentence is the TRUE one: the value really is the wrong shape. Only a
+   *  function boundary tells the two apart. */
+  it("keeps the prop's own sentence where the fault is a member of the value itself", async () => {
+    const result = await checkComponentScreen({
+      source: `import { DataTable, useQuery } from "@vendo/screen";
+
+export default function Ledger() {
+  const pending = useQuery("list_pending_transfers");
+  return <DataTable rows={pending.data} columns={[{ key: "amount_cents", label: 5 }]} />;
+}
+`,
+      hostTools: tools,
+      catalog: [...catalog, "DataTable"],
+      runQuery: async () => ROWS,
+    });
+
+    expect(result.issues.map(({ message }) => message).join("\n")).toContain('prop "columns" on <DataTable> takes');
+  });
 });
 
 describe("stage 4 — it runs the screen for real", () => {

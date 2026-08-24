@@ -304,6 +304,16 @@ const attributeValueFinding = (
   where: string,
 ): Finding | undefined => {
   if (locus.prop === undefined || locus.element === undefined) return undefined;
+  // A fault inside a callback the prop CARRIES — a handler body, a slot arrow —
+  // is not a fault in the value the prop IS. The walk that found this attribute
+  // crosses function boundaries, so without this the sentence prints the prop's
+  // declared signature against a value that already matches it: `takes a list of
+  // rows, but this value is a list of rows`. A refusal that contradicts itself
+  // has no repair that satisfies it, so the model retries until it gives up.
+  // The compiler's own sentence names the real fault instead.
+  for (let at: TS.Node | undefined = locus.node; at !== undefined && !ts.isJsxAttribute(at); at = at.parent) {
+    if (ts.isArrowFunction(at) || ts.isFunctionExpression(at) || ts.isFunctionDeclaration(at)) return undefined;
+  }
   const attribute = locus.element.attributes.properties.find((property) =>
     ts.isJsxAttribute(property) && property.name.getText(file) === locus.prop);
   if (attribute === undefined || !ts.isJsxAttribute(attribute) || attribute.initializer === undefined) return undefined;
