@@ -7,32 +7,20 @@ sidebarTitle: "How the door works"
 One bearer arrives, one user is named, and every call after that answers to the
 same guard your own UI answers to.
 
-<svg viewBox="0 0 760 118" role="img" aria-label="A request path: your agent, the door, your guard, your host API" style={{ width: "100%", height: "auto", margin: "1.5rem 0" }}>
-  <g fill="none" stroke="currentColor" strokeOpacity="0.2">
-    <rect x="1" y="1" width="164" height="52" rx="11" />
-    <rect x="199" y="1" width="164" height="52" rx="11" />
-    <rect x="397" y="1" width="164" height="52" rx="11" />
-    <rect x="595" y="1" width="164" height="52" rx="11" />
-  </g>
-  <g fill="none" stroke="#6c3bff" strokeWidth="1.5" strokeLinecap="round">
-    <path d="M169 27h20" /><path d="M367 27h20" /><path d="M565 27h20" />
-  </g>
-  <g fill="#6c3bff">
-    <path d="M189 23l7 4-7 4z" /><path d="M387 23l7 4-7 4z" /><path d="M585 23l7 4-7 4z" />
-  </g>
-  <g fill="currentColor" fontSize="13.5" fontWeight="600" textAnchor="middle">
-    <text x="83" y="32">Your agent</text>
-    <text x="281" y="32">The door</text>
-    <text x="479" y="32">Your guard</text>
-    <text x="677" y="32">Your host API</text>
-  </g>
-  <g fill="currentColor" fillOpacity="0.55" fontSize="11.5" textAnchor="middle">
-    <text x="83" y="76">bearer for user_1904</text>
-    <text x="281" y="76">principal + consent</text>
-    <text x="479" y="76">allow · ask · block</text>
-    <text x="677" y="76">called as that user</text>
-  </g>
-</svg>
+<CardGroup cols={4}>
+  <Card title="Your agent">
+    Bearer for `user_1904`.
+  </Card>
+  <Card title="The door">
+    Principal + consent.
+  </Card>
+  <Card title="Your guard">
+    Allow · ask · block.
+  </Card>
+  <Card title="Your host API">
+    Called as that user.
+  </Card>
+</CardGroup>
 
 ## Who is calling
 

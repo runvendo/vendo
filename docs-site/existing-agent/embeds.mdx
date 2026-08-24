@@ -8,35 +8,19 @@ A `vendo_*` tool answers your loop with either plain data or a small versioned r
 
 ## The dispatch
 
-<svg viewBox="0 0 720 240" role="img" aria-label="A tool output enters VendoToolResult and leaves as nothing, an app embed, or an approval embed" style={{ width: "100%", height: "auto" }}>
-  <rect x="8" y="94" width="150" height="52" rx="10" fill="#faf9fc" stroke="#e9e6f1" />
-  <text x="83" y="117" textAnchor="middle" fontFamily="monospace" fontSize="13" fill="#4b4857">part.output</text>
-  <text x="83" y="134" textAnchor="middle" fontFamily="sans-serif" fontSize="11" fill="#7c7989">from a vendo_* tool</text>
+A tool output enters `VendoToolResult`, which reads `kind`.
 
-  <path d="M158 120h52" stroke="#a8a5b4" strokeWidth="1.5" fill="none" />
-  <path d="m204 115 8 5-8 5" stroke="#a8a5b4" strokeWidth="1.5" fill="none" />
-
-  <rect x="212" y="88" width="168" height="64" rx="12" fill="#f5f1ff" stroke="#ddd0ff" />
-  <text x="296" y="114" textAnchor="middle" fontFamily="monospace" fontSize="12.5" fill="#4a22bd">VendoToolResult</text>
-  <text x="296" y="132" textAnchor="middle" fontFamily="sans-serif" fontSize="11" fill="#6c3bff">reads kind</text>
-
-  <path d="M380 120h40v-72h48" stroke="#a8a5b4" strokeWidth="1.5" fill="none" />
-  <path d="M380 120h88" stroke="#a8a5b4" strokeWidth="1.5" fill="none" />
-  <path d="M380 120h40v72h48" stroke="#a8a5b4" strokeWidth="1.5" fill="none" />
-  <path d="m462 43 8 5-8 5M462 115l8 5-8 5M462 187l8 5-8 5" stroke="#a8a5b4" strokeWidth="1.5" fill="none" />
-
-  <rect x="478" y="26" width="234" height="44" rx="10" fill="#ffffff" stroke="#e9e6f1" />
-  <text x="494" y="45" fontFamily="sans-serif" fontSize="12.5" fill="#15141b">plain data</text>
-  <text x="494" y="61" fontFamily="sans-serif" fontSize="11" fill="#7c7989">renders nothing, your model already has it</text>
-
-  <rect x="478" y="98" width="234" height="44" rx="10" fill="#ffffff" stroke="#ddd0ff" />
-  <text x="494" y="117" fontFamily="monospace" fontSize="11.5" fill="#4a22bd">vendo/app-ref@1</text>
-  <text x="494" y="133" fontFamily="sans-serif" fontSize="11" fill="#7c7989">the app embed, building inline</text>
-
-  <rect x="478" y="170" width="234" height="44" rx="10" fill="#ffffff" stroke="#e2dfec" />
-  <text x="494" y="189" fontFamily="monospace" fontSize="11.5" fill="#4b4857">vendo/approval-ref@1</text>
-  <text x="494" y="205" fontFamily="sans-serif" fontSize="11" fill="#7c7989">the approve or deny card</text>
-</svg>
+<CardGroup cols={3}>
+  <Card title="plain data">
+    Renders nothing. Your model already has it.
+  </Card>
+  <Card title="vendo/app-ref@1">
+    The app embed, building inline.
+  </Card>
+  <Card title="vendo/approval-ref@1">
+    The approve or deny card.
+  </Card>
+</CardGroup>
 
 ## The envelope
 

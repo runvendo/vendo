@@ -43,22 +43,18 @@ const vendo = createVendo({ catalog: registry });
 
 ## What a screen may name
 
-<Frame caption="A name outside these two sets fails the save. It never renders as an empty box.">
-  <svg viewBox="0 0 700 118" width="100%" role="img" aria-label="A generated screen may name the Kit's 51 components plus the components this host registered, and nothing else.">
-    <rect x="1" y="1" width="330" height="72" rx="10" fill="currentColor" fillOpacity="0.04" stroke="currentColor" strokeOpacity="0.22" />
-    <text x="166" y="27" fontSize="8" letterSpacing="1.2" textAnchor="middle" fill="currentColor" fillOpacity="0.55">SHIPPED WITH VENDO</text>
-    <text x="166" y="48" fontSize="14" fontWeight="600" textAnchor="middle" fill="currentColor">the Kit</text>
-    <text x="166" y="64" fontSize="11" textAnchor="middle" fill="currentColor" fillOpacity="0.55">51 components, themed by your tokens</text>
-    <text x="350" y="43" fontSize="18" fontWeight="500" textAnchor="middle" fill="currentColor" fillOpacity="0.35">+</text>
-    <rect x="369" y="1" width="330" height="72" rx="10" fill="#6c3bff" fillOpacity="0.08" stroke="#6c3bff" strokeOpacity="0.35" />
-    <text x="534" y="27" fontSize="8" letterSpacing="1.2" textAnchor="middle" fill="#6c3bff" fillOpacity="0.8">SHIPPED WITH YOUR PRODUCT</text>
-    <text x="534" y="48" fontSize="14" fontWeight="600" textAnchor="middle" fill="#6c3bff">your catalog</text>
-    <text x="534" y="64" fontSize="11" textAnchor="middle" fill="#6c3bff" fillOpacity="0.75">the ones you registered, with their schemas</text>
-    <line x1="350" y1="74" x2="350" y2="88" stroke="currentColor" strokeOpacity="0.25" strokeDasharray="3 3" />
-    <rect x="212" y="88" width="276" height="29" rx="8" fill="none" stroke="currentColor" strokeOpacity="0.22" />
-    <text x="350" y="107" fontSize="11" fontWeight="600" textAnchor="middle" fill="currentColor">everything a screen may render</text>
-  </svg>
-</Frame>
+A name outside these two sets fails the save. It never renders as an empty box.
+
+<Columns cols={2}>
+  <Card title="The Kit">
+    Shipped with Vendo. 51 components, themed by your tokens.
+  </Card>
+  <Card title="Your catalog">
+    Shipped with your product. The ones you registered, with their schemas.
+  </Card>
+</Columns>
+
+Together, everything a screen may render.
 
 The Kit is one family, and every component in it reads your [theme tokens](/customize/theming).
 
@@ -84,28 +80,19 @@ The Kit is one family, and every component in it reads your [theme tokens](/cust
 
 Two artifacts, both deterministic and byte-stable. Commit them.
 
-<Frame caption="catalog.json is what your components are called. .vendo/components/ is what they are.">
-  <svg viewBox="0 0 700 128" width="100%" role="img" aria-label="Your provider's components map feeds catalog.json for names and .vendo/components/ for source, split into per-component records and content-addressed modules.">
-    <rect x="1" y="34" width="182" height="60" rx="10" fill="currentColor" fillOpacity="0.04" stroke="currentColor" strokeOpacity="0.22" />
-    <text x="92" y="60" fontSize="8" letterSpacing="1.2" textAnchor="middle" fill="currentColor" fillOpacity="0.55">YOUR SOURCE</text>
-    <text x="92" y="78" fontSize="11" fontWeight="600" textAnchor="middle" fill="currentColor">&lt;VendoProvider components&gt;</text>
-    <line x1="183" y1="64" x2="222" y2="64" stroke="#6c3bff" strokeOpacity="0.4" strokeWidth="1.5" />
-    <path d="M232 64 l-10 -5 v10 z" fill="#6c3bff" fillOpacity="0.6" />
-    <text x="207" y="52" fontSize="9" textAnchor="middle" fill="#6c3bff">sync</text>
-    <rect x="232" y="1" width="200" height="54" rx="10" fill="#6c3bff" fillOpacity="0.08" stroke="#6c3bff" strokeOpacity="0.35" />
-    <text x="332" y="24" fontSize="11" fontWeight="600" textAnchor="middle" fill="#6c3bff">.vendo/catalog.json</text>
-    <text x="332" y="42" fontSize="10" textAnchor="middle" fill="#6c3bff" fillOpacity="0.75">names, prop schemas, examples</text>
-    <rect x="232" y="73" width="200" height="54" rx="10" fill="#6c3bff" fillOpacity="0.08" stroke="#6c3bff" strokeOpacity="0.35" />
-    <text x="332" y="96" fontSize="11" fontWeight="600" textAnchor="middle" fill="#6c3bff">.vendo/components/</text>
-    <text x="332" y="114" fontSize="10" textAnchor="middle" fill="#6c3bff" fillOpacity="0.75">the real source, content addressed</text>
-    <line x1="432" y1="100" x2="471" y2="100" stroke="currentColor" strokeOpacity="0.3" />
-    <path d="M481 100 l-10 -5 v10 z" fill="currentColor" fillOpacity="0.4" />
-    <rect x="481" y="66" width="218" height="26" rx="7" fill="none" stroke="currentColor" strokeOpacity="0.22" />
-    <text x="590" y="83" fontSize="10" textAnchor="middle" fill="currentColor" fillOpacity="0.8">&lt;Name&gt;.json, refs only</text>
-    <rect x="481" y="98" width="218" height="26" rx="7" fill="none" stroke="currentColor" strokeOpacity="0.22" />
-    <text x="590" y="115" fontSize="10" textAnchor="middle" fill="currentColor" fillOpacity="0.8">modules/&lt;hex&gt;.json, the bytes</text>
-  </svg>
-</Frame>
+`vendo sync` reads `<VendoProvider components>`. `catalog.json` is what your components are called. `.vendo/components/` is what they are.
+
+<Columns cols={2}>
+  <Card title=".vendo/catalog.json">
+    Names, prop schemas, examples.
+  </Card>
+  <Card title=".vendo/components/">
+    The real source, content addressed.
+
+    * `<Name>.json`, refs only
+    * `modules/<hex>.json`, the bytes
+  </Card>
+</Columns>
 
 `.vendo/catalog.json` records what your components are called: the module that exports each one, its JSON Schema props, its description, and its examples. Rescans preserve description and example copy you edited by hand.
 

@@ -12,22 +12,22 @@ Export writes a `.vendoapp` archive. Import mints a fresh `app_` id before it ev
 
 `fork` does the same in one call and records `forkedFrom` so the lineage is readable. `share` and `publish` hand the copy to Vendo Cloud, and both need `VENDO_API_KEY`.
 
-<Frame caption="A copy re-approves its own egress before it can run anything.">
-  <svg viewBox="0 0 700 132" width="100%" role="img" aria-label="What travels with a copy: the document, the app.tsx screen, the declared secrets and egress domains. What stays behind: the machine, the owner's approved egress, and the conversation.">
-    <rect x="1" y="1" width="330" height="130" rx="10" fill="#6c3bff" fillOpacity="0.07" stroke="#6c3bff" strokeOpacity="0.35" />
-    <text x="20" y="26" fontSize="8" letterSpacing="1.2" fill="#6c3bff" fillOpacity="0.85">TRAVELS</text>
-    <text x="20" y="50" fontSize="12" fill="currentColor">the document and its app.tsx screen</text>
-    <text x="20" y="73" fontSize="12" fill="currentColor">the storage the app declares</text>
-    <text x="20" y="96" fontSize="12" fill="currentColor">the secret names it declares</text>
-    <text x="20" y="119" fontSize="12" fill="currentColor">the egress domains it declares</text>
-    <rect x="369" y="1" width="330" height="130" rx="10" fill="none" stroke="currentColor" strokeOpacity="0.22" strokeDasharray="4 3" />
-    <text x="388" y="26" fontSize="8" letterSpacing="1.2" fill="currentColor" fillOpacity="0.5">STAYS BEHIND</text>
-    <text x="388" y="50" fontSize="12" fill="currentColor" fillOpacity="0.65">the machine, so the copy re-graduates</text>
-    <text x="388" y="73" fontSize="12" fill="currentColor" fillOpacity="0.65">the owner's approved egress</text>
-    <text x="388" y="96" fontSize="12" fill="currentColor" fillOpacity="0.65">every grant, which is keyed to the old id</text>
-    <text x="388" y="119" fontSize="12" fill="currentColor" fillOpacity="0.65">the owner's conversation</text>
-  </svg>
-</Frame>
+A copy re-approves its own egress before it can run anything.
+
+<Columns cols={2}>
+  <Card title="Travels">
+    * the document and its app.tsx screen
+    * the storage the app declares
+    * the secret names it declares
+    * the egress domains it declares
+  </Card>
+  <Card title="Stays behind">
+    * the machine, so the copy re-graduates
+    * the owner's approved egress
+    * every grant, which is keyed to the old id
+    * the owner's conversation
+  </Card>
+</Columns>
 
 Two copies are refused outright, and both refusals are loud.
 
@@ -243,26 +243,16 @@ Acknowledged slots are skipped without error and their baselines are left alone.
 
 Update the component, run `vendo sync`, and the new baseline overwrites the old one. Existing forks are now drifted: the hash they recorded no longer matches the captured baseline.
 
-<Frame caption="Drift is a warning, never an action. A drifted fork keeps rendering its own content, untouched.">
-  <svg viewBox="0 0 700 112" width="100%" role="img" aria-label="A user's fork records the baseline hash it was created from. When sync captures a new baseline, the recorded hash no longer matches and the fork is reported as drifted.">
-    <rect x="1" y="16" width="200" height="52" rx="9" fill="currentColor" fillOpacity="0.04" stroke="currentColor" strokeOpacity="0.22" />
-    <text x="101" y="38" fontSize="11" fontWeight="600" textAnchor="middle" fill="currentColor">NetWorthCard</text>
-    <text x="101" y="55" fontSize="10" textAnchor="middle" fill="currentColor" fillOpacity="0.55">baseline sha256:a1c4…</text>
-    <line x1="209" y1="42" x2="248" y2="42" stroke="#6c3bff" strokeOpacity="0.4" strokeWidth="1.5" />
-    <path d="M258 42 l-10 -5 v10 z" fill="#6c3bff" fillOpacity="0.6" />
-    <text x="233" y="30" fontSize="9" textAnchor="middle" fill="#6c3bff">remix</text>
-    <rect x="258" y="16" width="200" height="52" rx="9" fill="#6c3bff" fillOpacity="0.08" stroke="#6c3bff" strokeOpacity="0.35" />
-    <text x="358" y="38" fontSize="11" fontWeight="600" textAnchor="middle" fill="#6c3bff">the user's fork</text>
-    <text x="358" y="55" fontSize="10" textAnchor="middle" fill="#6c3bff" fillOpacity="0.75">seed.baseline sha256:a1c4…</text>
-    <line x1="101" y1="68" x2="101" y2="84" stroke="currentColor" strokeOpacity="0.3" strokeDasharray="3 3" />
-    <rect x="1" y="84" width="200" height="27" rx="7" fill="none" stroke="currentColor" strokeOpacity="0.22" />
-    <text x="101" y="102" fontSize="10" textAnchor="middle" fill="currentColor" fillOpacity="0.75">you edit it, sync captures sha256:7f02…</text>
-    <line x1="209" y1="97" x2="248" y2="97" stroke="currentColor" strokeOpacity="0.3" />
-    <path d="M258 97 l-10 -5 v10 z" fill="currentColor" fillOpacity="0.4" />
-    <rect x="258" y="84" width="200" height="27" rx="7" fill="none" stroke="currentColor" strokeOpacity="0.3" strokeDasharray="4 3" />
-    <text x="358" y="102" fontSize="10" fontWeight="600" textAnchor="middle" fill="currentColor" fillOpacity="0.8">drifted: baseline-changed</text>
-  </svg>
-</Frame>
+Drift is a warning, never an action. A drifted fork keeps rendering its own content, untouched.
+
+<Columns cols={2}>
+  <Card title="NetWorthCard">
+    Remix starts from baseline `sha256:a1c4…`. You edit it, sync captures `sha256:7f02…`.
+  </Card>
+  <Card title="The user's fork">
+    Still records `seed.baseline sha256:a1c4…`. Reported as `drifted: baseline-changed`.
+  </Card>
+</Columns>
 
 Vendo says so everywhere the fork is opened or edited. `open()` attaches a server-authoritative `seedDrift` to the payload, edit results carry the same field, and the renderer shows an in-surface notice above the fork.
 

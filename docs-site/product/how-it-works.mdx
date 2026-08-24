@@ -7,48 +7,24 @@ sidebarTitle: "How it works"
 The panel is the only Vendo code in your browser. Every turn goes to a route
 inside your own app and streams back to that panel.
 
-<svg viewBox="0 0 704 208" width="100%" role="img" aria-labelledby="vendo-path-title">
-  <title id="vendo-path-title">A question travels from the panel to your route, through the turn and the guard, to your API, and streams back to the panel.</title>
-  <defs>
-    <marker id="vendo-flow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-      <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor" />
-    </marker>
-    <marker id="vendo-flow-brand" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-      <path d="M 0 0 L 10 5 L 0 10 z" fill="#6c3bff" />
-    </marker>
-  </defs>
+A question travels from the panel to your route, through the turn and the guard, to your API, and streams back to the panel. Vendo Cloud (model · sandbox · store) sits on the turn when you leave those slots unset.
 
-  <rect x="364" y="8" width="160" height="44" rx="10" fill="none" stroke="#6c3bff" strokeOpacity="0.55" strokeDasharray="4 4" />
-  <text x="444" y="27" textAnchor="middle" fontSize="12" fontWeight="600" fill="#6c3bff">Vendo Cloud</text>
-  <text x="444" y="42" textAnchor="middle" fontSize="10" fill="#6c3bff" fillOpacity="0.8">model · sandbox · store</text>
-  <path d="M 444 52 L 444 80" stroke="#6c3bff" strokeOpacity="0.55" strokeWidth="1.5" strokeDasharray="4 4" fill="none" markerEnd="url(#vendo-flow-brand)" />
+<CardGroup cols={4}>
+  <Card title="Panel">
+    Your page. Asks.
+  </Card>
+  <Card title="Your route">
+    `/api/vendo`. Runs.
+  </Card>
+  <Card title="The turn">
+    Harness, then guard.
+  </Card>
+  <Card title="Your API">
+    Called as this user.
+  </Card>
+</CardGroup>
 
-  <rect x="16" y="84" width="112" height="52" rx="10" fill="none" stroke="currentColor" strokeOpacity="0.25" />
-  <text x="72" y="106" textAnchor="middle" fontSize="12.5" fontWeight="600" fill="currentColor">Panel</text>
-  <text x="72" y="122" textAnchor="middle" fontSize="10" fill="currentColor" fillOpacity="0.6">your page</text>
-
-  <rect x="184" y="84" width="124" height="52" rx="10" fill="none" stroke="currentColor" strokeOpacity="0.25" />
-  <text x="246" y="106" textAnchor="middle" fontSize="12.5" fontWeight="600" fill="currentColor">Your route</text>
-  <text x="246" y="122" textAnchor="middle" fontSize="10" fill="currentColor" fillOpacity="0.6">/api/vendo</text>
-
-  <rect x="364" y="84" width="160" height="52" rx="10" fill="none" stroke="currentColor" strokeOpacity="0.25" />
-  <text x="444" y="106" textAnchor="middle" fontSize="12.5" fontWeight="600" fill="currentColor">The turn</text>
-  <text x="444" y="122" textAnchor="middle" fontSize="10" fill="currentColor" fillOpacity="0.6">harness, then guard</text>
-
-  <rect x="580" y="84" width="112" height="52" rx="10" fill="none" stroke="currentColor" strokeOpacity="0.25" />
-  <text x="636" y="106" textAnchor="middle" fontSize="12.5" fontWeight="600" fill="currentColor">Your API</text>
-  <text x="636" y="122" textAnchor="middle" fontSize="10" fill="currentColor" fillOpacity="0.6">as this user</text>
-
-  <path d="M 132 110 L 180 110" stroke="currentColor" strokeOpacity="0.45" strokeWidth="1.5" fill="none" markerEnd="url(#vendo-flow)" />
-  <path d="M 312 110 L 360 110" stroke="currentColor" strokeOpacity="0.45" strokeWidth="1.5" fill="none" markerEnd="url(#vendo-flow)" />
-  <path d="M 528 110 L 576 110" stroke="currentColor" strokeOpacity="0.45" strokeWidth="1.5" fill="none" markerEnd="url(#vendo-flow)" />
-  <text x="156" y="100" textAnchor="middle" fontSize="9.5" fill="currentColor" fillOpacity="0.55">asks</text>
-  <text x="336" y="100" textAnchor="middle" fontSize="9.5" fill="currentColor" fillOpacity="0.55">runs</text>
-  <text x="552" y="100" textAnchor="middle" fontSize="9.5" fill="currentColor" fillOpacity="0.55">calls</text>
-
-  <path d="M 444 136 L 444 172 L 72 172 L 72 140" stroke="#6c3bff" strokeOpacity="0.7" strokeWidth="1.5" fill="none" markerEnd="url(#vendo-flow-brand)" />
-  <text x="258" y="190" textAnchor="middle" fontSize="10.5" fill="#6c3bff">text, tool beats, and a live screen, streamed back through your route</text>
-</svg>
+Text, tool beats, and a live screen stream back through your route.
 
 ## The path of one question
 

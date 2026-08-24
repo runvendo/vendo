@@ -77,29 +77,17 @@ your own styles and a custom panel tracks the same theme:
 
 You do not write it from scratch. You inherit it, then change what you want.
 
-<svg viewBox="0 0 760 118" role="img" aria-label="vendo init reads your live UI, writes .vendo/theme.json into your repo, and you edit it like any other file" style={{ width: "100%", height: "auto", margin: "1.5rem 0" }}>
-  <g fill="none" stroke="currentColor" strokeOpacity="0.2">
-    <rect x="1" y="1" width="226" height="52" rx="11" />
-    <rect x="533" y="1" width="226" height="52" rx="11" />
-  </g>
-  <rect x="267" y="1" width="226" height="52" rx="11" fill="#6c3bff" fillOpacity="0.06" stroke="#6c3bff" strokeOpacity="0.45" />
-  <g fill="none" stroke="#6c3bff" strokeWidth="1.5" strokeLinecap="round">
-    <path d="M235 27h20" /><path d="M501 27h20" />
-  </g>
-  <g fill="#6c3bff">
-    <path d="M255 23l7 4-7 4z" /><path d="M521 23l7 4-7 4z" />
-  </g>
-  <g fill="currentColor" fontSize="13.5" fontWeight="600" textAnchor="middle">
-    <text x="114" y="32">vendo init</text>
-    <text x="646" y="32">You</text>
-  </g>
-  <text x="380" y="32" fill="#6c3bff" fontSize="13.5" fontWeight="600" textAnchor="middle">.vendo/theme.json</text>
-  <g fill="currentColor" fillOpacity="0.55" fontSize="11.5" textAnchor="middle">
-    <text x="114" y="76">reads your live UI</text>
-    <text x="380" y="76">written into your repo</text>
-    <text x="646" y="76">edit it like any other file</text>
-  </g>
-</svg>
+<CardGroup cols={3}>
+  <Card title="vendo init">
+    Reads your live UI.
+  </Card>
+  <Card title=".vendo/theme.json">
+    Written into your repo.
+  </Card>
+  <Card title="You">
+    Edit it like any other file.
+  </Card>
+</CardGroup>
 
 `vendo init` reads your app's own CSS and writes the file. It then prints the
 paste that imports it into your provider:

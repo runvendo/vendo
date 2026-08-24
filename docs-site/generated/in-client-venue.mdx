@@ -10,28 +10,16 @@ A screen runs in a sealed VM with no DOM, no network, and no clock. An approved 
 
 `open()` computes the venue on every open. Nothing a stored, imported, or streamed document says about `inClient` survives to the client.
 
-<Frame caption="A stored approval pinning the current content hash is the only way into your page.">
-  <svg viewBox="0 0 700 196" width="100%" role="img" aria-label="open() checks for a stored approval pinning the current content hash. Granted, the code mounts in your page. Otherwise a contained notice takes its place.">
-    <rect x="252" y="1" width="196" height="30" rx="8" fill="currentColor" fillOpacity="0.04" stroke="currentColor" strokeOpacity="0.22" />
-    <text x="350" y="20" fontSize="12" fontWeight="600" textAnchor="middle" fill="currentColor">open()</text>
-    <line x1="350" y1="31" x2="350" y2="55" stroke="currentColor" strokeOpacity="0.3" />
-    <rect x="192" y="56" width="316" height="44" rx="8" fill="#6c3bff" fillOpacity="0.07" stroke="#6c3bff" strokeOpacity="0.35" />
-    <text x="350" y="74" fontSize="11" textAnchor="middle" fill="currentColor" fillOpacity="0.75">does a stored approval pin</text>
-    <text x="350" y="90" fontSize="11" fontWeight="600" textAnchor="middle" fill="#6c3bff">this version's content hash?</text>
-    <path d="M192 78 H120 V132" fill="none" stroke="currentColor" strokeOpacity="0.3" />
-    <path d="M120 142 l-5 -10 h10 z" fill="currentColor" fillOpacity="0.45" />
-    <text x="152" y="120" fontSize="10" fill="currentColor" fillOpacity="0.6">no</text>
-    <path d="M508 78 H580 V132" fill="none" stroke="#6c3bff" strokeOpacity="0.45" />
-    <path d="M580 142 l-5 -10 h10 z" fill="#6c3bff" fillOpacity="0.6" />
-    <text x="540" y="120" fontSize="10" fill="#6c3bff">yes</text>
-    <rect x="1" y="144" width="238" height="50" rx="8" fill="none" stroke="currentColor" strokeOpacity="0.22" strokeDasharray="4 3" />
-    <text x="120" y="164" fontSize="11" fontWeight="600" textAnchor="middle" fill="currentColor" fillOpacity="0.7">the code does not run</text>
-    <text x="120" y="181" fontSize="10" textAnchor="middle" fill="currentColor" fillOpacity="0.5">a contained notice takes its place</text>
-    <rect x="461" y="144" width="238" height="50" rx="8" fill="#6c3bff" fillOpacity="0.08" stroke="#6c3bff" strokeOpacity="0.35" />
-    <text x="580" y="164" fontSize="11" fontWeight="600" textAnchor="middle" fill="#6c3bff">it mounts in your page</text>
-    <text x="580" y="181" fontSize="10" textAnchor="middle" fill="#6c3bff" fillOpacity="0.75">your origin, your cookies, your CSP</text>
-  </svg>
-</Frame>
+A stored approval pinning the current content hash is the only way into your page.
+
+<Columns cols={2}>
+  <Card title="No">
+    The code does not run. A contained notice takes its place.
+  </Card>
+  <Card title="Yes">
+    It mounts in your page — your origin, your cookies, your CSP.
+  </Card>
+</Columns>
 
 <Columns cols={2}>
   <Frame>

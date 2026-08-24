@@ -59,32 +59,24 @@ export const vendo = createVendo({
 
 The prompt is assembled fresh on every turn, in this order.
 
-<svg viewBox="0 0 560 236" role="img" aria-label="The assembled system prompt, top to bottom: Vendo's operating sections, Product from your brief, the User facts block, Directions from your guard, the theme line, and the knowledge index" style={{ width: "100%", height: "auto", margin: "1.5rem 0" }}>
-  <g fill="none" stroke="currentColor" strokeOpacity="0.2">
-    <rect x="1" y="1" width="558" height="34" rx="9" />
-    <rect x="1" y="79" width="558" height="34" rx="9" />
-    <rect x="1" y="118" width="558" height="34" rx="9" />
-    <rect x="1" y="157" width="558" height="34" rx="9" />
-    <rect x="1" y="196" width="558" height="34" rx="9" />
-  </g>
-  <rect x="1" y="40" width="558" height="34" rx="9" fill="#6c3bff" fillOpacity="0.06" stroke="#6c3bff" strokeOpacity="0.45" />
-  <g fill="currentColor" fontSize="13" fontWeight="600">
-    <text x="18" y="23">Vendo's operating sections</text>
-    <text x="18" y="101">[User]</text>
-    <text x="18" y="140">Directions</text>
-    <text x="18" y="179">Theme</text>
-    <text x="18" y="218">Knowledge</text>
-  </g>
-  <text x="18" y="62" fill="#6c3bff" fontSize="13" fontWeight="600">Product</text>
-  <g fill="currentColor" fillOpacity="0.55" fontSize="11.5" textAnchor="end">
-    <text x="542" y="23">how to work, how to speak</text>
-    <text x="542" y="101">facts you assert about the signed-in user</text>
-    <text x="542" y="140">policy steering from your guard</text>
-    <text x="542" y="179">one line about your brand</text>
-    <text x="542" y="218">an index of your docs</text>
-  </g>
-  <text x="542" y="62" fill="#6c3bff" fillOpacity="0.75" fontSize="11.5" textAnchor="end">your brief, verbatim</text>
-</svg>
+<Card title="Vendo's operating sections">
+  How to work, how to speak.
+</Card>
+<Card title="Product">
+  Your brief, verbatim.
+</Card>
+<Card title="[User]">
+  Facts you assert about the signed-in user.
+</Card>
+<Card title="Directions">
+  Policy steering from your guard.
+</Card>
+<Card title="Theme">
+  One line about your brand.
+</Card>
+<Card title="Knowledge">
+  An index of your docs.
+</Card>
 
 A section with nothing to say drops out entirely. The theme line and the
 knowledge index ride only the surfaces that can render a screen.

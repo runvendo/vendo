@@ -8,32 +8,20 @@ A service key is the one long-lived credential in this path. It never touches
 your agent, and it never leaves your backend. `vendo.tokenFor()` spends it for
 you — this page is what is behind that call.
 
-<svg viewBox="0 0 760 118" role="img" aria-label="A service key path: the key, the token exchange, a ten-minute bearer, your door" style={{ width: "100%", height: "auto", margin: "1.5rem 0" }}>
-  <g fill="none" stroke="currentColor" strokeOpacity="0.2">
-    <rect x="1" y="1" width="164" height="52" rx="11" />
-    <rect x="199" y="1" width="164" height="52" rx="11" />
-    <rect x="397" y="1" width="164" height="52" rx="11" />
-    <rect x="595" y="1" width="164" height="52" rx="11" />
-  </g>
-  <g fill="none" stroke="#6c3bff" strokeWidth="1.5" strokeLinecap="round">
-    <path d="M169 27h20" /><path d="M367 27h20" /><path d="M565 27h20" />
-  </g>
-  <g fill="#6c3bff">
-    <path d="M189 23l7 4-7 4z" /><path d="M387 23l7 4-7 4z" /><path d="M585 23l7 4-7 4z" />
-  </g>
-  <g fill="currentColor" fontSize="13.5" fontWeight="600" textAnchor="middle">
-    <text x="83" y="32">Service key</text>
-    <text x="281" y="32">tokenFor()</text>
-    <text x="479" y="32">10-minute bearer</text>
-    <text x="677" y="32">Your door</text>
-  </g>
-  <g fill="currentColor" fillOpacity="0.55" fontSize="11.5" textAnchor="middle">
-    <text x="83" y="76">lives in your backend</text>
-    <text x="281" y="76">RFC 8693 exchange</text>
-    <text x="479" y="76">bound to one user id</text>
-    <text x="677" y="76">verifies the signature</text>
-  </g>
-</svg>
+<CardGroup cols={4}>
+  <Card title="Service key">
+    Lives in your backend.
+  </Card>
+  <Card title="tokenFor()">
+    RFC 8693 exchange.
+  </Card>
+  <Card title="10-minute bearer">
+    Bound to one user id.
+  </Card>
+  <Card title="Your door">
+    Verifies the signature.
+  </Card>
+</CardGroup>
 
 ## Where the key lives
 
