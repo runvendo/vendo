@@ -151,9 +151,15 @@ describe("the JavaScript hand", () => {
   it("has no network inside the script", async () => {
     const session = createShellSession({ workspace: await disk({}), javascript: true });
 
-    const result = await session.exec(`js-exec -c 'fetch("https://example.com").then(() => console.log("reached"))'`);
+    // AWAITED, not fire-and-forget: `fetch` IS defined in the sandbox, so an
+    // unawaited promise only proves the script exited before it settled — which
+    // it would do just as happily with the network working. What has to be proven
+    // is that the call is REFUSED, in the sandbox's own words.
+    const result = await session.exec(`js-exec -c 'await fetch("https://example.com"); console.log("reached")'`);
 
+    expect(result.exitCode).not.toBe(0);
     expect(result.stdout).not.toContain("reached");
+    expect(result.stderr).toContain("Network access not configured");
   });
 
   it("has no js-exec at all when it was not asked for", async () => {
