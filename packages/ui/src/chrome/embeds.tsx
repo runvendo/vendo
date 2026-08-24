@@ -184,7 +184,7 @@ function executedCard(summary: string, outcome: ToolOutcome | undefined): ReactN
  * `GET /approvals/:id` and resolves in place to the executed outcome,
  * "declined", or "expired" (the frozen `VendoApprovalEmbedState` vocabulary).
  */
-export function VendoApprovalEmbed({ refValue }: VendoApprovalEmbedProps) {
+export function VendoApprovalEmbed({ refValue, theme }: VendoApprovalEmbedProps) {
   const { client } = useVendoProvider();
   const { approvalId, summary } = refValue;
 
@@ -261,7 +261,7 @@ export function VendoApprovalEmbed({ refValue }: VendoApprovalEmbedProps) {
   }
 
   return (
-    <ChromeRoot>
+    <ChromeRoot theme={theme}>
       <div data-vendo-embed="approval">{body}</div>
     </ChromeRoot>
   );
@@ -272,7 +272,7 @@ export function VendoApprovalEmbed({ refValue }: VendoApprovalEmbedProps) {
  * build streams, then the live app. In-app interactions go over the wire
  * (`apps.call`), never through the host's agent loop.
  */
-export function VendoAppEmbed({ refValue }: VendoAppEmbedProps) {
+export function VendoAppEmbed({ refValue, theme }: VendoAppEmbedProps) {
   const { client, components } = useVendoProvider();
   const { appId, title } = refValue;
   // A press inside the embedded app that parks on the guard asks its question
@@ -403,7 +403,7 @@ export function VendoAppEmbed({ refValue }: VendoAppEmbedProps) {
   const shown: OpenSurface | undefined = surface
     ?? (forming === undefined ? undefined : { kind: "tree", payload: forming });
   return (
-    <ChromeRoot>
+    <ChromeRoot theme={theme}>
       {/* The thread lane's app boundary: the bar narrates forming → live via
           the shared data-state contract ("building" | "ready"). */}
       <div className="fl-uihost fl-appcard" data-vendo-embed="app">
@@ -486,14 +486,18 @@ export function VendoAppEmbed({ refValue }: VendoAppEmbedProps) {
  * embed by `parseVendoToolEnvelope` — or nothing for plain data (the action
  * executed cleanly; the agent already consumed the result).
  */
-export function VendoToolResult({ output }: VendoToolResultProps) {
+export function VendoToolResult({ output, theme }: VendoToolResultProps) {
   const envelope = parseVendoToolEnvelope(output);
   if (envelope === null) return null;
-  if (envelope.kind === VENDO_APP_REF_KIND) return <VendoAppEmbed refValue={envelope} />;
+  if (envelope.kind === VENDO_APP_REF_KIND) return <VendoAppEmbed refValue={envelope} theme={theme} />;
   // The record it just armed, in the card the thread already renders
   // automations with — the envelope's one line IS the rule sentence.
   if (envelope.kind === VENDO_AUTOMATION_REF_KIND) {
-    return <AutomationCard name={envelope.summary} enabled={envelope.armed} />;
+    return (
+      <ChromeRoot theme={theme}>
+        <AutomationCard name={envelope.summary} enabled={envelope.armed} />
+      </ChromeRoot>
+    );
   }
-  return <VendoApprovalEmbed refValue={envelope} />;
+  return <VendoApprovalEmbed refValue={envelope} theme={theme} />;
 }

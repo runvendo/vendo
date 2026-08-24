@@ -1,3 +1,4 @@
+import type { VendoTheme } from "@vendoai/apps/contract";
 import type { VendoAppRef, VendoApprovalRef } from "@vendoai/core";
 
 /**
@@ -6,12 +7,29 @@ import type { VendoAppRef, VendoApprovalRef } from "@vendoai/core";
  * built on the existing slot / build-beat / approval-card machinery, on the
  * defaults a `VendoProvider` overrides when the host mounts one.
  * Frozen in `docs/superpowers/specs/2026-07-20-existing-agents-contracts.md`.
+ *
+ * `theme` is the one addition since the freeze (approved 2026-08-23): an
+ * OPTIONAL per-surface override, never a required prop and never a second way
+ * to say what the provider already says.
  */
 
 /** Inline generated app: build-beat while the build streams, then the live
  *  app. In-app interactions go over the wire, not through the host loop. */
 export interface VendoAppEmbedProps {
   refValue: VendoAppRef;
+  /**
+   * This embed's own brand tokens, merged group by group over the provider's
+   * resolved theme — the same merge `VendoProvider` does over
+   * `defaultVendoTheme`, so a bare embed merges over the defaults. The approval
+   * modal a press inside the app parks on carries them too.
+   *
+   * FRAME ONLY: it styles Vendo's own chrome — the app card's bar, the beats,
+   * the failure notice. The mounted generated view keeps the PROVIDER theme,
+   * whether it is iframe-served (themed over the app transport) or rendered
+   * natively: the tree surface restates the provider tokens on its own root,
+   * so the local ones do not cascade in.
+   */
+  theme?: Partial<VendoTheme>;
 }
 
 /** Where an approval embed can be, in the order it gets there. The wire owns
@@ -23,10 +41,33 @@ export type VendoApprovalEmbedState = "pending" | "executed" | "declined" | "exp
 /** Approve/deny for a parked guarded call. */
 export interface VendoApprovalEmbedProps {
   refValue: VendoApprovalRef;
+  /**
+   * This embed's own brand tokens, merged group by group over the provider's
+   * resolved theme — the same merge `VendoProvider` does over
+   * `defaultVendoTheme`, so a bare embed merges over the defaults.
+   *
+   * FRAME ONLY: it styles Vendo's own chrome. A mounted generated view keeps
+   * the PROVIDER theme, whether it is iframe-served (themed over the app
+   * transport) or rendered natively: the tree surface restates the provider
+   * tokens on its own root, so the local ones do not cascade in.
+   */
+  theme?: Partial<VendoTheme>;
 }
 
 /** The dispatcher: give it any `vendo_*` tool output and it renders the right
  *  embed by `parseVendoToolEnvelope`, or nothing for plain data. */
 export interface VendoToolResultProps {
   output: unknown;
+  /**
+   * Passed straight through to whichever embed the envelope dispatches to:
+   * this surface's own brand tokens, merged group by group over the provider's
+   * resolved theme — the same merge `VendoProvider` does over
+   * `defaultVendoTheme`, so a bare embed merges over the defaults.
+   *
+   * FRAME ONLY: it styles Vendo's own chrome. A mounted generated view keeps
+   * the PROVIDER theme, whether it is iframe-served (themed over the app
+   * transport) or rendered natively: the tree surface restates the provider
+   * tokens on its own root, so the local ones do not cascade in.
+   */
+  theme?: Partial<VendoTheme>;
 }

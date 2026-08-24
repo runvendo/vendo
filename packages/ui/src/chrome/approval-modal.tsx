@@ -39,13 +39,13 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { APPROVALS_DECIDED_EVENT, type ApprovalsDecidedDetail } from "../client-impl.js";
-import { useVendoProvider, useVendoTheme, useVendoTools } from "../context.js";
+import { useVendoProvider, useVendoTools } from "../context.js";
 import { themeCssVariables } from "../theme.js";
 import type { ApprovalResolution } from "../wire-types.js";
 import { refusalCopy } from "./approval-card.js";
 import { consentAsk, toolPresentation } from "./build-beat.js";
 import { CARD_EYEBROWS, CardFields, NOTE_SEPARATOR } from "./card-shell.js";
-import { ensureChromeStyles } from "./chrome-root.js";
+import { ensureChromeStyles, useChromeTheme } from "./chrome-root.js";
 import { fieldRows } from "./field-rows.js";
 import { inertBehind } from "./inert-behind.js";
 
@@ -125,7 +125,11 @@ export function ApprovalModal({ approvalId, onClose }: {
   onClose(): void;
 }) {
   const { client } = useVendoProvider();
-  const theme = useVendoTheme();
+  // The ask belongs to the surface the press came from, so it wears THAT
+  // surface's theme — a slot or embed with its own `theme` prop, not just the
+  // provider's. The layer below portals to <body>, so the boundary that themes
+  // the spawning surface can only reach it through React context.
+  const theme = useChromeTheme();
   const tools = useVendoTools();
   const [resolution, setResolution] = useState<ApprovalResolution>();
   const [loadFailed, setLoadFailed] = useState(false);

@@ -68,7 +68,10 @@ export {
   type WorkbenchTurn,
 } from "./chrome/workbench-store.js";
 export { announcePin, onPinAnnounced } from "./pin-events.js";
-export { defaultVendoTheme, resolveTheme, themeCssVariables } from "./theme.js";
+// `VendoTheme` is nameable from here because hosts now type more than the
+// provider's `theme` prop with it — every chrome surface takes its own
+// `theme?: Partial<VendoTheme>`.
+export { defaultVendoTheme, resolveTheme, themeCssVariables, type VendoTheme } from "./theme.js";
 export type {
   AppListRow,
   ApprovalResolution,

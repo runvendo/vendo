@@ -32,13 +32,37 @@ describe("embed prop contracts", () => {
 
   /** The provider went optional by DEFAULTING, not by growing a knob: these
    *  exhaustive (and excess-checked) key maps fail to compile the day a
-   *  client/baseUrl/theme prop appears on any of the three. */
+   *  client/baseUrl prop appears on any of the three.
+   *
+   *  `theme` is the one deliberate addition (approved 2026-08-23, per-surface
+   *  theme overrides). It is not a second way to reach the wire — it is the
+   *  chrome's own tokens, optional, and it never widens what an embed can talk
+   *  to. Everything else on this list stays banned. */
   it("takes no client or config prop of its own, bare or not", () => {
-    const appKeys: Record<keyof VendoAppEmbedProps, true> = { refValue: true };
-    const approvalKeys: Record<keyof VendoApprovalEmbedProps, true> = { refValue: true };
-    const resultKeys: Record<keyof VendoToolResultProps, true> = { output: true };
+    const appKeys: Record<keyof VendoAppEmbedProps, true> = { refValue: true, theme: true };
+    const approvalKeys: Record<keyof VendoApprovalEmbedProps, true> = { refValue: true, theme: true };
+    const resultKeys: Record<keyof VendoToolResultProps, true> = { output: true, theme: true };
     expect([Object.keys(appKeys), Object.keys(approvalKeys), Object.keys(resultKeys)])
-      .toEqual([["refValue"], ["refValue"], ["output"]]);
+      .toEqual([["refValue", "theme"], ["refValue", "theme"], ["output", "theme"]]);
+  });
+
+  /** The prop stays OPTIONAL: an embed still works with nothing but its ref. */
+  it("theme is optional on all three", () => {
+    const app: VendoAppEmbedProps = {
+      refValue: { kind: "vendo/app-ref@1", appId: "app_x", title: "Dashboard", status: "building" },
+    };
+    const approval: VendoApprovalEmbedProps = {
+      refValue: { kind: "vendo/approval-ref@1", approvalId: "apr_x", summary: "Send the report" },
+    };
+    const result: VendoToolResultProps = { output: null };
+    expect([app.theme, approval.theme, result.theme]).toEqual([undefined, undefined, undefined]);
+  });
+
+  /** A PARTIAL is enough — the same `Partial<VendoTheme>` the provider takes,
+   *  so a surface changing only the density says only that. */
+  it("theme takes a partial theme, group by group", () => {
+    const props: VendoToolResultProps = { output: null, theme: { density: "compact" } };
+    expect(props.theme?.density).toBe("compact");
   });
 
   it("VendoToolResult takes any vendo_* tool output and dispatches on the envelope parse", () => {

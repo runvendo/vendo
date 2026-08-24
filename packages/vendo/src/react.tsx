@@ -95,6 +95,7 @@ export {
   defaultVendoTheme,
   resolveTheme,
   themeCssVariables,
+  type VendoTheme,
   // wire-types.ts
   type OpenSurface,
   type SeedDrift,

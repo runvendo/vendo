@@ -1,4 +1,5 @@
 import { log, type AppId, type Json, type ToolOutcome, type UIPayload } from "@vendoai/core";
+import type { VendoTheme } from "@vendoai/apps/contract";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useVendoProvider } from "../context.js";
 import { announcePin } from "../pin-events.js";
@@ -245,7 +246,7 @@ export interface VendoSlotPin {
  *  the original `children` as the visible recovery path (06-apps §8). Without any
  *  of the three, the children render UNTOUCHED (no wrapper — hosts may inline
  *  slots anywhere). */
-export function VendoSlot({ id, label, description, appId: appIdProp, pin, onAuthor, onParked, discover = true, emptyState, children }: {
+export function VendoSlot({ id, label, description, appId: appIdProp, pin, onAuthor, onParked, discover = true, emptyState, theme, children }: {
   id: string;
   /** What a person choosing this slot in the "Add to…" picker reads. Defaults
    *  to the id read as words ("net-worth-card" → "Net worth card"). */
@@ -281,6 +282,23 @@ export function VendoSlot({ id, label, description, appId: appIdProp, pin, onAut
     /** Primary button label. Default "Design a view". */
     ctaLabel?: string;
   };
+  /**
+   * This slot's own brand tokens, merged group by group over the provider's
+   * resolved theme — the same merge `VendoProvider` does over
+   * `defaultVendoTheme`, so with no provider above this merges over the
+   * defaults. The approval modal a press inside this slot parks on carries
+   * these tokens too, even though it portals to `<body>`.
+   *
+   * FRAME ONLY: it styles Vendo's own chrome — the ghost, the invitation, the
+   * failure cards, the ✦ pin chrome. The mounted view itself keeps the
+   * PROVIDER theme, whether it is an iframe-served app (themed over the app
+   * transport) or a `pin` rendered natively: the tree surface restates the
+   * provider tokens on its own root, so the local ones do not cascade in.
+   *
+   * A slot showing your OWN markup has no Vendo chrome on screen and gets no
+   * wrapper at all, so this does nothing there — by design.
+   */
+  theme?: Partial<VendoTheme>;
   children?: ReactNode;
 }) {
   const { client, components } = useVendoProvider();
@@ -367,7 +385,7 @@ export function VendoSlot({ id, label, description, appId: appIdProp, pin, onAut
   // placement resolves into a mountable app id, and this one never will.
   if (status === "failed" && discovery.appId !== undefined) {
     return (
-      <ChromeRoot>
+      <ChromeRoot theme={theme}>
         <div className="fl-slot" data-vendo-slot={id}>
           <SlotBuildFailed appId={discovery.appId} slotId={id} onChanged={() => void discovery.refresh()} />
         </div>
@@ -385,7 +403,7 @@ export function VendoSlot({ id, label, description, appId: appIdProp, pin, onAut
     // on a first-ever visit.
     if (discovery.isLoading) {
       return (
-        <ChromeRoot>
+        <ChromeRoot theme={theme}>
           <div className="fl-slot" data-vendo-slot={id}>
             <SlotGhost label="Loading app…" slotId={id} />
           </div>
@@ -400,7 +418,7 @@ export function VendoSlot({ id, label, description, appId: appIdProp, pin, onAut
     // The conversation surface carries that beat for the person who asked.
     if (status === "building") {
       return (
-        <ChromeRoot>
+        <ChromeRoot theme={theme}>
           <div className="fl-slot" data-vendo-slot={id}>
             <SlotGhost label="Building your view…" loading />
           </div>
@@ -417,7 +435,7 @@ export function VendoSlot({ id, label, description, appId: appIdProp, pin, onAut
       ctaLabel: emptyState?.ctaLabel ?? "Design a view",
     };
     return (
-      <ChromeRoot>
+      <ChromeRoot theme={theme}>
         <div className="fl-slot" data-vendo-slot={id}>
           <div className="fl-slot-ghost fl-slot-invite">
             <GhostSkeleton />
@@ -463,7 +481,7 @@ export function VendoSlot({ id, label, description, appId: appIdProp, pin, onAut
   );
   const pinTitle = discovery.title !== undefined && discovery.title !== "" ? discovery.title : name;
   return (
-    <ChromeRoot>
+    <ChromeRoot theme={theme}>
       <div className="fl-slot" data-vendo-slot={id}>
         {/* Only a PLACEMENT gets the ✦: a host-asserted `appId` prop is the
             host's own markup decision, and offering to unpin it would clear a

@@ -1,7 +1,8 @@
-import { createContext, useContext, useEffect, type CSSProperties, type ReactNode } from "react";
+import type { VendoTheme } from "@vendoai/apps/contract";
+import { createContext, useContext, useEffect, useMemo, type CSSProperties, type ReactNode } from "react";
 import { useVendoProvider } from "../context.js";
 import { useVendoStatus } from "../hooks/use-vendo-status.js";
-import { themeCssVariables } from "../theme.js";
+import { resolveTheme, themeCssVariables } from "../theme.js";
 import { PolicyNoticeBody } from "./policy-notice-body.js";
 import { ensureThemeFontStyles } from "./theme-fonts.js";
 
@@ -18,10 +19,39 @@ export function ensureChromeStyles(): void {
   document.head.append(style);
 }
 
-const ChromeRootContext = createContext(false);
+/** The theme the enclosing chrome boundary resolved, or null outside one. It
+    carries the VALUE rather than a bare presence flag so that a surface which
+    portals OUT of the boundary's DOM subtree can still read the theme of the
+    surface that spawned it (see {@link useChromeTheme}). */
+const ChromeRootContext = createContext<VendoTheme | null>(null);
 
 export function useChromeRootPresence(): boolean {
-  return useContext(ChromeRootContext);
+  return useContext(ChromeRootContext) !== null;
+}
+
+/**
+ * The theme in force at this point in the REACT tree: the nearest chrome
+ * boundary's resolved theme, else the provider's.
+ *
+ * This is what anything portalling to `document.body` reads. Those surfaces
+ * hand-roll their own `.vendo-root` boundary (the comment above
+ * {@link ensureChromeStyles}), so a DOM-cascade inheritance never reaches
+ * them — but they are still rendered from inside their spawning surface's
+ * React subtree, and that surface may carry its own `theme`.
+ */
+export function useChromeTheme(): VendoTheme {
+  const boundary = useContext(ChromeRootContext);
+  const provider = useVendoProvider().theme;
+  return boundary ?? provider;
+}
+
+/** A surface's own partial theme, merged over the provider's resolved theme —
+    the same merge `VendoProvider` applies over `defaultVendoTheme`. With no
+    provider above, the provider value IS `defaultVendoTheme`, so a bare surface
+    merges over the defaults. */
+export function useSurfaceTheme(theme?: Partial<VendoTheme>): VendoTheme {
+  const provider = useVendoProvider().theme;
+  return useMemo(() => resolveTheme(provider, theme), [provider, theme]);
 }
 
 /**
@@ -45,17 +75,20 @@ function AutomaticPolicyNotice() {
 function ChromeBoundary({
   children,
   className,
+  theme: override,
   automaticPolicyNotice,
 }: {
   children: ReactNode;
   className?: string;
+  theme?: Partial<VendoTheme>;
   automaticPolicyNotice: boolean;
 }) {
-  const { theme, fonts } = useVendoProvider();
+  const { fonts } = useVendoProvider();
+  const theme = useSurfaceTheme(override);
   useEffect(ensureChromeStyles, []);
   useEffect(() => ensureThemeFontStyles(fonts ?? ""), [fonts]);
   return (
-    <ChromeRootContext.Provider value>
+    <ChromeRootContext.Provider value={theme}>
       <div
         className={["vendo-root", className].filter(Boolean).join(" ")}
         // Decision 4 (spec 2026-08-05): the widget excludes itself from the
@@ -76,14 +109,21 @@ function ChromeBoundary({
 export function ChromeRoot({
   children,
   className,
+  /** This surface's own brand tokens, merged over the provider's. */
+  theme,
   /** Opt IN to the developer policy banner (dev/console surfaces only). */
   automaticPolicyNotice = false,
 }: {
   children: ReactNode;
   className?: string;
+  theme?: Partial<VendoTheme>;
   automaticPolicyNotice?: boolean;
 }) {
   const nested = useChromeRootPresence();
-  if (nested) return <>{children}</>;
-  return <ChromeBoundary className={className} automaticPolicyNotice={automaticPolicyNotice}>{children}</ChromeBoundary>;
+  // A nested boundary is redundant — the ancestor already emitted these exact
+  // tokens — UNLESS this surface carries a theme of its own, which the
+  // pass-through would silently drop. Then the inner boundary restates the
+  // merged tokens and the cascade does the rest.
+  if (nested && theme === undefined) return <>{children}</>;
+  return <ChromeBoundary className={className} theme={theme} automaticPolicyNotice={automaticPolicyNotice}>{children}</ChromeBoundary>;
 }

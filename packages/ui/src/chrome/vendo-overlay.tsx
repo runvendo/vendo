@@ -1,7 +1,8 @@
 import type { UIPayload } from "@vendoai/core";
+import type { VendoTheme } from "@vendoai/apps/contract";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore, type ComponentProps, type ComponentType, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { useVendoProvider, useVendoDiscoverability, useVendoTheme } from "../context.js";
+import { useVendoProvider, useVendoDiscoverability } from "../context.js";
 import { useMobileTakeover } from "../hooks/use-mobile-takeover.js";
 import { useSignedOut } from "../hooks/identity-state.js";
 import { themeCssVariables } from "../theme.js";
@@ -9,7 +10,7 @@ import { PayloadView } from "../tree/renderer.js";
 import { PlacementAction } from "./add-to-picker.js";
 import { useApprovalModal } from "./approval-modal.js";
 import { BeatRail } from "./build-beat.js";
-import { ChromeRoot } from "./chrome-root.js";
+import { ChromeRoot, useSurfaceTheme } from "./chrome-root.js";
 import { hasSeen, markSeen, type VendoDiscoverability, type VendoGreeting } from "./discoverability.js";
 import { HistoryPicker } from "./history-picker.js";
 import { inertBehind } from "./inert-behind.js";
@@ -96,6 +97,20 @@ export interface VendoOverlayProps {
    * provider's `greeting`.
    */
   greeting?: VendoGreeting;
+  /**
+   * This surface's own brand tokens, merged group by group over the provider's
+   * resolved theme — the same merge `VendoProvider` does over
+   * `defaultVendoTheme`, so with no provider above this merges over the
+   * defaults. The panel portals to `<body>` and the approval modal portals
+   * again from inside it; both carry these tokens.
+   *
+   * FRAME ONLY: it styles Vendo's own chrome — launcher, panel, thread,
+   * composer. A generated view mounted in the conversation keeps the PROVIDER
+   * theme, whether it is iframe-served (themed over the app transport) or
+   * rendered natively: the tree surface restates the provider tokens on its
+   * own root, so the local ones do not cascade in.
+   */
+  theme?: Partial<VendoTheme>;
   /**
    * Where the panel sits while open.
    *
@@ -624,6 +639,7 @@ export function VendoOverlay({
   thread: Thread = VendoThread,
   discoverability,
   greeting,
+  theme: themeOverride,
   placement = "center",
   dockWidth = 420,
   signedOutNotice,
@@ -645,7 +661,10 @@ export function VendoOverlay({
   // previous-conversations picker (useRememberedConversation above).
   const { resumeThreadId, setResumeThreadId, historyOpen, setHistoryOpen, forgetForFreshStart } =
     useRememberedConversation(conversationKey);
-  const theme = useVendoTheme();
+  // The panel portals to <body>, so it hand-rolls the same boundary ChromeRoot
+  // below builds — off the SAME resolved theme, or the two halves of one
+  // surface could disagree.
+  const theme = useSurfaceTheme(themeOverride);
   const { client } = useVendoProvider();
   // H2-E / #1372 — the wire refused this visitor for missing identity. The
   // launcher stays (nothing about wire health hides it); the PANEL answers
@@ -1137,7 +1156,7 @@ export function VendoOverlay({
   ) : null;
 
   return (
-    <ChromeRoot>
+    <ChromeRoot theme={themeOverride}>
       {launcherHidden ? null : (
         <button
           ref={launcherRef}

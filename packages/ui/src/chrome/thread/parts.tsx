@@ -9,6 +9,7 @@ import { PlacementAction } from "../add-to-picker.js";
 import { ApprovalCard } from "../approval-card.js";
 import { useApprovalModal } from "../approval-modal.js";
 import { ApprovalSheet } from "../approval-sheet.js";
+import { useChromeTheme } from "../chrome-root.js";
 import { ThreadAutomationConsent } from "./automation-consent.js";
 import { BuildBeat, toolPresentation } from "../build-beat.js";
 import { ConnectCard } from "../connect-card.js";
@@ -868,7 +869,12 @@ export function ThreadApprovals({ approvals, risks, guardApprovals, cardRefs, re
   respond: (response: { id: string; approved: boolean }) => void;
   onMorph: (morph: Omit<MorphToastProps, "onDone">) => void;
 }) {
-  const { client, theme, tools } = useVendoProvider();
+  const { client, tools } = useVendoProvider();
+  // The morph toast portals to <body>, so it takes its tokens as a prop rather
+  // than by cascade. They are the ENCLOSING surface's — a themed VendoOverlay's
+  // panel is where the approval was decided, so that is the theme the pill
+  // flies away in.
+  const theme = useChromeTheme();
   // Below the mobile breakpoint the NEWEST parked approval
   // presents as a bottom sheet (thumb-zone consent); older parked ones stay
   // in-list behind it so the thread record is complete when the sheet closes.

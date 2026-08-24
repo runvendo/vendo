@@ -128,6 +128,44 @@ overwritten, and `vendo sync --theme-refresh` takes your app's value back.
   Leave it unset and the server reads `.vendo/theme.json`.
 </Note>
 
+## One surface, a different theme
+
+The provider sets the brand for everything under it. A single surface can
+differ — a dark assistant panel on a light page, a compact slot in a dense
+console — with its own `theme` prop.
+
+```tsx
+import { VendoOverlay, VendoSlot } from "@vendoai/vendo/react";
+
+<VendoSlot id="net-worth-card" />
+<VendoSlot id="ops-console" theme={{ density: "compact" }} />
+<VendoOverlay theme={darkPanel} />
+```
+
+It merges over the provider's resolved theme group by group, the same way the
+provider's merges over Vendo's default — so a surface states only what differs,
+and the groups it leaves out stay the brand. With no provider above it, the
+merge runs over the default.
+
+Six surfaces take it: `VendoOverlay`, `VendoSlot`, `VendoTrigger`,
+`VendoAppEmbed`, `VendoApprovalEmbed`, and `VendoToolResult`. Type it with
+`Partial<VendoTheme>`.
+
+What a surface sends to `document.body` goes with it. The overlay panel, the
+approval modal a press parks on, and the toast stack all wear the theme of the
+surface they came from rather than falling back to the provider's.
+
+<Warning>
+  A surface theme styles Vendo's **frame**, not the view inside it. A generated
+  view keeps the **provider** theme either way it mounts — served in an iframe,
+  or rendered natively as a pin — because the view is its own theme boundary and
+  restates the provider's tokens on itself. Theme a surface to change the chrome
+  around a generated view; change the provider to change the view.
+</Warning>
+
+A slot showing your own markup renders it untouched, with no Vendo wrapper at
+all. There is no chrome on screen there, so `theme` has nothing to style.
+
 ## Where to go next
 
 Theme is how it looks. These three are what it knows.

@@ -17,7 +17,7 @@ import { useApprovals } from "../hooks/use-approvals.js";
 import { themeCssVariables } from "../theme.js";
 import { consentAsk, toolPresentation } from "./build-beat.js";
 import { NOTE_SEPARATOR } from "./card-shell.js";
-import { ensureChromeStyles } from "./chrome-root.js";
+import { ensureChromeStyles, useChromeTheme } from "./chrome-root.js";
 import { fieldRows } from "./field-rows.js";
 
 export interface VendoToastAction {
@@ -251,7 +251,11 @@ export interface VendoToastsProps {
 
 /** 08-ui §4 chrome — mount once per page. */
 export function VendoToasts({ placement = "bottom-right", approvals = false, pollMs = 5_000 }: VendoToastsProps = {}): ReactNode {
-  const { theme } = useVendoProvider();
+  // Mounted bare (the usual shape) this is the provider theme. Mounted inside a
+  // chrome surface that carries its own `theme`, the stack wears that one — it
+  // portals out of the DOM subtree, so context is the only way the boundary
+  // reaches it.
+  const theme = useChromeTheme();
   const toasts = useToastQueue();
   // The stack portals out of any ChromeRoot subtree, so it owns its own style
   // injection — a page that mounts ONLY VendoToasts still renders styled.
