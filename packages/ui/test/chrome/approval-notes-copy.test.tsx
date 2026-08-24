@@ -31,7 +31,7 @@ const approval: ApprovalRequest = {
 const FACTS = [
   "Invoice id: inv_42",
   "Permanent: Yes",
-  "This makes a change you can’t undo, as you.",
+  "This makes a change you can’t undo, and it runs as you.",
   "asked in an app",
 ];
 
@@ -56,7 +56,7 @@ describe("the ask's quiet line, copied", () => {
     expect(Array.from(list.querySelectorAll("li")).map(item => item.textContent)).toEqual([
       "Invoice id: inv_42",
       " · Permanent: Yes",
-      " · This makes a change you can’t undo, as you.",
+      " · This makes a change you can’t undo, and it runs as you.",
       " · asked in an app",
     ]);
     // The WCAG 1.3.1 half: every child of the list is an item. A separator

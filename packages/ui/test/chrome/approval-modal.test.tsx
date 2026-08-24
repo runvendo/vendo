@@ -118,7 +118,7 @@ describe("the screen-initiated approval modal", () => {
       }));
       await waitFor(() => expect(ask()).toBe("Archive project?"));
       expect(rows()).toEqual(["Project: Orion", "Notify team: Yes"]);
-      expect(notes()).toEqual(["This makes a change you can’t undo, as you."]);
+      expect(notes()).toEqual(["This makes a change you can’t undo, and it runs as you."]);
     });
 
     it("lands focus on the dialog, never on Approve — the press that opened it must not spend the decision", async () => {

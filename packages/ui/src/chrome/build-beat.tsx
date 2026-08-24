@@ -102,9 +102,9 @@ const TARGET_FIELDS = ["recipient_name", "recipient", "payee", "to", "destinatio
  * safety the ruling exists to kill.
  */
 const CLASS_LINE: Record<string, string> = {
-  read: "This reads your data, as you.",
-  write: "This changes something in your account, as you.",
-  destructive: "This makes a change you can’t undo, as you.",
+  read: "This reads your data, and it runs as you.",
+  write: "This changes something in your account, and it runs as you.",
+  destructive: "This makes a change you can’t undo, and it runs as you.",
 };
 
 export function consentClassLine(risk: string): string {
