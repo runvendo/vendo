@@ -77,7 +77,7 @@ import type { VendoToolSearchConfig } from "@vendoai/harnesses/vendo";
 import { createUIMessageStream, createUIMessageStreamResponse, type LanguageModel, type UIMessage } from "ai";
 import { discoveryRail } from "./prompt.js";
 import { finishActiveTurn } from "./turn-liveness.js";
-import { isUserFilePath, userFilePath } from "./user-files.js";
+import { isUserFilePath, threadFilePath, uploadStagingPath, userFilePath, USER_UPLOADS } from "./user-files.js";
 import type { Limiter } from "./limits.js";
 
 export interface HarnessTurnsConfig {
@@ -269,6 +269,18 @@ export interface HarnessTurns {
     content: Uint8Array | string;
     contentType?: string;
   }): Promise<UploadedFile>;
+  /** The CHAT drop's landing pad. A dropped file is not a saved one — it belongs
+   *  to the conversation that is about to receive it, and the turn re-homes it
+   *  there. Until then it lives in staging under an address only the re-homer
+   *  and its sweep read. */
+  stageUpload(input: {
+    principal: Principal;
+    name: string;
+    content: Uint8Array | string;
+    contentType?: string;
+  }): Promise<UploadedFile>;
+  /** @internal The one write both file doors share. */
+  writeUserBytes(principal: Principal, path: string, content: Uint8Array | string): Promise<UploadedFile>;
   /** D6 — drop every thread a subject owns. */
   evictSubject(subject: string): Promise<void>;
 }
@@ -469,13 +481,20 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
     },
 
     async putUserFile(input) {
-      const path = userFilePath(input.name);
-      const bytes = typeof input.content === "string"
-        ? new TextEncoder().encode(input.content)
-        : input.content;
-      // The user's OWN mount and nothing else: no host projection to build and
-      // no org mounts to assert, because a drawer write addresses one subject.
-      const workspace = await sqlDoors().workspaces.open(input.principal);
+      return await this.writeUserBytes(input.principal, userFilePath(input.name), input.content);
+    },
+
+    async stageUpload(input) {
+      return await this.writeUserBytes(input.principal, uploadStagingPath(input.name), input.content);
+    },
+
+    /** The ONE server-side write both doors go through, so a shelved file and a
+     *  dropped one land the same way and differ only in their address. The
+     *  user's OWN mount and nothing else: no host projection to build and no org
+     *  mounts to assert, because this addresses one subject. */
+    async writeUserBytes(principal, path, content) {
+      const bytes = typeof content === "string" ? new TextEncoder().encode(content) : content;
+      const workspace = await sqlDoors().workspaces.open(principal);
       await workspace.writeFile(path, bytes);
       await workspace.commit();
       return { path, bytes: bytes.byteLength };

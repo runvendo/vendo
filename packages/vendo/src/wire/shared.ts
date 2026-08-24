@@ -93,7 +93,7 @@ export interface WireDeps {
       §3.3/§6), and a store that offers neither a SQL handle nor a StoreOps
       surface refuses THAT TURN, loudly, naming both options — where the old
       probe silently routed the whole deployment onto the legacy door. */
-  harness: Pick<HarnessTurns, "stream" | "threads" | "putUserFile">;
+  harness: Pick<HarnessTurns, "stream" | "threads" | "stageUpload">;
   guard: VendoGuard;
   /** Which optional subsystems this deployment mounted (`createVendo({ apps:
       false })` / `{ automations: false }`). An unmounted subsystem's routes are

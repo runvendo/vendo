@@ -36,7 +36,7 @@ export const fileRoutes: RouteEntry[] = [
     const bytes = new Uint8Array(await request.arrayBuffer());
     if (bytes.byteLength > max) throw overCap(name, bytes.byteLength, max, venue);
     const contentType = request.headers.get("content-type");
-    return json(await deps.harness.putUserFile({
+    return json(await deps.harness.stageUpload({
       principal: ctx.principal,
       name,
       content: bytes,

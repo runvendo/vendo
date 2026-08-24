@@ -130,12 +130,11 @@ const post = (vendo: Vendo, body: unknown, headers: Record<string, string>): Pro
 const bytes = (text: string): Uint8Array => new TextEncoder().encode(text);
 
 describe("the user's file drawer — real doors, real workspace", () => {
-  it("saves an upload where a LATER workspace open finds it", async () => {
+  it("saves a host push where a LATER workspace open finds it", async () => {
     const { vendo } = await compose();
-    const response = await upload(vendo, "ledger.csv", bytes("month,revenue\njan,31000\n"), await bearer());
+    const put = await vendo.putUserFile({ principal, name: "ledger.csv", content: "month,revenue\njan,31000\n" });
 
-    expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ path: "/user/files/ledger.csv", bytes: 24 });
+    expect(put).toEqual({ path: "/user/files/ledger.csv", bytes: 24 });
     // A workspace opened fresh — its own index read — sees the same bytes.
     expect(await readBack(vendo, "/user/files/ledger.csv")).toBe("month,revenue\njan,31000\n");
   });
@@ -187,7 +186,8 @@ describe("the user's file drawer — real doors, real workspace", () => {
     const response = await upload(vendo, "notes.txt", bytes("hello"), await bearer(), "text/plain");
 
     expect(response.status).toBe(200);
-    expect(await readBack(vendo, "/user/files/notes.txt")).toBe("hello");
+    const { path } = await response.json() as { path: string };
+    expect(await readBack(vendo, path)).toBe("hello");
   });
 
   it("refuses an over-cap upload on its DECLARED length, before reading it", async () => {
@@ -230,12 +230,11 @@ describe("the user's file drawer — real doors, real workspace", () => {
 
   it("REPLACES the file when the same name arrives again", async () => {
     const { vendo } = await compose();
-    const headers = await bearer();
 
-    await upload(vendo, "ledger.csv", bytes("jan,31000\n"), headers);
-    const second = await upload(vendo, "ledger.csv", bytes("jan,33000\nfeb,39000\n"), headers);
+    await vendo.putUserFile({ principal, name: "ledger.csv", content: "jan,31000\n" });
+    const second = await vendo.putUserFile({ principal, name: "ledger.csv", content: "jan,33000\nfeb,39000\n" });
 
-    expect(await second.json()).toEqual({ path: "/user/files/ledger.csv", bytes: 20 });
+    expect(second).toEqual({ path: "/user/files/ledger.csv", bytes: 20 });
     expect(await readBack(vendo, "/user/files/ledger.csv")).toBe("jan,33000\nfeb,39000\n");
   });
 
