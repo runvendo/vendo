@@ -186,9 +186,10 @@ const descriptors: ToolDescriptor[] = [
     name: VENDO_USER_FILES_LIST_TOOL,
     title: VENDO_TOOL_TITLES[VENDO_USER_FILES_LIST_TOOL]!,
     description:
-      "List the files this user has shared with you. They are saved and stay available in EVERY conversation, "
-      + "not just the one they were dropped in — so call this whenever the user refers to something they gave "
-      + "you and you cannot see it in this conversation.",
+      "List the files this user has kept — their shelf, which outlives every conversation. "
+      + "This is NOT where a file they dropped into chat lives: that is in the conversation's own "
+      + "files, under /user/threads/<thread>/files, and the bash tool reads it directly. Call this "
+      + "when the user refers to something they told you to save.",
     inputSchema: { $schema: DRAFT_2020_12, type: "object", properties: {}, additionalProperties: false },
     risk: "read",
   },
@@ -196,12 +197,12 @@ const descriptors: ToolDescriptor[] = [
     name: VENDO_USER_FILES_READ_TOOL,
     title: VENDO_TOOL_TITLES[VENDO_USER_FILES_READ_TOOL]!,
     description:
-      "Read one of the files this user has shared with you, by its name. "
+      "Read one of the files this user has kept, by its name. "
       + `It comes back at most ${LINES_PER_READ} lines at a time: when the result says truncated, call again with `
       + "offset set to the nextOffset it gave you, and keep going until it stops. offset counts LINES from the "
       + "start of the file, never characters. "
-      + "A file that is not text — a PDF, an image, a spreadsheet workbook, a parquet or database file — answers "
-      + "with its type and size and no content: say what it is instead of guessing at what is inside it.",
+      + "For a file dropped into THIS conversation, or for anything that is not plain text, use bash instead — "
+      + "it reads the same workspace and can parse PDFs, spreadsheets and Word documents.",
     inputSchema: {
       $schema: DRAFT_2020_12,
       type: "object",
@@ -218,9 +219,12 @@ const descriptors: ToolDescriptor[] = [
     name: VENDO_USER_FILES_PUT_TOOL,
     title: VENDO_TOOL_TITLES[VENDO_USER_FILES_PUT_TOOL]!,
     description:
-      "Save a file into this user's own files, under a name. It stays available in EVERY conversation, and a "
-      + "file already saved under that name is replaced. Send text as content; send anything else base64-encoded "
-      + `with encoding set to base64. Any type can be SAVED, but only ${READABLE_EXTENSIONS} read back as text.`,
+      "Put a file on this user's shelf, under a name — for something they asked you to keep, so it is "
+      + "there in EVERY future conversation. A file already kept under that name is replaced. "
+      + "Do NOT use this to stash working files: anything you produce for THIS conversation belongs in "
+      + "/user/threads/<thread>/files, which bash writes to directly. "
+      + "Send text as content; send anything else base64-encoded with encoding set to base64. "
+      + `Any type can be SAVED, but only ${READABLE_EXTENSIONS} read back as text here.`,
     inputSchema: {
       $schema: DRAFT_2020_12,
       type: "object",
