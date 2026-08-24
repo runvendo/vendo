@@ -106,11 +106,13 @@ describe("SEAM — what the upload door writes, the shell reads", () => {
 
   it("writes a file the workspace keeps, readable through the workspace door", async () => {
     const deployment = await compose();
-    await upload(deployment, "ledger.csv", "month,revenue\njan,31000\nfeb,39000\n", await bearer());
+    const uploaded = await upload(deployment, "ledger.csv", "month,revenue\njan,31000\nfeb,39000\n", await bearer());
+    const { path: staged } = await uploaded.json() as { path: string };
+    expect(staged).toMatch(/^\/user\/uploads\/[0-9a-f]{8}-ledger\.csv$/);
 
     const written = await run(
       deployment,
-      "mkdir -p /user/files && tail -n +2 /user/files/ledger.csv | sort -t, -k2 -nr > /user/files/ranked.csv",
+      `mkdir -p /user/files && tail -n +2 ${staged} | sort -t, -k2 -nr > /user/files/ranked.csv`,
     );
     expect(written.exitCode).toBe(0);
 
