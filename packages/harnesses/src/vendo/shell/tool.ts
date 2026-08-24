@@ -30,6 +30,9 @@ const DESCRIPTION =
   + "workspace: /user/threads/<thread>/files holds what they dropped in THIS conversation, "
   + "/user/apps/<app> holds an app's files, and /user/files is the shelf of things they asked you to "
   + "keep. /tmp is scratch that lasts this conversation and is never saved. "
+  + "When you build an app OUT OF a file the user dropped, `cp` it into "
+  + "/user/apps/<app>/ first and parse it there: a conversation's files are deleted with the "
+  + "conversation, and an app must not depend on one. "
   + "Binary formats are ordinary commands here: `pdftotext <file>`, `xlsx2csv <file> [sheet]` and "
   + "`docx2txt <file>` each write text to stdout, so they pipe into grep, awk and the rest. "
   + (JAVASCRIPT

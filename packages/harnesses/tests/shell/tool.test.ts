@@ -251,3 +251,12 @@ describe("the parsers, announced", () => {
     expect(descriptor?.description).toContain("docx2txt");
   });
 });
+
+describe("what the shell says about apps", () => {
+  it("tells the model to copy a file into the app it is building from it", async () => {
+    const [descriptor] = await createShellTools(async () => workspaceDouble()).descriptors();
+
+    expect(descriptor?.description).toContain("/user/apps/");
+    expect(descriptor?.description).toContain("cp");
+  });
+});
