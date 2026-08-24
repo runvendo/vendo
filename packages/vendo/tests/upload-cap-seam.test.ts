@@ -124,8 +124,11 @@ describe("createVendo({ uploadMaxBytes }) — the drop door's cap, moved", () =>
     const response = await upload(vendo, "export.bin", big, await bearer());
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ path: "/user/files/export.bin", bytes: big.byteLength });
-    expect((await readBack(vendo, "/user/files/export.bin")).length).toBe(big.byteLength);
+    // A drop STAGES; the cap is what this test is about, so the assertion is the
+    // byte count and that every one of them landed where the door said.
+    const { path, bytes } = await response.json() as { path: string; bytes: number };
+    expect(bytes).toBe(big.byteLength);
+    expect((await readBack(vendo, path)).length).toBe(big.byteLength);
   });
 
   it("refuses on the DECLARED length too, with the same copy", async () => {

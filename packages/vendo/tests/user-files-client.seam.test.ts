@@ -63,7 +63,8 @@ describe("the shipped client's upload against the shipped door", () => {
     // percent-encoding and the door's decoding agree on one filename.
     const saved = await client.files.upload(csv("month,revenue\njan,31000\n"));
 
-    expect(saved).toEqual({ path: "/user/files/sales 2026.csv", bytes: 24 });
+    // A drop stages, and the name — space and all — survives the round trip.
+    expect(saved).toEqual({ path: expect.stringMatching(/^\/user\/uploads\/[0-9a-f]{8}-sales 2026\.csv$/), bytes: 24 });
     const workspace = await vendo.harness.workspace(ADA);
     expect(await workspace.readFile(saved.path)).toBe("month,revenue\njan,31000\n");
   });
