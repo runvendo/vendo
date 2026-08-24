@@ -28,7 +28,13 @@ import {
   type AppSourceFile,
 } from "../src/contract/index.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { appMountFor, commitApp, invalidSourcePath, type AppSourceSeam } from "../src/server/persistence/app-source.js";
+import {
+  appMountFor,
+  commitApp,
+  invalidSourcePath,
+  sealBundleBlobs,
+  type AppSourceSeam,
+} from "../src/server/persistence/app-source.js";
 
 const APP = "app_source" as AppId;
 const ADA = "user_ada";
@@ -313,6 +319,49 @@ describe("commitApp spills past the inline cap", () => {
 
     await expect(commitApp(APP, [`/user/apps/${APP}/big.ts`], workspace, ctx, seam))
       .rejects.toThrow(/configure one, or keep the file smaller/);
+  });
+});
+
+describe("sealBundleBlobs refuses before it writes", () => {
+  const bytesOf = (text: string) => new TextEncoder().encode(text);
+  const countingBlobs = (): { blobs: FilesAdapter; written: string[] } => {
+    const written: string[] = [];
+    return {
+      written,
+      blobs: {
+        async put(key) { written.push(key); },
+        async get() { return undefined; },
+        async delete() {},
+      },
+    };
+  };
+
+  it("writes NOTHING when the entry is not among the built files", async () => {
+    // An entry the builder never produced is a rejected seal, and every blob
+    // written before the refusal is an orphan: content-addressed keys are never
+    // referenced by any `AppBundle`, so nothing ever reads or reaps them.
+    const { blobs, written } = countingBlobs();
+
+    await expect(sealBundleBlobs(APP, [
+      { path: "dist/other.js", bytes: bytesOf("a") },
+      { path: "src/app.tsx", bytes: bytesOf("b") },
+    ], "dist/app.js", blobs)).rejects.toThrow(/is not among/);
+
+    expect(written).toEqual([]);
+  });
+
+  it("still seals every file when the entry IS among them", async () => {
+    const { blobs, written } = countingBlobs();
+
+    const bundle = await sealBundleBlobs(APP, [
+      { path: "dist/app.js", bytes: bytesOf("entry") },
+      { path: "src/app.tsx", bytes: bytesOf("source") },
+    ], "dist/app.js", blobs);
+
+    expect(written).toHaveLength(2);
+    expect(bundle.entry).toHaveLength(64);
+    expect(bundle.assets).toEqual({ "src/app.tsx": expect.any(String) });
+    expect(bundle.bytes).toBe(bytesOf("entry").byteLength + bytesOf("source").byteLength);
   });
 });
 

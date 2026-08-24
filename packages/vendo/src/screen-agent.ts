@@ -1204,6 +1204,11 @@ export async function assembleScreen(
       // door's business (`make-tool.ts`'s escalate arm), which is what keeps
       // this loop unable to spend a machine.
       record.escalated = why;
+      // …and the turn ends here, the same way a closing save ends it. Recording
+      // the line and returning left the drive taking further steps, still
+      // offered `save_app` and `edit_app`, so a screen could be written and
+      // painted for an app whose build is waiting on the person's yes.
+      ended?.abort();
       return { asked: true };
     },
   };

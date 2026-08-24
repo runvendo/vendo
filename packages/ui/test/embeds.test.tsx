@@ -244,6 +244,19 @@ describe("existing-agents embeds", () => {
       expect(screen.getByText("Weather board")).toBeDefined();
     });
 
+    it("announces the build's line, so a detached build reaches a screen reader too", async () => {
+      // The build's own progress lands in this one span, replaced word by word.
+      // Without live-region semantics a screen-reader user is told "Building
+      // Weather board…" once and then hears nothing for the whole build.
+      const building: VendoAppRef = { kind: "vendo/app-ref@1", appId: "app_building", title: "Weather board", status: "building" };
+      mount(<VendoAppEmbed refValue={building} />);
+      await waitFor(() => expect(screen.getByText(/Building/)).toBeDefined());
+
+      const line = screen.getByText(/Building/);
+      expect(line.getAttribute("aria-live")).toBe("polite");
+      expect(line.getAttribute("role")).toBe("status");
+    });
+
     it("polls the build window under the pending flag, so a miss is a 200 envelope and never a console 404", async () => {
       const building: VendoAppRef = { kind: "vendo/app-ref@1", appId: "app_building", title: "Weather board", status: "building" };
       mount(<VendoAppEmbed refValue={building} />);

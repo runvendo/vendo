@@ -53,6 +53,19 @@ const WHY = "this needs a real npm package running real code, which a screen can
  *  nothing: an assembly FAILURE, which must never become a build proposal. */
 const BROKEN = "not a document at all";
 
+/** A screen every stage of the gauntlet passes — the smallest thing that can
+ *  legitimately paint, so a save reaching the workspace really would land. */
+const SCREEN = `import { Stack, Text } from "@vendo/screen";
+
+export default function Spending() {
+  return (
+    <Stack gap={12}>
+      <Text text="This month" variant="heading" />
+    </Stack>
+  );
+}
+`;
+
 const ZERO_USAGE = {
   inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },
   outputTokens: { total: 0, text: 0, reasoning: 0 },
@@ -191,6 +204,30 @@ describe("a chat ask bigger than a screen reaches the build lane", () => {
     expect(row?.building).toBeUndefined();
 
     // NOTHING WAS SPENT. The turn ended with the sandbox untouched.
+    expect(walked.sandbox.claims).toBe(0);
+  }, 60_000);
+
+  it("ENDS THE TURN: nothing is offered another step once the escalation is recorded", async () => {
+    // The hand's own contract says "This ends your turn", and it has to hold on
+    // this side of the model: a drive that keeps going is offered `save_app` and
+    // `edit_app` again, so a screen can be written and painted for an app whose
+    // build is still waiting on the person's yes.
+    const walked = await walk({
+      turns: [
+        call(ESCALATE_TOOL, { why: WHY }, "c1"),
+        call(SAVE_APP_TOOL, { content: SCREEN }, "c2"),
+        speak("saved anyway"),
+      ],
+    });
+
+    // ONE model call: the escalation was the last thing this drive did. The two
+    // scripted turns behind it were never reached.
+    expect(walked.model.toolNamesPerCall).toHaveLength(1);
+    expect(walked.receipt?.status).toBe("awaiting-consent");
+    // …and the row is still only an OFFER: no screen was written past the ask.
+    const row = await walked.vendo.apps.get(walked.receipt!.id, ctx);
+    expect(row?.proposal).toBeDefined();
+    expect(row?.source).toBeUndefined();
     expect(walked.sandbox.claims).toBe(0);
   }, 60_000);
 

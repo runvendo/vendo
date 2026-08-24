@@ -88,6 +88,9 @@ export function useApp(appId: AppId, { enabled = true }: AppOptions = {}): {
         }
         setApp(nextApp);
         setSurface(nextSurface);
+        // The line was what the build said WHILE it was pending. The app is
+        // here now, so it is no longer true of anything.
+        setStatus(undefined);
         loadedRef.current = true;
         setIsLoading(false);
         return;

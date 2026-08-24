@@ -92,6 +92,14 @@ const runtimeWith = (screen?: ScreenAssembler, options: {
           available: () => true,
           build: async () => ({ kind: "failed" as const, why: "never reached" }),
         },
+        // The other half of the same capability: `build.available()` is false
+        // without somewhere to seal the bytes, so a builder alone is not a
+        // deployment that can be asked to build.
+        files: {
+          put: async () => {},
+          get: async () => undefined,
+          delete: async () => {},
+        },
       }
       : {}),
     ...(screen === undefined ? {} : { screen }),
@@ -173,7 +181,7 @@ export default function Spending() {
 const EDITED = SCREEN.replace("This month", "Last month");
 
 describe("an escalation and the build that finishes it share ONE app id", () => {
-  it("the build runs at the id the screen agent was handed, briefed with the ask itself", async () => {
+  it("the ASK is offered at the id the screen agent was handed, holding the ask itself, with nothing spent", async () => {
     const { seen, assembler } = recordingAssembler({ kind: "escalate", why: "this needs real code" });
     const { agentTools, briefs, store } = runtimeWith(assembler, { sandbox: true });
 

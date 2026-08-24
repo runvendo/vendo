@@ -115,7 +115,10 @@ export function bundleDocument(entry: Uint8Array): Uint8Array {
   // A bundle carries markup in its own strings, and a raw `</script` inside an
   // inline script ends the script early — the app that renders HTML snippets
   // would ship broken.
-  const script = decoder.decode(entry).split("</script").join("<\\/script");
+  // Case-insensitively, because the HTML parser matches an end tag that way
+  // (HTML5 §13.2.6.4) — and the tag's own case is KEPT, because the escape
+  // lands inside a JavaScript string literal the app renders verbatim.
+  const script = decoder.decode(entry).replace(/<\/(script)/giu, "<\\/$1");
   return encoder.encode('<!doctype html><meta charset="utf-8">'
     + "<style>html,body{margin:0;background:transparent}</style>"
     + '<div id="root"></div>'
@@ -182,7 +185,11 @@ export const createBuildDoor = (
     // existing compare-and-swap picks the head. The loser survives as the
     // history version appended below.
     const doc = await updateAppDocument(input.appId, (previous) => {
-      const { building: _building, buildStatus: _status, proposal: _proposal, ...rest } = previous;
+      // `buildFailed` goes with the rest of the build state: the watchdog can
+      // tombstone a lane that was merely slow, and a bundle that then lands on
+      // that row would read as a failure forever (`entryFor` shows the card).
+      const { building: _building, buildStatus: _status, proposal: _proposal,
+        buildFailed: _failed, ...rest } = previous;
       return { ...rest, ui: "bundle", bundle };
     });
     await history.append(input.appId, doc, {
@@ -214,7 +221,10 @@ export const createBuildDoor = (
   };
 
   return {
-    available: () => builder?.available() ?? false,
+    // A files adapter is half the capability: `seal` has nowhere to put the
+    // bytes without one, so a deployment missing it would raise the consent
+    // card and spend the yes on a build that throws at its landing.
+    available: () => builder?.available() === true && config.files !== undefined,
     bundleDocument: serveBundle,
 
     async propose(input, ctx) {
@@ -247,7 +257,9 @@ export const createBuildDoor = (
         // an ask standing with no build behind it — a question the person can
         // answer yes to and nothing happens. Taken back through the same verb the
         // chat door uses for an ask nobody needs any more.
-        await config.guard.abandonApprovals?.([approvalId], guardCtx);
+        // Best-effort, and swallowed: a cleanup that fails too must not become
+        // the answer the caller reacts to instead of the write that failed.
+        await config.guard.abandonApprovals?.([approvalId], guardCtx).catch(() => undefined);
         throw error;
       }
       return { approvalId };
@@ -257,11 +269,6 @@ export const createBuildDoor = (
       const parked = await parkedBuilds.byApproval(approvalId);
       if (parked === null) return;
       const { appId, prompt, why, ctx } = parked;
-      // Read raw and untyped, like the placement read: one unparseable row must
-      // not decide how every other build fails.
-      const record = await engine.get(APPS_COLLECTION, appId);
-      const existing = (record?.data as { doc?: { bundle?: unknown; name?: string } } | null)?.doc;
-      const alreadySealed = existing?.bundle !== undefined;
       /**
        * The ONE terminal landing every failure shares: the tombstone that turns
        * the claimed slot into the honest failure card. A denial is one of them —
@@ -276,9 +283,20 @@ export const createBuildDoor = (
        * so naming it from the prompt renamed the person's app to a 60-character
        * cut of what they typed — and that name then rode into the version
        * history. `fallbackAppName` is left for the row that has no name to keep.
+       *
+       * READ AT REFUSAL TIME, never before the build. The watchdog below fires
+       * minutes after `resume` began, and a snapshot taken back then says the
+       * row is unsealed when the build has since sealed it (the tombstone would
+       * replace a working app) and says the row exists when the person has since
+       * deleted the app (the tombstone would stand it back up). Read raw and
+       * untyped, like the placement read: one unparseable row must not decide
+       * how every other build fails.
        */
       const refuse = async (reason: string): Promise<void> => {
-        if (!alreadySealed) {
+        const record = await engine.get(APPS_COLLECTION, appId);
+        if (record === null) return;
+        const existing = (record.data as { doc?: { bundle?: unknown; name?: string } } | null)?.doc;
+        if (existing?.bundle === undefined) {
           return await markUnbuilt(appId, existing?.name ?? fallbackAppName(prompt), reason, ctx);
         }
         await updateAppDocument(appId,

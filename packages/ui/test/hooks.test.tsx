@@ -101,6 +101,20 @@ describe("headless hooks", () => {
     expect(result.current.surface?.kind).toBe("tree");
   });
 
+  it("drops the build's last status line once the app itself lands", async () => {
+    // `status` is what the build last said about itself WHILE the surface was
+    // pending. Left standing after the app arrives, a host reading the hook
+    // shows "Starting a build machine…" over a built app forever.
+    wire.state.pendingScreens.set("app_1", 1);
+    wire.state.buildStatus.set("app_1", "Starting a build machine…");
+    const { result } = renderHook(() => useApp("app_1"), { wrapper });
+
+    await waitFor(() => expect(result.current.status).toBe("Starting a build machine…"));
+    await waitFor(() => expect(result.current.surface?.kind).toBe("tree"), { timeout: 10_000 });
+
+    expect(result.current.status).toBeUndefined();
+  }, 20_000);
+
   it("ignores a stale app response after appId changes", async () => {
     let releaseFirst!: () => void;
     const firstGate = new Promise<void>(resolve => { releaseFirst = resolve; });

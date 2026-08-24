@@ -11,6 +11,7 @@
  */
 import {
   VENDO_APP_FORMAT,
+  VendoError,
   engineOverAdapter,
   type AppId,
   type FilesAdapter,
@@ -23,6 +24,8 @@ import {
   type AppBuilder,
   type BuildOutcome,
 } from "../src/contract/index.js";
+import { bundleDocument, createBuildDoor } from "../src/server/doors/build-door.js";
+import { APPS_COLLECTION } from "../src/server/persistence/persistence.js";
 import { runMakeTool } from "../src/server/doors/make-tool.js";
 import { readBundleBlob } from "../src/server/persistence/app-source.js";
 import { createApps, type AppsConfig } from "../src/server/index.js";
@@ -81,7 +84,7 @@ const memoryBlobs = () => {
   return adapter;
 };
 
-const setup = (options: { build?: AppBuilder } = {}) => {
+const setup = (options: { build?: AppBuilder; files?: false } = {}) => {
   const store = memoryStore();
   const files = memoryBlobs();
   const guard = guardFixture();
@@ -92,7 +95,7 @@ const setup = (options: { build?: AppBuilder } = {}) => {
     tools,
     catalog: [],
     screen,
-    files,
+    ...(options.files === false ? {} : { files }),
     ...(options.build === undefined ? {} : { build: options.build }),
   };
   const runtime = createApps(config);
@@ -184,6 +187,149 @@ describe("the decision alone starts the build", () => {
     expect(row?.proposal).toBeUndefined();
     expect(row?.buildFailed).toMatchObject({ reason: expect.stringContaining("not approved") });
     expect(await engine.get(PARKED_BUILD_COLLECTION, approvalId)).toBeNull();
+  });
+});
+
+describe("the gate refuses a build this deployment could never seal", () => {
+  it("is unavailable with a builder but no files adapter, so no card is ever raised", async () => {
+    // `seal` needs somewhere to put the bytes. Without it the yes was spent on a
+    // build that throws at the seal, so the ask must not be put at all.
+    const { builder, built } = recordingBuilder();
+    const { guard, make } = setup({ build: builder, files: false });
+
+    const receipt = receiptOf(await make());
+
+    expect(receipt.status).toBe("failed");
+    expect(receipt.say).toContain("build machine");
+    expect(guard.approvals).toEqual([]);
+    expect(built).toEqual([]);
+  });
+});
+
+/** The row a refusal lands on is read at the moment it lands on it. A detached
+ *  lane's watchdog fires minutes after `resume` began, by which time the row may
+ *  have been sealed by the very build it was meant to catch — or deleted. */
+describe("a refusal reads the row it is refusing", () => {
+  type Engine = ReturnType<typeof engineOverAdapter>;
+  /** The one seam a case can use to move the row WHILE the build is in the box. */
+  const laneThat = (
+    work: (engine: Engine, appId: AppId) => Promise<void>,
+    outcome: BuildOutcome,
+  ): { builder: AppBuilder; bind(engine: Engine): void } => {
+    let engine: Engine | undefined;
+    return {
+      bind(next) { engine = next; },
+      builder: {
+        available: () => true,
+        async build(request) {
+          if (engine !== undefined) await work(engine, request.appId);
+          return outcome;
+        },
+      },
+    };
+  };
+  const patchDoc = async (engine: Engine, appId: AppId, patch: Record<string, unknown>): Promise<void> => {
+    const record = await engine.get(APPS_COLLECTION, appId);
+    if (record === null) return;
+    const data = record.data as { doc: Record<string, unknown> };
+    await engine.put(APPS_COLLECTION, { ...record, data: { ...data, doc: { ...data.doc, ...patch } } });
+  };
+  /** Drive one consented build to its terminal landing. */
+  const ran = async (lane: ReturnType<typeof laneThat>) => {
+    const composed = setup({ build: lane.builder });
+    lane.bind(composed.engine);
+    const receipt = receiptOf(await composed.make());
+    composed.guard.decide(composed.guard.approvals[0]?.id ?? "", true);
+    await new Promise((resolve) => setImmediate(resolve));
+    return await composed.rowOf(receipt.id);
+  };
+
+  it("leaves a SEALED app alone when the refusal lands after the seal", async () => {
+    const bundle = { entry: "a".repeat(64), bytes: 4, sealedAt: "2026-08-24T00:00:00.000Z" };
+    const row = await ran(laneThat(
+      async (engine, appId) => patchDoc(engine, appId, { ui: "bundle", bundle }),
+      { kind: "failed", why: "the build never finished" },
+    ));
+
+    // The app the person owns survives a refusal that arrived after it: the
+    // bundle is theirs, and only the build state goes.
+    expect(row?.bundle).toMatchObject({ entry: bundle.entry });
+    expect(row?.buildFailed).toBeUndefined();
+    expect(row?.building).toBeUndefined();
+  });
+
+  it("never resurrects an app that was DELETED while its build ran", async () => {
+    const row = await ran(laneThat(
+      async (engine, appId) => { await engine.delete(APPS_COLLECTION, appId); },
+      { kind: "failed", why: "the box went away" },
+    ));
+
+    // A deleted app can never mount again (apps-surface.ts). A failure card put
+    // back at its id is an app the person deleted, standing again.
+    expect(row).toBeNull();
+  });
+
+  it("a seal clears a failure an earlier terminal write already recorded", async () => {
+    const entry = "app.js";
+    const bytes = new TextEncoder().encode("console.log('built')");
+    // The watchdog tombstoned this row while the box was still working, and the
+    // box then came back with a real bundle. Only one of the two is the truth.
+    const row = await ran(laneThat(
+      async (engine, appId) => patchDoc(engine, appId, {
+        buildFailed: { reason: "never finished", at: "2026-08-24T00:00:00.000Z" },
+      }),
+      { kind: "built", files: [{ path: entry, bytes }], entry },
+    ));
+
+    expect(row?.bundle).toBeDefined();
+    // A built app is not a failed one: the slot reads `buildFailed` and would
+    // show the failure card over a bundle that landed.
+    expect(row?.buildFailed).toBeUndefined();
+  });
+});
+
+describe("bundleDocument cannot be closed early by the bundle's own text", () => {
+  const decoder = new TextDecoder();
+  const documentFor = (source: string) => decoder.decode(bundleDocument(new TextEncoder().encode(source)));
+
+  it("escapes every case of a script end tag, because the HTML parser matches them all", () => {
+    // HTML5 §13.2.6.4 matches the script end tag ASCII-case-insensitively, so a
+    // bundle carrying "</SCRIPT>" in a string literal closes the inline script
+    // exactly as a lowercase one does.
+    for (const closing of ["</script>", "</SCRIPT>", "</Script>", "</ScRiPt>"]) {
+      const html = documentFor(`const markup = "${closing}";`);
+      expect(html, closing).toContain("<\\/");
+      // One opening tag, one closing tag: the document the frame boots.
+      expect(html.match(/<\/script/gu), closing).toHaveLength(1);
+    }
+  });
+
+  it("keeps the bundle's own bytes, case and all — only the slash is escaped", () => {
+    // The escape lives inside a JavaScript string literal, so lowercasing it
+    // would change what the app renders.
+    expect(documentFor('const markup = "</SCRIPT>";')).toContain('"<\\/SCRIPT>"');
+  });
+});
+
+describe("propose never lets its cleanup hide the write that failed", () => {
+  it("throws the original error even when abandonApprovals throws too", async () => {
+    const parkFailure = new VendoError("unavailable", "the store said no");
+    const door = createBuildDoor({
+      config: {
+        guard: {
+          async check() {
+            return { action: "ask" as const, approval: { id: "apr_1" } };
+          },
+          async abandonApprovals() { throw new Error("the guard is down too"); },
+        },
+      },
+      parkedBuilds: { async put() { throw parkFailure; } },
+    } as unknown as Parameters<typeof createBuildDoor>[0]);
+
+    // The abandon is best-effort cleanup for a card nobody needs. Its own
+    // failure must not become the answer the caller reacts to.
+    await expect(door.propose({ appId: "app_x" as AppId, name: "X", prompt: ASK, why: "y" }, ctx))
+      .rejects.toThrow(parkFailure);
   });
 });
 

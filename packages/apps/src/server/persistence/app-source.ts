@@ -123,8 +123,13 @@ export const sealBundleBlobs = async (
   entry: string,
   blobs: FilesAdapter,
 ): Promise<AppBundle> => {
+  // Refused BEFORE the first write: a seal with no entry is rejected, and every
+  // blob written on the way to that refusal is an orphan no `AppBundle` names.
+  if (!files.some((file) => file.path === entry)) {
+    throw new VendoError("validation", `the entry "${entry}" is not among ${appId}'s built files`);
+  }
   const assets: Record<string, string> = {};
-  let entryHash: string | undefined;
+  let entryHash = "";
   let bytes = 0;
   for (const file of files) {
     const hex = createHash("sha256").update(file.bytes).digest("hex");
@@ -132,9 +137,6 @@ export const sealBundleBlobs = async (
     bytes += file.bytes.byteLength;
     if (file.path === entry) entryHash = hex;
     else assets[file.path] = hex;
-  }
-  if (entryHash === undefined) {
-    throw new VendoError("validation", `the entry "${entry}" is not among ${appId}'s built files`);
   }
   return {
     entry: entryHash,

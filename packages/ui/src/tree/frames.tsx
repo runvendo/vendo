@@ -82,6 +82,7 @@ function BundleFrame({ appId, entry, onAction }: {
 }) {
   const { client, theme, fonts } = useVendoProvider();
   const frameRef = useRef<HTMLIFrameElement | null>(null);
+  const booted = useRef(false);
   const vars = useMemo(() => themeCssVariables(theme), [theme]);
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
@@ -89,19 +90,40 @@ function BundleFrame({ appId, entry, onAction }: {
       const frame = frameRef.current;
       if (applyFrameResize(frame, event)) return;
       // The handshake: a frame that has not booted has no listener yet, so the
-      // tokens would land on nobody.
-      if ((event.data as { vendo?: unknown; kind?: unknown } | null)?.kind === "booted" && isFromFrame(frame, event)) {
+      // tokens would land on nobody. Stamped like every other branch of this
+      // bridge — a frame speaking some other protocol that happens to use the
+      // same `kind` key is not this one.
+      const message = event.data as { vendo?: unknown; kind?: unknown } | null;
+      if (message?.vendo === true && message.kind === "booted" && isFromFrame(frame, event)) {
+        booted.current = true;
         sendFrameTheme(frame, vars, fonts);
         return;
       }
       const call = readFrameCall(frame, event);
       if (call === undefined) return;
-      void onAction({ nodeId: call.id, action: call.ref, payload: call.args })
-        .then((outcome) => replyToFrame(frame, call.id, outcome));
+      void onAction({ nodeId: call.id, action: call.ref, payload: call.args }).then(
+        (outcome) => replyToFrame(frame, call.id, outcome),
+        // A REFUSAL is still an answer. `callHost` inside the seal has no
+        // timeout of its own, so a call left unanswered leaves whatever asked
+        // for it loading for the life of the page.
+        (reason: unknown) => replyToFrame(frame, call.id, {
+          status: "error",
+          error: {
+            code: "execution",
+            message: reason instanceof Error ? reason.message : String(reason),
+          },
+        }),
+      );
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
   }, [onAction, vars, fonts]);
+  // A palette or a brand face that moves AFTER the handshake gets no second
+  // `booted` to ride in on, so the seal would wear the theme it mounted under
+  // for the rest of the page's life.
+  useEffect(() => {
+    if (booted.current) sendFrameTheme(frameRef.current, vars, fonts);
+  }, [vars, fonts]);
   return (
     <iframe
       // The entry IS the content hash, so fresh bytes are a fresh frame.

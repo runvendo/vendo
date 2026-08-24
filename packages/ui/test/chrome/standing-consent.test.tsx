@@ -26,10 +26,15 @@ const PROMPT = "A page with a scannable QR code";
 /** The ask the build door parks: `guard.check` on the build descriptor, with the
  *  app id and the person's own words as its inputs (build-door.ts). */
 function buildAsk(base: ApprovalRequest): ApprovalRequest {
+  // The base is the `host_email_send` fixture, and its `inputPreview` is that
+  // ask's — "to a@example.com" on an app-build card contradicts the card's own
+  // words. Rewritten the way the real guard writes it: `<tool> <canonical args>`.
+  const call = { id: `call_build_${BUILD_APP}`, tool: "vendo_app_build", args: { appId: BUILD_APP, prompt: PROMPT } };
   return {
     ...base,
     id: "apr_build",
-    call: { id: `call_build_${BUILD_APP}`, tool: "vendo_app_build", args: { appId: BUILD_APP, prompt: PROMPT } },
+    inputPreview: `${call.tool} ${JSON.stringify(call.args)}`,
+    call,
     descriptor: {
       name: "vendo_app_build",
       title: "Build this app for real",

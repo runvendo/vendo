@@ -88,4 +88,19 @@ describe("the box's model slots — every one the SDK reads, not just the defaul
     });
     for (const slot of MODEL_SLOTS) expect(env[slot]).toBeUndefined();
   });
+
+  test("a whitespace-only credential is no credential", () => {
+    // A blank line in a `.env` is the same misconfiguration as an empty one, and
+    // treating it as a key boots a Cloud-configured box whose every call 401s.
+    const env = withEnv({
+      ANTHROPIC_API_KEY: undefined,
+      ANTHROPIC_BASE_URL: undefined,
+      VENDO_INFERENCE_KEY: undefined,
+      VENDO_INFERENCE_URL: undefined,
+      VENDO_API_KEY: "   ",
+      VENDO_CLOUD_URL: undefined,
+    });
+    for (const slot of MODEL_SLOTS) expect(env[slot]).toBeUndefined();
+    expect(env["ANTHROPIC_API_KEY"]).toBeUndefined();
+  });
 });

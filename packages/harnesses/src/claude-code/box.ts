@@ -663,7 +663,10 @@ const SDK_MODEL_SLOT_ENV = [
 export function inferenceEnv(): Record<string, string> {
   const source = globalThis.process?.env ?? {};
   const set = (name: string): string | undefined => {
-    const value = source[name];
+    // Trimmed, because a blank line in a `.env` is the same misconfiguration as
+    // an empty one — and taking it as a credential boots a configured box whose
+    // every call comes back 401.
+    const value = source[name]?.trim();
     return value === undefined || value === "" ? undefined : value;
   };
   const env: Record<string, string> = {

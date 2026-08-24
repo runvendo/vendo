@@ -626,6 +626,9 @@ describe("vendo_make — the slot a new app lands in", () => {
     // builder for the ask to be honest. What it never reaches is this stub's
     // `build`: the card stands, undecided, for the whole of this test.
     build: { available: () => true, async build() { return { kind: "failed", why: "never reached" }; } },
+    // The other half of the same capability: `build.available()` is false
+    // without somewhere to seal the bytes.
+    files: { put: async () => {}, get: async () => undefined, delete: async () => {} },
   });
 
   it("takes request, app, context, slot and component — request required, nothing else allowed", async () => {

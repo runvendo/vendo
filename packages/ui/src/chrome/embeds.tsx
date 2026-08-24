@@ -412,7 +412,10 @@ export function VendoAppEmbed({ refValue }: VendoAppEmbedProps) {
           <span className="fl-boot-labels fl-appcard-name">
             {/* The build's own line when it has one — same slot, same type, so
                 a status is a change of words and never of geometry. */}
-            <span className="fl-boot-building" aria-hidden={!building}>{status ?? `Building ${title}…`}</span>
+            {/* A live region, because this line is the WHOLE progress channel
+                for a detached build: the words change under the reader without
+                anything else on the page moving, so nothing else would say so. */}
+            <span className="fl-boot-building" role="status" aria-live="polite" aria-hidden={!building}>{status ?? `Building ${title}…`}</span>
             <span className="fl-boot-ready" aria-hidden={building}>{title}</span>
           </span>
           {/* The placement affordance, only once the view is READY — the same
