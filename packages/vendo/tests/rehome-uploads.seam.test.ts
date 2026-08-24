@@ -210,3 +210,29 @@ describe("staging does not accumulate", () => {
     expect(await readBack(vendo, fresh)).toBe("y");
   });
 });
+
+describe("what the model is handed", () => {
+  it("names a thread file and a shelf file alike, and still sends images inline", async () => {
+    const { vendo, seen } = await compose();
+    const headers = await bearer();
+    const { path: staged } = await (await upload(vendo, "ledger.csv", bytes("jan,31000\n"), headers)).json() as { path: string };
+
+    await (await post(vendo, {
+      threadId: "thr_refs",
+      message: {
+        id: "m1",
+        role: "user",
+        parts: [
+          { type: "text", text: "chart this" },
+          { type: "file", mediaType: "text/csv", filename: "ledger.csv", url: staged },
+          { type: "file", mediaType: "image/png", filename: "chart.png", url: "data:image/png;base64,aGVsbG8=" },
+        ],
+      },
+    }, headers)).text();
+
+    const prompt = seen[0]!;
+    expect(prompt).toContain("The user shared ledger.csv, saved at /user/threads/thr_refs/files/ledger.csv");
+    expect(prompt).not.toContain("text/csv");
+    expect(prompt).toContain("aGVsbG8=");
+  });
+});
