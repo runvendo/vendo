@@ -126,7 +126,7 @@ export const ITEMS: ScorecardItem[] = [
 
   { id: "M1", kind: "multi-source", query: "Compare Maple's wire cutoff time with international transfer duration." },
   { id: "M2", kind: "multi-source", query: "What is the savings APY and the monthly withdrawal limit?" },
-  { id: "M3", kind: "multi-source", query: "How do overdraft fees interact with refund timing?" },
+  { id: "M3", kind: "multi-source", query: "What is the daily wire limit and the 2FA threshold for a wire?" },
   { id: "M4", kind: "multi-source", query: "Which Settings screens cover debit card freeze and 2FA backup codes?" },
 
   { id: "E1", kind: "no-source-empty", query: "quantum blockchain espresso" },

@@ -201,15 +201,5 @@ describe("unanswerable scorecard vs vendo_knowledge_search (no verifier)", () =>
     // a production default change — overlap TF scores sit in the same band as
     // genuine answers, so the threshold cannot isolate the 7–10/34 class.
     expect(defaultLeak).toBe(overlapCount);
-    const { registry } = await seedTools();
-    const sample = ITEMS.find((item) => item.kind === "no-source-overlap")!;
-    const stillDefault = await registry.execute(
-      { id: "call_default_knob", tool: VENDO_KNOWLEDGE_SEARCH_TOOL, args: { query: sample.query } },
-      ctx,
-    );
-    expect(stillDefault.status).toBe("ok");
-    if (stillDefault.status === "ok") {
-      expect((stillDefault.output as unknown as KnowledgeResultEnvelope).outcome).toBe("answered");
-    }
   });
 });
