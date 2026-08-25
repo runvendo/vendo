@@ -8,11 +8,10 @@
       any code path; automations delivery wires through this).
     - `approvals` — opt-in polling of pending approvals: a NEWLY parked approval
       raises an approval-required toast, decidable in place. */
-import { VENDO_APP_BUILD_TOOL, type AppId } from "@vendoai/core";
-import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { VENDO_APP_BUILD_TOOL } from "@vendoai/core";
+import { useEffect, useRef, useSyncExternalStore, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useVendoProvider } from "../context.js";
-import { useApp } from "../hooks/use-app.js";
 import { useApprovals } from "../hooks/use-approvals.js";
 import { themeCssVariables } from "../theme.js";
 import { consentAsk, toolPresentation } from "./build-beat.js";
@@ -134,25 +133,6 @@ function useToastQueue(): ToastRecord[] {
   return useSyncExternalStore(subscribe, () => queue, () => EMPTY);
 }
 
-/**
- * FINAL SPEC v1 — "progress = chat status lines only", and for a build there is
- * no chat left to say it in: the yes may land long after the turn that asked is
- * gone, so the build runs detached with no stream to write to. Its own line
- * therefore lands on the surface the yes was GIVEN on, from the same poll the
- * forming card reads, and stands down the moment the app does.
- */
-function BuildProgress({ appId }: { appId: AppId }) {
-  const { status, surface, error } = useApp(appId);
-  useEffect(() => {
-    // Nothing invented: silent until the lane speaks, gone once there is an app
-    // (or a reason there is not) — those speak for themselves on their own
-    // surfaces. The toast's own dismiss handle is the cleanup.
-    if (status === undefined || surface !== undefined || error !== undefined) return undefined;
-    return vendoToast({ text: status, durationMs: 0 });
-  }, [status, surface, error]);
-  return null;
-}
-
 /** Opt-in approval feed: a toast per approval waiting on the user, decidable in
     place, withdrawn once decided anywhere.
 
@@ -169,10 +149,6 @@ function ApprovalToasts({ pollMs }: { pollMs: number }) {
   const { pending, decide } = useApprovals({ pollMs });
   const seenRef = useRef(new Set<string>());
   const dismissersRef = useRef(new Map<string, () => void>());
-  // The builds this person has just authorized here, so their progress has a
-  // surface. Not durable: a build already under way when the page loads speaks
-  // through the app's own embed, which is mounted where that app is.
-  const [builds, setBuilds] = useState<AppId[]>([]);
   useEffect(() => {
     const dismissers = dismissersRef.current;
     const seen = seenRef.current;
@@ -205,10 +181,6 @@ function ApprovalToasts({ pollMs }: { pollMs: number }) {
         void decide(approval.id, { approve }).then(() => {
           dismissers.get(approval.id)?.();
           dismissers.delete(approval.id);
-          const appId = (approval.call.args as { appId?: unknown }).appId;
-          if (approve && approval.call.tool === VENDO_APP_BUILD_TOOL && typeof appId === "string") {
-            setBuilds(current => [...current, appId as AppId]);
-          }
         }).catch(() => {
           // The decide failed — the approval is still parked server-side.
           // Keep the toast so the buttons stay retryable, and un-see the id
@@ -244,7 +216,7 @@ function ApprovalToasts({ pollMs }: { pollMs: number }) {
     for (const dismiss of dismissersRef.current.values()) dismiss();
     dismissersRef.current.clear();
   }, []);
-  return <>{builds.map(appId => <BuildProgress key={appId} appId={appId} />)}</>;
+  return null;
 }
 
 export interface VendoToastsProps {
