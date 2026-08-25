@@ -10,10 +10,12 @@
  */
 import type { ApprovalId, Json, ToolOutcome, UIPayload } from "@vendoai/core";
 import type { VendoTheme } from "@vendoai/apps/contract";
+import type { UIMessage } from "ai";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { VendoProvider, createVendoClient, defaultVendoTheme, type VendoClient } from "../../src/index.js";
 import {
+  ApprovalSheet,
   ChromeRoot,
   VendoAppEmbed,
   VendoApprovalEmbed,
@@ -24,6 +26,7 @@ import {
   VendoTrigger,
   vendoToast,
 } from "../../src/chrome/index.js";
+import { TurnCitations } from "../../src/chrome/thread/turn-citations.js";
 import { createWireServer } from "../wire-server.js";
 
 let wire: Awaited<ReturnType<typeof createWireServer>>;
@@ -208,6 +211,33 @@ describe("every chrome surface takes one", () => {
   });
 });
 
+/** One assistant turn carrying a knowledge citation, so the hovercard has a
+ *  real chip to open from. */
+function citationsTurn(): UIMessage {
+  return {
+    id: "msg_knowledge",
+    role: "assistant",
+    parts: [
+      {
+        type: "data-vendo-citations",
+        data: {
+          toolCallId: "call_search",
+          outcome: "answered",
+          citations: [{
+            docId: "doc-refunds",
+            chunkId: "doc-refunds#0",
+            title: "Refunds & cancellations",
+            source: "docs/refunds.md",
+            kind: "docs",
+            visibility: "public",
+            snippet: "If you cancel mid-cycle we do not charge again.",
+          }],
+        },
+      } as UIMessage["parts"][number],
+    ],
+  };
+}
+
 /** A pinned generated view that parks its press on the guard — the real path
  *  from a press inside a slot to the approval modal on <body>. */
 const PARKING_PIN = {
@@ -286,6 +316,51 @@ describe("surfaces that portal out of the boundary still wear its theme", () => 
       return found!;
     });
     expectProvider(bare);
+  });
+
+  /** The knowledge citation hovercard portals to <body> out of the thread that
+   *  themes it. A dark overlay must not pop a light provider-themed card. */
+  it("the citation hovercard carries the enclosing surface's theme", () => {
+    withProvider(
+      <ChromeRoot theme={SURFACE_THEME}>
+        <TurnCitations message={citationsTurn()} />
+      </ChromeRoot>,
+    );
+    fireEvent.pointerEnter(document.querySelector<HTMLElement>(".fl-cite")!);
+    const card = document.querySelector("[data-vendo-portal=\"citation\"]");
+    expect(card, "expected the portaled citation card").not.toBeNull();
+    expectMerged(card!);
+  });
+
+  it("the citation hovercard falls back to the provider theme with no surface theme", () => {
+    withProvider(
+      <ChromeRoot>
+        <TurnCitations message={citationsTurn()} />
+      </ChromeRoot>,
+    );
+    fireEvent.pointerEnter(document.querySelector<HTMLElement>(".fl-cite")!);
+    expectProvider(document.querySelector("[data-vendo-portal=\"citation\"]")!);
+  });
+
+  /** The mobile presentation of a consent — same portal, same rule. */
+  it("the mobile approval sheet carries the enclosing surface's theme", () => {
+    withProvider(
+      <ChromeRoot theme={SURFACE_THEME}>
+        <ApprovalSheet label="Approval for Send the report"><p>Send the report?</p></ApprovalSheet>
+      </ChromeRoot>,
+    );
+    const layer = document.querySelector(".fl-approval-sheet-layer");
+    expect(layer, "expected the portaled approval sheet").not.toBeNull();
+    expectMerged(layer!);
+  });
+
+  it("the mobile approval sheet falls back to the provider theme with no surface theme", () => {
+    withProvider(
+      <ChromeRoot>
+        <ApprovalSheet label="Approval for Send the report"><p>Send the report?</p></ApprovalSheet>
+      </ChromeRoot>,
+    );
+    expectProvider(document.querySelector(".fl-approval-sheet-layer")!);
   });
 });
 
