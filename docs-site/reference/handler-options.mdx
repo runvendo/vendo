@@ -86,6 +86,8 @@ A name string is pinnable per seat with `VENDO_MODEL`, `VENDO_MODEL_APPS`, `VEND
 
 Named presets: `"cautious"` lets reads run and asks before writes or destructive calls, `"readonly"` lets reads run and blocks everything else, `"autopilot"` runs everything.
 
+`"cautious"` makes one exception to that prompt: the agent's `bash` runs without asking. It is still graded `write`, so it takes an audit row per call and answers to your own rules and the kill switch — but an automation has nobody to answer an approval card, and a prompt here would mean the shell could never run unattended. Add your own rule for the `bash` tool to put the prompt back.
+
 `guard({ policy: {} })` reads the default `.vendo/policy.json`, which is what `vendo init` scaffolds. It reads fail-soft, so a missing file also auto-runs with no notice; keep the file in version control.
 
 Omitting the `guard` key entirely surfaces an unconfigured-policy notice in the shipped chrome. Past either breaker, a would-be auto-run parks for approval until the window clears.
