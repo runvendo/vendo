@@ -289,20 +289,28 @@ type SlotKey = keyof ThemeSlotValues;
 /**
  * The shadcn theme-variable vocabulary (ui.shadcn.com/docs/theming), mapped
  * only where the shadcn semantic IS the Vendo slot semantic. Notably absent:
- * shadcn's `--accent` (a hover wash, not the brand color — `--primary` is),
- * `--muted` (a muted surface, not muted text), `--secondary`, `--popover`,
- * `--input`, `--ring`, `--chart-*`, `--sidebar-*`. Each name is also accepted
- * with the Tailwind-v4 `@theme` namespace prefix (`--color-primary`, ...).
+ * shadcn's `--muted` (a muted surface, not muted text), `--secondary`,
+ * `--popover`, `--input`, `--ring`, `--chart-*`, `--sidebar-*`. Each name is
+ * also accepted with the Tailwind-v4 `@theme` namespace prefix
+ * (`--color-primary`, ...).
+ *
+ * After each shadcn name, Vendo's own slot name is accepted as a fallback
+ * spelling (`--text`, `--surface`, `--accent`, ...), so a Tailwind-v4 host
+ * that names its tokens after the slots they configure still extracts
+ * exactly. The shadcn name is tried FIRST, so an existing shadcn sheet keeps
+ * today's reads even where the vocabularies collide — shadcn's hover-wash
+ * `--accent` only wins when no `--primary` exists, where it is the best
+ * available brand signal.
  */
 const EXACT_COLOR_TOKENS: ReadonlyArray<[SlotKey, string[]]> = [
   ["background", ["--background"]],
-  ["text", ["--foreground"]],
-  ["surface", ["--card"]],
-  ["accent", ["--primary"]],
+  ["text", ["--foreground", "--text"]],
+  ["surface", ["--card", "--surface"]],
+  ["accent", ["--primary", "--accent"]],
   ["accentText", ["--primary-foreground"]],
-  ["mutedText", ["--muted-foreground"]],
+  ["mutedText", ["--muted-foreground", "--muted-text"]],
   ["border", ["--border"]],
-  ["danger", ["--destructive"]],
+  ["danger", ["--destructive", "--danger"]],
 ];
 
 /** Non-color conventions: shadcn `--radius`; Tailwind v4 `--font-*` and
