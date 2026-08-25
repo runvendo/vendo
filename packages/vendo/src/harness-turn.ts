@@ -491,13 +491,16 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
       // The NAME is the part's, and it goes through the same leaf rule every
       // other door uses (`threadFilePath` throws on anything that is not one).
       let to = threadFilePath(threadId, (part as { filename?: string }).filename ?? from.slice(from.indexOf("-") + 1));
-      // ONE message can carry two drops of one name — the composer appends, and
-      // the staging door deliberately keeps them apart. Homing both on the name
-      // alone put the second move on top of the first, SILENTLY (a workspace
-      // move overwrites), and the same turn's staging erase then freed the
-      // loser's blob. So the second keeps the unique leaf staging already gave
-      // it; the common single-drop turn is untouched.
-      if ([...homes.values()].includes(to)) to = threadFilePath(threadId, from.slice(USER_UPLOADS.length + 1));
+      // One name can arrive twice — twice in ONE message (the composer appends),
+      // or again on a LATER turn of a thread a person keeps coming back to. The
+      // staging door keeps the drops apart, but homing on the name alone put the
+      // second move on top of the first, SILENTLY (a workspace move overwrites),
+      // and the staging erase then freed the loser's blob. So the second keeps
+      // the unique leaf staging already gave it. `exists` covers both arrivals
+      // with one question: it reads the store's index AND this turn's own staged
+      // moves (store/src/workspace-fs.ts:260). The common single-drop turn is
+      // untouched.
+      if (await workspace.exists(to)) to = threadFilePath(threadId, from.slice(USER_UPLOADS.length + 1));
       await workspace.mv(from, to);
       homes.set(from, to);
     }

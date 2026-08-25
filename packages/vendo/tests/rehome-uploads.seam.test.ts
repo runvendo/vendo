@@ -198,6 +198,41 @@ describe("a turn takes its files home", () => {
     expect(await readBack(vendo, stored[1]!.url!)).toBe("second\n");
   });
 
+  it("keeps both drops when TWO TURNS of one thread carry the same name", async () => {
+    // The same root cause one axis over: the within-message fix compared the
+    // addresses THIS message was taking, which is empty on a later turn, so
+    // turn 5's `report.csv` landed on turn 1's — and the staging erase then
+    // released the first's blob. Silent user data loss, in a thread a person
+    // keeps coming back to.
+    const { vendo } = await compose();
+    const headers = await bearer();
+
+    const fileMessage = (id: string, url: string) => ({
+      id,
+      role: "user",
+      parts: [{ type: "file", mediaType: "text/csv", filename: "report.csv", url }],
+    });
+
+    const first = await (await upload(vendo, "report.csv", bytes("january\n"), headers)).json() as { path: string };
+    await (await post(vendo, { threadId: "thr_return", message: fileMessage("m1", first.path) }, headers)).text();
+
+    const second = await (await upload(vendo, "report.csv", bytes("february\n"), headers)).json() as { path: string };
+    await (await post(vendo, { threadId: "thr_return", message: fileMessage("m2", second.path) }, headers)).text();
+
+    const thread = await (await vendo.handler(new Request(
+      "https://host.test/api/vendo/threads/thr_return",
+      { headers },
+    ))).json() as { messages: Array<{ id: string; parts: Array<{ type: string; url?: string }> }> };
+    const pills = thread.messages
+      .flatMap((message) => message.parts.filter((part) => part.type === "file"));
+
+    expect(pills).toHaveLength(2);
+    expect(pills[0]!.url).not.toBe(pills[1]!.url);
+    // Each turn's pill opens the bytes THAT turn carried.
+    expect(await readBack(vendo, pills[0]!.url!)).toBe("january\n");
+    expect(await readBack(vendo, pills[1]!.url!)).toBe("february\n");
+  });
+
   it("homes a FIRST turn's drop under the id the server minted", async () => {
     const { vendo } = await compose();
     const headers = await bearer();
