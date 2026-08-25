@@ -104,6 +104,8 @@ When the person approves in the card, the wire runs the parked call and the card
 
 A call parked at the [MCP door](/outside-agents/your-own-agent) is the one exception: approving there grants the call, and the outside agent's own retry of it is what runs it. The card waits through that gap on its working beat, then settles on "Approved — ran" once the retry spends the approval.
 
+When the parked outcome ships the ask itself to your page — an `approval` block of `{ id, question, notes }` rather than a ref — render it with [`<VendoApproval>`](/outside-agents/your-own-agent#approvals) instead. Same card, with the words already chosen and the decision spent on an explicit client.
+
 <Frame>
   <img
     src="/images/existing-agents/embed-approval.png"

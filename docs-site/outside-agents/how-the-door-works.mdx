@@ -136,7 +136,7 @@ write.
 | `ok` | the tool's output, as text plus `structuredContent` |
 | `error` | `code: message` from your handler |
 | `blocked` | your guard's reason, verbatim |
-| `pending-approval` | the approval id and where to resolve it |
+| `pending-approval` | the sentence to relay, plus a typed `vendo/approval-ref@1` on `structuredContent` |
 | `connect-required` | which account to connect in your product, then retry |
 
 `vendo_make` answers with an id, a title, a status, and one line to say out
@@ -247,8 +247,15 @@ nobody aimed there.
 On the `cautious` preset, reads answer straight away and writes park. The agent
 gets an error naming the approval and where it is waiting.
 
-Approving does not resume the call. The agent has to call again, and it has to
-be on the same MCP session.
+The same answer carries the approval in a type. `structuredContent` holds a
+`vendo/approval-ref@1` — `{ approvalId, summary }` — so your loop reads the id
+off a field instead of parsing it out of the sentence.
+
+Approving does not resume the call. It grants it, once: the agent has to call
+again, and it has to be on the same MCP session. Through that gap
+`GET /approvals/:id` tells the states apart — `pending` until the retry spends
+the yes, `executed` after it does, `declined` for a person's no, `expired` for
+the sweep's. See [HTTP routes](/reference/http-routes) for the envelope.
 
 <Warning>
   The door mints a fresh call id per `tools/call`, except for an identical call
