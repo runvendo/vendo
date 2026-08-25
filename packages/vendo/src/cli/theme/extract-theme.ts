@@ -300,7 +300,8 @@ type SlotKey = keyof ThemeSlotValues;
  * exactly. The shadcn name is tried FIRST, so an existing shadcn sheet keeps
  * today's reads even where the vocabularies collide — shadcn's hover-wash
  * `--accent` only wins when no `--primary` exists, where it is the best
- * available brand signal.
+ * available brand signal. An alias whose value does not resolve to a color is
+ * treated as absent, never terminal: the next spelling still gets its read.
  */
 const EXACT_COLOR_TOKENS: ReadonlyArray<[SlotKey, string[]]> = [
   ["background", ["--background"]],
@@ -363,9 +364,16 @@ function readExact(vars: CssVarDecl[]): ExactReads {
   };
 
   for (const [slot, names] of EXACT_COLOR_TOKENS) {
-    const decl = lastLightDecl(vars, names);
-    const resolved = decl === undefined ? null : resolveCssVarRefs(decl.value, vars);
-    put(slot, decl, resolved === null ? null : normalizeColor(resolved));
+    // An alias whose value cannot be resolved to a color is treated as absent
+    // (color.ts's law), not terminal — the next spelling still gets its read.
+    for (const name of names) {
+      const decl = lastLightDecl(vars, [name]);
+      const resolved = decl === undefined ? null : resolveCssVarRefs(decl.value, vars);
+      const value = resolved === null ? null : normalizeColor(resolved);
+      if (value === null) continue;
+      put(slot, decl, value);
+      break;
+    }
   }
   for (const [slot, names] of FONT_TOKENS) {
     const decl = lastLightDecl(vars, names);

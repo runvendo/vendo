@@ -164,6 +164,39 @@ describe("extractTheme allowlist fast-path", () => {
     expect(result.defaulted).toEqual(["radius", "fontFamily", "headingFamily", "baseSize", "density", "motion"]);
   });
 
+  it("an unreadable higher-priority alias falls through to the next spelling; a readable one keeps precedence", async () => {
+    // A declared-but-unreadable shadcn name (a named color is outside the
+    // exact-read vocabulary) must not shadow a readable Vendo spelling —
+    // color.ts's law: an unreadable value is treated as ABSENT, not terminal.
+    const masked = await fixture({
+      "package.json": "{}\n",
+      "app/layout.tsx": 'import "./global.css";\nexport default function Layout({ children }) { return <html><body>{children}</body></html>; }\n',
+      "app/global.css": `
+        :root {
+          --primary: purple;
+          --accent: #7c3aed;
+        }
+      `,
+    });
+
+    const maskedResult = await extractTheme(masked);
+
+    expect(maskedResult.slots.accent).toBe("#7c3aed");
+    expect(maskedResult.matched["accent"]).toBe("--accent");
+
+    // Both readable: the shadcn name still wins.
+    const both = await fixture({
+      "package.json": "{}\n",
+      "app/layout.tsx": 'import "./global.css";\nexport default function Layout({ children }) { return <html><body>{children}</body></html>; }\n',
+      "app/global.css": ":root { --primary: #1d4ed8; --accent: #7c3aed; }\n",
+    });
+
+    const bothResult = await extractTheme(both);
+
+    expect(bothResult.slots.accent).toBe("#1d4ed8");
+    expect(bothResult.matched["accent"]).toBe("--primary");
+  });
+
   it("lets the IMPORTING sheet win over the sheet it imports, like the real cascade", async () => {
     // `@import` must precede other rules, so an imported declaration behaves as
     // if inserted at the import point — the importer's own later declaration
