@@ -62,7 +62,12 @@ export const xlsx2csv: LazyCommand = {
           return notThisFormat(NAME, args[0]!, "spreadsheet", cause);
         }
         const wanted = args[1] ?? book.SheetNames[0];
-        const sheet = wanted === undefined ? undefined : book.Sheets[wanted];
+        // SheetNames, not a bare `Sheets[wanted]`: `xlsx2csv book.xlsx toString`
+        // would otherwise find Object.prototype's method and print an empty CSV
+        // with exit 0 instead of naming the sheets.
+        const sheet = wanted !== undefined && book.SheetNames.includes(wanted)
+          ? book.Sheets[wanted]
+          : undefined;
         if (sheet === undefined) {
           // Naming the sheets IS the fix: an agent told only "no" asks the user,
           // an agent told what exists picks the right one and carries on.

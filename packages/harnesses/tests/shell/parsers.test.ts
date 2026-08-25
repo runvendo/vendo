@@ -79,6 +79,16 @@ describe("pdftotext", () => {
     expect(result.exitCode).toBe(1);
     expect(result.stderr).toContain("No such file or directory");
   });
+
+  it("says a directory is a directory, the way bash does", async () => {
+    const workspace = await diskWith({ "/user/files/reports/q1.pdf": minimalPdf("x") });
+    const session = createShellSession({ workspace });
+
+    const result = await session.exec("pdftotext files/reports");
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("Is a directory");
+  });
 });
 
 describe("xlsx2csv", () => {
@@ -123,6 +133,16 @@ describe("xlsx2csv", () => {
 
     expect(result.exitCode).toBe(1);
     expect(result.stderr).toContain("not a readable spreadsheet");
+  });
+
+  it("treats a sheet named after an Object property as the missing sheet it is", async () => {
+    const session = createShellSession({ workspace: await diskWith({ "/user/files/q1.xlsx": await workbook() }) });
+
+    const result = await session.exec("xlsx2csv files/q1.xlsx toString");
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("no sheet named");
+    expect(result.stderr).toContain("Revenue");
   });
 });
 
@@ -176,5 +196,74 @@ describe("docx2txt", () => {
 
     expect(result.exitCode).toBe(1);
     expect(result.stderr).toContain("not a readable Word document");
+  });
+
+  /** A .docx carrying exactly this `word/document.xml`, and nothing else. */
+  const docxWith = async (documentXml: string): Promise<Uint8Array> => {
+    const { zipSync, strToU8 } = await import("fflate");
+    return zipSync({ "word/document.xml": strToU8(documentXml) });
+  };
+
+  const body = (inner: string): string =>
+    `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>${inner}</w:body></w:document>`;
+
+  it("keeps the tab and the manual break Word put between two fields", async () => {
+    const docx = await docxWith(body(
+      `<w:p><w:r><w:t>Account</w:t></w:r><w:r><w:tab/></w:r><w:r><w:t>Balance</w:t></w:r>`
+      + `<w:r><w:br/></w:r><w:r><w:t>Due</w:t></w:r></w:p>`,
+    ));
+    const session = createShellSession({ workspace: await diskWith({ "/user/files/table.docx": docx }) });
+
+    expect((await session.exec("docx2txt files/table.docx")).stdout).toBe("Account\tBalance\nDue\n");
+  });
+
+  it("does not mistake a tab STOP in the paragraph's properties for a tab", async () => {
+    const docx = await docxWith(body(
+      `<w:p><w:pPr><w:tabs><w:tab w:val="left" w:pos="720"/></w:tabs></w:pPr>`
+      + `<w:r><w:t>Indented</w:t></w:r></w:p>`,
+    ));
+    const session = createShellSession({ workspace: await diskWith({ "/user/files/stops.docx": docx }) });
+
+    expect((await session.exec("docx2txt files/stops.docx")).stdout).toBe("Indented\n");
+  });
+
+  it("decodes the numeric character references XML allows, not just the named five", async () => {
+    const docx = await docxWith(body(`<w:p><w:r><w:t>Q1&#8212;Q2 &#x2014; &amp; up</w:t></w:r></w:p>`));
+    const session = createShellSession({ workspace: await diskWith({ "/user/files/refs.docx": docx }) });
+
+    expect((await session.exec("docx2txt files/refs.docx")).stdout).toBe("Q1—Q2 — & up\n");
+  });
+
+  it("refuses a part that only becomes huge once decompressed", async () => {
+    // 33 MB of zeros zips to a few KB: the upload cap bounds the FILE, and only
+    // the declared inflated size bounds what the host process has to hold.
+    const { zipSync } = await import("fflate");
+    const bomb = zipSync({ "word/document.xml": new Uint8Array(33 * 1024 * 1024) });
+    const session = createShellSession({ workspace: await diskWith({ "/user/files/bomb.docx": bomb }) });
+
+    const result = await session.exec("docx2txt files/bomb.docx");
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("not a readable Word document");
+  });
+
+  it("stays linear on a malformed part full of unclosed paragraph openers", async () => {
+    // A lazy `<w:p>…</w:p>` match rescans the remainder for EVERY opener, so this
+    // input costs minutes quadratically and milliseconds linearly. The test's own
+    // timeout is the detector — no inner stopwatch to go flaky under load.
+    const docx = await docxWith(body("<w:p >".repeat(200_000)));
+    const session = createShellSession({ workspace: await diskWith({ "/user/files/malformed.docx": docx }) });
+
+    expect((await session.exec("docx2txt files/malformed.docx")).exitCode).toBe(0);
+  });
+
+  it("stays linear on a paragraph full of unclosed text openers", async () => {
+    // The same quadratic trap one level down: a `<w:t>…</w:t>` pair matched as
+    // one lazy unit rescans to the end of the paragraph for every opener that
+    // never closes.
+    const docx = await docxWith(body(`<w:p >${"<w:t >".repeat(200_000)}</w:p>`));
+    const session = createShellSession({ workspace: await diskWith({ "/user/files/runs.docx": docx }) });
+
+    expect((await session.exec("docx2txt files/runs.docx")).exitCode).toBe(0);
   });
 });

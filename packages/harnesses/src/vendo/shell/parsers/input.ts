@@ -20,8 +20,15 @@ export async function inputBytes(
   }
   try {
     return { bytes: await ctx.fs.readFileBuffer(ctx.fs.resolvePath(ctx.cwd, target)) };
-  } catch {
-    return { refusal: { stdout: "", stderr: `${name}: ${target}: No such file or directory\n`, exitCode: 1 } };
+  } catch (cause) {
+    // A directory is the one failure bash names differently, and the difference
+    // matters: told "no such file" an agent invents another path, told "is a
+    // directory" it lists it. Both filesystems carry the code in the MESSAGE and
+    // set no `code` property (`enoent`/`eisdir` in store's workspace-fs.ts).
+    const reason = cause instanceof Error && cause.message.startsWith("EISDIR")
+      ? "Is a directory"
+      : "No such file or directory";
+    return { refusal: { stdout: "", stderr: `${name}: ${target}: ${reason}\n`, exitCode: 1 } };
   }
 }
 
