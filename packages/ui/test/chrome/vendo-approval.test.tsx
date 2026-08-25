@@ -56,6 +56,23 @@ describe("<VendoApproval>", () => {
     expect(screen.queryByRole("button", { name: "Deny" })).toBeNull();
   });
 
+  it("spends a NO the same way, and settles into the declined receipt", async () => {
+    const { container } = render(<VendoApproval approval={ask} client={client} />);
+    fireEvent.click(screen.getByRole("button", { name: "Deny" }));
+    await waitFor(() => expect(container.querySelector(".fl-cardshell--settled")).not.toBeNull());
+    const receipt = container.querySelector("p.fl-approval-sub")!;
+    expect(receipt.textContent).toBe("Declined — nothing ran");
+    // The settled card wears the failed treatment, which is the only thing that
+    // says a no from a yes at a glance.
+    expect(receipt.classList.contains("fl-approval-sub--failed")).toBe(true);
+    expect(wire.requests.filter(entry => entry.path === "/approvals/decide").map(entry => entry.body)).toEqual([
+      { ids: ["apr_1"], decision: { approve: false } },
+    ]);
+    // The no really landed: the wire no longer has the ask waiting.
+    expect(wire.state.approvals.some(item => item.id === "apr_1")).toBe(false);
+    expect(screen.queryByRole("button", { name: "Deny" })).toBeNull();
+  });
+
   it("settles an ask that is no longer waiting, instead of reporting a failure", async () => {
     // Decided on another surface, or expired: the wire answers `not-found`, and
     // the question is settled — not broken.
