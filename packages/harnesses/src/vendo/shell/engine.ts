@@ -9,8 +9,8 @@
  * with and no host disk to reach: a write outside the mounts is `EACCES` from
  * the filesystem itself, not from a check bolted on here.
  */
-import type { IFileSystem } from "@vendoai/core";
-import type { Bash as BashInstance } from "just-bash";
+import { log, type IFileSystem } from "@vendoai/core";
+import type { Bash as BashInstance, SecurityViolation } from "just-bash";
 import { docx2txt } from "./parsers/docx2txt.js";
 import { pdftotext } from "./parsers/pdftotext.js";
 import { xlsx2csv } from "./parsers/xlsx2csv.js";
@@ -47,6 +47,34 @@ const TMP_MAX_BYTES = 32 * 1024 * 1024;
 
 type JustBash = typeof import("just-bash");
 
+/** Violation types already reported, PROCESS-wide.
+ *
+ *  Process-wide rather than per session for two independent reasons. just-bash's
+ *  defense box is a process singleton whose `getInstance` THROWS a config
+ *  conflict unless every `Bash` in the process passes the identical
+ *  `onViolation` reference, so this has to be one stable function rather than a
+ *  per-session closure. And the volume: a host async tracker trips
+ *  `performance_timing`/`weak_ref` on nearly every promise the shell makes —
+ *  1294 times in one measured turn — so a line per violation is a line per
+ *  promise, which is noise an operator learns to filter. One line per type is
+ *  the whole signal: which host global the box touched, and that nothing was
+ *  blocked. It also bounds the recursion if the log sink itself trips a guard
+ *  (`process_stderr` is one), because the second trip is already reported. */
+const reportedViolations = new Set<string>();
+
+const reportViolation = (violation: SecurityViolation): void => {
+  if (reportedViolations.has(violation.type)) return;
+  reportedViolations.add(violation.type);
+  log({
+    code: "harnesses.shell-defense-audit",
+    level: "warn",
+    message: `[vendo] shell: host code reached ${violation.path} (${violation.type}) inside just-bash's `
+      + "main-thread box. AUDITED AND ALLOWED — this box is the secondary layer and does not block here; "
+      + "containment stays with the QuickJS worker's own defense layer, the workspace's permission mounts, "
+      + `and the guard. Further ${violation.type} violations this process are not logged.`,
+  });
+};
+
 /**
  * One session, one workspace. The interpreter boots on the FIRST call and is
  * kept: booting it costs a module load, and a turn that runs three commands
@@ -82,6 +110,28 @@ export function createShellSession(opts: {
         maxExecutionTimeMs: opts.limits?.maxExecutionTimeMs ?? DEFAULT_MAX_EXECUTION_TIME_MS,
         maxOutputSize: opts.limits?.maxOutputBytes ?? DEFAULT_MAX_OUTPUT_BYTES,
       },
+      // just-bash's MAIN-THREAD box patches host globals while a command runs.
+      // Inside a HOST's process that is not containment, it is a crash: an
+      // async-hooks `init` callback the host installed (Next dev's React async
+      // tracker is one, an APM agent is another) fires on the box's own first
+      // promise, touches `performance.now()`/`new WeakRef()`, and the box
+      // throws — from `emitInitNative`, where Node treats any exception as
+      // fatal, so no try/catch of ours is even on the stack. The demo host's dev
+      // server died on the FIRST bash call, deterministically.
+      //
+      // So audit: report the violation, let it through. The box's only
+      // enforcement action inside a host process is "kill the host", which is
+      // worse than the intrusion it guards against, and it was never the layer
+      // that contains a script — `WorkerDefenseInDepth` inside the QuickJS
+      // worker is separate, always on, and untouched by this, as are the
+      // workspace's permission mounts, the guard's audit row and kill switch,
+      // and the absent network.
+      //
+      // Not `excludeViolationTypes`: that list names React's MINIFIED internals,
+      // so it breaks on their next release, and it would still not cover an APM
+      // agent reaching a different guarded global from the same kind of hook —
+      // the same structural failure, and that one can hit production.
+      defenseInDepth: { auditMode: true, onViolation: reportViolation },
       // Network is off by definition: just-bash registers curl/wget only when a
       // `network` or `fetch` option is passed, and neither is.
     });

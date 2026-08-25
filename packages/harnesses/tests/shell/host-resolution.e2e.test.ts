@@ -21,11 +21,11 @@
  * so this can never pass by accident.
  */
 import { execFileSync } from "node:child_process";
-import { cp, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 const PACKAGE_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const SHELL_DIST = join(PACKAGE_DIR, "dist", "vendo", "shell");
@@ -76,14 +76,26 @@ process.exit(0);
 type Result = { stdout?: string; stderr?: string; exitCode?: number; error?: string };
 
 let probed: { bare: Record<string, string> } & Record<string, Result>;
+/** A full copy of the shell dist per run, so it is removed rather than left
+ *  in the OS temp directory. */
+let chunk: string;
+
+afterAll(async () => { await rm(chunk, { recursive: true, force: true }); });
 
 beforeAll(async () => {
   // The built dist is what a host actually loads, and it is what tsc emits for
   // `pnpm build` — same command, so this never tests a stale copy.
   execFileSync("npx", ["tsc", "-p", "tsconfig.json"], { cwd: PACKAGE_DIR, stdio: "pipe" });
-  const chunk = await mkdtemp(join(tmpdir(), "vendo-host-chunk-"));
+  chunk = await mkdtemp(join(tmpdir(), "vendo-host-chunk-"));
   await cp(SHELL_DIST, chunk, { recursive: true });
   await writeFile(join(chunk, "package.json"), '{"type":"module"}\n');
+  // A bundler INLINES an ordinary sibling like @vendoai/core into the chunk; the
+  // four above are the only imports left bare, because they alone are
+  // bundler-blind. Modelling core as bare too would fail this fixture for a
+  // reason no host has. So the chunk gets core, and nothing else — the first
+  // assertion below still proves the four are genuinely dead here.
+  await mkdir(join(chunk, "node_modules", "@vendoai"), { recursive: true });
+  await symlink(join(PACKAGE_DIR, "..", "core"), join(chunk, "node_modules", "@vendoai", "core"), "dir");
   const runtime = join(chunk, "runtime.js");
   await writeFile(runtime, (await readFile(runtime, "utf8")).replaceAll(
     "import.meta.url",
