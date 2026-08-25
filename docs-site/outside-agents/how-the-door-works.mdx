@@ -152,6 +152,57 @@ An agent relays it close to verbatim and reports nothing else.
 | `partial` | the screen is up, and the server-side work its plan called for is not |
 | `failed` | nothing painted. One narrower retry on the same `app`, then stop |
 
+## Opening a saved app
+
+`vendo_apps_open` takes `appId`, which is the app's id or its name as the
+person said it. Every answer rides as `structuredContent` under a `kind`
+discriminant, so a loop branches on the state rather than parsing English.
+Where the answer carries a `say` line, that line is written for the person.
+Relay it close to verbatim.
+
+| `kind` | What the agent has |
+| --- | --- |
+| `vendo/open-in-product@1` | the app is live. `url` is where the person opens it, `productName` names your product, and `appName` rides along when the door can resolve it |
+| `pending` | the build window. `say` names the wait: the build is awaiting the person's approval, or still running. Call again after the wait |
+| `failed` | the build failed for good. `reason` is written for a person, and `retryable: true` means asking for the app again may work |
+
+Neither build-window state is an error. An app whose build the person has not
+approved, and one still being built, both answer `{ kind: "pending", say }`,
+so an agent narrates the wait instead of reporting the app missing.
+
+A sealed bundle boots inside your product's own UI, in a sandboxed frame, so
+the door never links to the bundle itself and never returns its content hash.
+The open-in-product `url` is the deployment's public base, taken from the
+door's `baseUrl`. With no `baseUrl` configured there is no link to give, and
+the bundle answer carries a `say` that the app is built and ready to open in
+your product.
+
+```ts
+const result = await client.callTool({
+  name: "vendo_apps_open",
+  arguments: { appId: "Savings goals" },
+});
+const open = result.structuredContent as {
+  kind: string;
+  url?: string;
+  say?: string;
+  reason?: string;
+  retryable?: boolean;
+};
+
+if (open.kind === "vendo/open-in-product@1") {
+  // Hand the person the link: open.url
+} else if (open.kind === "pending") {
+  // Relay open.say, then call again after the wait
+} else if (open.kind === "failed") {
+  // Relay open.reason; retry only if open.retryable is true
+}
+```
+
+The text content carries the same answer as one line, for example
+`Open Savings goals in Maple: https://maple.example.com`, so a client that
+never reads `structuredContent` still has something safe to say.
+
 ## Rendering the app in your own chat
 
 React only — there is no web component and no MCP Apps UI resource. If the chat
