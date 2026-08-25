@@ -46,13 +46,17 @@ const decode = (xml: string): string =>
 /** Every tag that carries text, matched ONE AT A TIME. Matching `<w:t>…</w:t>`
     as a single lazy pair is the trap: against openers that never close, each one
     rescans to the end of the paragraph, so a malformed part costs O(n²) of
-    blocked event loop. Each alternative here stops at its own `>`, so the scan
-    is linear no matter what the bytes say.
+    blocked event loop. Each alternative here stops at the next `<` OR its own
+    `>`, so the scan is linear no matter what the bytes say — `[^>]*` alone is
+    not enough, because an opener whose `>` never arrives then scans to the end
+    of the part for EVERY opener, which is the same O(n²) one level deeper. `<`
+    cannot appear inside a tag in any well-formed XML (it is `&lt;` there), so
+    excluding it costs no real document a thing.
 
     `<w:tab/>` is EMPTY: a tab STOP is a `w:tab` in `w:pPr` carrying `w:val`, so
     demanding the self-closing form keeps stops out of the text. */
 const CONTENT =
-  /(?<open><w:t(?:\s[^>]*)?>)|(?<shut><\/w:t>)|(?<tab><w:tab\s*\/>)|<w:(?:br|cr)\b[^>]*>/g;
+  /(?<open><w:t(?:\s[^<>]*)?>)|(?<shut><\/w:t>)|(?<tab><w:tab\s*\/>)|<w:(?:br|cr)\b[^<>]*>/g;
 
 /** What one paragraph contributes, in document order. */
 function runsOf(paragraph: string): string[] {

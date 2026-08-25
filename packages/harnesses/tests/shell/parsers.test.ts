@@ -274,4 +274,14 @@ describe("docx2txt", () => {
 
     expect((await session.exec("docx2txt files/runs.docx")).exitCode).toBe(0);
   });
+
+  it("stays linear when the text openers never reach their own '>'", async () => {
+    // One level deeper again: the opener alternative itself scans for `>`, so
+    // openers with no `>` anywhere after them make EVERY one of them scan to the
+    // end of the part. Only stopping that scan at the next `<` keeps it linear.
+    const docx = await docxWith(body(`<w:p >${"<w:t ".repeat(200_000)}</w:p>`));
+    const session = createShellSession({ workspace: await diskWith({ "/user/files/open.docx": docx }) });
+
+    expect((await session.exec("docx2txt files/open.docx")).exitCode).toBe(0);
+  });
 });
