@@ -58,7 +58,11 @@ export const BUILD_CONSENT_ASK: Omit<PendingApproval, "id"> = {
   notes: [BUILD_DESCRIPTION],
 };
 
-const buildDescriptor = (): ToolDescriptor => ({
+/** THE authored ask, and the source both surfaces read: the CARD derives its
+ *  words from this descriptor (`consentAsk` off the `data-vendo-approval` part's
+ *  copy of it), and {@link BUILD_CONSENT_ASK} above is the same ask already in
+ *  words for the surfaces that render no card. One author, two renderings. */
+export const buildDescriptor = (): ToolDescriptor => ({
   name: BUILD_TOOL,
   title: BUILD_TITLE,
   description: BUILD_DESCRIPTION,

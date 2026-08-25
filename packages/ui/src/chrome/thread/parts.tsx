@@ -1,4 +1,4 @@
-import { riskLabelSchema, VENDO_MAKE_TOOL, type RiskLabel, type UIPayload, type VendoAutomationPart, type VendoBuildFailedPart, type VendoConnectPart, type VendoGrantSetPart, type VendoLimitPart, type VendoStepLimitPart, type VendoTurnErrorPart, type VendoViewPart } from "@vendoai/core";
+import { riskLabelSchema, VENDO_MAKE_TOOL, type RiskLabel, type UIPayload, type VendoApprovalPart, type VendoAutomationPart, type VendoBuildFailedPart, type VendoConnectPart, type VendoGrantSetPart, type VendoLimitPart, type VendoStepLimitPart, type VendoTurnErrorPart, type VendoViewPart } from "@vendoai/core";
 import { isToolUIPart, type DynamicToolUIPart, type ToolUIPart, type UIMessage } from "ai";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useVendoProvider } from "../../context.js";
@@ -9,7 +9,8 @@ import { PlacementAction } from "../add-to-picker.js";
 import { ApprovalCard } from "../approval-card.js";
 import { useApprovalModal } from "../approval-modal.js";
 import { ApprovalSheet } from "../approval-sheet.js";
-import { useChromeTheme } from "../chrome-root.js";
+import { ChromeRoot, useChromeTheme } from "../chrome-root.js";
+import { ResolvedApprovalCard } from "../embeds.js";
 import { ThreadAutomationConsent } from "./automation-consent.js";
 import { BuildBeat, toolPresentation } from "../build-beat.js";
 import { ConnectCard } from "../connect-card.js";
@@ -361,6 +362,15 @@ export function ThreadPart({ part, partKey, role, restored, count = 1, risks, co
     if (rendered) return null;
     return <ThreadConnect ask={ask} live={connectLive} sendMessage={sendMessage} />;
   }
+  if (part.type === "data-vendo-approval") {
+    // A STANDING ask — one raised by a TOOL about another call — renders its own
+    // card here; anything else is a parked native call's ask and renders from
+    // that call's approval state (ThreadApprovals). Which is which is the
+    // component's own question; before it, the transcript showed a person
+    // nothing but the calling tool's beat ("wasn't allowed") for a question they
+    // had not been asked yet.
+    return <ThreadStandingApproval part={part} siblingParts={siblingParts ?? []} />;
+  }
   if (part.type === "data-vendo-build-failed") {
     // 0.4.4 cert defect B — a terminally failed app build is content, not
     // progress: the turn ends right after this part, so without it the thread
@@ -462,13 +472,6 @@ export function ThreadPart({ part, partKey, role, restored, count = 1, risks, co
       />
     );
   }
-  if (part.type === "data-vendo-citations") {
-    // Knowledge K1 — rendered at TURN level (message.tsx → TurnCitations),
-    // under the answer text the citations ground, matching the signed
-    // mockups; at this part's transcript position the answer hasn't
-    // streamed yet, so rendering here would put sources above the text.
-    return null;
-  }
   if (part.type === "data-vendo-view") {
     const data = partData(part) as Partial<VendoViewPart>;
     if (typeof data.appId !== "string" || !data.payload) return null;
@@ -492,6 +495,11 @@ export function ThreadPart({ part, partKey, role, restored, count = 1, risks, co
     } = data.payload as typeof data.payload & { inClient?: unknown; pinDrift?: unknown };
     return <ThreadAppCard key={`${partKey}-${data.appId}`} buildKey={`${partKey}-${data.appId}`} appId={data.appId} payload={payload} restored={restored} />;
   }
+  // Everything else renders nothing HERE, and `data-vendo-citations` is the one
+  // that renders nothing on purpose: Knowledge K1 puts it at TURN level
+  // (message.tsx → TurnCitations), under the answer text the citations ground,
+  // matching the signed mockups — at this part's transcript position the answer
+  // hasn't streamed yet, so sources would sit above the text.
   return null;
 }
 
@@ -560,6 +568,73 @@ function GrantSetConsent({ toolCallId, grantSetId, name, permissions, siblingPar
           if (nativeApprovalId !== undefined) respond?.({ id: nativeApprovalId, approved: approve });
         },
       })}
+    />
+  );
+}
+
+/**
+ * A STANDING consent ask at its transcript position, on the ONE approval card.
+ *
+ * `ThreadApprovals` below renders every ask a NATIVE parked call carries, and
+ * this one has none: the tool parked an ask of its OWN (the built-app door asks
+ * about a build from inside `vendo_make`), the call itself returned, and no part
+ * will ever reach `approval-requested` — nor may it, since the runtime abandons
+ * every still-parked native ask at the next turn and this ask has to outlive the
+ * turn that raised it. Same shape as the connect card above: the `data-vendo-*`
+ * part is the whole ask, because the native part cannot carry it.
+ *
+ * WHICH asks are those: the ones whose descriptor names a DIFFERENT call than
+ * the one the part rides beside. A guard-raised ask describes the very call
+ * parked next to it and keeps its card there, where the resume lives — one
+ * consent surface per ask.
+ *
+ * That descriptor is also what the shared §16 builder derives the words from, so
+ * this card, the queue row and the toast read one ladder off one descriptor.
+ *
+ * Decided over the WIRE, like the queue and the toast: there is no parked turn
+ * to resume, and the yes may land long after this one is gone. No `remember`,
+ * because a grant is a standing yes to a CALL the person chose — this ask is
+ * about spending a machine once.
+ */
+function ThreadStandingApproval({ part, siblingParts }: {
+  part: UIMessage["parts"][number];
+  siblingParts: UIMessage["parts"];
+}) {
+  const { client, tools } = useVendoProvider();
+  const [settled, setSettled] = useState<{ ok: boolean; line: string }>();
+  const data = partData(part) as Partial<VendoApprovalPart>;
+  const asked = data.descriptor;
+  const rides = siblingParts.filter(isToolUIPart)
+    .find(candidate => candidate.toolCallId === data.toolCallId);
+  if (typeof data.approvalId !== "string" || asked?.name === undefined
+    || !riskLabelSchema.safeParse(data.risk).success
+    || (rides !== undefined && toolName(rides) === asked.name)) return null;
+  const approvalId = data.approvalId;
+  const approval = buildApprovalRequest({
+    approvalId,
+    toolCallId: data.toolCallId ?? approvalId,
+    // The ask is about THIS call, not the one the model made: `vendo_make` is a
+    // read, and grading the card off it told the person a build reads their data.
+    tool: asked.name,
+    risk: data.risk as RiskLabel,
+    descriptor: asked,
+  }, tools);
+  if (settled !== undefined) {
+    return (
+      <ChromeRoot>
+        <ResolvedApprovalCard summary={approval.descriptor.title ?? asked.name} ok={settled.ok} line={settled.line} />
+      </ChromeRoot>
+    );
+  }
+  return (
+    <ApprovalCard
+      approval={approval}
+      allowRemember={false}
+      showContext={false}
+      onDecide={async ({ approve }) => {
+        await client.approvals.decide(approvalId, { approve });
+        setSettled({ ok: approve, line: approve ? "Approved — under way" : "Declined — nothing ran" });
+      }}
     />
   );
 }

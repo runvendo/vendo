@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * THE DEAD SEAM — the screen agent's way of asking for a build, and where it
  * lands.
@@ -17,11 +18,18 @@
  * mood) and the sandbox PROVIDER — a stub that refuses to hand out a machine,
  * because the one thing this whole flow must not do before the person's yes is
  * claim a box.
+ *
+ * The last test closes the seam on the READ side too: the shipped `VendoThread`
+ * reads that same turn back over the real client and paints the real
+ * `ApprovalCard`. The producer and the consumer disagreeing about one wire part
+ * is exactly how this ask reached a person mis-graded, so neither side gets to
+ * hold its own copy of it.
  */
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  VENDO_APP_BUILD_TOOL,
   VENDO_MAKE_TOOL,
   vendoApprovalPartSchema,
   type AppId,
@@ -34,15 +42,20 @@ import { makeReceiptSchema } from "@vendoai/apps/contract";
 import type { SandboxAdapter } from "@vendoai/apps";
 import { defineHarness } from "@vendoai/harnesses";
 import { createStore, type VendoStore } from "@vendoai/store";
+import { VendoProvider, createVendoClient } from "@vendoai/ui";
+import { VendoThread } from "@vendoai/ui/chrome";
 import type { LanguageModel } from "ai";
 import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
+import { act, createElement, type ReactElement } from "react";
+import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it } from "vitest";
 import { ESCALATE_TOOL, SAVE_APP_TOOL } from "../src/screen-agent.js";
 import { createVendo } from "../src/server.js";
 
-const cleanups: Array<() => Promise<void>> = [];
+const cleanups: Array<() => Promise<void> | void> = [];
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
+  document.body.innerHTML = "";
 });
 
 const principal: Principal = { kind: "user", subject: "user_escalate" };
@@ -196,6 +209,49 @@ async function walk(options: { turns: Chunk[][]; sandbox?: boolean }): Promise<W
   };
 }
 
+// --- the READ side: the shipped thread, painting that same turn --------------
+
+const BASE = "https://host.test/api/vendo";
+
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+/** The client's fetch IS the door — every read the thread makes is answered by
+ *  the composition that just wrote the turn, so nothing painted is arranged. */
+function serve(vendo: Walked["vendo"]): void {
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    // jsdom's AbortSignal is not undici's, and undici's Request rejects it
+    // outright; nothing here aborts, so it is dropped at the boundary.
+    const { signal: _signal, ...rest } = init ?? {};
+    const url = typeof input === "string" || input instanceof URL ? String(input) : (input as { url: string }).url;
+    return await vendo.handler(new Request(url, rest as RequestInit));
+  }) as typeof fetch;
+  cleanups.push(() => { globalThis.fetch = realFetch; });
+}
+
+async function mount(element: ReactElement): Promise<void> {
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  cleanups.push(() => act(() => root.unmount()));
+  await act(async () => { root.render(element); });
+}
+
+/** Poll the painted DOM. The budget is the TEST's own — a tighter inner clock
+ *  would report a product bug whenever the machine is merely busy. */
+async function until<T>(what: string, probe: () => T | null | undefined | false): Promise<T> {
+  const deadline = Date.now() + 25_000;
+  for (;;) {
+    let found: T | null | undefined | false;
+    await act(async () => {
+      found = probe();
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    });
+    if (found) return found;
+    if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`);
+  }
+}
+
 describe("a chat ask bigger than a screen reaches the build lane", () => {
   it("lands as a standing card, a card part in the thread, and a park, with no box claimed", async () => {
     const walked = await walk({
@@ -219,8 +275,18 @@ describe("a chat ask bigger than a screen reaches the build lane", () => {
     expect(walked.result).toMatchObject({ needs: { kind: "approval", approvalId: pending[0]?.id } });
 
     // THE CARD IN THE THREAD: the wire part the shipped bridge publishes off a
-    // `pending-approval` outcome, which is what the receipt could never raise.
-    expect(approvalPartIn(walked.stream).approvalId).toBe(pending[0]?.id);
+    // `pending-approval` outcome, which is what the receipt could never raise —
+    // carrying the ask's OWN descriptor, because the card must speak about the
+    // BUILD. Graded off the calling tool it spoke about `vendo_make`, a read,
+    // and told the person that spending a build machine reads their data.
+    const part = approvalPartIn(walked.stream);
+    expect(part.approvalId).toBe(pending[0]?.id);
+    expect(part.risk).toBe("write");
+    expect(part.descriptor).toMatchObject({
+      name: VENDO_APP_BUILD_TOOL,
+      title: "Build this app for real",
+      risk: "write",
+    });
 
     // THE ROW says "offered, unanswered" — and carries the model's own one line,
     // which is what the person reads on the card.
@@ -266,6 +332,41 @@ describe("a chat ask bigger than a screen reaches the build lane", () => {
 
     expect(walked.model.toolNamesPerCall[0]).not.toContain(ESCALATE_TOOL);
     expect(walked.receipt?.status).toBe("failed");
+  }, 60_000);
+});
+
+describe("the ask reaches the person on the ONE approval card", () => {
+  it("paints the shipped ApprovalCard in the thread, in the build's own words", async () => {
+    const walked = await walk({
+      turns: [call(ESCALATE_TOOL, { why: WHY }, "c1"), speak("Asked about building it.")],
+    });
+    serve(walked.vendo);
+    await mount(createElement(VendoProvider, {
+      client: createVendoClient({ baseUrl: BASE }),
+      children: createElement(VendoThread, { threadId: "thr_escalate" }),
+    }));
+
+    // THE LITERAL CARD — `.fl-approval` is `ApprovalCard`'s own shell, and its
+    // machine attributes say which ask it is grading.
+    const card = await until("the approval card", () =>
+      document.querySelector<HTMLElement>(".fl-approval"));
+    expect(card.getAttribute("data-vendo-tool")).toBe(VENDO_APP_BUILD_TOOL);
+    expect(card.getAttribute("data-risk")).toBe("write");
+
+    // THE WORDS, off the shared ladder (`consentAsk`) reading the descriptor the
+    // door authored — never a second sentence written for this surface.
+    expect(card.textContent).toContain("Build this app for real?");
+    expect(card.textContent).toContain("This changes something in your account, as you.");
+    // What it said before the descriptor travelled: ungraded, so the note could
+    // only say nobody had checked what spending a build machine does.
+    expect(card.textContent).not.toContain("This hasn’t been checked");
+    expect(card.textContent).not.toContain("Nobody has checked what this changes");
+
+    // Answerable, and NOT rememberable: a grant is a standing yes to a call the
+    // person chose to make; this ask is about spending one machine, once.
+    const label = (element: Element) => (element.textContent ?? "").trim();
+    expect([...card.querySelectorAll("button")].map(label)).toContain("Approve");
+    expect(card.textContent).not.toContain("Remember this decision");
   }, 60_000);
 });
 

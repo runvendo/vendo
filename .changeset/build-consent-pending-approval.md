@@ -2,6 +2,7 @@
 "@vendoai/core": minor
 "@vendoai/apps": minor
 "@vendoai/harnesses": minor
+"@vendoai/ui": minor
 "@vendoai/vendo": minor
 ---
 
@@ -17,11 +18,22 @@ for work nobody had authorized. It now returns the ordinary
 part the thread renders the card from, and what the MCP door maps to its
 approval-ref result.
 
-`ToolOutcome`'s `pending-approval` gains two optional fields for the tool that
-parks an ask of its OWN: `approval` (`{ id, question, notes }` — the ask in
+`ToolOutcome`'s `pending-approval` gains three optional fields for the tool that
+parks an ask of its OWN: `descriptor` (the ask's own — what a CARD derives its
+words from), `approval` (`{ id, question, notes }` — the same ask already in
 words, for a surface that renders no card) and `say` (the assistant's sentence
-meanwhile). Both are optional and additive; every shipped producer and reader
-is untouched.
+meanwhile). All three are optional and additive; every shipped producer and
+reader is untouched.
+
+The descriptor rides the `data-vendo-approval` part, so the in-thread card is
+graded and worded off the BUILD. Graded off the calling tool it read
+`vendo_make`'s "read", and told a person that spending a build machine reads
+their data. And because a standing ask has no parked native call to render
+from — nor may it have one, since the runtime abandons every still-parked ask
+at the next turn — the thread now paints the shipped `ApprovalCard` from that
+part directly, deciding over the wire like the queue and the toast, with no
+`remember` disclosure. Before this the transcript showed only the calling
+tool's beat, "wasn't allowed", for a question nobody had been asked yet.
 
 Such a card also now SURVIVES the turn. A parked call is swept denied at turn
 end so a live-but-dead card cannot accrete in the queue — which, for a build,

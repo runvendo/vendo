@@ -117,7 +117,7 @@ function BeatLine({ state, children }: { state: "working" | "done" | "error"; ch
  *  the line, and the line in danger colour. Muting the failure to the same grey
  *  as "Approved — ran" left the WORDS as the only difference between a call
  *  that landed and one that didn't, on a receipt people scan rather than read. */
-function ResolvedApprovalCard({ summary, ok, line, detail }: {
+export function ResolvedApprovalCard({ summary, ok, line, detail }: {
   summary: string;
   ok: boolean;
   line: string;

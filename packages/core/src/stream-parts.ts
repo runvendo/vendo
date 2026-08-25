@@ -13,7 +13,7 @@ import {
   type TurnId,
 } from "./ids.js";
 import { knowledgeKindSchema, knowledgeVisibilitySchema, type KnowledgeKind, type KnowledgeVisibility } from "./knowledge.js";
-import { riskLabelSchema, type RiskLabel } from "./tools.js";
+import { riskLabelSchema, toolDescriptorSchema, type RiskLabel, type ToolDescriptor } from "./tools.js";
 import type { ToolCall } from "./tools.js";
 import { uiPayloadSchema, type UIPayload } from "./genui/tree-node.js";
 import { triggerSourceSchema, type TriggerSource } from "./triggers.js";
@@ -160,6 +160,12 @@ export interface VendoApprovalPart {
     id: GrantId;
     grantedAt: IsoDateTime;
   };
+  /** The ask's OWN descriptor, present when the tool parked an ask about
+   *  something other than the call the model made (the built-app door asks about
+   *  a BUILD, from inside `vendo_make`). The client's shared §16 builder reads
+   *  its title and schema (`buildApprovalRequest`), so the card derives the same
+   *  words the server authored instead of humanizing the calling tool's slug. */
+  descriptor?: ToolDescriptor;
 }
 
 /** 01-core §16 */
@@ -172,6 +178,7 @@ export const vendoApprovalPartSchema = z.object({
     id: grantIdSchema,
     grantedAt: isoDateTimeSchema,
   }).passthrough().optional(),
+  descriptor: toolDescriptorSchema.optional(),
 }).passthrough() satisfies z.ZodType<VendoApprovalPart>;
 
 /** Streamed when the agent loop stops because it exhausted its step cap, so

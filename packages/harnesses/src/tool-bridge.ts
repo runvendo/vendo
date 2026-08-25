@@ -145,13 +145,19 @@ export function approvalPart(
   risk: RiskLabel,
   approvalId: ApprovalId,
   invalidatedGrant?: VendoApprovalPart["invalidatedGrant"],
+  /** The ask's OWN descriptor, when the tool parked an ask about something
+   *  other than the call the model made. It both GRADES the card and gives it
+   *  its authored words — `risk` above belongs to the calling tool, which for a
+   *  build is `vendo_make`'s "read". */
+  asked?: ToolDescriptor,
 ): VendoApprovalPart {
   return {
     type: "data-vendo-approval",
     toolCallId,
-    risk,
+    risk: asked?.risk ?? risk,
     approvalId,
     ...(invalidatedGrant === undefined ? {} : { invalidatedGrant }),
+    ...(asked === undefined ? {} : { descriptor: asked }),
   };
 }
 
@@ -308,7 +314,8 @@ export async function guardedCall(
     // so the card is published by the apps runtime through the stream seam above,
     // by the side that knows it armed something. One less thing read by shape.
   } else if (outcome.status === "pending-approval") {
-    writePart(options.writer, approvalPart(toolCallId, descriptor.risk, outcome.approvalId));
+    writePart(options.writer, approvalPart(
+      toolCallId, descriptor.risk, outcome.approvalId, undefined, outcome.descriptor));
   } else if (outcome.status === "connect-required") {
     // The inline connect card (04-actions §3): emitted beside the native
     // tool part exactly like the approval part, keyed by toolCallId.

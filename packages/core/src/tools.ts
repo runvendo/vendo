@@ -447,14 +447,25 @@ const pendingApprovalSchema = z.object({
 export type ToolOutcome =
   | { status: "ok"; output: Json }
   | { status: "error"; error: { code: string; message: string } }
-  // `approval`/`say` are FIELDS on the existing status, never a status of their
-  // own — the same trade `blocked.cause` makes above. A tool that parks an ask
-  // of its OWN (the built-app door: the ask is about a build, not about calling
-  // that tool) is the one that knows what the card says and what to tell the
-  // person meanwhile; a park the guard raised on the tool's own descriptor is
-  // already described by it, so both stay optional and every shipped producer
-  // and reader is untouched.
-  | { status: "pending-approval"; approvalId: ApprovalId; approval?: PendingApproval; say?: string }
+  // `approval`/`say`/`descriptor` are FIELDS on the existing status, never a
+  // status of their own — the same trade `blocked.cause` makes above. A tool
+  // that parks an ask of its OWN (the built-app door: the ask is about a build,
+  // not about calling that tool) is the one that knows what the card says and
+  // what to tell the person meanwhile; a park the guard raised on the tool's own
+  // descriptor is already described by it, so all three stay optional and every
+  // shipped producer and reader is untouched.
+  //
+  // `descriptor` is the ask's own — what the CARD reads. `approval` is the same
+  // ask already in words, for the surfaces that render no card, and both are
+  // authored off the one descriptor (build-door.ts), so a card and an outside
+  // agent can never be told different things about one ask.
+  | {
+      status: "pending-approval";
+      approvalId: ApprovalId;
+      approval?: PendingApproval;
+      say?: string;
+      descriptor?: ToolDescriptor;
+    }
   | { status: "blocked"; reason: string; cause?: "expired" }
   | { status: "connect-required"; connect: ConnectRequired };
 
@@ -470,6 +481,7 @@ export const toolOutcomeSchema = z.discriminatedUnion("status", [
     approvalId: approvalIdSchema,
     approval: pendingApprovalSchema.optional(),
     say: z.string().min(1).optional(),
+    descriptor: toolDescriptorSchema.optional(),
   }).passthrough(),
   z.object({
     status: z.literal("blocked"),
