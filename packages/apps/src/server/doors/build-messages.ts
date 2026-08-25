@@ -35,9 +35,14 @@ export const NO_MACHINE = "This needs a real build — code running on a server 
  *  screen. FIRST person, unlike the three above: this one is the assistant's
  *  own sentence on the receipt, and it is the only thing the calling agent is
  *  given to say. No estimate and no cost — the card is a consent question, not
- *  a price quote (make-receipt.ts law 5). */
-export const AWAITING_CONSENT = "This one needs a real build, not just a screen — I've asked for your"
-  + " go-ahead, and it starts as soon as you approve.";
+ *  a price quote (make-receipt.ts law 5).
+ *
+ *  ONE SHORT SENTENCE, and it points AT the card. The say is what the agent
+ *  utters verbatim (make-receipt.ts law 2), and a say that explained the
+ *  situation was read as an invitation to explain it further: the model wrote
+ *  paragraphs under a card that was already asking the question. The shape is
+ *  the instruction — there is nothing here left to expand on. */
+export const AWAITING_CONSENT = "I've asked for your go-ahead — the card above has the details.";
 /** The other terminal landing an OFFERED build has: the person answered the
  *  standing card with no. Same third-person voice as NO_MACHINE — a system
  *  notice — and it never mentions a box, because none was opened. */

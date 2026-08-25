@@ -1,4 +1,4 @@
-import { riskLabelSchema, VENDO_MAKE_TOOL, type RiskLabel, type UIPayload, type VendoApprovalPart, type VendoAutomationPart, type VendoBuildFailedPart, type VendoConnectPart, type VendoGrantSetPart, type VendoLimitPart, type VendoStepLimitPart, type VendoTurnErrorPart, type VendoViewPart } from "@vendoai/core";
+import { isVendoError, riskLabelSchema, VENDO_MAKE_TOOL, type RiskLabel, type UIPayload, type VendoApprovalPart, type VendoAutomationPart, type VendoBuildFailedPart, type VendoConnectPart, type VendoGrantSetPart, type VendoLimitPart, type VendoStepLimitPart, type VendoTurnErrorPart, type VendoViewPart } from "@vendoai/core";
 import { isToolUIPart, type DynamicToolUIPart, type ToolUIPart, type UIMessage } from "ai";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useVendoProvider } from "../../context.js";
@@ -6,7 +6,7 @@ import { useSplitView } from "../split-view.js";
 import { useApprovalSheetPresentation } from "../../hooks/use-mobile-takeover.js";
 import { PayloadView } from "../../tree/renderer.js";
 import { PlacementAction } from "../add-to-picker.js";
-import { ApprovalCard } from "../approval-card.js";
+import { ApprovalCard, refusalCopy } from "../approval-card.js";
 import { useApprovalModal } from "../approval-modal.js";
 import { ApprovalSheet } from "../approval-sheet.js";
 import { ChromeRoot, useChromeTheme } from "../chrome-root.js";
@@ -573,6 +573,38 @@ function GrantSetConsent({ toolCallId, grantSetId, name, permissions, siblingPar
 }
 
 /**
+ * One decided card, SETTLED in place — the same settled register the wire-driven
+ * embed resolves into (`ResolvedApprovalCard` in embeds.tsx).
+ *
+ * A standing ask outlives the turn that raised it, so no stream will ever move
+ * its part out of `approval-requested`: without this the buttons stay live on a
+ * question the person already answered, and pressing them again asks the wire
+ * about a decision it has already made.
+ *
+ * An ask the wire says is ALREADY answered (or has been swept) settles too — the
+ * question is closed either way, and the consumer sentence for it is the card's
+ * own (`refusalCopy`). Only then: `landed` is the answer's onward journey (the
+ * native resume), which an ask that was decided elsewhere has no business
+ * restarting. Any other failure rethrows, so the card keeps its buttons and the
+ * person can try again.
+ */
+async function settleDecision(
+  decided: Promise<unknown>,
+  approve: boolean,
+  landed?: () => void,
+): Promise<{ ok: boolean; line: string }> {
+  try {
+    await decided;
+  } catch (reason) {
+    const code = isVendoError(reason) ? reason.code : undefined;
+    if (code !== "conflict" && code !== "not-found") throw reason;
+    return { ok: false, line: refusalCopy(reason) };
+  }
+  landed?.();
+  return { ok: approve, line: approve ? "Approved — under way" : "Declined — nothing ran" };
+}
+
+/**
  * A STANDING consent ask at its transcript position, on the ONE approval card.
  *
  * `ThreadApprovals` below renders every ask a NATIVE parked call carries, and
@@ -632,8 +664,7 @@ function ThreadStandingApproval({ part, siblingParts }: {
       allowRemember={false}
       showContext={false}
       onDecide={async ({ approve }) => {
-        await client.approvals.decide(approvalId, { approve });
-        setSettled({ ok: approve, line: approve ? "Approved — under way" : "Declined — nothing ran" });
+        setSettled(await settleDecision(client.approvals.decide(approvalId, { approve }), approve));
       }}
     />
   );
@@ -957,6 +988,11 @@ export function ThreadApprovals({ approvals, risks, guardApprovals, cardRefs, re
   // regression): on short viewports the consent stays an in-list card so the
   // voice stage's controls remain reachable.
   const mobile = useApprovalSheetPresentation();
+  // The answered cards, by ask id. A parked NATIVE ask normally leaves this list
+  // on its own — the stream moves its part past `approval-requested` — but a
+  // standing one (a restored transcript, an ask that outlived its turn) has no
+  // stream left to do it, so the card it left behind settles here instead.
+  const [settled, setSettled] = useState(new Map<string, { ok: boolean; line: string }>());
   return (
     <>
       {approvals.map((part, index) => {
@@ -983,6 +1019,14 @@ export function ThreadApprovals({ approvals, risks, guardApprovals, cardRefs, re
             ? {} : { descriptor: guardApproval.descriptor }),
         }, tools);
         const guardApprovalId = guardApproval?.approvalId;
+        const answered = settled.get(part.approval.id);
+        if (answered !== undefined) {
+          return (
+            <ChromeRoot key={part.approval.id}>
+              <ResolvedApprovalCard summary={approval.descriptor.title ?? name} ok={answered.ok} line={answered.line} />
+            </ChromeRoot>
+          );
+        }
         const asSheet = mobile && index === approvals.length - 1;
         const card = (
           <div key={part.approval.id} ref={element => { cardRefs.current.set(part.approval.id, element); }}>
@@ -1031,11 +1075,17 @@ export function ThreadApprovals({ approvals, risks, guardApprovals, cardRefs, re
                 }
                 // Decide the guard's approval record over the wire FIRST so the
                 // resumed execution replays as approved (05 §1) — the native
-                // response alone only tells the model loop to continue.
-                if (guardApprovalId !== undefined) {
-                  await client.approvals.decide([guardApprovalId], decision);
-                }
-                respond({ id: part.approval.id, approved: decision.approve });
+                // response alone only tells the model loop to continue. Then the
+                // card settles, because this one may be all there is: an ask that
+                // outlived its turn has no stream left to retire it.
+                const record = await settleDecision(
+                  guardApprovalId === undefined
+                    ? Promise.resolve()
+                    : client.approvals.decide([guardApprovalId], decision),
+                  decision.approve,
+                  () => respond({ id: part.approval.id, approved: decision.approve }),
+                );
+                setSettled(previous => new Map(previous).set(part.approval.id, record));
               }}
             />
           </div>

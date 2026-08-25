@@ -271,8 +271,15 @@ describe("a chat ask bigger than a screen reaches the build lane", () => {
     expect(pending[0]?.call.args).toMatchObject({ prompt: ASK });
     const appId = (pending[0]?.call.args as { appId: AppId }).appId;
 
-    // THE ANSWER the calling agent got is the standard park, aimed at that card.
-    expect(walked.result).toMatchObject({ needs: { kind: "approval", approvalId: pending[0]?.id } });
+    // THE ANSWER the calling agent got is the standard park, aimed at that card —
+    // and its reason is the DOOR's own one line (`say`), not the harness's
+    // generic "This still needs approval.": the refusal is the only thing the
+    // model reads about this call, so a say that never reached it left the model
+    // narrating its own paragraphs under a card already asking the question.
+    expect(walked.result).toMatchObject({
+      reason: expect.stringContaining("the card above"),
+      needs: { kind: "approval", approvalId: pending[0]?.id },
+    });
 
     // THE CARD IN THE THREAD: the wire part the shipped bridge publishes off a
     // `pending-approval` outcome, which is what the receipt could never raise —
@@ -356,7 +363,7 @@ describe("the ask reaches the person on the ONE approval card", () => {
     // THE WORDS, off the shared ladder (`consentAsk`) reading the descriptor the
     // door authored — never a second sentence written for this surface.
     expect(card.textContent).toContain("Build this app for real?");
-    expect(card.textContent).toContain("This changes something in your account, as you.");
+    expect(card.textContent).toContain("This changes something in your account, and it runs as you.");
     // What it said before the descriptor travelled: ungraded, so the note could
     // only say nobody had checked what spending a build machine does.
     expect(card.textContent).not.toContain("This hasn’t been checked");
@@ -367,6 +374,20 @@ describe("the ask reaches the person on the ONE approval card", () => {
     const label = (element: Element) => (element.textContent ?? "").trim();
     expect([...card.querySelectorAll("button")].map(label)).toContain("Approve");
     expect(card.textContent).not.toContain("Remember this decision");
+
+    // AND IT SETTLES once they answer. This ask outlives its turn by design, so
+    // there is no stream left to retire the part it was painted from: without
+    // settling here the buttons stand for good on a question already decided, and
+    // pressing them asks the guard again about a record it has already written.
+    const deny = [...card.querySelectorAll("button")].find((button) => label(button) === "Deny")!;
+    await act(async () => { deny.click(); });
+    const settled = await until("the settled card", () =>
+      document.querySelector<HTMLElement>(".fl-cardshell--settled"));
+    expect(settled.textContent).toContain("Build this app for real");
+    expect(settled.textContent).toContain("Declined — nothing ran");
+    expect([...settled.querySelectorAll("button")].map(label)).not.toContain("Deny");
+    // The person's no reached the real guard, not just the card.
+    expect(await walked.vendo.guard.approvals.pending(principal)).toEqual([]);
   }, 60_000);
 });
 

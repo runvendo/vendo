@@ -39,4 +39,13 @@ Such a card also now SURVIVES the turn. A parked call is swept denied at turn
 end so a live-but-dead card cannot accrete in the queue — which, for a build,
 tombstoned the app the moment the turn that asked for it ended.
 
+An answered card SETTLES, and the assistant stops talking over it. In-thread
+consent cards resolve into the settled record on decide — including a decide the
+wire says was already answered (or swept), which used to leave the buttons live
+under an error on a closed question. And `say` is now the refusal the harness
+hands the model for a tool that parked its own ask, so the model relays the one
+sentence the door wrote ("I've asked for your go-ahead — the card above has the
+details.") instead of narrating its own paragraphs under a card that is already
+asking.
+
 `MakeReceipt.status` drops `"awaiting-consent"`; nothing produces it any more.

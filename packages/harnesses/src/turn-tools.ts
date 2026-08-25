@@ -424,7 +424,13 @@ export function createTurnTools(options: TurnToolsOptions): RuntimeTurnTools {
           });
           // The guard asked twice for one tap; refusing to loop is the honest
           // answer (a second card for the same call would be a trap).
-          return refused("This still needs approval.", {
+          //
+          // A tool that raised the ask ITSELF also wrote the one line the agent
+          // is to relay (`say` — make-receipt.ts law 2), and this refusal is the
+          // only thing the model reads about the call. Without it the model was
+          // told nothing but "needs approval" beside a card already asking the
+          // question, and narrated its own paragraphs under it.
+          return refused(outcome.say ?? "This still needs approval.", {
             kind: "approval",
             approvalId: outcome.approvalId,
           });
