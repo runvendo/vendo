@@ -23,6 +23,9 @@ export type { VendoAppEmbedProps, VendoApprovalEmbedProps, VendoApprovalEmbedSta
 // The components behind the frozen prop contracts, exported from the root so
 // a BYO chat page needs only `@vendoai/ui`.
 export { VendoAppEmbed, VendoApprovalEmbed, VendoToolResult } from "./chrome/embeds.js";
+// The outside-agent ask, as one element: the door ships the rendered approval
+// with the parked call's outcome, and this asks, decides and settles it.
+export { VendoApproval, type PendingApproval, type VendoApprovalProps } from "./chrome/vendo-approval.js";
 // The slot itself, from the ROOT: a host mounting one only has @vendoai/vendo
 // as a direct dependency, and the "@vendoai/ui/chrome" subpath does not resolve
 // under pnpm strict linking (the same TS2307 story as VendoOverlay's).

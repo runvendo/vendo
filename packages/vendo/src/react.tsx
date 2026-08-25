@@ -41,6 +41,10 @@ export {
   VendoAppEmbed,
   VendoApprovalEmbed,
   VendoToolResult,
+  // chrome/vendo-approval.tsx — the outside-agent ask, as one element.
+  VendoApproval,
+  type PendingApproval,
+  type VendoApprovalProps,
   // chrome/vendo-slot.tsx — the mount point a host puts in its own markup, and
   // the shape of its `onParked` prop.
   VendoSlot,
