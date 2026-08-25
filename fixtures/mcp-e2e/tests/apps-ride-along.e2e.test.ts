@@ -1,5 +1,11 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { createStack, FIXTURE_APP_ID, HTTP_FIXTURE_APP_ID, resetFixture } from "../src/harness.js";
+import {
+  BUNDLE_FIXTURE_APP_ID,
+  createStack,
+  FIXTURE_APP_ID,
+  HTTP_FIXTURE_APP_ID,
+  resetFixture,
+} from "../src/harness.js";
 import { connectWithSdk, textOf } from "../src/support.js";
 
 const SHIM_URI = "ui://vendo/tree-shim.html";
@@ -88,6 +94,29 @@ describe("saved apps ride along as MCP Apps", () => {
         expect(textOf(opened)).toMatch(
           new RegExp(`Open MCP hosted dashboard in .+: ${stack.origin}/fixture/apps/${HTTP_FIXTURE_APP_ID}`),
         );
+      } finally {
+        await connected.close();
+      }
+    } finally {
+      await stack.close();
+    }
+  });
+
+  it("opens a SEALED bundle as the built app it is, never as its content hash", async () => {
+    const stack = await createStack();
+    try {
+      const connected = await connectWithSdk(stack);
+      try {
+        const opened = await connected.client.callTool({
+          name: "vendo_apps_open",
+          arguments: { appId: BUNDLE_FIXTURE_APP_ID },
+        });
+        expect(opened.isError).not.toBe(true);
+        // This door was composed with no public base url, so there is no link to
+        // hand out — and the answer is still a sentence about a ready app rather
+        // than the entry hash, which is the one thing an agent cannot use.
+        expect(textOf(opened)).toMatch(/^This app is built and ready to open in .+\.$/);
+        expect(textOf(opened)).not.toMatch(/[0-9a-f]{64}/);
       } finally {
         await connected.close();
       }

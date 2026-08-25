@@ -13,14 +13,15 @@ import type {
   VendoTheme,
 } from "@vendoai/apps/contract";
 import { createActions } from "@vendoai/actions";
-import { createApps, SCREEN_FILE, type AppsRuntime } from "@vendoai/apps";
+import { createApps, sealBundleBlobs, SCREEN_FILE, type AppsRuntime } from "@vendoai/apps";
 import { createGuard, type PolicyConfig, type VendoGuard } from "@vendoai/guard";
 import { createMcpDoor, type McpDoorConfig, type HostOAuthAdapter } from "@vendoai/mcp";
-import { createStore, type VendoStore } from "@vendoai/store";
+import { createStore, storeFiles, type VendoStore } from "@vendoai/store";
 
 export const SUBJECT = "user_1";
 export const FIXTURE_APP_ID = "app_mcp_fixture";
 export const HTTP_FIXTURE_APP_ID = "app_mcp_http_fixture";
+export const BUNDLE_FIXTURE_APP_ID = "app_mcp_bundle_fixture";
 export const MCP_MOUNT = "/api/vendo/mcp";
 export const FIXTURE_THEME: VendoTheme = {
   colors: {
@@ -214,6 +215,30 @@ export async function createStack(options: StackOptions = {}): Promise<Stack> {
     data: { subject: SUBJECT, enabled: false, doc: httpFixtureApp },
     refs: { subject: SUBJECT },
   });
+  // A SEALED bundle (FINAL SPEC v1) written through the REAL seal, so what the
+  // door projects is a built app's own surface rather than a shape this file
+  // invented.
+  const bundle = await sealBundleBlobs(
+    BUNDLE_FIXTURE_APP_ID,
+    [{ path: "dist/app.js", bytes: new TextEncoder().encode('document.title = "sealed";\n') }],
+    "dist/app.js",
+    storeFiles(store),
+  );
+  await store.records("vendo_apps").put({
+    id: BUNDLE_FIXTURE_APP_ID,
+    data: {
+      subject: SUBJECT,
+      enabled: false,
+      doc: {
+        format: "vendo/app@1",
+        id: BUNDLE_FIXTURE_APP_ID,
+        name: "MCP sealed app",
+        ui: "bundle",
+        bundle,
+      } satisfies AppDocument,
+    },
+    refs: { subject: SUBJECT },
+  });
   const resolvePrincipal: HostOAuthAdapter["principal"] = async (subject) => {
     return revoked.has(subject)
       ? null
@@ -246,9 +271,11 @@ export async function createStack(options: StackOptions = {}): Promise<Stack> {
         return { kind: "http", url: `${origin}/fixture/apps/${HTTP_FIXTURE_APP_ID}` };
       }
       const opened = await apps.open(appId, ctx);
-      if (opened.kind === "tree") return { kind: "tree", payload: opened.payload };
-      if (opened.kind === "http") return { kind: "http", url: opened.url };
-      throw new Error(`rung-1 fixture cannot serve app surface "${opened.kind}"`);
+      // Only the tree is narrowed (its resolved payload is what the shim
+      // renders); every other surface travels as itself, exactly as the
+      // umbrella's own port does — the DOOR is what turns an open into
+      // something an agent can say.
+      return opened.kind === "tree" ? { kind: "tree", payload: opened.payload } : opened;
     },
     call: (appId, ref, args, ctx) => apps.call(appId, ref, args, ctx),
   };
