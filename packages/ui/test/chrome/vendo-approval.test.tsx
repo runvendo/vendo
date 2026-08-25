@@ -30,6 +30,15 @@ describe("<VendoApproval>", () => {
 
   it("renders the shipped question, and every note as its own item", () => {
     const { container } = render(<VendoApproval approval={ask} client={client} />);
+    // THE literal `<ApprovalCard>`, not a lookalike composed out of the same
+    // shell: `fl-item-in` and the machine affordances beside it are that
+    // component's own (approval-card.tsx), and the markup this replaced — which
+    // passed every other assertion in this file — carried none of them.
+    const shell = container.querySelector(".fl-approval")!;
+    expect(shell.classList.contains("fl-item-in")).toBe(true);
+    // The wire carries no grade, and "ungraded" is a first-class one: this ask
+    // arrived as words, so nobody checked what it changes.
+    expect(shell.getAttribute("data-risk")).toBe("ungraded");
     expect(container.querySelector(".fl-approval-ask")!.textContent).toBe(ask.question);
     const notes = container.querySelector("ul.fl-approval-sub")!;
     expect(notes.getAttribute("aria-label")).toBe("Request details");
