@@ -77,7 +77,10 @@ export const xlsx2csv: LazyCommand = {
             exitCode: 1,
           };
         }
-        return { stdout: XLSX.utils.sheet_to_csv(sheet), stderr: "", exitCode: 0 };
+        // Terminated, like the other parsers and like every text stream a shell
+        // produces: `sheet_to_csv` stops after the last row, and an unterminated
+        // last line makes `wc -l` and `tail` undercount the sheet by one.
+        return { stdout: `${XLSX.utils.sheet_to_csv(sheet)}\n`, stderr: "", exitCode: 0 };
       },
     };
   },

@@ -114,6 +114,14 @@ describe("xlsx2csv", () => {
     expect(result.stdout.trim().split("\n")).toEqual(["month,revenue", "jan,31000", "feb,39000"]);
   });
 
+  it("terminates the CSV with a newline, so `wc -l` counts every row", async () => {
+    const session = createShellSession({ workspace: await diskWith({ "/user/files/q1.xlsx": await workbook() }) });
+
+    expect((await session.exec("xlsx2csv files/q1.xlsx")).stdout)
+      .toBe("month,revenue\njan,31000\nfeb,39000\n");
+    expect((await session.exec("xlsx2csv files/q1.xlsx | wc -l")).stdout.trim()).toBe("3");
+  });
+
   it("takes a sheet by name, and lists them when the name is wrong", async () => {
     const session = createShellSession({ workspace: await diskWith({ "/user/files/q1.xlsx": await workbook() }) });
 
