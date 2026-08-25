@@ -102,7 +102,6 @@
             "pages": [
               "generated/quickstart",
               "generated/apps",
-              "generated/in-client-venue",
               "generated/host-components",
               "generated/import-and-fork"
             ]
@@ -432,7 +431,7 @@
     },
     {
       "source": "/concepts/in-client-venue",
-      "destination": "/generated/in-client-venue",
+      "destination": "/generated/apps",
       "permanent": true
     },
     {
@@ -562,7 +561,12 @@
     },
     {
       "source": "/capabilities/in-client-venue",
-      "destination": "/generated/in-client-venue",
+      "destination": "/generated/apps",
+      "permanent": true
+    },
+    {
+      "source": "/generated/in-client-venue",
+      "destination": "/generated/apps",
       "permanent": true
     },
     {

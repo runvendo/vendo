@@ -51,24 +51,21 @@ Mounted unless `apps: false`.
 | `/apps/seed` | POST | `{ component, instruction, slot? }` → a seeded `AppDocument`. The remix gesture on a captured component |
 | `/apps/placements` | GET | `?slots=a,b,c` → `{ slot, app, title, status }[]`, one entry per named slot holding an app for the caller. One poll for a whole page |
 | `/apps/import` | POST | bytes → `AppDocument`, fresh id minted. Requires `Content-Type: application/octet-stream` or `application/vnd.vendo.app` |
-| `/apps/review-queue` | GET | review-kind versions awaiting a reviewer. Outside a development composition it answers `[]`, never an error |
 | `/apps/:id` | GET · DELETE | app · delete |
 | `/apps/:id/open` | GET | `OpenSurface`. With `?pending=1` a not-yet-servable app answers `{ kind: "pending" }` at `200`, and a terminally failed build answers `{ kind: "failed", reason, retryable? }` at `200`, so the poll resolves instead of spinning |
 | `/apps/:id/call` | POST | `{ ref: "<tool>", args }` → `ToolOutcome` |
 | `/apps/:id/edit` | POST | `{ instruction }` → `EditResult` |
 | `/apps/:id/reseed` | POST | re-seed this app from the current baseline |
 | `/apps/:id/history` | GET | the app's capped version log, newest first |
-| `/apps/:id/ship-diff` | GET | `ShipDiff`, the reviewable code diff against the last approved baseline, hash-pinned |
 | `/apps/:id/export` | GET | `.vendoapp` bytes |
 | `/apps/:id/fork` | POST | `AppDocument` |
 | `/apps/:id/bundle/:hash` | GET | a sealed bundle's bytes, as the document its frame renders. Answered behind `Content-Security-Policy: default-src 'none'` and cached immutably, because the url is the content's own hash. Viewer level, so a person who may see a shared app may render it |
 | `/apps/:id/place` | POST | `{ slot }` → `{ evicted? }`. A slot holds one app per subject, so whatever it held is evicted |
 | `/apps/:id/unplace` | POST | `{ slot }` → `{}`. Unplacing a slot this app does not hold is not an error |
-| `/apps/:id/reject-review` | POST | `{ note }` → the rejection. The note is required and the work is not deleted |
 | `/slots` | POST | `{ slots: { id, label }[] }` → `{}`. Which slots the caller's surfaces mount, batched so a page costs one request. Idempotent per subject and slot |
 | `/slots` | GET | `{ id, label, lastSeen }[]`, filtered to the 30-day decay window |
 
-`/apps/seed`, `/apps/placements`, `/apps/import`, and `/apps/review-queue` are registered ahead of `/apps/:id/*`, so none of those words is ever read as an app id.
+`/apps/seed`, `/apps/placements`, and `/apps/import` are registered ahead of `/apps/:id/*`, so none of those words is ever read as an app id.
 
 ## Automations and runs
 
@@ -123,7 +120,6 @@ These answer only in a development composition (`createVendo({ development })`, 
 
 | Route | Method | Body → Response |
 | --- | --- | --- |
-| `/dev/inclient-approval` | POST | `{ appId, approvedBy? }` → the minted `InClientApproval`. Pins the app's current `versionHash`; `approvedBy` defaults to `"local-dev"`. An ephemeral principal is refused with `401` |
 | `/sync/impact` | POST | `{ tools: string[] }` → `{ impact }`, per-tool reference counts across enabled apps, automations, and active grants. Up to 200 names per call |
 
 `/sync/impact` takes no principal and its counts are deployment-wide, which is exactly why a deployment that did not opt in must not carry it.

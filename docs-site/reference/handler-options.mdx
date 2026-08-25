@@ -144,7 +144,6 @@ A key is any opaque string (`openssl rand -hex 32`), the door never writes one d
 | Sub-key | Default | Behavior |
 | --- | --- | --- |
 | `designRules` | `.vendo/design-rules.md`, re-read per generation | A non-blank string wins and is then fixed for the instance lifetime |
-| `review.reviewer` | unset | `(ctx) => boolean`. Unset, the review queue shows only the caller's own submissions and reject refuses naming this hook |
 | `pipeline.smokeRender` | on unless explicitly `false` | Headless smoke render of every generated island before it ships |
 | `checks` | `[]` | Host checks appended to the built-ins. They add findings, never remove one |
 
