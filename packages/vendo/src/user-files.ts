@@ -57,14 +57,18 @@ export const isUserFilePath = (path: string): boolean =>
  * (b9392b92c): reject the segment rather than sanitize it, because the values
  * reaching here are steerable by end-user chat.
  */
+/** The longest leaf any door accepts. Named because the re-homer builds a leaf
+    out of one staging already prefixed and has to cut it to the same limit. */
+export const MAX_LEAF_NAME = 200;
+
 function leafName(name: string): string {
-  const bad = name.length === 0 || name.length > 200
+  const bad = name.length === 0 || name.length > MAX_LEAF_NAME
     || /[/\\]/.test(name) || name === "." || name === ".."
     || [...name].some((char) => char < " ");
   if (bad) {
     throw new VendoError(
       "validation",
-      `${JSON.stringify(name)} is not a file name. Send one name — no slashes, no control characters, at most 200 characters — and it lands in the user's files as exactly that.`,
+      `${JSON.stringify(name)} is not a file name. Send one name — no slashes, no control characters, at most ${MAX_LEAF_NAME} characters — and it lands in the user's files as exactly that.`,
     );
   }
   return name;

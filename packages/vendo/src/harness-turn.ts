@@ -79,7 +79,7 @@ import type { VendoToolSearchConfig } from "@vendoai/harnesses/vendo";
 import { createUIMessageStream, createUIMessageStreamResponse, type LanguageModel, type UIMessage } from "ai";
 import { discoveryRail } from "./prompt.js";
 import { finishActiveTurn } from "./turn-liveness.js";
-import { isUserFilePath, threadFilePath, threadFilesDir, uploadStagingPath, userFilePath, USER_UPLOADS } from "./user-files.js";
+import { isUserFilePath, MAX_LEAF_NAME, threadFilePath, threadFilesDir, uploadStagingPath, userFilePath, USER_UPLOADS } from "./user-files.js";
 import type { Limiter } from "./limits.js";
 
 export interface HarnessTurnsConfig {
@@ -500,7 +500,12 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
       // with one question: it reads the store's index AND this turn's own staged
       // moves (store/src/workspace-fs.ts:260). The common single-drop turn is
       // untouched.
-      if (await workspace.exists(to)) to = threadFilePath(threadId, from.slice(USER_UPLOADS.length + 1));
+      // That leaf is the name with staging's nine-character prefix in front of
+      // it, so a name near the door's own limit overshoots it — and the whole
+      // turn was refused rather than the second drop homed. The prefix is what
+      // makes it unique, so the overshoot comes off the END.
+      const staged = from.slice(USER_UPLOADS.length + 1);
+      if (await workspace.exists(to)) to = threadFilePath(threadId, staged.slice(0, MAX_LEAF_NAME));
       await workspace.mv(from, to);
       homes.set(from, to);
     }

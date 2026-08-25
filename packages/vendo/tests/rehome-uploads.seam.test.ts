@@ -198,6 +198,41 @@ describe("a turn takes its files home", () => {
     expect(await readBack(vendo, stored[1]!.url!)).toBe("second\n");
   });
 
+  it("keeps both drops when the shared name is as long as the door allows", async () => {
+    // The unique fallback re-uses the STAGING leaf, which is the name plus a
+    // nine-character prefix — so a name near the 200-character door limit built
+    // a leaf past it, and `threadFilePath` refused the whole turn rather than
+    // homing the second drop.
+    const { vendo } = await compose();
+    const headers = await bearer();
+    const name = `${"ledger-".repeat(27)}rows.csv`;
+    expect(name).toHaveLength(197);
+    const first = await (await upload(vendo, name, bytes("first\n"), headers)).json() as { path: string };
+    const second = await (await upload(vendo, name, bytes("second\n"), headers)).json() as { path: string };
+
+    const message = {
+      id: "m1",
+      role: "user",
+      parts: [
+        { type: "file", mediaType: "text/csv", filename: name, url: first.path },
+        { type: "file", mediaType: "text/csv", filename: name, url: second.path },
+      ],
+    };
+    const response = await post(vendo, { threadId: "thr_long", message }, headers);
+    await response.text();
+    expect(response.status).toBe(200);
+
+    const thread = await (await vendo.handler(new Request(
+      "https://host.test/api/vendo/threads/thr_long",
+      { headers },
+    ))).json() as { messages: Array<{ parts: Array<{ type: string; url?: string }> }> };
+    const stored = thread.messages[0]!.parts.filter((part) => part.type === "file");
+    expect(stored).toHaveLength(2);
+    expect(stored[0]!.url).not.toBe(stored[1]!.url);
+    expect(await readBack(vendo, stored[0]!.url!)).toBe("first\n");
+    expect(await readBack(vendo, stored[1]!.url!)).toBe("second\n");
+  });
+
   it("keeps both drops when TWO TURNS of one thread carry the same name", async () => {
     // The same root cause one axis over: the within-message fix compared the
     // addresses THIS message was taking, which is empty on a later turn, so
