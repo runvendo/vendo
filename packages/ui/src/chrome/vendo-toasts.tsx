@@ -177,6 +177,11 @@ function ApprovalToasts({ pollMs }: { pollMs: number }) {
     const dismissers = dismissersRef.current;
     const seen = seenRef.current;
     for (const approval of pending) {
+      // A build's ask is answered on its own in-thread card (ApprovalCard,
+      // painted from the `data-vendo-approval` part), so a toast would ask the
+      // same question a second time. It still counts in the launcher badge —
+      // that is what keeps a closed thread from stranding it.
+      if (approval.call.tool === VENDO_APP_BUILD_TOOL) continue;
       if (seen.has(approval.id) || dismissers.has(approval.id)) continue;
       seen.add(approval.id);
       // Ruling 14's ONE plain-words ladder, the same one the approval card and
