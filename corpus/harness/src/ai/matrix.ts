@@ -271,12 +271,19 @@ function resolveAgentSdk(sdkDir: string): string | null {
   }
 }
 
+/** npm is a `.cmd` shim on Windows and Node has refused to exec one without a
+ *  shell since CVE-2024-27980, so a bare spawn ENOENTs and the SDK provision
+ *  fails before npm ever starts. Windows takes the whole line as ONE string —
+ *  an args array alongside `shell: true` is DEP0190 and warns on every run. The
+ *  spec is quoted because cmd.exe reads `^` (as in `@^1.2`) as an escape
+ *  character outside double quotes; the same reasoning as provider-deps.ts. */
 function npmInstallAgentSdk(sdkDir: string): Promise<void> {
   return new Promise((resolve, reject) => {
-    const child = spawn("npm", ["install", "--no-audit", "--no-fund", `${AGENT_SDK_PACKAGE}@${AGENT_SDK_VERSION}`], {
-      cwd: sdkDir,
-      stdio: ["ignore", "ignore", "pipe"],
-    });
+    const spec = `${AGENT_SDK_PACKAGE}@${AGENT_SDK_VERSION}`;
+    const stdio: ["ignore", "ignore", "pipe"] = ["ignore", "ignore", "pipe"];
+    const child = process.platform === "win32"
+      ? spawn(`npm install --no-audit --no-fund "${spec}"`, { cwd: sdkDir, stdio, shell: true })
+      : spawn("npm", ["install", "--no-audit", "--no-fund", spec], { cwd: sdkDir, stdio });
     let stderr = "";
     child.stderr.setEncoding("utf8");
     child.stderr.on("data", (chunk: string) => { stderr += chunk; });

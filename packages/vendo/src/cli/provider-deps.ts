@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, type SpawnOptions } from "node:child_process";
 import { access, readFile } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import type { DevCredential, EnvKeyProvider } from "../dev-creds/resolve.js";
@@ -220,16 +220,40 @@ export function installStderrTail(): string {
     through the platform shell there — a shell-less spawn ENOENTs before the
     install starts. cmd.exe treats `^` (as in ai@^6) as an escape character
     OUTSIDE double quotes, so every arg is quoted; none of ours carry quotes
-    of their own (specs, flags, relative paths). */
+    of their own (specs, flags, relative paths).
+
+    Windows takes the whole line as ONE string rather than command + args:
+    passing an array alongside `shell: true` is DEP0190, and Node prints that
+    deprecation warning to the CLI's own stderr on every install — so the user
+    saw a security warning about our spawn in the middle of `vendo` output.
+
+    An arg carrying a `"` of its own is REFUSED rather than escaped. cmd.exe has
+    no escaping story worth trusting — the rules differ between the shell and
+    the callee's own argv parser — and this builds a command line for a shell,
+    so a wrong guess is a command injection, not a typo. Nothing calls it with
+    one (specs, flags, relative paths), which is exactly why the day something
+    does should be a loud stop rather than a quiet best effort. */
+export function installSpawnPlan(
+  command: string,
+  args: readonly string[],
+  platform: NodeJS.Platform = process.platform,
+): { command: string; args: readonly string[] | undefined; shell: boolean } {
+  if (platform !== "win32") return { command, args, shell: false };
+  const quoted = args.map((arg) => {
+    if (arg.includes('"')) {
+      throw new Error(`install argument cannot be quoted safely for cmd.exe (it contains a double quote): ${arg}`);
+    }
+    return `"${arg}"`;
+  });
+  return { command: [command, ...quoted].join(" "), args: undefined, shell: true };
+}
+
 export const defaultRunner: InstallRunner = (command, args, cwd) =>
   new Promise((resolve) => {
     stderrTail = "";
-    const windows = process.platform === "win32";
-    const child = spawn(command, windows ? args.map((arg) => `"${arg}"`) : args, {
-      cwd,
-      stdio: ["ignore", "ignore", "pipe"],
-      shell: windows,
-    });
+    const plan = installSpawnPlan(command, args);
+    const options: SpawnOptions = { cwd, stdio: ["ignore", "ignore", "pipe"], shell: plan.shell };
+    const child = plan.args ? spawn(plan.command, [...plan.args], options) : spawn(plan.command, options);
     child.stderr?.setEncoding("utf8");
     child.stderr?.on("data", (chunk: string) => {
       stderrTail = (stderrTail + chunk).slice(-STDERR_TAIL_CHARS);

@@ -50,7 +50,12 @@ import { createControllableModel, expandTurn, type TurnSpec } from "./model.ts";
 const WIRE_BASE = "/api/vendo";
 const CONTROL_BASE = "/__test";
 const hostDir = fileURLToPath(new URL("../../../host-app/", import.meta.url));
-const nextBin = join(hostDir, "node_modules", ".bin", "next");
+// `node_modules/.bin/next` is an extensionless shell script on POSIX and a
+// `.cmd`/`.ps1` pair on Windows, where Node has refused to exec either without
+// a shell since CVE-2024-27980 — the bare spawn ENOENTs and the fixture never
+// comes up. Next ships its real entry as plain JS, so run that on this same
+// Node: no shell, no quoting, one code path on both platforms.
+const nextBin = join(hostDir, "node_modules", "next", "dist", "bin", "next");
 
 async function freePort(): Promise<number> {
   const probe = createNetServer();
@@ -79,7 +84,7 @@ export async function startBackends(): Promise<Backends> {
   const hostPort = await freePort();
   const hostBaseUrl = `http://127.0.0.1:${hostPort}`;
   let hostOutput = "";
-  const host: ChildProcessWithoutNullStreams = spawn(nextBin, ["dev", "-p", String(hostPort)], {
+  const host: ChildProcessWithoutNullStreams = spawn(process.execPath, [nextBin, "dev", "-p", String(hostPort)], {
     cwd: hostDir,
     env: { ...process.env, NEXT_TELEMETRY_DISABLED: "1", FIXTURE_DIST_DIR: ".next/integration-browser" },
     stdio: ["pipe", "pipe", "pipe"],

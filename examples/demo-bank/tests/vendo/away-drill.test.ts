@@ -369,7 +369,12 @@ beforeAll(async () => {
     MAPLE_DIST_DIR: ".next-away-drill",
   };
   delete (env as Record<string, string | undefined>).NODE_ENV; // vitest's "test" would leak into next dev
-  const spawned = spawn(join(appDir, "node_modules", ".bin", "next"), ["dev", "-p", String(port)], {
+  // Not the `.bin` entry: it is an extensionless script on POSIX and a
+  // `.cmd`/`.ps1` pair on Windows, where Node has refused to exec either without
+  // a shell since CVE-2024-27980 — the bare spawn ENOENTs and the drill never
+  // starts. Next ships its real entry as plain JS; run that on this same Node.
+  const nextEntry = join(appDir, "node_modules", "next", "dist", "bin", "next");
+  const spawned = spawn(process.execPath, [nextEntry, "dev", "-p", String(port)], {
     cwd: appDir,
     env,
     stdio: ["pipe", "pipe", "pipe"],

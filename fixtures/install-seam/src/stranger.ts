@@ -265,9 +265,13 @@ export async function bootStranger(artifactsDir: string): Promise<{ stranger: St
     await writeLog("init.log", init.output);
 
     // Assertion 3: the app compiles WITH what init generated.
+    // Not the `.bin` entry: it is an extensionless script on POSIX and a
+    // `.cmd`/`.ps1` pair on Windows, where Node has refused to exec either
+    // without a shell since CVE-2024-27980. TypeScript ships its real entry as
+    // plain JS, so run that on this same Node — no shell, no quoting.
     const typecheck = await run(
-      path.join(scaffoldDir, "node_modules/.bin/tsc"),
-      ["--noEmit"],
+      process.execPath,
+      [path.join(scaffoldDir, "node_modules/typescript/bin/tsc"), "--noEmit"],
       { cwd: scaffoldDir, env },
     );
     await writeLog("typecheck.log", typecheck.output);

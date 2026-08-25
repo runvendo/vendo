@@ -11,7 +11,7 @@
     "test:ai7": "node scripts/pin-ai-major-7.mjs && pnpm install --no-frozen-lockfile && pnpm build && VITEST_MIN_FORKS=1 VITEST_MAX_FORKS=2 VITEST_MIN_THREADS=1 VITEST_MAX_THREADS=2 turbo run test --continue --concurrency=2 '--filter=./packages/*' '--filter=!@vendoai/store'",
     "conformance": "turbo run conformance --filter=@vendoai/core --filter=@vendoai/store --filter=@vendoai/vendo",
     "typecheck": "turbo run typecheck",
-    "lint": "node scripts/dependency-guard.mjs && node scripts/portability-gate.mjs && turbo run lint:packages lint",
+    "lint": "node scripts/dependency-guard.mjs && node scripts/portability-gate.mjs && node scripts/windows-spawn-gate.mjs && turbo run lint:packages lint",
     "lint:packages": "eslint --config eslint.blocking.config.mjs --no-config-lookup packages",
     "lint:report": "node scripts/lint-report.mjs",
     "deps:guard": "node scripts/dependency-guard.mjs",
@@ -22,7 +22,8 @@
     "changeset:status": "changeset status --since=origin/main",
     "changeset:version": "changeset version && node scripts/sync-version-constants.mjs",
     "changeset:publish": "changeset publish",
-    "portability": "node scripts/portability-gate.mjs"
+    "portability": "node scripts/portability-gate.mjs",
+    "windows-spawn": "node scripts/windows-spawn-gate.mjs"
   },
   "devDependencies": {
     "@changesets/cli": "^2.31.0",
