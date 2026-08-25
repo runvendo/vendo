@@ -163,6 +163,41 @@ describe("a turn takes its files home", () => {
     expect(stored?.url).toBe(homed);
   });
 
+  it("keeps both drops when ONE message carries two files of the same name", async () => {
+    // The staging door mints a unique prefix per drop, so two `report.csv`s
+    // survive as two rows — but the home address was derived from the NAME
+    // alone, so the second move landed on the first and both pills then pointed
+    // at one file. Silent: a workspace move overwrites without complaint, and
+    // the loser's blob was released by the staging erase in the same turn.
+    const { vendo } = await compose();
+    const headers = await bearer();
+    const first = await (await upload(vendo, "report.csv", bytes("first\n"), headers)).json() as { path: string };
+    const second = await (await upload(vendo, "report.csv", bytes("second\n"), headers)).json() as { path: string };
+    expect(first.path).not.toBe(second.path);
+
+    const message = {
+      id: "m1",
+      role: "user",
+      parts: [
+        { type: "text", text: "compare these" },
+        { type: "file", mediaType: "text/csv", filename: "report.csv", url: first.path },
+        { type: "file", mediaType: "text/csv", filename: "report.csv", url: second.path },
+      ],
+    };
+    await (await post(vendo, { threadId: "thr_twins", message }, headers)).text();
+
+    const thread = await (await vendo.handler(new Request(
+      "https://host.test/api/vendo/threads/thr_twins",
+      { headers },
+    ))).json() as { messages: Array<{ parts: Array<{ type: string; url?: string }> }> };
+    const stored = thread.messages[0]!.parts.filter((part) => part.type === "file");
+    expect(stored).toHaveLength(2);
+    expect(stored[0]!.url).not.toBe(stored[1]!.url);
+    // Each pill still opens the bytes the person actually sent.
+    expect(await readBack(vendo, stored[0]!.url!)).toBe("first\n");
+    expect(await readBack(vendo, stored[1]!.url!)).toBe("second\n");
+  });
+
   it("homes a FIRST turn's drop under the id the server minted", async () => {
     const { vendo } = await compose();
     const headers = await bearer();
@@ -223,6 +258,29 @@ describe("staging does not accumulate", () => {
 
     await expect(readBack(vendo, stale)).rejects.toThrow();
     expect(await readBack(vendo, fresh)).toBe("y");
+  });
+
+  it("sweeps a nested stray the agent's own shell left behind", async () => {
+    // The upload door cannot make one — `leafName` refuses a separator. The
+    // SHELL can: this build mounts the whole workspace under the agent's bash,
+    // so `cp -r` into `/user/uploads/…` plants a subtree. A directory's `stat`
+    // answers the epoch, so it is never spared by the six-hour rule, and the
+    // sweep's non-recursive `rm` then threw ENOTEMPTY on EVERY later turn —
+    // before the model ran, so the whole thread 500'd for good.
+    const { vendo } = await compose();
+    const headers = await bearer();
+    const shell = await vendo.harness.workspace(principal);
+    await shell.writeFile("/user/uploads/scratch/notes.txt", "left behind");
+    await shell.commit();
+
+    const response = await post(vendo, {
+      threadId: "thr_nested_stray",
+      message: { id: "m1", role: "user", parts: [{ type: "text", text: "hello" }] },
+    }, headers);
+    await response.text();
+
+    expect(response.status).toBe(200);
+    await expect(readBack(vendo, "/user/uploads/scratch/notes.txt")).rejects.toThrow();
   });
 
   // The sweep removed the ROW and kept the OBJECT: `workspace.rm` tombstones,

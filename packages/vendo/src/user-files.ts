@@ -83,8 +83,13 @@ export function uploadStagingPath(name: string): string {
 }
 
 /** Everything one conversation owns. The delete cascade sweeps this whole
-    subtree, so nothing may live under it that should outlive the thread. */
-export const threadFilesDir = (threadId: ThreadId): string => `${USER_THREADS}/${threadId}`;
+    subtree, so nothing may live under it that should outlive the thread.
+
+    The id goes through the SAME rule as a name: it is a path segment like any
+    other, and the only shape the wire checks is `thr_` + `.+` (core ids.ts),
+    whose `.+` matches a slash. Without this a client-chosen id climbed out of
+    this mount — and took the delete cascade's recursive rm with it. */
+export const threadFilesDir = (threadId: ThreadId): string => `${USER_THREADS}/${leafName(threadId)}`;
 
 /** One file, homed with its conversation. */
 export const threadFilePath = (threadId: ThreadId, name: string): string =>

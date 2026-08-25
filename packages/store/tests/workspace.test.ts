@@ -616,6 +616,26 @@ for (const backend of backends()) {
         expect(await next.exists("/user/files/box")).toBe(false);
       });
 
+      it("refuses to move a directory into its own subtree, and keeps it", async () => {
+        // The same copy-then-delete that ate a self-move eats this one, only
+        // worse: the copy stages the children UNDER the destination, and the
+        // recursive delete then drops everything with the source's prefix —
+        // which now includes the copies. The tree is gone with no error.
+        const workspace = workspaceStore(made.store, { files: bucket() });
+        const first = await workspace.open(user);
+        await first.writeFile("/user/files/box/a.txt", "a");
+        await first.commit();
+
+        const moving = await workspace.open(user);
+        // POSIX `rename(2)` answers EINVAL here, and bash prints it verbatim;
+        // a silent no-op would tell the caller the move happened.
+        await expect(moving.mv("/user/files/box", "/user/files/box/inner"))
+          .rejects.toThrow(/EINVAL: invalid argument/);
+        await moving.commit();
+
+        expect(await (await workspace.open(user)).readFile("/user/files/box/a.txt")).toBe("a");
+      });
+
       it("refuses a source that is not there, a read-only source and an unmounted destination", async () => {
         const fs = await workspaceStore(made.store, { files: bucket() })
           .open(user, { host: { "/host/skills/charting/SKILL.md": "read me" } });

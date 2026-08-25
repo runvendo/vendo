@@ -490,7 +490,14 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
       const from = (part as { url: string }).url;
       // The NAME is the part's, and it goes through the same leaf rule every
       // other door uses (`threadFilePath` throws on anything that is not one).
-      const to = threadFilePath(threadId, (part as { filename?: string }).filename ?? from.slice(from.indexOf("-") + 1));
+      let to = threadFilePath(threadId, (part as { filename?: string }).filename ?? from.slice(from.indexOf("-") + 1));
+      // ONE message can carry two drops of one name — the composer appends, and
+      // the staging door deliberately keeps them apart. Homing both on the name
+      // alone put the second move on top of the first, SILENTLY (a workspace
+      // move overwrites), and the same turn's staging erase then freed the
+      // loser's blob. So the second keeps the unique leaf staging already gave
+      // it; the common single-drop turn is untouched.
+      if ([...homes.values()].includes(to)) to = threadFilePath(threadId, from.slice(USER_UPLOADS.length + 1));
       await workspace.mv(from, to);
       homes.set(from, to);
     }
@@ -523,7 +530,12 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
     for (const name of await workspace.readdir(USER_UPLOADS)) {
       const path = `${USER_UPLOADS}/${name}`;
       if ((await workspace.stat(path)).mtime.getTime() >= cutoff) continue;
-      await workspace.rm(path);
+      // Recursive, because staging is not flat in practice: the agent's own
+      // shell mounts this workspace, so a `cp -r` can plant a subtree here, and
+      // a directory's `stat` answers the epoch — never spared by the cutoff. A
+      // bare `rm` then threw ENOTEMPTY on every later turn, before the model
+      // ran. `force`, because `readdir` and `rm` are two moments.
+      await workspace.rm(path, { recursive: true, force: true });
       await eraseStagedFile(ctx, path);
     }
   };

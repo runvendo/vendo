@@ -38,6 +38,19 @@ describe("the three addresses a user's file can have", () => {
     }
   });
 
+  it("applies it to the THREAD ID too, which is a segment like any other", () => {
+    // The containment argument in user-files.ts is that every path is BUILT from
+    // parts that provably carry no separator. The id is one of those parts, and
+    // the only shape the wire ever checked is `/^thr_.+$/` (core/src/ids.ts:51),
+    // whose `.+` matches a slash — so a client-supplied id climbed out of
+    // `/user/threads` and homed a drop on the shelf, and the thread's own delete
+    // cascade aimed its recursive rm at whatever the `..`s resolved to.
+    for (const id of ["thr_a/../..", "thr_a/b", "..", ""]) {
+      expect(() => threadFilesDir(id), id).toThrow();
+      expect(() => threadFilePath(id, "ledger.csv"), id).toThrow();
+    }
+  });
+
   it("recognises all three as server-held addresses, and nothing else", () => {
     expect(isUserFilePath("/user/files/a.csv")).toBe(true);
     expect(isUserFilePath("/user/uploads/9f2a1c04-a.csv")).toBe(true);
