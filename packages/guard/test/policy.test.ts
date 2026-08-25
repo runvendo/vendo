@@ -1,4 +1,4 @@
-import { VENDO_POLICY_FORMAT, VendoError } from "@vendoai/core";
+import { VENDO_BASH_TOOL, VENDO_POLICY_FORMAT, VendoError } from "@vendoai/core";
 import type { GuardDecision } from "@vendoai/core";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -407,5 +407,73 @@ describe("policy files, rules, directions, and code", () => {
 
     await expect(threw.check(call(edit.name), edit, context())).resolves.toMatchObject({ action: "ask" });
     await expect(invalid.check(call(edit.name), edit, context())).resolves.toMatchObject({ action: "ask" });
+  });
+});
+
+describe("the shell raises no approval card, and keeps everything its write grade buys", () => {
+  const shell = descriptor("write", { name: VENDO_BASH_TOOL });
+  const shellCall = (id = "call_1"): ReturnType<typeof call> =>
+    call(VENDO_BASH_TOOL, { command: "wc -l files/ledger.csv" }, id);
+
+  it("runs a bash call instead of asking, under the default policy", async () => {
+    const guard = createGuard({ store: createMemoryStore(), policy: "cautious" });
+
+    await expect(guard.check(shellCall(), shell, context())).resolves.toMatchObject({
+      action: "run",
+      decidedBy: "rule",
+    });
+  });
+
+  it("still asks for another write-graded tool — the exemption is not a hole in the write rule", async () => {
+    const guard = createGuard({ store: createMemoryStore(), policy: "cautious" });
+    const write = descriptor("write");
+
+    await expect(guard.check(call(write.name), write, context())).resolves.toMatchObject({
+      action: "ask",
+      decidedBy: "rule",
+    });
+  });
+
+  it("lets a host put the prompt back with their own rule", async () => {
+    const guard = createGuard({
+      store: createMemoryStore(),
+      policy: { rules: [{ match: { tool: VENDO_BASH_TOOL }, action: "ask" }] },
+    });
+
+    await expect(guard.check(shellCall(), shell, context())).resolves.toMatchObject({
+      action: "ask",
+      decidedBy: "rule",
+    });
+  });
+
+  it("lands an audit row for every bash call, prompt or no prompt", async () => {
+    const store = createMemoryStore();
+    const guard = createGuard({ store, policy: "cautious" });
+    const tools = new FixtureTools([shell]);
+    const bound = guard.bind(tools);
+
+    await expect(bound.execute(shellCall("call_1"), context())).resolves.toMatchObject({ status: "ok" });
+    await expect(bound.execute(shellCall("call_2"), context())).resolves.toMatchObject({ status: "ok" });
+
+    const { events } = await guard.audit.query({ principal: alice });
+    expect(events.filter((event) => event.kind === "tool-call" && event.tool === VENDO_BASH_TOOL))
+      .toMatchObject([
+        { risk: "write", outcome: "ok", decidedBy: "rule" },
+        { risk: "write", outcome: "ok", decidedBy: "rule" },
+      ]);
+  });
+
+  it("still stops a bash call at the kill switch", async () => {
+    const guard = createGuard({ store: createMemoryStore(), policy: "cautious" });
+    const tools = new FixtureTools([shell]);
+    const bound = guard.bind(tools);
+
+    await guard.freeze("ops_yousef");
+
+    await expect(bound.execute(shellCall(), context())).resolves.toMatchObject({
+      status: "blocked",
+      reason: "vendo is frozen — nothing runs until it is unfrozen",
+    });
+    expect(tools.executions).toHaveLength(0);
   });
 });

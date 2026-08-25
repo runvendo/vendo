@@ -1,5 +1,6 @@
 ---
 "@vendoai/core": minor
+"@vendoai/guard": minor
 "@vendoai/harnesses": minor
 "@vendoai/vendo": minor
 ---
@@ -20,8 +21,16 @@ containment story. Each session also gets an in-memory `/tmp` that lasts the
 conversation and is never saved.
 
 It rides the ONE guarded registry like every other tool: graded `write`, so the
-guard's rules, grants and approvals apply to it unchanged, and every call lands
-an audit row.
+host's rules, grants and the kill switch apply to it unchanged, and every call
+lands an audit row.
+
+One security default moves with it, and it is worth reading twice: the
+`cautious` preset no longer raises an approval card for `bash`. It is the only
+tool exempted, and only from the prompt — the `write` grade is exactly what keeps
+the audit row, the host's own rules and the kill switch over it. A shell that
+asked before every `wc -l` would be unusable in chat and simply cannot run in an
+automation, which has nobody to answer the card. A deployment that wants the
+confirmation back adds a rule of its own for `bash`, and it wins.
 
 `createVendo({ shell: false })` withholds it; `createVendo({ shell: { limits } })`
 moves its per-call wall clock (30 s) and output ceiling (1 MB). It composes for
