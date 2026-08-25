@@ -277,10 +277,12 @@ are not on. So:
   buttons, and never tell them what to click.
 - Never paste a link or an id unless they asked.
 - status "failed": try once more on the same `app`, narrower, then stop and say
-  so plainly. `vendo_make` only assembles a single screen out of the product's
-  own components — an ask that needs real code, its own server, an uploaded
-  file, or a scheduled job comes back as "failed" with nothing painted. Do not
-  try the same big ask a second way through this tool.
+  so plainly.
+- an ask bigger than a screen (real code, its own server, an uploaded file, a
+  scheduled job) escalates instead of failing. `vendo_make` returns as a
+  parked-approval outcome and `say` is one line pointing at the standing card
+  the person answers over the wire. Relay that sentence and stop — the build
+  starts on their yes, not on your next turn.
 - status "building": honest, not an error. Say the line and move on.
 - status "partial": the screen is on their page, the server-side part of it is
   not. Say the line and offer to try that part again. Never rebuild it.
@@ -289,7 +291,7 @@ are not on. So:
 Those slot ids are yours to publish. A `<VendoSlot id="…">` from `@vendoai/vendo/react` is a place in one of your own pages a generated view can occupy — without one, every screen lands in the person's own list of views. [Mount the surface](/product/mount-the-surface) has the component.
 
 <Note>
-`vendo_make` is the screen assembler, and it has no door out to a bigger build. To reach the builder from your own backend — for real code, an app that runs its own server, or work that must happen while nobody is watching — call `vendo.apps.create({ prompt, why })` directly. `prompt` is the person's ask verbatim and `why` is one plain sentence naming what assembly could not do. `vendo.apps.edit` has no `why` and does not reach the builder, so an existing app cannot be promoted through it.
+`vendo_make` escalates to the builder for asks bigger than a screen: it raises a standing approval card and answers as a parked approval. The person's yes starts a disposable-sandbox build that ships as an immutable sealed bundle; the app then renders inline like any other. A host can also skip the screen agent and call `vendo.apps.create({ prompt, why })` directly on its own server — `prompt` is the person's ask verbatim and `why` is one plain sentence naming what assembly cannot do. `vendo.apps.edit` has no `why` and does not reach the builder. Either path is gated on a configured `sandbox` adapter; without one the ask is refused rather than offered.
 </Note>
 
 

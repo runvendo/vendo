@@ -4,19 +4,63 @@ sidebarTitle: "Changelog"
 description: "Weekly release notes for the Vendo SDK and runtime: new features, updates, and fixes, newest first."
 ---
 
-<Update label="August 17, 2026" description="Week of August 17 – August 23">
+<Update label="August 25, 2026" description="Week of August 24 – August 30">
+
+## Fixes
+
+**A `vendo_make` build escalation answers as `pending-approval`, not a success.** When the screen agent escalates to the builder, `vendo_make` returns the ordinary `pending-approval` outcome carrying the build ask's own descriptor, in place of the old `awaiting-consent` receipt. That descriptor is what the thread's approval card is worded and graded off, so a person asked to spend a build machine no longer sees the calling tool's own read grade. The card renders in-thread from the outcome part itself and now survives the turn that raised it. Outside agents over MCP see the ask on the approval-ref result they already handle.
+
+The `MakeReceipt.status` value `"awaiting-consent"` is gone; nothing produces it any more.
+
+</Update>
+
+<Update label="August 24, 2026" description="Week of August 24 – August 30">
+
+## New features
+
+**Built apps.** An ask bigger than a screen now escalates to the builder: `vendo_make` raises a standing approval card and returns `pending-approval`. The person's yes starts a one-shot build in a disposable sandbox — npm from the registry, a coding agent inside the box, tested against reality — and the files that come home are sealed as an immutable, content-addressed bundle alongside their source and lockfile.
+
+A sealed bundle renders in a sandboxed iframe with `sandbox="allow-scripts"` and no `allow-same-origin`, so the frame runs at an opaque origin, and `Content-Security-Policy: default-src 'none'` so it makes no network request at all. Host data reaches the frame through one `postMessage` bridge into the guarded tool door, called with the viewer's own permissions. Brand tokens and fonts are posted in at render, never baked into the seal, so one seal follows your palette rather than pinning the one it was built under.
+
+Build progress reads out of `AppDocument.buildStatus`, replaced each time as the box narrates itself, and `useApp()` hands the current line back for chrome to render.
+
+Escalation is gated on one thing, a configured `sandbox` adapter and a files adapter both being composed. Without them the ask is refused rather than offered, and the screen agent comes back with an honest failed receipt.
+
+See [Generated apps](/generated/apps).
 
 ## Breaking changes
 
-**`vendo_make` no longer escalates to the builder.** The screen agent's loadout no longer carries an `escalate` tool, and its environment note no longer teaches one. `vendo_make` is now bounded to a single screen assembled from your product's own components.
+**Built apps do not travel.** Sharing, forking, exporting, and placing a built app are refused server-side, on every path — the `PUT /apps/:id/grants/:principal` route the ✦ toggle uses, the fork and export doors, and the placement door. A sealed bundle is arbitrary code whose one door into host data is the guarded tool bridge, so a copy would run its author's code with the recipient's own permissions. Screens are untouched: only bundles are refused, and the refusal reads the row's kind rather than waiting on the seal, so a build in flight is refused too.
 
-An ask bigger than a screen answers with a failed receipt naming what assembly could not do. Nothing is painted, and no sandbox is provisioned, even on deployments that have one configured.
+**The persistent per-app machine is gone.** A built app is a sealed bundle the host serves, so nothing needs a machine that outlives the build.
 
-Reach the builder explicitly from your own backend by calling `vendo.apps.create({ prompt, why })`. `prompt` is the person's ask verbatim; `why` is one plain sentence naming what assembly cannot serve. `vendo.apps.edit` takes no `why` and does not reach the builder.
+Removed:
 
-Update any system prompt or host code that told an agent to expect `vendo_make` to fall through to a build. The `ScreenOutcome` `kind: "escalate"` and every downstream `@vendoai/apps` consumer of it are unchanged and still work when a host calls `apps.create` directly.
+- `AppsRuntime.machine` (`available` / `ping` / `report`), `AppsRuntime.serve`, `AppsRuntime.box` (`request` / `redact`), and `client.apps.pingMachine`.
+- The wire routes `GET /apps/:id/serve/**`, `POST /apps/:id/fn/:name`, `POST /apps/:id/machine/ping`, and the whole `/box/*` callback surface with its per-app `VENDO_APP_TOKEN` bearer.
+- The `@vendoai/box-template` package and the box image's agent-task door.
+- `AppsConfig.machine`, `BoxRequest`, `BoxResponse`, and the `AppDocument` fields `machine` / `AppMachine` / `appMachineSchema`. The document's `ui` enum narrows to `"tree" | "bundle"` (`"http"` is gone).
+- The env vars `VENDO_BOX_EDIT_TIMEOUT_MS` and `VENDO_BOX_EDIT_POLL_MS`, which only fed the deleted lane. Cloud pool defaults are unchanged.
+- The engine allowlist retires `vendo_app_tokens` (v9) and `vendo_egress_approval` (v10). The store's `promote` no longer re-owns a per-app bearer that no longer exists.
 
-See [How the door works](/outside-agents/how-the-door-works#what-comes-back) and [Existing agent quickstart](/existing-agent/quickstart#teach-your-model-when-to-build-ui).
+Kept, deliberately: the sandbox adapter layer (including the `e2b` driver), the session half of the box image, and the build deadlines. Existing screens (`ui: "tree"`) are unaffected — the change is only to the machine-served path.
+
+See [Generated apps](/generated/apps), [HTTP routes](/reference/http-routes), and [Environment variables](/reference/environment-variables).
+
+## Migration
+
+- Update any system prompt that told an agent to expect `vendo_make` to answer `awaiting-consent` or to fall through to a build: it now answers `pending-approval`, and the person's yes on the standing card is what starts the build.
+- Drop any consumer of `client.apps.pingMachine` or the `/box/*`, `/serve/*`, `/fn/*`, and `/machine/ping` routes. Their producers are gone.
+- Remove `AppsConfig.machine`, `AppDocument.machine`, and `ui: "http"` reads. A built app carries `ui: "bundle"` and its bundle is served under `GET /apps/:id/bundle/:hash`.
+- If your host UI mounted a machine-served frame, swap to `BundleFrame` and `bundleUrl` from `@vendoai/ui`.
+
+</Update>
+
+<Update label="August 17, 2026" description="Week of August 17 – August 23">
+
+## Fixes
+
+**Screen assembly stops offering a builder it cannot reach.** The screen agent's environment note no longer promises an `escalate` door on deployments without a build machine composed. `vendo_make` still assembles one screen from your product's own components, and an assembly that cannot serve the ask comes back as a `failed` receipt. Escalation to the builder returns in the built-apps stack, gated on a composed sandbox.
 
 </Update>
 

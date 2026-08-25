@@ -143,18 +143,26 @@ An agent relays it close to verbatim and reports nothing else.
 | `partial` | the screen is up, and the server-side work its plan called for is not |
 | `failed` | nothing painted. One narrower retry on the same `app`, then stop |
 
-`vendo_make` is bounded to one screen assembled from your product's own
-components. It has no door out to a bigger build: an ask that needs real code,
-its own server, an uploaded file, or a scheduled job comes back as `failed`
-with a `say` line naming what assembly could not do. Nothing is painted, no
-sandbox is provisioned even when one is configured, and the retry rule above
-is the same one: one narrower try on the same `app`, then stop.
+`vendo_make` assembles one screen out of your product's components. An ask
+that needs real code, its own server, an uploaded file, or a scheduled job is
+bigger than a screen, and the tool escalates rather than paints: it raises a
+standing approval card and answers `pending-approval` on the ordinary consent
+protocol. The outcome carries the ask's own descriptor, so the card is worded
+and graded off the build rather than off `vendo_make`.
 
-The builder is behind a different door. A host reaches it by calling
-`vendo.apps.create({ prompt, why })` on its own server — `prompt` is the
-person's ask verbatim, and `why` is one plain sentence naming what assembly
-cannot serve. `vendo.apps.edit` takes no `why` and never reaches the builder,
-so an existing app cannot be promoted through it.
+The card is standing. It survives the turn that raised it and waits for the
+person, however long that takes. On yes, a disposable sandbox builds the app
+once and seals it as an immutable bundle; the app then renders through
+`vendo_apps_open` like any other. On no, nothing is provisioned and the ask
+is closed.
+
+Escalation is gated on a build machine being composed on the host. Without one,
+the assembly comes back as a genuine `failed` receipt on the retry rule above.
+
+A host can also skip the screen agent entirely and call
+`vendo.apps.create({ prompt, why })` on its own server: `prompt` is the
+person's ask verbatim, `why` is one plain sentence naming what assembly
+cannot serve. `vendo.apps.edit` takes no `why` and never reaches the builder.
 
 ## Rendering the app in your own chat
 
