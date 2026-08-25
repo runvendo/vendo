@@ -153,12 +153,25 @@ describe("vendo_make publishes the automation card (#881)", () => {
 });
 
 describe("an escalated ask is OFFERED, never built (S3)", () => {
-  it("ends the turn on awaiting-consent, with nothing spent", async () => {
-    const { call } = makeCall();
-    const { runtime } = runtimeWith(undefined);
-    const receipt = receiptOf(await runMakeTool(runtime, deps, call, ctx));
-    expect(receipt.status).toBe("awaiting-consent");
-    expect(receipt.say).toContain("go-ahead");
+  it("parks the ask on the standard protocol, with nothing spent and nothing armed", async () => {
+    // COMPOUND on purpose: an offered build has no app yet, so the schedule half
+    // has nothing to arm and the automation door must not be asked for one.
+    const { call } = makeCall("build me the invoice board and refresh it every monday");
+    const { runtime, asked } = runtimeWith(undefined);
+
+    // The same answer every other parked call gives, plus the ask in words for a
+    // surface that renders no card.
+    expect(await runMakeTool(runtime, deps, call, ctx)).toMatchObject({
+      status: "pending-approval",
+      approvalId: "apr_build_1",
+      approval: {
+        id: "apr_build_1",
+        question: "Build this app for real?",
+        notes: [expect.stringContaining("spends a build machine")],
+      },
+      say: expect.stringContaining("go-ahead"),
+    });
+    expect(asked).toEqual([]);
   });
 });
 
@@ -166,7 +179,7 @@ describe("the schedule half of a compound ask", () => {
   const COMPOUND = "build me the invoice board and refresh it every monday";
 
   it("reaches the automation door, and says so on the receipt", async () => {
-    const { call, updates } = makeCall(COMPOUND);
+    const { call, updates } = makeCall(COMPOUND, "app_made");
     const { runtime, asked } = runtimeWith(undefined, {
       ok: true,
       document: { format: VENDO_APP_FORMAT, id: "app_made", name: "Invoice nudges" },
@@ -189,12 +202,12 @@ describe("the schedule half of a compound ask", () => {
   });
 
   it("never fails the make when the schedule could not be armed — the app is on screen", async () => {
-    const { call, updates } = makeCall(COMPOUND);
+    const { call, updates } = makeCall(COMPOUND, "app_made");
     const { runtime } = runtimeWith(undefined, { ok: false, issues: ["no valid plan validated"] });
     const outcome = await runMakeTool(runtime, deps, call, ctx);
 
     const receipt = receiptOf(outcome);
-    expect(receipt.status).toBe("awaiting-consent");
+    expect(receipt.status).toBe("ready");
     expect(receipt.say).toContain("I couldn't set up the schedule: no valid plan validated");
     expect(updates.some((update) => update.part.type === "data-vendo-automation")).toBe(false);
   });

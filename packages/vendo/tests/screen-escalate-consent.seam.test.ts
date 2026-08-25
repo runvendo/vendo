@@ -23,9 +23,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   VENDO_MAKE_TOOL,
+  vendoApprovalPartSchema,
+  type AppId,
   type Principal,
   type RunContext,
   type ToolResult,
+  type VendoApprovalPart,
 } from "@vendoai/core";
 import { makeReceiptSchema } from "@vendoai/apps/contract";
 import type { SandboxAdapter } from "@vendoai/apps";
@@ -134,10 +137,23 @@ async function tempStore(): Promise<VendoStore> {
 interface Walked {
   receipt: ReturnType<typeof makeReceiptSchema.parse> | undefined;
   result: ToolResult | undefined;
+  /** The turn's whole wire, as the browser receives it. */
+  stream: string;
   vendo: ReturnType<typeof createVendo>;
   model: LanguageModel & { toolNamesPerCall: string[][] };
   sandbox: ReturnType<typeof noBoxes>;
 }
+
+/** The `data-vendo-approval` part off that wire, parsed with core's own schema —
+ *  the one shape every native surface builds the in-thread ApprovalCard from. */
+const approvalPartIn = (stream: string): VendoApprovalPart => {
+  const chunk = stream.split("\n")
+    .filter((line) => line.startsWith("data: {"))
+    .map((line) => JSON.parse(line.slice(6)) as { type: string; data: Record<string, unknown> })
+    .find((part) => part.type === "data-vendo-approval");
+  if (chunk === undefined) throw new Error("no data-vendo-approval part was published");
+  return vendoApprovalPartSchema.parse({ type: chunk.type, ...chunk.data });
+};
 
 /** One real turn whose harness does what a calling agent does: ask `vendo_make`
  *  in words, and hand back the receipt. */
@@ -169,10 +185,11 @@ async function walk(options: { turns: Chunk[][]; sandbox?: boolean }): Promise<W
     }),
   }));
   expect(response.status).toBe(200);
-  await response.text();
+  const stream = await response.text();
   return {
     receipt: result?.status === "ok" ? makeReceiptSchema.parse(result.output) : undefined,
     result,
+    stream,
     vendo,
     model,
     sandbox,
@@ -180,7 +197,7 @@ async function walk(options: { turns: Chunk[][]; sandbox?: boolean }): Promise<W
 }
 
 describe("a chat ask bigger than a screen reaches the build lane", () => {
-  it("lands as a standing card and an awaiting-consent receipt, with no box claimed", async () => {
+  it("lands as a standing card, a card part in the thread, and a park, with no box claimed", async () => {
     const walked = await walk({
       turns: [call(ESCALATE_TOOL, { why: WHY }, "c1"), speak("Asked about building it.")],
     });
@@ -188,18 +205,26 @@ describe("a chat ask bigger than a screen reaches the build lane", () => {
     // THE DOOR IS ON THE LOADOUT — the fact that was missing.
     expect(walked.model.toolNamesPerCall[0]).toContain(ESCALATE_TOOL);
 
-    // THE RECEIPT: the ask is alive and waiting on the person, not failed.
-    expect(walked.receipt?.status).toBe("awaiting-consent");
-
     // THE STANDING CARD, on the real guard: one undecided ask for the build,
-    // carrying this app and the person's own words.
+    // carrying this app and the person's own words. STANDING is the whole word:
+    // the turn is over and the ask is still there to be answered — an ordinary
+    // parked call is swept denied at turn end, and sweeping this one tombstoned
+    // the build the moment the turn that asked for it finished.
     const pending = await walked.vendo.guard.approvals.pending(principal);
     expect(pending.map((ask) => ask.call.tool)).toEqual(["vendo_app_build"]);
-    expect(pending[0]?.call.args).toMatchObject({ appId: walked.receipt?.id, prompt: ASK });
+    expect(pending[0]?.call.args).toMatchObject({ prompt: ASK });
+    const appId = (pending[0]?.call.args as { appId: AppId }).appId;
+
+    // THE ANSWER the calling agent got is the standard park, aimed at that card.
+    expect(walked.result).toMatchObject({ needs: { kind: "approval", approvalId: pending[0]?.id } });
+
+    // THE CARD IN THE THREAD: the wire part the shipped bridge publishes off a
+    // `pending-approval` outcome, which is what the receipt could never raise.
+    expect(approvalPartIn(walked.stream).approvalId).toBe(pending[0]?.id);
 
     // THE ROW says "offered, unanswered" — and carries the model's own one line,
     // which is what the person reads on the card.
-    const row = await walked.vendo.apps.get(walked.receipt!.id, ctx);
+    const row = await walked.vendo.apps.get(appId, ctx);
     expect(row?.proposal).toMatchObject({ approvalId: pending[0]?.id, why: WHY });
     expect(row?.building).toBeUndefined();
 
@@ -223,9 +248,9 @@ describe("a chat ask bigger than a screen reaches the build lane", () => {
     // ONE model call: the escalation was the last thing this drive did. The two
     // scripted turns behind it were never reached.
     expect(walked.model.toolNamesPerCall).toHaveLength(1);
-    expect(walked.receipt?.status).toBe("awaiting-consent");
+    const pending = await walked.vendo.guard.approvals.pending(principal);
     // …and the row is still only an OFFER: no screen was written past the ask.
-    const row = await walked.vendo.apps.get(walked.receipt!.id, ctx);
+    const row = await walked.vendo.apps.get((pending[0]?.call.args as { appId: AppId }).appId, ctx);
     expect(row?.proposal).toBeDefined();
     expect(row?.source).toBeUndefined();
     expect(walked.sandbox.claims).toBe(0);

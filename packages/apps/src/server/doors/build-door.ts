@@ -17,6 +17,7 @@ import {
   type AppBundle,
   type AppId,
   type ApprovalId,
+  type PendingApproval,
   type RunContext,
   type ToolCall,
   type ToolDescriptor,
@@ -42,13 +43,25 @@ import type { AppsRuntime } from "../runtime/types.js";
  * on it, so the harness's 90-second approval wait is not in this path at all.
  */
 const BUILD_TOOL = VENDO_APP_BUILD_TOOL;
+// §3 consumer voice — the shared table, like every other Vendo descriptor.
+// Without it the card asked the person to authorize "Vendo app build".
+const BUILD_TITLE = VENDO_TOOL_TITLES[BUILD_TOOL]!;
+const BUILD_DESCRIPTION = "Build this app for real: a sandbox installs the packages it needs, writes and tests the code,"
+  + " and the result is sealed. It spends a build machine, so it needs the person's yes.";
+
+/** This ask in words, for the surfaces that render no card. `consentAsk`'s own
+ *  ladder (ui/chrome/build-beat.tsx) read off the descriptor below — its title as
+ *  the question, its authored sentence as the note — so what an outside caller is
+ *  handed and what the person in the thread is shown come from one source. */
+export const BUILD_CONSENT_ASK: Omit<PendingApproval, "id"> = {
+  question: `${BUILD_TITLE}?`,
+  notes: [BUILD_DESCRIPTION],
+};
+
 const buildDescriptor = (): ToolDescriptor => ({
   name: BUILD_TOOL,
-  // §3 consumer voice — the shared table, like every other Vendo descriptor.
-  // Without it the card asked the person to authorize "Vendo app build".
-  title: VENDO_TOOL_TITLES[BUILD_TOOL],
-  description: "Build this app for real: a sandbox installs the packages it needs, writes and tests the code,"
-    + " and the result is sealed. It spends a build machine, so it needs the person's yes.",
+  title: BUILD_TITLE,
+  description: BUILD_DESCRIPTION,
   inputSchema: {
     type: "object",
     properties: { appId: { type: "string" }, prompt: { type: "string" } },

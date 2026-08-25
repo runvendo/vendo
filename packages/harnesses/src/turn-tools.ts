@@ -412,7 +412,16 @@ export function createTurnTools(options: TurnToolsOptions): RuntimeTurnTools {
         if (outcome.status === "pending-approval") {
           // The preview said run and the REAL check asked — a breaker or presence
           // boundary. Nobody is waiting on this one, so it must still be swept.
-          waiter.raise(outcome.approvalId, { standing: !options.interactive });
+          //
+          // UNLESS the tool parked an ask of its OWN and said what it asks
+          // (`approval`): the built-app door's card is answered on the person's
+          // clock, long after this turn, and sweeping it denied at turn end
+          // tombstoned the build the moment the turn ended. Only a tool that
+          // raised the ask itself can know that, which is why it is the tool
+          // that says so.
+          waiter.raise(outcome.approvalId, {
+            standing: !options.interactive || outcome.approval !== undefined,
+          });
           // The guard asked twice for one tap; refusing to loop is the honest
           // answer (a second card for the same call would be a trap).
           return refused("This still needs approval.", {

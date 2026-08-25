@@ -416,6 +416,24 @@ const connectRequiredSchema = z.object({
   message: z.string(),
 }).passthrough() satisfies z.ZodType<ConnectRequired>;
 
+/** 01-core §4 — the parked ask in words, for the surfaces that render no card:
+ *  an outside agent over MCP, a text message, a transcript. `question` is what
+ *  the person is being asked; `notes` are the quiet lines under it — the same
+ *  pair the in-thread card composes (`consentAsk`, ui/chrome/build-beat.tsx),
+ *  never a second vocabulary for one ask. */
+export interface PendingApproval {
+  id: ApprovalId;
+  question: string;
+  notes: string[];
+}
+
+/** 01-core §4 */
+const pendingApprovalSchema = z.object({
+  id: approvalIdSchema,
+  question: z.string().min(1),
+  notes: z.array(z.string()),
+}).passthrough() satisfies z.ZodType<PendingApproval>;
+
 /** 01-core §4
  *
  *  `blocked.cause` narrows WHY nothing ran when the reason is nobody's doing:
@@ -429,7 +447,14 @@ const connectRequiredSchema = z.object({
 export type ToolOutcome =
   | { status: "ok"; output: Json }
   | { status: "error"; error: { code: string; message: string } }
-  | { status: "pending-approval"; approvalId: ApprovalId }
+  // `approval`/`say` are FIELDS on the existing status, never a status of their
+  // own — the same trade `blocked.cause` makes above. A tool that parks an ask
+  // of its OWN (the built-app door: the ask is about a build, not about calling
+  // that tool) is the one that knows what the card says and what to tell the
+  // person meanwhile; a park the guard raised on the tool's own descriptor is
+  // already described by it, so both stay optional and every shipped producer
+  // and reader is untouched.
+  | { status: "pending-approval"; approvalId: ApprovalId; approval?: PendingApproval; say?: string }
   | { status: "blocked"; reason: string; cause?: "expired" }
   | { status: "connect-required"; connect: ConnectRequired };
 
@@ -440,7 +465,12 @@ export const toolOutcomeSchema = z.discriminatedUnion("status", [
     status: z.literal("error"),
     error: z.object({ code: z.string(), message: z.string() }).passthrough(),
   }).passthrough(),
-  z.object({ status: z.literal("pending-approval"), approvalId: approvalIdSchema }).passthrough(),
+  z.object({
+    status: z.literal("pending-approval"),
+    approvalId: approvalIdSchema,
+    approval: pendingApprovalSchema.optional(),
+    say: z.string().min(1).optional(),
+  }).passthrough(),
   z.object({
     status: z.literal("blocked"),
     reason: z.string(),

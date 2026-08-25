@@ -30,6 +30,7 @@ import {
 } from "../../contract/index.js";
 import type { AgentToolsDataDependencies } from "./agent-tools.js";
 import { automationCard } from "./automate-tool.js";
+import { BUILD_CONSENT_ASK } from "./build-door.js";
 import { AWAITING_CONSENT, NO_ASSEMBLER, NOTHING_RENDERABLE, NO_MACHINE } from "./build-messages.js";
 import { input, optionalString, resolveAppRef } from "./tool-args.js";
 import type { AppsRuntime, EditResult } from "../runtime/types.js";
@@ -229,7 +230,18 @@ const makeNewApp = async (
     return await failUnbuilt(title, unbuiltSay(proposed.declined));
   }
   await remember(appId);
-  return receipt({ id: appId, title, status: "awaiting-consent", say: AWAITING_CONSENT });
+  // THE STANDARD PROTOCOL, and not a receipt: a parked ask that answered
+  // `status: "ok"` was invisible to everything downstream that routes on the
+  // status — the in-thread approval card is published off this outcome
+  // (harnesses' `guardedCall`), and an outside caller reads the ask off it. The
+  // words ride along because nothing else here can say them: `approval` is what
+  // a surface with no card renders, and `say` is the assistant's own sentence.
+  return {
+    status: "pending-approval",
+    approvalId: proposed.approvalId,
+    approval: { id: proposed.approvalId, ...BUILD_CONSENT_ASK },
+    say: AWAITING_CONSENT,
+  };
 };
 
 const changeExistingApp = async (

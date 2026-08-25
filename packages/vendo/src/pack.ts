@@ -88,10 +88,8 @@ function appRefTitleFromPrompt(prompt: unknown): string {
  * laundering a partial receipt through it leaves a caller waiting on a completion
  * that already came, and drops the one sentence that says what is missing.
  *
- * `"awaiting-consent"` is refused for the third form of the same reason: the ask
- * has been PUT to the person and nothing is under way, so a ref reading
- * "accepted, still streaming" would show a build skeleton for a build nobody has
- * authorized — and drop the one sentence that says a card is waiting.
+ * An offered BUILD needs no clause here: it is a `pending-approval` outcome now,
+ * so it never reaches a receipt at all.
  *
  * Local to the PACK on purpose. `vendo/app-ref@1` means "accepted, still
  * streaming, NOT built yet"; only this fast-return path can honestly say that.
@@ -101,8 +99,7 @@ function appRefTitleFromPrompt(prompt: unknown): string {
  */
 function appRefFromReceipt(output: unknown, fallbackTitle: string): VendoAppRef | null {
   const receipt = makeReceiptSchema.safeParse(output);
-  if (!receipt.success || receipt.data.status === "failed" || receipt.data.status === "partial"
-    || receipt.data.status === "awaiting-consent") {
+  if (!receipt.success || receipt.data.status === "failed" || receipt.data.status === "partial") {
     return null;
   }
   return {

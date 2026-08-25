@@ -14,6 +14,7 @@ import {
   VendoError,
   engineOverAdapter,
   type AppId,
+  type ApprovalId,
   type FilesAdapter,
   type RunContext,
   type ToolRegistry,
@@ -29,7 +30,7 @@ import { APPS_COLLECTION } from "../src/server/persistence/persistence.js";
 import { runMakeTool } from "../src/server/doors/make-tool.js";
 import { readBundleBlob } from "../src/server/persistence/app-source.js";
 import { createApps, type AppsConfig } from "../src/server/index.js";
-import { guardFixture } from "../src/server/testing/guard-fixture.js";
+import { guardFixture, type GuardFixture } from "../src/server/testing/guard-fixture.js";
 import { memoryStore } from "../src/server/testing/memory-store.js";
 import type { AgentToolsDataDependencies } from "../src/server/doors/agent-tools.js";
 import { PARKED_BUILD_COLLECTION } from "@vendoai/core";
@@ -122,25 +123,48 @@ const receiptOf = (outcome: Awaited<ReturnType<typeof runMakeTool>>): { id: stri
   return outcome.output as unknown as { id: string; status: string; say: string };
 };
 
+/** An offered build is a PARK, not a receipt — and the app it is about is named
+ *  on the standing card itself, which is the only place a caller could read it. */
+const parkedOf = (
+  outcome: Awaited<ReturnType<typeof runMakeTool>>,
+  guard: GuardFixture,
+): { approvalId: ApprovalId; appId: AppId } => {
+  if (outcome.status !== "pending-approval") throw new Error(`expected a park, got ${outcome.status}`);
+  const ask = guard.approvals.find((approval) => approval.id === outcome.approvalId);
+  return { approvalId: outcome.approvalId, appId: (ask?.call.args as { appId: AppId }).appId };
+};
+
 describe("propose spends no box", () => {
   it("raises the standing card, parks the build, and claims nothing", async () => {
     const { builder, built } = recordingBuilder();
     const { guard, engine, make, rowOf } = setup({ build: builder });
 
-    const receipt = receiptOf(await make());
+    const outcome = await make();
+    const { approvalId, appId } = parkedOf(outcome, guard);
 
-    expect(receipt.status).toBe("awaiting-consent");
+    // THE PROTOCOL: the same `pending-approval` answer every other parked call
+    // gives, carrying the ask in words for a surface that renders no card.
+    expect(outcome).toMatchObject({
+      status: "pending-approval",
+      approvalId,
+      approval: {
+        id: approvalId,
+        question: "Build this app for real?",
+        notes: [expect.stringContaining("spends a build machine")],
+      },
+      say: expect.stringContaining("go-ahead"),
+    });
     // The whole point: the turn ended with the box untouched.
     expect(built).toEqual([]);
     // One undecided card, and the ask verbatim on it.
     expect(guard.approvals).toHaveLength(1);
-    expect(guard.approvals[0]?.call.args).toMatchObject({ appId: receipt.id, prompt: ASK });
+    expect(guard.approvals[0]?.call.args).toMatchObject({ appId, prompt: ASK });
     // Parked against that card, in the real collection.
-    const parked = await engine.get(PARKED_BUILD_COLLECTION, guard.approvals[0]?.id ?? "");
-    expect(parked?.data).toMatchObject({ appId: receipt.id, prompt: ASK, owner: "user_ada" });
+    const parked = await engine.get(PARKED_BUILD_COLLECTION, approvalId);
+    expect(parked?.data).toMatchObject({ appId, prompt: ASK, owner: "user_ada" });
     // The row says "offered, unanswered" — and never "building".
-    const row = await rowOf(receipt.id);
-    expect(row?.proposal).toMatchObject({ approvalId: guard.approvals[0]?.id, prompt: ASK });
+    const row = await rowOf(appId);
+    expect(row?.proposal).toMatchObject({ approvalId, prompt: ASK });
     expect(row?.building).toBeUndefined();
   });
 });
@@ -151,21 +175,20 @@ describe("the decision alone starts the build", () => {
     const bytes = new TextEncoder().encode("console.log('built')");
     const { builder, built } = recordingBuilder({ kind: "built", files: [{ path: entry, bytes }], entry });
     const { guard, engine, files, make, rowOf } = setup({ build: builder });
-    const receipt = receiptOf(await make());
-    const approvalId = guard.approvals[0]?.id ?? "";
+    const { approvalId, appId } = parkedOf(await make(), guard);
     expect(built).toEqual([]);
 
     // Nothing but the decision. No second tool call, no re-dispatch.
     guard.decide(approvalId, true);
     await new Promise((resolve) => setImmediate(resolve));
 
-    expect(built).toEqual([{ appId: receipt.id, prompt: ASK, why: "this needs a real image library" }]);
-    const row = await rowOf(receipt.id);
+    expect(built).toEqual([{ appId, prompt: ASK, why: "this needs a real image library" }]);
+    const row = await rowOf(appId);
     expect(row?.ui).toBe("bundle");
     expect(row?.bundle).toMatchObject({ bytes: bytes.byteLength });
     // Sealed for real: the entry hash reads back as the bytes the builder made.
     const entryHash = (row?.bundle as { entry: string }).entry;
-    expect(await readBundleBlob(receipt.id as AppId, entryHash, files)).toEqual(bytes);
+    expect(await readBundleBlob(appId, entryHash, files)).toEqual(bytes);
     // Both build-state fields are gone: the app IS built now.
     expect(row?.proposal).toBeUndefined();
     expect(row?.building).toBeUndefined();
@@ -176,14 +199,13 @@ describe("the decision alone starts the build", () => {
   it("denying it spends no box and leaves the honest failure card", async () => {
     const { builder, built } = recordingBuilder();
     const { guard, engine, make, rowOf } = setup({ build: builder });
-    const receipt = receiptOf(await make());
-    const approvalId = guard.approvals[0]?.id ?? "";
+    const { approvalId, appId } = parkedOf(await make(), guard);
 
     guard.decide(approvalId, false);
     await new Promise((resolve) => setImmediate(resolve));
 
     expect(built).toEqual([]);
-    const row = await rowOf(receipt.id);
+    const row = await rowOf(appId);
     expect(row?.proposal).toBeUndefined();
     expect(row?.buildFailed).toMatchObject({ reason: expect.stringContaining("not approved") });
     expect(await engine.get(PARKED_BUILD_COLLECTION, approvalId)).toBeNull();
@@ -238,10 +260,10 @@ describe("a refusal reads the row it is refusing", () => {
   const ran = async (lane: ReturnType<typeof laneThat>) => {
     const composed = setup({ build: lane.builder });
     lane.bind(composed.engine);
-    const receipt = receiptOf(await composed.make());
-    composed.guard.decide(composed.guard.approvals[0]?.id ?? "", true);
+    const { approvalId, appId } = parkedOf(await composed.make(), composed.guard);
+    composed.guard.decide(approvalId, true);
     await new Promise((resolve) => setImmediate(resolve));
-    return await composed.rowOf(receipt.id);
+    return await composed.rowOf(appId);
   };
 
   it("leaves a SEALED app alone when the refusal lands after the seal", async () => {

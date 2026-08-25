@@ -735,13 +735,12 @@ describe("vendo_make — the slot a new app lands in", () => {
       args: { request: "match my invoices to payments", slot: "dashboard.hero" },
     }, ctx);
 
-    expect(outcome.status).toBe("ok");
-    const receipt = (outcome as { output: { id: string; status: string } }).output;
-    // S3 — the escalated ask is now OFFERED, not built. The row and the slot
-    // still land at the mint, which is what this test is about.
-    expect(receipt.status).toBe("awaiting-consent");
+    // S3 — the escalated ask is now OFFERED, not built, and it answers on the
+    // standard park. The row and the slot still land at the mint, which is what
+    // this test is about.
+    expect(outcome.status).toBe("pending-approval");
     expect(await runtime.placements({}, ctx)).toEqual([
-      expect.objectContaining({ slot: "dashboard.hero", app: receipt.id }),
+      expect.objectContaining({ slot: "dashboard.hero", app: expect.stringMatching(/^app_/) }),
     ]);
   });
 
