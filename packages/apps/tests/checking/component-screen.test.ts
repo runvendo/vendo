@@ -1703,6 +1703,70 @@ export default function Window() {
     expect(ranged.issues).toHaveLength(1);
   });
 
+  /**
+   * THE PINCER. A control reports what a person picked through the change event
+   * and nowhere else, so a screen that feeds a Select into a tool whose input
+   * declares an ENUM had two states to choose between and both were refused:
+   * typed to the tool's own union it failed at the handler, because
+   * `event.target.value` was declared `string`; widened to `string` it failed at
+   * the payload. Neither sentence named the enum as the thing to satisfy — the
+   * payload one named the Button its call sat under — so the model rewrote the
+   * handler for as long as it was allowed to.
+   */
+  it("lets a Select's value reach a tool's enum, and names the tool when the value stays wide", async () => {
+    const paying: readonly HostToolInfo[] = [...tools, {
+      name: "record_payment",
+      description: "Record a payment against one transfer",
+      risk: "write",
+      inputSchema: {
+        type: "object",
+        properties: {
+          body: {
+            type: "object",
+            properties: { id: { type: "string" }, method: { type: "string", enum: ["ach", "card", "check"] } },
+            required: ["id", "method"],
+            additionalProperties: false,
+          },
+        },
+        required: ["body"],
+        additionalProperties: false,
+      },
+    }];
+    const paid = async (state: string): Promise<ComponentScreenCheck> => checkComponentScreen({
+      source: `import { useState } from "react";
+import { Button, Select, Stack, tools } from "@vendo/screen";
+
+export default function Pay() {
+  const [method, setMethod] = useState<${state}>("ach");
+  return (
+    <Stack gap={8}>
+      <Select label="Method" options={["ach", "card", "check"]} value={method} onChange={(e) => setMethod(e.target.value)} />
+      <Button label="Record" onClick={() => { void tools.record_payment({ body: { id: "tr_1", method } }); }} />
+    </Stack>
+  );
+}
+`,
+      hostTools: paying,
+      catalog: controls,
+      runQuery: async () => ROWS,
+    });
+
+    // The state typed to the tool's own enum is the CORRECT screen, and the
+    // whole gauntlet takes it.
+    const typed = await paid(`"ach" | "card" | "check"`);
+    expect(typed.issues).toEqual([]);
+    expect(typed.ok).toBe(true);
+
+    // Left wide, the payload is a real fault — and the sentence is about the
+    // TOOL whose schema refused it, not about the button the call sits under.
+    const wide = await paid("string");
+    const [{ code, message }] = wide.issues as [{ code: string; message: string }];
+    expect(code).toBe("types");
+    expect(message).toContain("calls tools.record_payment(…) with an input its schema does not accept");
+    expect(message).toContain(`"ach" | "card" | "check"`);
+    expect(message).not.toContain('prop "onClick"');
+  });
+
   /** A field description written as the bare KEY — the shorthand `Select.options`
    *  already takes. `items` given `string[]` was a whole class of looped repairs;
    *  the type is the union now, so there is nothing left to refuse. */

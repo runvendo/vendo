@@ -554,8 +554,15 @@ export interface ComponentScreenTypingsInput {
  *  a Checkbox) — this program has no DOM lib to describe the real thing, and
  *  anything wider would reject working code. It is OPTIONAL because most handlers
  *  ignore it, and the return covers both `() => setOpen(true)` and an `async`
- *  handler that awaits a tool. */
-const HANDLER_TYPE = "(event?: { target: { value?: string; checked?: boolean } }) => void | Promise<void>";
+ *  handler that awaits a tool.
+ *
+ *  `value` is `any` deliberately. What a control reports is not a string — a
+ *  Slider gives a number, a multi-select an array (`specs.ts`) — and the type
+ *  no control's data really has closed the one route a picked value has to a
+ *  tool: called `string`, a state typed to a tool's declared ENUM was refused at
+ *  the handler and the same state widened was refused at the payload, which is
+ *  every state a screen could hold. */
+const HANDLER_TYPE = "(event?: { target: { value?: any; checked?: boolean } }) => void | Promise<void>";
 
 /** An identifier a declaration can be written under. A catalog name that is not
  *  one cannot be imported by a screen either. */

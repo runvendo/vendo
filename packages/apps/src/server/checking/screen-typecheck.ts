@@ -334,6 +334,13 @@ const typeIssue = (
   if (MISSING_PROPERTY.has(diagnostic.code) || BAD_CALL.has(diagnostic.code) || diagnostic.code === 2322) {
     const handler = changeHandlerMessage(ts, file, checker, node);
     if (handler !== undefined) return at(handler);
+    // A value refused INSIDE a tool payload arrives as 2322 — the assignment to
+    // one nested field rather than the argument as a whole — and the locus a
+    // sentence reads best from is the tool, not the control the call sits under:
+    // an enum fed a widened value was stamped `<Button> prop "onClick"`, so the
+    // repair looked like the handler and the payload was rewritten forever.
+    const payload = badPayloadMessage(ts, file, checker, diagnostic, sentence);
+    if (payload !== undefined) return at(payload);
     const [reused] = translateDiagnostic(ts, file, checker, diagnostic);
     // The wire translator's `where` is a locus its sentence sometimes states
     // itself, and prefixing it anyway said `prop "variant" prop "variant" on
