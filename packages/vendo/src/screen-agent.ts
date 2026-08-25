@@ -716,14 +716,18 @@ const surfaceNote = (viewport: ScreenInput["viewport"]): string => {
 const doorOut = (input: ScreenInput): string => {
   if (input.canBuild !== true) return "";
   return `
-- **\`${ESCALATE_TOOL}\`** is the one door out. Writing one screen out of this
-  product's components is all you can do here; an ask that needs real code, its
-  own server, a package to install, or a surface these components cannot express
-  goes through it instead.
+- **\`${ESCALATE_TOOL}\`** is the one door out. A screen is already real code —
+  logic, state, full JS — so "this needs code" is never the reason. Escalate when
+  the ask needs what this room does not have:
+  - a package to install — maps, rich editors, 3D, PDF: anything imported;
+  - a surface this product's components and the Kit cannot express;
+  - heavier computation than a screen's render budget allows.
   - It builds nothing by itself. It ASKS the person whether to have this built
     for real, and their yes — whenever it comes — is what starts it.
-  - A view you could assemble does not keep an ask here: if part of it needs real
-    code, escalate the WHOLE ask.
+  - A build cannot run its own server, work while nobody is watching, or reach
+    the internet. An ask that needs those gets an honest no, not an escalation.
+  - A view you could assemble does not keep an ask here: if part of it needs a
+    package, escalate the WHOLE ask.
   - The builder gets the person's own words, so all you write is one plain
     sentence saying what assembly cannot do.`;
 };
