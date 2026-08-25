@@ -139,8 +139,15 @@ export function createShellSession(opts: {
 
   return {
     async exec(command) {
-      const bash = await (booting ??= boot());
       try {
+        if (booting === undefined) {
+          booting = boot();
+          // A REJECTED boot is not cached: the libraries load bundler-blind on
+          // first use, and one blink there must not answer every later call in
+          // the turn with the same stale failure (same as `open`, tool.ts:179).
+          void booting.catch(() => { booting = undefined; });
+        }
+        const bash = await booting;
         const { stdout, stderr, exitCode } = await bash.exec(command);
         return { stdout, stderr, exitCode };
       } catch (error) {
@@ -149,7 +156,9 @@ export function createShellSession(opts: {
         // `exec` instead of turning it into an exit code. A path the person's own
         // filesystem refused is an ordinary shell failure, not a broken tool call:
         // the model has to READ it and pick another path, which it cannot do if
-        // the turn dies instead.
+        // the turn dies instead. A boot that fails is inside the same boundary
+        // for the same reason: an unloadable library is a shell that is down, not
+        // a tool call that is broken.
         return { stdout: "", stderr: `${(error as Error).message}\n`, exitCode: 1 };
       }
     },
