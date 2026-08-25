@@ -140,8 +140,10 @@ describe("the user's file drawer — real doors, real workspace", () => {
 
     expect(response.status).toBe(200);
     const staged = await response.json() as { path: string; bytes: number };
-    expect(staged.path).toMatch(/^\/user\/uploads\/[0-9a-f]{8}-ledger\.csv$/);
-    expect(staged.bytes).toBe(24);
+    expect(staged).toEqual({
+      path: expect.stringMatching(/^\/user\/uploads\/[0-9a-f]{8}-ledger\.csv$/),
+      bytes: 24,
+    });
     // A workspace opened fresh — its own index read — sees the same bytes.
     expect(await readBack(vendo, staged.path)).toBe("month,revenue\njan,31000\n");
   });
