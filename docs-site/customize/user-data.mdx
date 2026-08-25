@@ -1,33 +1,40 @@
 ---
 title: "User data"
 sidebarTitle: "User data"
-description: "Give each user a place to keep their own files: drop one in chat and the agent can read it, build on it, and pick it up again in next week's conversation."
+description: "Drop a file into a conversation and it lives with that conversation — the agent reads it on every later turn, and it is deleted with the thread. The shelf is for things the user asks to keep."
 ---
 
 Drop a file. Build on it.
 
 ## The picture
 
-Attachments used to ride one message and end with it. A file dropped in chat is
-now **saved** — into that user's own files, private to them, still there in next
-week's conversation. The agent reads it and answers from it, and can build an
-app on top of it.
+A file dropped in chat belongs to the **conversation** it was dropped into. The
+turn that receives it moves it into that thread's own files, so the agent reads
+it on this turn and on every later turn of the same thread — and when the
+conversation is deleted, the file and the bytes behind it go with it.
 
-The message that follows carries only a reference to the file. That is what
-keeps a transcript light: a spreadsheet lands once, and the conversation about
-it stays a conversation, not a copy of the file repeated on every turn.
+Files a user asks the agent to *keep* live somewhere else: the shelf, at
+`/user/files/`, which outlives every conversation. A drop is not a keep — the
+shelf holds only what someone deliberately put there.
+
+The message that follows a drop carries only a reference to the file. That is
+what keeps a transcript light: a spreadsheet lands once, and the conversation
+about it stays a conversation, not a copy of the file repeated on every turn.
 
 Images are the deliberate exception. They still ride the message itself, because
 that is how a model sees a picture at all.
 
 ## Where files go
 
-Each user gets `/user/files/` inside their own workspace — the same filesystem
-the agent works in, scoped to that one person. Nothing is shared between users,
-and nothing here belongs to a thread, so a file survives every conversation that
-comes after it.
+Three addresses, one lifecycle:
 
-`POST /files` is the door a browser uses:
+| Address | What lives there |
+| --- | --- |
+| `/user/uploads/<prefix>-<name>` | A staged drop — received, not yet claimed by a turn |
+| `/user/threads/<threadId>/files/<name>` | A conversation's own files, where a claimed drop is homed |
+| `/user/files/<name>` | The keep-shelf — things the user asked to save, in reach of every conversation |
+
+`POST /files` is the door a browser uses, and it **stages**:
 
 ```http
 POST /api/vendo/files?name=sales-2026.csv
@@ -39,11 +46,26 @@ jan,31000
 ```
 
 ```json
-{ "path": "/user/files/sales-2026.csv", "bytes": 24 }
+{ "path": "/user/uploads/3f2a9c1e-sales-2026.csv", "bytes": 24 }
 ```
 
 The body is the file's own raw bytes under its own media type — there is no
 multipart form to assemble, so the name rides the query string, percent-encoded.
+The random prefix on the staged path is the server's, never the caller's: two
+conversations may drop `report.pdf` in the same second and neither may overwrite
+the other before its turn claims it.
+
+**Echo the `path` back exactly as the door returned it.** The message that sends
+the file carries a file part whose `url` is that staged path. The turn that
+receives the message moves the file to
+`/user/threads/<threadId>/files/<name>` and rewrites the part before the message
+is stored, so the transcript points at the file's permanent home. This is why a
+drop can finish before the conversation exists at all — the composer uploads
+pre-send, and a first turn's thread id is minted server-side. Never build a
+path yourself; the one the door answered is the only one the turn will claim.
+
+A staged file whose message is never sent does not sit there forever: any later
+turn by the same user sweeps staged files older than six hours, bytes included.
 
 `x-vendo-upload` is required and its value is not read. A raw body cannot be
 `application/json`, so this door sits outside the wire's CSRF floor and asks for
@@ -51,11 +73,11 @@ a header a cross-site form post cannot set. Without it the upload comes back a
 `400`. The client below sends it for you.
 
 <Note>
-  **Same name replaces.** Upload `sales-2026.csv` again and the new file *is*
-  `sales-2026.csv` — last write wins, no `-v2` suffix, no second copy. This is
-  deliberate: re-sending a corrected export is the common case, and a drawer that
-  silently accumulated four near-identical spreadsheets would be worse than one
-  that keeps the newest.
+  **Same name, two rules.** On the shelf, same name replaces: save
+  `sales-2026.csv` again and the new file *is* `sales-2026.csv` — last write
+  wins, no second copy. In a conversation, a second drop of the same name is
+  **kept**, under a distinct name, rather than silently overwriting the first —
+  both pills in the transcript keep pointing at the bytes they were sent with.
 </Note>
 
 A name is a **file name**, never a path. `nested/report.csv` and `../escape.csv`
@@ -68,16 +90,18 @@ The client does it in one call — no upload state to manage:
 
 ```ts
 const saved = await client.files.upload(file);
-// { path: "/user/files/sales-2026.csv", bytes: 86104 }
+// { path: "/user/uploads/9b1f04a2-sales-2026.csv", bytes: 86104 }
 ```
 
-The built-in chat surface already does this for you: dropping a file on the
-thread, or picking one with the paperclip, uploads it and sends the reference.
+The built-in chat surface already does the whole dance for you: dropping a file
+on the thread, or picking one with the paperclip, uploads it and sends the
+reference the door answered with. A custom surface must do the same — send the
+returned `path` as the file part's `url`, unmodified.
 
 ## From your own code
 
-`putUserFile` is the same write, called server-side — for pushing a file at a
-user without waiting for them to bring it:
+`putUserFile` writes the **shelf**, server-side — for pushing a file at a user
+without waiting for them to bring it:
 
 ```ts
 await vendo.putUserFile({
@@ -87,41 +111,48 @@ await vendo.putUserFile({
 });
 ```
 
-It writes exactly what the chat door writes, so nothing downstream can tell the
-two apart. It **delivers nothing and starts no turn** — the file is simply there,
-and the user reaches it the next time they chat.
+It lands at `/user/files/statement-2026-08.pdf`, same name replaces, and it is
+in reach of every conversation. It **delivers nothing and starts no turn** — the
+file is simply there, and the user reaches it the next time they chat. It is a
+shelf write, not a chat drop: nothing stages, and no thread claims it.
 
 ## What the agent does with it
 
-Three tools come with every deployment — no adapter, no key, no configuration:
+A file dropped into the conversation needs no tool call to find — it is in the
+conversation's own files, and the agent's shell reads it directly at
+`/user/threads/<thread>/files/<name>`, parsers included.
+
+The **shelf** has three tools, on every deployment — no adapter, no key, no
+configuration:
 
 | Tool | Risk | What it does |
 | --- | --- | --- |
-| `vendo_user_files_list` | `read` | What this user has shared, with each file's size and type |
-| `vendo_user_files_read` | `read` | Reads one of them, by name |
-| `vendo_user_files_put` | `write` | Saves one, by name. Text as `content`; anything else base64 with `encoding: "base64"` |
+| `vendo_user_files_list` | `read` | What this user has kept on the shelf, with each file's size and type |
+| `vendo_user_files_read` | `read` | Reads one kept file, by name |
+| `vendo_user_files_put` | `write` | Keeps one, by name. Text as `content`; anything else base64 with `encoding: "base64"` |
 
 All three run through the same guard, audit trail and approval rules as every
 other tool, so on the `cautious` preset the write parks for the person. None of
 them takes a path — only a **file name** — so nothing they are asked for can
-address anything outside that one user's files. There is no subject argument
-either: each call opens the drawer of the principal that made it and no other.
+address anything outside that one user's shelf. There is no subject argument
+either: each call opens the shelf of the principal that made it and no other.
 
 A long file is read a window at a time — 200 lines, or 12,000 characters,
 whichever comes first — so a spreadsheet gets walked rather than truncated. The
 result says `truncated` and hands back a `nextOffset` to pass as `offset` on the
 next call. `offset` counts lines, never characters.
 
-Because the tools are on the ordinary registry, the listing is also how the
-agent finds a file in a **later** conversation. Nothing about last month's
-upload is in this conversation's history — the agent looks, finds it, and reads
-it. Being on the ordinary registry is also why they are at the
+Because the tools are on the ordinary registry, the listing is how the agent
+finds a **kept** file in a later conversation — the user says "the pricing sheet
+I asked you to save", the agent lists, finds, reads. Being on the ordinary
+registry is also why they are at the
 [MCP door](/outside-agents/how-the-door-works): an outside agent holding a
-user-bound token gets the same three tools against that same user's files.
+user-bound token gets the same three tools against that same user's shelf.
 
 ## What reads back
 
-Any file can be **saved**. Only these read back as text:
+Any file can be **kept**. Only these read back as text through
+`vendo_user_files_read`:
 
 `csv` · `tsv` · `txt` · `log` · `sql` · `md` · `json` · `ndjson` · `xml` ·
 `html` · `yaml` · `yml`
@@ -137,7 +168,8 @@ media type, `readable: false`, and this:
 
 That is an `ok`, not an error. The bytes are safe, and the sentence tells the
 agent what to ask the person for instead of leaving it to narrate an empty
-result.
+result. A file in the *conversation's* files has a better path: the agent's
+shell parses PDFs, spreadsheets and Word documents as ordinary commands.
 
 <Warning>
   **The extension is the whole evidence.** Nothing stores a media type, so a
@@ -154,25 +186,46 @@ configuration. This is what the agent does with a file, automatically.
 The whole flow, as your user experiences it:
 
 1. **They drop `sales-2026.csv`** into the chat and ask: *"make me a dashboard of this."*
-2. **The agent reads the file and builds an app.** The rows it needs are copied into the app's own saved items — the app's private storage, separate from the user's files. The dashboard renders from those saved rows.
-3. **The file and the app now live separately.** The copy is a snapshot, not a live link — the app doesn't read the user's files afterward, and nothing re-reads them on its behalf.
-4. **In December they drop the updated `sales-2026.csv`.** Same name, so it replaces the old copy — no duplicates. The dashboard still shows what it was built from —
-5. **— until they ask.** *"Refresh my dashboard."* The agent reads the new file, rewrites the app's saved items, and says what it did: file replaced, app updated.
+2. **The agent copies the file into the app it is building, then reads it there.** A conversation's files are deleted with the conversation, so an app must never depend on one — the agent copies the drop into the app's own files (`/user/apps/<app>/`) first and parses it there. The dashboard renders from the app's own copy.
+3. **The file and the app now live separately.** The copy is a snapshot, not a live link — the app doesn't read the conversation's files afterward, and nothing re-reads them on its behalf.
+4. **In December they drop the updated `sales-2026.csv`.** The dashboard still shows what it was built from —
+5. **— until they ask.** *"Refresh my dashboard."* The agent reads the new file, rewrites the app's copy, and says what it did.
 
 <Note>
-  No watcher, no polling, no background sync — a file sitting in the drawer
-  changes nothing until the user talks to the agent. That's deliberate:
-  everything the agent does is visible in the conversation.
+  No watcher, no polling, no background sync — a dropped file changes nothing
+  until the user talks to the agent. That's deliberate: everything the agent
+  does is visible in the conversation.
 </Note>
 
 What *is* yours to wire is already above on this page: the upload door
 (`POST /files`), `client.files.upload` in your UI, and `putUserFile` from your
-backend. The agent's three file tools ship with every deployment.
+backend. The agent's file tools and shell ship with every deployment.
+
+## Deleted means deleted
+
+A conversation's files die with it. `DELETE /threads/:id` — and the trash
+action in the shipped chrome — removes the thread row, its messages, its
+harness state, and everything under `/user/threads/<id>`: the rows, their
+history, and the blobs those rows were the only pointer to. Deleting an app
+does the same for the app's workspace files and their objects.
+
+The full cascade needs a store the deployment can run SQL against — the
+default store, your own Postgres, or a hosted store's `StoreOps` surface. On a
+store with neither, deleting a thread still removes the live file rows, but the
+append-only history and the objects it points at stay behind, exactly as a
+plain remove always left them.
+
+The shelf is untouched by either delete: a kept file outlives every
+conversation, and only [erasing the user](/users-orgs/erasing-a-user) — or the
+agent replacing it by name — removes it.
 
 <Warning>
-  In this release a PDF or an image **lands in the drawer and can be read about,
-  but does not reach an app**. Only tabular data is copied into an app. Putting a
-  document into an app's own file storage is a follow-up.
+  **If you built against the old layout, stop assuming `/user/files/...`.**
+  Chat drops used to land on the shelf; they now stage and move in with the
+  conversation. A custom surface must echo the `path` the upload door returns
+  instead of constructing `/user/files/<name>`, and anything that must outlive
+  a conversation belongs on the shelf (`putUserFile`, `vendo_user_files_put`)
+  or in an app's own files — never at a `/user/threads/...` address.
 </Warning>
 
 ## Size

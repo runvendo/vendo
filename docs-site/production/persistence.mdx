@@ -107,9 +107,18 @@ const report = await eraseStore(vendo.store, { files }).bySubject(subjectId);
 
 // Everything one app owns.
 const byApp = await eraseStore(vendo.store, { files }).byApp(appId);
+
+// One conversation's workspace files, history and blobs.
+const byThread = await eraseStore(vendo.store, { files }).byThread(threadId);
 ```
 
-The HOSTED store carries its own erase door with the same two methods and no
+You rarely call `byThread` yourself: deleting a thread through
+`DELETE /threads/:id` already runs the whole cascade — the thread row, its
+messages and its harness state in one transaction, and the conversation's files
+and blobs with them. Deleting an app likewise erases its workspace files and
+their objects. `byThread` exists for cleanup outside those paths.
+
+The HOSTED store carries its own erase door with `bySubject` and `byApp` and no
 `files` — the console cascades its own storage server-side. `eraseStore` cannot
 be handed that store: it throws `Unknown VendoStore handle` before any request
 goes out.

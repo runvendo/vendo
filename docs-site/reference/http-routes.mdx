@@ -24,7 +24,13 @@ Most routes resolve a principal through `principal(req)`. Three surfaces never c
 | `/threads/:id/heartbeat` | POST | `{ active: boolean }`. Beaten by the client while a turn streams so the server can idle-abort on a runtime that never surfaces a disconnect. Only the caller's own in-flight turns answer `true` |
 | `/threads/:id/steer` | POST | `{ text, messageId }` → `{ landed: boolean }`. Steers the caller's own in-flight turn |
 | `/threads` | GET | `ThreadSummary[]` |
-| `/threads/:id` | GET · DELETE | one thread · delete it |
+| `/threads/:id` | GET · DELETE | one thread · delete it. The delete is a cascade: the thread row, its messages and its harness state go together, and the conversation's files under `/user/threads/:id` are erased with their blobs |
+
+## Files
+
+| Route | Method | Body → Response |
+| --- | --- | --- |
+| `/files` | POST | the file's raw bytes, name in `?name=` (percent-encoded), `x-vendo-upload: 1` required → `{ path, bytes }`. The upload is staged at `/user/uploads/<prefix>-<name>`; send that exact `path` as the message's file part and the receiving turn homes the file at `/user/threads/<threadId>/files/<name>`. Staged files never sent are swept after six hours. See [User data](/customize/user-data) |
 
 ## Approvals and grants
 

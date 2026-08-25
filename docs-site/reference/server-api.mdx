@@ -81,7 +81,7 @@ export interface Vendo {
 | `tokenFor` | One short-lived MCP access token bound to one of your users, for a backend agent connecting to this deployment's door. Pass the `Request` to read the signed-in user off its session cookie, or a user id to mint headlessly. A blank id is refused rather than minted. See [Your own agent](/outside-agents/your-own-agent) |
 | `agentTools` | The door, already wired, for an agent loop you wrote yourself: `tools` in the shape the Messages API takes, `results(message)` to run what the model picked, `embeds` for the typed envelopes those calls produced. One handle per conversation — the session it opens is what a parked approval resumes on. Same `Request \| userId` duality as `tokenFor`. See [Your own agent](/outside-agents/your-own-agent) |
 | `emit` | The host-event seam. Returns the ids of runs started for enabled automations owned by that principal, and throws `not-implemented` under `automations: false` |
-| `putUserFile` | Pushes a file into one user's own drawer from host code — the programmatic half of the chat drop, through the same server-side write. Same name replaces the file that was there. It reaches the user the next time they chat; nothing is delivered and no turn starts |
+| `putUserFile` | Pushes a file onto one user's keep-shelf (`/user/files/<name>`) from host code. Same name replaces the file that was there. It reaches the user the next time they chat; nothing is delivered and no turn starts. It is a shelf write, not a chat drop — a drop through `POST /files` stages at `/user/uploads/…` and is homed with the conversation that receives it |
 | `usage` | Reads the store's usage meter. Throws `not-implemented` on a meterless store |
 | `guardedTools` | The guard-bound registry your own agent loop executes through. Parks pending-approval calls for wire resume |
 | `agent` | The agent this deployment adopted via `createVendo({ agent })`, read back. Absent when the host composed none — the deployment still has the composed harness, and a firing that names no agent reaches it |
@@ -89,7 +89,7 @@ export interface Vendo {
 | `channels` | `{ text: { link, status, unlink } }`, each taking a `Principal` |
 | `harness` | The composed thinker's door: what `POST /threads` runs, and what a host driving a turn directly calls |
 
-`HarnessTurns` carries `stream`, `warm`, `workspace`, `threads` (`get`, `list`, `delete`), and `evictSubject`.
+`HarnessTurns` carries `stream`, `warm`, `workspace`, `threads` (`get`, `list`, `delete`), `stageUpload`, and `evictSubject`. `stageUpload` is the chat drop's landing pad — it writes `/user/uploads/<prefix>-<name>` and answers the staged path, which the sending message must echo so the receiving turn can home the file with its conversation. `threads.delete` is a cascade: the thread row, its messages and its harness state go in one transaction, and the conversation's files and blobs are erased with them.
 
 ### Next.js
 
@@ -149,7 +149,7 @@ The old `agent: { … }` options bag is gone the same way. What the deployment c
 | `createStore` | `(config?: StoreConfig) => VendoStore` |
 | `hostedStore` | `(options: HostedStoreOptions) => HostedStore` |
 | `hostedStoreOps` | `(options: HostedStoreOptions) => StoreOps` |
-| `eraseStore` | `(store, options: { files: FilesAdapter }) => { bySubject, byApp }` |
+| `eraseStore` | `(store, options: { files: FilesAdapter }) => { bySubject, byApp, byThread, byWorkspacePath }` |
 | `s3Files` | `(options: S3FilesOptions) => FilesAdapter`. Any S3-compatible bucket — R2, S3, Supabase, MinIO. See [User data](/customize/user-data#your-own-bucket) |
 | `envSecrets` | `(prefix?: string) => SecretsProvider` |
 | `storeSecrets` | `(store: VendoStore) => SecretsProvider` |
@@ -185,9 +185,13 @@ import { eraseStore } from "@vendoai/vendo/server";
 const erase = eraseStore(vendo.store, { files });
 await erase.bySubject("user_123");
 await erase.byApp("app_abc");
+await erase.byThread("thr_123");
+await erase.byWorkspacePath("user_123", "/user/uploads");
 ```
 
 The files adapter is required, not defaulted, and it must be the same one you passed to `createVendo({ files })`. Defaulting it let a host with a wired bucket erase the rows and silently keep the objects.
+
+`byThread` erases one conversation's workspace files — the rows under `/user/threads/<id>`, their history, and the blobs those rows were the only pointer to. The thread row, its messages and its harness state are a separate cascade, run by `threads.delete`. `byWorkspacePath` erases one workspace subtree for one owner; the owner is required because `/user/**` names a different file in every subject's workspace. Both run automatically on the ordinary delete paths — reach for them directly only when you are cleaning up outside those paths.
 
 Each call returns a map of per-table deleted counts. Full semantics are on [Persistence](/production/persistence).
 
