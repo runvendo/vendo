@@ -22,6 +22,10 @@ describe("armBackgroundSweep - the newest composition ADOPTS the sweep", () => {
 describe("composeSweep - adoption is a DEVELOPMENT posture", () => {
   afterEach(() => {
     vi.useRealTimers();
+    // The legs below arm against the REAL process slot (composeSweep owns the
+    // host binding, unlike the isolated hosts above); drop it so no stale stop
+    // leaks past this describe block.
+    delete (globalThis as unknown as Record<symbol, unknown>)[Symbol.for("vendo.background-ttl-sweep")];
   });
 
   const compositionOf = (development: boolean): {
