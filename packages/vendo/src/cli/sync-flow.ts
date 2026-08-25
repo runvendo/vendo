@@ -211,6 +211,14 @@ export function printSyncReport(report: SyncReportWithWarnings, output: Output):
       + " at the app root (public/ and docs/ are read too) — add one and re-run");
   }
   output.log(`pins: ${report.pins.captured.length} captured, ${report.pins.drifted.length} drifted`);
+  // Right under the count it contradicts. "0 captured, 0 drifted" printed over
+  // a file with `<Remixable>` in it is the single most misleading line sync can
+  // emit, so the wrappers it could not attribute are named here, not buried.
+  const unattributed = report.pins.unattributed ?? [];
+  if (unattributed.length > 0) {
+    output.error(`warning: ${unattributed.length} <Remixable> wrapper${unattributed.length === 1 ? " was" : "s were"} found but NOT captured — sync could not trace ${unattributed.length === 1 ? "its" : "their"} \`Remixable\` back to @vendoai/ui:`);
+    for (const line of unattributed) output.error(`  ${line}`);
+  }
   if ((report.pins.ported ?? []).length > 0) {
     // BOTH call sites, or the feature silently does not exist: the ✦ chrome is
     // fail-closed on the provider's wiring, so a host that wires only

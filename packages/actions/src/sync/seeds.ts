@@ -15,7 +15,9 @@ import {
   portablePath,
 } from "./capture.js";
 import {
+  exportOrigin,
   importReferenceFor,
+  insideBounds,
   isInside,
   parseModuleSource,
   resolveImportSource,
@@ -50,6 +52,11 @@ export interface PinCaptureResult {
   pruned: string[];
   /** Loud wrapper errors ("file:line — message"); sync must fail on them. */
   errors: string[];
+  /** `<Remixable>` wrappers sync FOUND but could not attribute to `@vendoai/ui`
+   *  ("file:line — message"). Never silent: a repo whose wrappers all sit
+   *  behind an unrecognized module used to sync to "0 captured, 0 drifted"
+   *  with nothing said. */
+  unattributed: string[];
   warnings: string[];
   /** The app-root stylesheets this walk captured. Shared with the registered
    *  component capture — the same root files, read once. */
@@ -88,31 +95,78 @@ function tagText(ts: typeof TS, tagName: TS.JsxTagNameExpression, sf: TS.SourceF
 const REMIXABLE_MODULE = /^(?:@vendoai\/(?:ui|vendo)|vendoai)(?:\/|$)/u;
 
 /** Local bindings PROVEN to be our `Remixable` at the use site: named imports
- *  (aliased or not — `import { Remixable as Remix }`) and namespace imports
- *  from a REMIXABLE_MODULE. A same-named component from anywhere else is not
- *  ours and is skipped silently (checker round-1 ruling 2026-08-02). */
+ *  (aliased or not — `import { Remixable as Remix }`) and namespace imports,
+ *  from a REMIXABLE_MODULE directly or through the host's own re-export shim.
+ *  A same-named component from anywhere else is not ours and is never
+ *  captured (checker round-1 ruling 2026-08-02) — but it is no longer silent:
+ *  every unproven local name is kept so the wrapper using it can say so. */
 interface RemixableBindings {
   names: Set<string>;
   namespaces: Set<string>;
+  /** Local name → the specifier it was imported from, for names that LOOK like
+   *  our `Remixable` and were not proven. Absent from the map = not imported
+   *  at all. */
+  unproven: Map<string, string>;
 }
 
-function remixableBindings(ts: typeof TS, sf: TS.SourceFile): RemixableBindings {
+/** Where a wrapper's `Remixable` is resolved from. */
+interface BindingScope {
+  file: string;
+  root: string;
+  extraRoots: readonly string[];
+}
+
+/**
+ * Is `imported` from `specifier` OUR Remixable? A direct `@vendoai/ui` import
+ * is proof on its face. Anything else is proof only if reading the host's own
+ * modules says so: hosts that forbid deep `@vendoai/*` imports re-export
+ * `Remixable` through a kit module (`@host/vendo-kit`), and following that
+ * module's exports back to `@vendoai/ui` is a fact, not a guess. A specifier
+ * that cannot be followed is left unproven rather than assumed either way.
+ */
+async function isOurRemixable(specifier: string, imported: string, scope: BindingScope): Promise<boolean> {
+  if (REMIXABLE_MODULE.test(specifier)) return true;
+  const origin = await exportOrigin({
+    importer: scope.file,
+    specifier,
+    exported: imported,
+    root: scope.root,
+    extraRoots: scope.extraRoots,
+  });
+  return origin !== null && REMIXABLE_MODULE.test(origin);
+}
+
+async function remixableBindings(ts: typeof TS, sf: TS.SourceFile, scope: BindingScope): Promise<RemixableBindings> {
   const names = new Set<string>();
   const namespaces = new Set<string>();
+  const unproven = new Map<string, string>();
   for (const statement of sf.statements) {
-    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)
-      || !REMIXABLE_MODULE.test(statement.moduleSpecifier.text)) continue;
-    const bindings = statement.importClause?.namedBindings;
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) continue;
+    const specifier = statement.moduleSpecifier.text;
+    const clause = statement.importClause;
+    if (clause === undefined) continue;
+    // A DEFAULT import is never ours — `Remixable` is a named export — but
+    // recording it keeps the miss message honest about where the name came from
+    // instead of claiming it was never imported.
+    if (clause.name !== undefined) unproven.set(clause.name.text, specifier);
+    const bindings = clause.namedBindings;
     if (bindings === undefined) continue;
     if (ts.isNamespaceImport(bindings)) {
-      namespaces.add(bindings.name.text);
+      // A namespace only matters when the file writes `<Ns.Remixable>`, and
+      // proving that asks the same question a named import does.
+      const local = bindings.name.text;
+      if (await isOurRemixable(specifier, "Remixable", scope)) namespaces.add(local);
+      else unproven.set(local, specifier);
       continue;
     }
     for (const element of bindings.elements) {
-      if ((element.propertyName?.text ?? element.name.text) === "Remixable") names.add(element.name.text);
+      const imported = element.propertyName?.text ?? element.name.text;
+      if (imported !== "Remixable") continue;
+      if (await isOurRemixable(specifier, imported, scope)) names.add(element.name.text);
+      else unproven.set(element.name.text, specifier);
     }
   }
-  return { names, namespaces };
+  return { names, namespaces, unproven };
 }
 
 function isRemixableTag(
@@ -159,29 +213,67 @@ function functionTypedProps(ts: typeof TS, child: TS.JsxElement | TS.JsxSelfClos
   return names;
 }
 
-/** Every `<Remixable>` usage in one module, with loud errors for children that
- *  are not a single component element. */
-function wrapperSites(
+/** The local binding a tag that NAMES `Remixable` reads through — `Remixable`
+ *  itself, or `Kit` in `<Kit.Remixable>`. Null for every other tag. */
+function remixableTagBinding(text: string): string | null {
+  if (text.slice(text.lastIndexOf(".") + 1) !== "Remixable") return null;
+  const dot = text.indexOf(".");
+  return dot === -1 ? text : text.slice(0, dot);
+}
+
+const quoted = (value: string): string => `"${value}"`;
+
+/** `"@vendoai/ui/chrome"`, quotes included, assembled at runtime: the
+ *  dependency guard's static scan reads import-shaped text even inside a string
+ *  literal, and actions may not depend on `@vendoai/ui`. */
+const CHROME = quoted(["@vendoai", "ui", "chrome"].join("/"));
+const IMPORT_FIX = `\`import { Remixable } from ${CHROME}\``;
+const REEXPORT_FIX = `\`export { Remixable } from ${CHROME}\``;
+
+/** THE loud miss. What happened, why, and the exact edits that fix it —
+ *  because the alternative a host actually experienced is `pins: 0 captured,
+ *  0 drifted` printed over a file with `<Remixable>` right there in it. */
+function unattributedWrapper(at: string, tag: string, local: string, specifier: string | undefined): string {
+  const head = `${at} — <${tag}> was NOT captured: \`${local}\``;
+  return specifier === undefined
+    ? `${head} is not imported in this file, so sync cannot tell whether it is Vendo's. Import it (${IMPORT_FIX}, or from one of your own modules that re-exports it) and re-run \`vendo sync\`. If this is your own component, rename it — Remixable is Vendo's wrap marker.`
+    : `${head} comes from ${quoted(specifier)}, and following that module's exports never reached @vendoai/ui's Remixable. Fix it either way: import it directly (${IMPORT_FIX}), or re-export it from ${quoted(specifier)} (${REEXPORT_FIX}). Then re-run \`vendo sync\`.`;
+}
+
+/** Every `<Remixable>` usage in one module: the ones that capture, loud errors
+ *  for children that are not a single component element, and loud misses for
+ *  wrappers whose `Remixable` could not be traced to `@vendoai/ui`. */
+async function wrapperSites(
   source: string,
   file: string,
   relativeFile: string,
-): { sites: WrapperSite[]; errors: string[] } {
+  scope: BindingScope,
+): Promise<{ sites: WrapperSite[]; errors: string[]; unattributed: string[] }> {
   const sites: WrapperSite[] = [];
   const errors: string[] = [];
+  const unattributed: string[] = [];
   // The token's absence is a cheap skip that avoids parsing every walked module.
-  if (!source.includes("Remixable")) return { sites, errors };
+  if (!source.includes("Remixable")) return { sites, errors, unattributed };
   const parsed = parseModuleSource(source, file);
-  if (!parsed) return { sites, errors };
+  if (!parsed) return { sites, errors, unattributed };
   const { ts, sf } = parsed;
-  const bindings = remixableBindings(ts, sf);
-  if (bindings.names.size === 0 && bindings.namespaces.size === 0) return { sites, errors };
+  const bindings = await remixableBindings(ts, sf, scope);
   visitNodes(ts, sf, (node) => {
-    if (ts.isJsxSelfClosingElement(node) && isRemixableTag(ts, node.tagName, sf, bindings)) {
-      errors.push(`${relativeFile}:${lineOf(sf, node)} — <Remixable /> wraps nothing; put exactly one component element inside it`);
+    if (!ts.isJsxElement(node) && !ts.isJsxSelfClosingElement(node)) return;
+    const tagName = ts.isJsxElement(node) ? node.openingElement.tagName : node.tagName;
+    const line = lineOf(sf, node);
+    if (!isRemixableTag(ts, tagName, sf, bindings)) {
+      const text = tagText(ts, tagName, sf);
+      const local = remixableTagBinding(text);
+      if (local !== null) {
+        unattributed.push(unattributedWrapper(`${relativeFile}:${line}`, text, local, bindings.unproven.get(local)));
+      }
       return;
     }
-    if (!ts.isJsxElement(node) || !isRemixableTag(ts, node.openingElement.tagName, sf, bindings)) return;
-    const line = lineOf(sf, node);
+    if (!ts.isJsxElement(node)) {
+      errors.push(`${relativeFile}:${line} — <Remixable /> wraps nothing; put exactly one component element inside it`);
+      return;
+    }
     // Whitespace and comment-only expression containers ({/* … */}) render
     // nothing and do not count against the single-child rule.
     const children = node.children.filter((child) =>
@@ -206,7 +298,7 @@ function wrapperSites(
       functionProps: functionTypedProps(ts, child),
     });
   });
-  return { sites, errors };
+  return { sites, errors, unattributed };
 }
 
 /** Reach into host plumbing inside the captured component's own module:
@@ -310,6 +402,7 @@ async function resolveSite(
   source: string,
   root: string,
   realRoot: string,
+  extraRoots: readonly string[],
   errors: string[],
 ): Promise<ResolvedSite | null> {
   // Walked files are labeled relative to the given root, not its realpath —
@@ -320,7 +413,7 @@ async function resolveSite(
     errors.push(`${at} — <Remixable> wraps <${site.childTag}>, which is not statically imported; extract it into its own module, import it, and wrap the imported component`);
     return null;
   }
-  const resolved = await resolveImportSource(site.file, reference.specifier, root, reference.imported);
+  const resolved = await resolveImportSource(site.file, reference.specifier, root, reference.imported, extraRoots);
   if (!resolved) {
     errors.push(`${at} — <Remixable> wraps <${site.childTag}>, but its import ("${reference.specifier}") does not resolve to source inside the host root`);
     return null;
@@ -332,7 +425,7 @@ async function resolveSite(
     errors.push(`${at} — <Remixable> wraps <${site.childTag}>, but its source could not be read safely inside the host root`);
     return null;
   }
-  if (!isInside(realRoot, realFile)) {
+  if (!insideBounds([realRoot, ...extraRoots], realFile)) {
     errors.push(`${at} — <Remixable> wraps <${site.childTag}>, but its source resolves outside the host root`);
     return null;
   }
@@ -416,16 +509,18 @@ async function writeHoles(directory: string, homes: ReadonlyMap<string, string>)
 async function collectResolvedSites(
   root: string,
   realRoot: string,
+  extraRoots: readonly string[],
   files: readonly string[],
   result: PinCaptureResult,
 ): Promise<Map<string, ResolvedSite[]>> {
   const bySlot = new Map<string, ResolvedSite[]>();
   for (const file of files) {
     const source = await fs.readFile(file, "utf8");
-    const { sites, errors } = wrapperSites(source, file, portablePath(root, file));
+    const { sites, errors, unattributed } = await wrapperSites(source, file, portablePath(root, file), { file, root, extraRoots });
     result.errors.push(...errors);
+    result.unattributed.push(...unattributed);
     for (const site of sites) {
-      const resolved = await resolveSite(site, source, root, realRoot, result.errors);
+      const resolved = await resolveSite(site, source, root, realRoot, extraRoots, result.errors);
       if (resolved === null) continue;
       const grouped = bySlot.get(resolved.slot);
       if (grouped === undefined) bySlot.set(resolved.slot, [resolved]);
@@ -439,6 +534,7 @@ async function collectResolvedSites(
 interface CaptureContext {
   root: string;
   realRoot: string;
+  extraRoots: readonly string[];
   remixableDir: string;
   generatedDir: string;
   budgetBytes?: number;
@@ -454,7 +550,7 @@ interface CaptureContext {
  *  split, and the baseline write (or the sameCapturedPayload no-op) — every
  *  early exit below is a place the original loop iteration moved on. */
 async function captureSlot(slot: string, sites: readonly ResolvedSite[], ctx: CaptureContext): Promise<void> {
-  const { root, realRoot, remixableDir, generatedDir, budgetBytes, samplePropsFor, ignoreSlots, wiring, homes, result } = ctx;
+  const { root, realRoot, extraRoots, remixableDir, generatedDir, budgetBytes, samplePropsFor, ignoreSlots, wiring, homes, result } = ctx;
   const [primary] = sites as [ResolvedSite, ...ResolvedSite[]];
   // Two wrappers of the SAME component are one capture, many mount points
   // (legal). Two DIFFERENT components sharing an exported name would leave
@@ -488,6 +584,7 @@ async function captureSlot(slot: string, sites: readonly ResolvedSite[], ctx: Ca
   const walked = await captureClosure({
     root,
     realRoot,
+    extraRoots,
     label: `remixable slot ${slot}`,
     primaryFile: primary.realFile,
     primarySource: primary.source,
@@ -540,7 +637,11 @@ async function captureSlot(slot: string, sites: readonly ResolvedSite[], ctx: Ca
  *  wrapper's slot is unknowable, and deleting its baseline would turn a loud
  *  failure into silent data loss. A DEGRADED scan prunes nothing either — a
  *  missing host compiler parses every file to zero sites without one error,
- *  and a walk that hit its file cap may simply never have seen the wrapper. */
+ *  and a walk that hit its file cap may simply never have seen the wrapper.
+ *  An UNATTRIBUTED wrapper counts the same way: a host that just moved its
+ *  imports behind a shim sync cannot follow still has every wrapper it had
+ *  yesterday, and pruning on that reading would delete the baselines their
+ *  forks live on. */
 async function pruneZombieBaselines(
   remixableDir: string,
   files: readonly string[],
@@ -550,7 +651,7 @@ async function pruneZombieBaselines(
 ): Promise<void> {
   const scanTrusted = parseModuleSource("", "compiler-probe.tsx") !== null
     && files.length < MAX_SCAN_FILES;
-  if (scanTrusted && result.errors.length === 0) {
+  if (scanTrusted && result.errors.length === 0 && result.unattributed.length === 0) {
     const entries = await fs.readdir(remixableDir).catch((error: NodeJS.ErrnoException) => {
       if (error.code === "ENOENT") return [];
       throw error;
@@ -564,19 +665,64 @@ async function pruneZombieBaselines(
   }
 }
 
-export async function capturePins(
-  root: string,
-  out: string,
-  ignoreSlots: ReadonlySet<string> = new Set(),
-  budgetBytes?: number,
+export interface CapturePinsOptions {
+  /** Slots the host opted out of (`.vendo/overrides.json` → `remix.ignoreSlots`). */
+  ignoreSlots?: ReadonlySet<string>;
+  /** Extra directories to scan for `<Remixable>` wrappers on top of the project
+   *  root (`.vendo/overrides.json` → `remix.sources`). Resolved from the root,
+   *  and free to sit OUTSIDE it: a repo whose app is `host/` and whose screens
+   *  are `../demos/` needs both halves in one sync. */
+  sources?: readonly string[];
+  budgetBytes?: number;
   /** The host's own DECLARED sample props for a component, by (file, slot) —
    *  read off the catalog scan's registrations, never generated: a grade that
    *  passes on invented data is worse than a refusal. */
-  samplePropsFor?: (file: string, slot: string) => Record<string, Json> | undefined,
+  samplePropsFor?: (file: string, slot: string) => Record<string, Json> | undefined;
+}
+
+const SOURCE_FILE = (relativePath: string): boolean =>
+  /\.(?:[cm]?[jt]sx?)$/u.test(relativePath) && !/\.d\.ts$/u.test(relativePath);
+
+/** The configured extra source roots, each one checked before it is trusted: a
+ *  path that names nothing is a typo the host must SEE, not a directory that
+ *  quietly contributes no wrappers. */
+async function extraSourceRoots(
+  root: string,
+  sources: readonly string[],
+  warnings: string[],
+): Promise<{ scan: string[]; real: string[] }> {
+  const scan: string[] = [];
+  const real: string[] = [];
+  for (const source of sources) {
+    const directory = path.resolve(root, source);
+    try {
+      if (!(await fs.stat(directory)).isDirectory()) throw new Error("not a directory");
+      real.push(await fs.realpath(directory));
+      scan.push(directory);
+    } catch {
+      warnings.push(`remix source "${source}" is not a readable directory (looked in ${portablePath(root, directory)}), so no <Remixable> wrapper under it was scanned — fix the path in .vendo/overrides.json → remix.sources (it resolves from your project root), or drop the entry`);
+    }
+  }
+  return { scan, real };
+}
+
+export async function capturePins(
+  root: string,
+  out: string,
+  options: CapturePinsOptions = {},
 ): Promise<PinCaptureResult> {
-  const result: PinCaptureResult = { captured: [], drifted: [], ported: [], pruned: [], errors: [], warnings: [], styles: [] };
+  const { ignoreSlots = new Set<string>(), budgetBytes, samplePropsFor } = options;
+  const result: PinCaptureResult = { captured: [], drifted: [], ported: [], pruned: [], errors: [], unattributed: [], warnings: [], styles: [] };
   const realRoot = await fs.realpath(root);
-  const files = await walk(root, (relativePath) => /\.(?:[cm]?[jt]sx?)$/u.test(relativePath) && !/\.d\.ts$/u.test(relativePath), MAX_SCAN_FILES);
+  const extra = await extraSourceRoots(root, options.sources ?? [], result.warnings);
+  // One cap across every root, and one deduped list: an extra source that
+  // overlaps the project root must not walk the same file twice.
+  const walked: string[] = [];
+  for (const directory of [root, ...extra.scan]) {
+    if (walked.length >= MAX_SCAN_FILES) break;
+    walked.push(...await walk(directory, SOURCE_FILE, MAX_SCAN_FILES - walked.length));
+  }
+  const files = [...new Set(walked)].sort();
   const remixableDir = path.join(out, "remixable");
   const generatedDir = path.join(out, "generated");
   const wiring: WiringSlot[] = [];
@@ -584,10 +730,10 @@ export async function capturePins(
 
   result.styles = await captureRootStyles(root, realRoot, files, result.warnings);
 
-  const bySlot = await collectResolvedSites(root, realRoot, files, result);
+  const bySlot = await collectResolvedSites(root, realRoot, extra.real, files, result);
 
   const captureCtx: CaptureContext = {
-    root, realRoot, remixableDir, generatedDir, budgetBytes, samplePropsFor, ignoreSlots, wiring, homes, result,
+    root, realRoot, extraRoots: extra.real, remixableDir, generatedDir, budgetBytes, samplePropsFor, ignoreSlots, wiring, homes, result,
   };
   for (const [slot, sites] of [...bySlot.entries()].sort(([left], [right]) => left.localeCompare(right))) {
     await captureSlot(slot, sites, captureCtx);

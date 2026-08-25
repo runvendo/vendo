@@ -559,7 +559,7 @@ describe("stale baseline pruning", () => {
       import { FIXTURES } from "../data/fixtures";
       export function Card() { return <div>{FIXTURES.length}</div>; }
     `);
-    const result = await capturePins(root, path.join(root, ".vendo"), new Set(), 2_000);
+    const result = await capturePins(root, path.join(root, ".vendo"), { budgetBytes: 2_000 });
 
     expect(result.captured).toEqual([]);
     expect(result.drifted).toEqual([]);
@@ -575,7 +575,7 @@ describe("stale baseline pruning", () => {
     await fs.mkdir(path.join(root, ".vendo/remixable"), { recursive: true });
     await fs.writeFile(path.join(root, ".vendo/remixable/Ignored.json"), "{}\n", "utf8");
 
-    const result = await capturePins(root, path.join(root, ".vendo"), new Set(["Ignored"]));
+    const result = await capturePins(root, path.join(root, ".vendo"), { ignoreSlots: new Set(["Ignored"]) });
 
     expect(result.pruned).toEqual([]);
     await expect(fs.access(path.join(root, ".vendo/remixable/Ignored.json"))).resolves.toBeUndefined();

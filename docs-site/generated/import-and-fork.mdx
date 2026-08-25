@@ -236,6 +236,49 @@ A component that is intentionally never capturable can be acknowledged instead.
 
 Acknowledged slots are skipped without error and their baselines are left alone.
 
+### Importing `Remixable` through your own module
+
+Plenty of codebases forbid deep package imports and re-export what they use through a kit module. Sync follows that: it reads your module's exports and traces `Remixable` back to `@vendoai/ui`, so wrapping works the same behind a shim.
+
+```ts src/kit/vendo-kit.ts
+export { Remixable } from "@vendoai/ui/chrome";
+```
+
+```tsx demos/maple/Overview.tsx
+import { Remixable } from "@host/vendo-kit";
+import { NetWorth } from "./NetWorth";
+
+export function Overview() {
+  return <Remixable><NetWorth total={7} /></Remixable>;
+}
+```
+
+`export { Remixable } from`, `export * from`, and an `import` followed by an `export` all work, aliased or not, relative or through a `tsconfig` path, however many of your own modules the chain passes through.
+
+It is a trace, not a name match — so a `Remixable` that is genuinely your own is never captured as Vendo's. When a wrapper cannot be traced, sync says so on the line under the pin count rather than reporting zero captures over a file that plainly has a wrapper in it:
+
+```text
+pins: 0 captured, 0 drifted
+warning: 1 <Remixable> wrapper was found but NOT captured — sync could not trace its `Remixable` back to @vendoai/ui:
+  demos/maple/Overview.tsx:4 — <Remixable> was NOT captured: `Remixable` comes from "@host/vendo-kit", and following that module's exports never reached @vendoai/ui's Remixable. Fix it either way: import it directly (`import { Remixable } from "@vendoai/ui/chrome"`), or re-export it from "@host/vendo-kit" (`export { Remixable } from "@vendoai/ui/chrome"`). Then re-run `vendo sync`.
+```
+
+That one is a warning, not an exit code: sync cannot prove a `Remixable` it could not trace is Vendo's, so it reports it instead of failing your build on the guess. `sync --json` carries the same lines as `pins.unattributed`. Baseline pruning is held for that run too — a wrapper sync stopped recognizing is still a wrapper, and its baseline is what existing forks render from.
+
+### Components outside your project root
+
+`vendo sync` scans the directory it runs in. When your app and your components are siblings — an app in `host/`, screens in `../demos/` — name the extra roots and sync scans those too.
+
+```json .vendo/overrides.json focus={4}
+{
+  "format": "vendo/overrides@3",
+  "tools": {},
+  "remix": { "sources": ["../demos"] }
+}
+```
+
+Paths resolve from your project root and may sit outside it. Captured module ids stay relative to the project root, so a file under an extra source reads as `../demos/maple/NetWorth.tsx`. A path that names nothing warns rather than silently contributing no wrappers.
+
 ## Drift and reseed
 
 Update the component, run `vendo sync`, and the new baseline overwrites the old one. Existing forks are now drifted: the hash they recorded no longer matches the captured baseline.

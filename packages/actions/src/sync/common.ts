@@ -151,7 +151,13 @@ export function isInside(root: string, candidate: string): boolean {
   return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
 }
 
-async function resolvedCandidate(base: string, realRoot: string): Promise<ResolvedSource | null> {
+/** Every realpathed directory host source may live under: the project root,
+ *  plus the extra source roots a host configured (`remix.sources`). */
+export function insideBounds(bounds: readonly string[], candidate: string): boolean {
+  return bounds.some((bound) => isInside(bound, candidate));
+}
+
+async function resolvedCandidate(base: string, bounds: readonly string[]): Promise<ResolvedSource | null> {
   for (const candidate of candidates(base)) {
     if (candidate.split(path.sep).includes("node_modules")) continue;
     let realCandidate: string;
@@ -164,7 +170,7 @@ async function resolvedCandidate(base: string, realRoot: string): Promise<Resolv
     // pointing into node_modules resolves to a path inside the root and would
     // otherwise be captured as if it were the host's own source.
     if (realCandidate.split(path.sep).includes("node_modules")) continue;
-    if (!isInside(realRoot, realCandidate)) continue;
+    if (!insideBounds(bounds, realCandidate)) continue;
     try {
       return { file: realCandidate, source: await fs.readFile(realCandidate, "utf8") };
     } catch {
@@ -314,7 +320,7 @@ async function resolveImportedSource(
   specifier: string,
   root: string,
   importedName: string,
-  realRoot: string,
+  bounds: readonly string[],
   seen: Set<string>,
 ): Promise<ResolvedSource | null> {
   const key = `${path.resolve(importer)}\0${specifier}\0${importedName}`;
@@ -323,7 +329,7 @@ async function resolveImportedSource(
 
   const bases = await importBases(importer, specifier, root);
   for (const base of bases) {
-    const resolved = await resolvedCandidate(base, realRoot);
+    const resolved = await resolvedCandidate(base, bounds);
     if (!resolved) continue;
     const target = await reExportTarget(resolved.source, importedName, resolved.file);
     if (target.named) {
@@ -335,13 +341,13 @@ async function resolveImportedSource(
         target.named.specifier,
         root,
         target.named.imported,
-        realRoot,
+        bounds,
         seen,
       );
     }
     if (target.direct || importedName === "default") return resolved;
     for (const star of target.stars) {
-      const followed = await resolveImportedSource(resolved.file, star, root, importedName, realRoot, seen);
+      const followed = await resolveImportedSource(resolved.file, star, root, importedName, bounds, seen);
       if (followed) return followed;
     }
     // The requested export is absent from everything this module reaches.
@@ -352,19 +358,105 @@ async function resolveImportedSource(
   return null;
 }
 
+/** The realpathed roots host source may be read from: the project root, then
+ *  any extra source roots the host configured. Unreadable root → null, which
+ *  every caller turns into "resolves to nothing". */
+async function boundsFor(root: string, extraRoots: readonly string[]): Promise<string[] | null> {
+  try {
+    return [await fs.realpath(root), ...extraRoots];
+  } catch {
+    return null;
+  }
+}
+
 export async function resolveImportSource(
   importer: string,
   specifier: string,
   root: string,
   importedName = "default",
+  /** Realpathed directories outside `root` that also hold host source. */
+  extraRoots: readonly string[] = [],
 ): Promise<ResolvedSource | null> {
-  let realRoot: string;
-  try {
-    realRoot = await fs.realpath(root);
-  } catch {
+  const bounds = await boundsFor(root, extraRoots);
+  if (bounds === null) return null;
+  return resolveImportedSource(importer, specifier, root, importedName, bounds, new Set());
+}
+
+export interface ExportOriginInput {
+  /** The module doing the importing — where `specifier` is resolved from. */
+  importer: string;
+  specifier: string;
+  /** The export name to follow (as `specifier`'s module names it). */
+  exported: string;
+  root: string;
+  extraRoots?: readonly string[];
+}
+
+/**
+ * The module specifier one export ultimately comes FROM, following re-export
+ * hops that stay inside host source: `export { X } from "…"`, `export * from
+ * "…"`, and `import { X } from "…"; export { X }`. The answer is the first
+ * specifier whose module is NOT host source — the package that owns the name —
+ * or null when the chain ends inside the host (the module declares the value
+ * itself), breaks, or loops.
+ *
+ * This is what lets a `<Remixable>` behind a host's own re-export shim
+ * (`@host/vendo-kit`) still be PROVEN to be Vendo's: sync reads the shim's
+ * exports instead of pattern-matching its name.
+ */
+export async function exportOrigin(input: ExportOriginInput): Promise<string | null> {
+  const { root } = input;
+  const bounds = await boundsFor(root, input.extraRoots ?? []);
+  if (bounds === null) return null;
+  const seen = new Set<string>();
+
+  const follow = async (importer: string, specifier: string, exported: string): Promise<string | null> => {
+    const key = `${path.resolve(importer)}\0${specifier}\0${exported}`;
+    if (seen.has(key)) return null;
+    seen.add(key);
+    // Nothing host-local to resolve: the chain just left the host's source, so
+    // this specifier is the origin.
+    const bases = await importBases(importer, specifier, root);
+    if (bases.length === 0) return specifier;
+    for (const base of bases) {
+      const resolved = await resolvedCandidate(base, bounds);
+      if (!resolved) continue;
+      const parsed = parseModuleSource(resolved.source, resolved.file);
+      if (!parsed) return null;
+      const { ts, sf } = parsed;
+      const stars: string[] = [];
+      for (const statement of sf.statements) {
+        if (!ts.isExportDeclaration(statement)) continue;
+        const from = statement.moduleSpecifier && ts.isStringLiteral(statement.moduleSpecifier)
+          ? statement.moduleSpecifier.text
+          : undefined;
+        const clause = statement.exportClause;
+        if (clause === undefined || ts.isNamespaceExport(clause)) {
+          if (from !== undefined) stars.push(from);
+          continue;
+        }
+        const element = clause.elements.find((item) => item.name.text === exported);
+        if (element === undefined) continue;
+        const imported = (element.propertyName ?? element.name).text;
+        // `export { X } from "y"` — one more hop through y. `export { X }` with
+        // no source re-exports a local binding, so the IMPORT that bound it is
+        // the hop (a shim that imports and then exports).
+        if (from !== undefined) return follow(resolved.file, from, imported);
+        const reference = await importReferenceFor(resolved.source, imported);
+        return reference === undefined ? null : follow(resolved.file, reference.specifier, reference.imported);
+      }
+      // `export * from "…"` carries every name its target exports, this one
+      // included, so a star that leaves host source answers for it.
+      for (const star of stars) {
+        const origin = await follow(resolved.file, star, exported);
+        if (origin !== null) return origin;
+      }
+      return null; // the module declares the name itself
+    }
     return null;
-  }
-  return resolveImportedSource(importer, specifier, root, importedName, realRoot, new Set());
+  };
+
+  return follow(input.importer, input.specifier, input.exported);
 }
 
 export async function importReferenceFor(source: string, localExpression: string): Promise<ImportReference | undefined> {
