@@ -16,6 +16,9 @@ const committed = resolve(packageDir, "../mcp/src/shim/shim-html.gen.ts");
 // call form and gated on a non-identifier, non-`.` prefix so it never matches the
 // minified bundle's own identifiers that merely end in "Function(" — the embedded
 // interpreter ships dozens (callFunction(, parseFunction(, QTS_NewFunction(, …).
+// That same prefix gate is why this is a targeted tripwire for the known forms,
+// not an exhaustive scan — see the block comment below for what it does and
+// doesn't prove.
 const EXECUTOR = /(^|[^.\w$])(new\s+Function|Function|eval)\s*\(/;
 // The refusal the shim renders instead of executing generated component source.
 const REFUSAL_MARKER = "no longer runs in the host page";
@@ -26,16 +29,26 @@ const REFUSAL_MARKER = "no longer runs in the host page";
 // `new Function` executor for generated component source that the source had
 // already refused.
 //
-// The load-bearing guard is executor-absence: the shipped bundle — and a fresh
-// rebuild — must contain no dynamic-execution primitive and must keep the refusal
-// marker. That assertion runs on the bytes directly, so it fails CI if the source
-// re-adds `new Function` even when the committed file still matches a fresh build.
+// The executor-absence checks below are a targeted regression tripwire for the
+// specific forms that removed executor used (`new Function`, bare `Function(`,
+// `eval(`) — not an adversarial proof that the bundle contains no dynamic
+// execution of any kind. They do not catch a deliberately obfuscated or indirect
+// executor (`globalThis.Function(`, `obj.Function(`, `["Function"](...)`,
+// `.constructor("...")(...)`). Broadening the scan to catch those forms is
+// intentionally avoided: it would false-positive against the bundled QuickJS
+// interpreter's own identifiers (see EXECUTOR's prefix gate above).
 //
-// The byte-compare below is a secondary staleness nudge, not the security line.
-// It is kept byte-exact for simplicity: a cosmetic Vite/esbuild/Rollup output
-// change trips it, and the fix is to regenerate on a toolchain bump
-// (`pnpm --filter @vendoai/ui build:mcp-shim`) and commit. That is a maintenance
-// chore, not a vulnerability — executor-absence is proven independently above.
+// What's actually load-bearing is that the bundle byte-matches a fresh build of
+// the current source, and the current source (renderer.tsx) refuses to execute
+// `source:"generated"` component code. A dynamic executor can only reappear in
+// the bundle if one is reintroduced in source — which the source-level refusal
+// and its review are what prevent. The tripwire above is belt-and-suspenders on
+// top of that for the common forms, not the security boundary itself.
+//
+// The byte-compare below is kept byte-exact for simplicity: a cosmetic
+// Vite/esbuild/Rollup output change trips it, and the fix is to regenerate on a
+// toolchain bump (`pnpm --filter @vendoai/ui build:mcp-shim`) and commit. That is
+// a maintenance chore, not a vulnerability.
 describe("MCP shim bundle", () => {
   let tmp: string;
   let fresh: string;
@@ -60,7 +73,7 @@ describe("MCP shim bundle", () => {
   const expectNoExecutor = (bundle: string, label: string) => {
     expect(
       EXECUTOR.test(bundle),
-      `${label} shim bundle contains a dynamic-execution primitive (new Function / Function( / eval() — it must never execute generated component source in the host page`,
+      `${label} shim bundle matches a known dynamic-execution call form (new Function / Function( / eval() — the signature the removed native executor used`,
     ).toBe(false);
     expect(
       bundle.includes(REFUSAL_MARKER),
