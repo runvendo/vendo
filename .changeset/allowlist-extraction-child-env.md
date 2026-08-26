@@ -12,6 +12,9 @@ redirect the Cloud key and the source-bearing prompts to an attacker endpoint.
 The extraction path now reads the dotenv through an allowlist — a repo file may
 contribute a credential, the model pin, or the dev-server URL, and nothing else;
 every other variable reaches a child only from the developer's own shell, never
-from the checkout. (Doctor's config reads keep the general reader unchanged.)
-The Agent SDK availability probe also no longer imports the host-resolved module
-just to check that it exists.
+from the checkout. (Doctor's config reads keep the general reader unchanged.) The
+npx rung also pins its registry on the child (from the developer's own shell
+value, else the public default), so a repo-root `.npmrc` — which `npm exec` reads
+from cwd and which outranks the user's own `~/.npmrc` — can no longer redirect
+the engine fetch to a malicious registry. The Agent SDK availability probe no
+longer imports the host-resolved module just to check that it exists.

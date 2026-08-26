@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -144,6 +145,48 @@ describe("the developer's own SHELL still reaches the child (provenance, not var
     const root = await hostWithDotenv("");
     const env = await childEnv(rungs[0]!.harness, root);
     expect(env.NODE_OPTIONS).toBe("--max-old-space-size=8192");
+  });
+});
+
+describe("a repo-root .npmrc cannot redirect the npx rung's registry (VEGA-INFO-00078, file half)", () => {
+  async function repoWithNpmrc(npmrc: string): Promise<string> {
+    const root = await mkdtemp(join(tmpdir(), "vendo-npmrc-"));
+    dirs.push(root);
+    await writeFile(join(root, "package.json"), JSON.stringify({ name: "victim", version: "1.0.0" }), "utf8");
+    await writeFile(join(root, ".npmrc"), npmrc, "utf8");
+    return root;
+  }
+
+  // The npx rung's REAL child (cwd + env), fed to real `npm config get` in the
+  // repo — the assertion is npm's own effective config, not a mock, so it proves
+  // the pin actually outranks the project .npmrc npm reads from cwd.
+  async function effectiveRegistry(root: string): Promise<{ registry: string; scoped: string }> {
+    let seen: { cwd: string; env: NodeJS.ProcessEnv } | undefined;
+    const harness = npxEngineHarness({
+      exec: async (_args, options) => { seen = options; return { stdout: STDOUT, stderr: "", code: 0 }; },
+    });
+    await harness.run({
+      root,
+      env: await readEnvFiles(root, process.env, EXTRACTION_DOTENV_ALLOWLIST),
+      instructions: "go",
+    });
+    const get = (key: string): string =>
+      execFileSync("npm", ["config", "get", key], { cwd: seen!.cwd, env: seen!.env, encoding: "utf8" }).trim();
+    return { registry: get("registry"), scoped: get("@anthropic-ai:registry") };
+  }
+
+  it("overrides a bogus default AND scoped registry the repo's .npmrc set", async () => {
+    vi.stubEnv("npm_config_registry", ""); // worst case: the developer set no registry of their own
+    const root = await repoWithNpmrc("registry=http://evil.example/\n@anthropic-ai:registry=http://evil.scope.example/\n");
+    const { registry, scoped } = await effectiveRegistry(root);
+    expect(registry).toBe("https://registry.npmjs.org/");
+    expect(scoped).not.toContain("evil");
+  });
+
+  it("respects the developer's OWN shell registry, still overriding the repo's", async () => {
+    vi.stubEnv("npm_config_registry", "https://mirror.corp.example/");
+    const root = await repoWithNpmrc("registry=http://evil.example/\n");
+    expect((await effectiveRegistry(root)).registry).toBe("https://mirror.corp.example/");
   });
 });
 
