@@ -299,7 +299,21 @@ async function actAsAuth(
   principal: Principal,
   grant: PermissionGrant,
   messages: { declined: string; failed: string },
+  untrustedBase: boolean,
 ): Promise<{ headers: Record<string, string> } | { error: ToolOutcome }> {
+  // The trusted-origin decision presentHeaders makes, applied to the mint seam:
+  // never mint host credentials against a base learned from a spoofable Host.
+  if (untrustedBase) {
+    return {
+      error: error(
+        "blocked",
+        `Host credentials for ${grant.tool} cannot be minted because VENDO_BASE_URL is not set — `
+          + "the request origin is not a trusted, operator-set base. Set VENDO_BASE_URL to this "
+          + "deployment's full public URL (path prefix included), or VENDO_HOST_API_URL when the host "
+          + "API answers on another origin, then restart the server.",
+      ),
+    };
+  }
   if (grant.subject !== principal.subject) {
     return {
       error: withActAs(error(
@@ -460,6 +474,11 @@ async function hostHeaders(
   ctx: RunContext,
   url: URL,
 ): Promise<{ headers: Record<string, string>; actAsMinted: boolean } | { error: ToolOutcome }> {
+  // presentHeaders' fail-closed trigger, shared with the actAs seam below: a
+  // base learned from a spoofable Host (baseUrlTrusted:false) is no place to
+  // mint host credentials. Armed where present-mode hard-fails — production with
+  // no VENDO_BASE_URL sets untrustedOriginPolicy:"fail".
+  const untrustedBase = config.baseUrlTrusted === false && config.untrustedOriginPolicy === "fail";
   if (ctx.presence === "away") {
     if (!config.actAs) return { error: error("not-implemented", "away execution isn't set up for this product") };
     const grant = (ctx as ActionsRunContext).grant;
@@ -467,7 +486,7 @@ async function hostHeaders(
     const authed = await actAsAuth(config.actAs, ctx.principal, grant, {
       declined: "the host declined away execution for this action",
       failed: "away authentication failed",
-    });
+    }, untrustedBase);
     if ("error" in authed) return { error: authed.error };
     return { headers: authed.headers, actAsMinted: true };
   }
@@ -501,7 +520,7 @@ async function hostHeaders(
     const authed = await actAsAuth(config.actAs, ctx.principal, grant, {
       declined: "the host declined MCP execution for this action",
       failed: "MCP authentication failed",
-    });
+    }, untrustedBase);
     if ("error" in authed) return { error: authed.error };
     return { headers: authed.headers, actAsMinted: true };
   }
@@ -527,7 +546,7 @@ async function hostHeaders(
     const authed = await actAsAuth(config.actAs, ctx.principal, grant, {
       declined: "the host declined text-channel execution for this action",
       failed: "text-channel authentication failed",
-    });
+    }, untrustedBase);
     if ("error" in authed) return { error: authed.error };
     return { headers: authed.headers, actAsMinted: true };
   }
