@@ -324,12 +324,13 @@ function redactingWriter(
   secrets: readonly string[],
 ): UIMessageStreamWriter<UIMessage> {
   if (secrets.length === 0) return writer;
+  const redactString = (value: string): string => {
+    let out = value;
+    for (const secret of secrets) out = out.split(secret).join("[redacted]");
+    return out;
+  };
   const walk = (value: unknown): unknown => {
-    if (typeof value === "string") {
-      let out = value;
-      for (const secret of secrets) out = out.split(secret).join("[redacted]");
-      return out;
-    }
+    if (typeof value === "string") return redactString(value);
     if (Array.isArray(value)) return value.map(walk);
     if (value !== null && typeof value === "object") {
       const out: Record<string, unknown> = {};
@@ -338,9 +339,48 @@ function redactingWriter(
     }
     return value;
   };
+  // The model streams its prose in many text-delta parts, so a secret split
+  // across deltas ("sk-", "ant-", …) is never whole inside one `walk` and would
+  // stream through — the common case. Carry the last (maxLen-1) chars of the
+  // running text (the only span a secret could straddle into the next delta),
+  // scan the accumulated tail, and flush what's held back the moment the text
+  // stream yields to any other part (its text-end, a mirrored tool call, or turn
+  // end). Bounded by the longest secret, so the buffer can never grow unbounded.
+  const maxLen = Math.max(...secrets.map((secret) => secret.length));
+  let carry = "";
+  let carryId = "";
+  const isTextDelta = (part: unknown): part is { type: "text-delta"; id: string; delta: string } =>
+    typeof part === "object" && part !== null
+    && (part as { type?: unknown }).type === "text-delta"
+    && typeof (part as { id?: unknown }).id === "string"
+    && typeof (part as { delta?: unknown }).delta === "string";
+  const flushCarry = (): void => {
+    if (carry === "") return;
+    writer.write({ type: "text-delta", id: carryId, delta: carry } as never);
+    carry = "";
+  };
   return {
-    write: (part) => writer.write(walk(part) as typeof part),
-    merge: writer.merge.bind(writer),
+    write: (part) => {
+      if (isTextDelta(part)) {
+        if (part.id !== carryId) { flushCarry(); carryId = part.id; }
+        const scanned = redactString(carry + part.delta);
+        const keep = Math.max(0, scanned.length - (maxLen - 1));
+        carry = scanned.slice(keep);
+        if (keep > 0) writer.write({ ...part, delta: scanned.slice(0, keep) });
+        return;
+      }
+      flushCarry();
+      writer.write(walk(part) as typeof part);
+    },
+    // `merge` splices another chunk stream straight onto the wire, so its
+    // content must pass through the same scrub as `write` above — no path uses
+    // it today, but an unscrubbed merge would be a silent hole in the redactor.
+    merge: (stream) => {
+      type Chunk = Parameters<typeof writer.write>[0];
+      writer.merge(stream.pipeThrough(new TransformStream<Chunk, Chunk>({
+        transform: (chunk, controller) => controller.enqueue(walk(chunk) as Chunk),
+      })));
+    },
     get onError() { return writer.onError; },
     set onError(handler) { writer.onError = handler; },
   };

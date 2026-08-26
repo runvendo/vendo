@@ -85,6 +85,34 @@ describe("VEGA-INFO-00021 — the model credential never reaches the user", () =
     expect(said).not.toContain(SECRET);
   });
 
+  it("redacts a credential streamed one fragment per delta — the split-across-deltas case", async () => {
+    // A model streams its prose in many small deltas, so the credential arrives
+    // in pieces that are each too short to match on their own. The redactor must
+    // reassemble across deltas or the secret streams through whole.
+    const fragments = SECRET.match(/.{1,4}/g)!;
+    const parts = await runTurn(
+      defineHarness({
+        name: "drip-leaker",
+        async *run() {
+          yield { type: "text", delta: "your key is " };
+          for (const fragment of fragments) yield { type: "text", delta: fragment };
+          yield { type: "text", delta: " — done" };
+        },
+      }),
+    );
+    const serialized = JSON.stringify(parts);
+    expect(serialized).not.toContain(SECRET);
+    const said = parts
+      .filter((part) => part.type === "text-delta")
+      .map((part) => part.delta)
+      .join("");
+    expect(said).not.toContain(SECRET);
+    expect(said).toContain("[redacted]");
+    // Ordinary text on either side of the secret still reaches the user in full.
+    expect(said).toContain("your key is ");
+    expect(said).toContain(" — done");
+  });
+
   it("redacts the credential when it rides back inside a tool's output", async () => {
     const parts = await runTurn(
       defineHarness({

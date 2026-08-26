@@ -304,14 +304,22 @@ const wireRoutesFor = (deps: WireDeps): readonly RouteEntry[] => [
 function createWireHandler(deps: WireDeps): (request: Request) => Promise<Response> {
   // Assembled once per composition, not per request: what is mounted is a boot
   // fact. Each handler is wrapped so the same-origin baseUrl default is learned
-  // ONLY once a request actually matched a real Vendo route — before that
-  // handler runs any host call, and never for a 404 (an unmatched path invokes
-  // no handler). A spoofed Host on a 404 therefore can never poison the base.
+  // ONLY from a request that TERMINALLY matched a real Vendo route (VEGA-INFO-
+  // 00037). A grouped ("*") route matches a PATH then dispatches by method
+  // inside, falling through (undefined) to a 404 when no inner method matches —
+  // so learning at its entry would let a route-shaped 404 with a spoofed Host
+  // poison the base. Such a route therefore learns only after it produced a real
+  // response. A method-specific route cannot fall through (matchRoute already
+  // pinned its method) and one may make a same-origin host call DURING its own
+  // dispatch (the /doctor probes, before they return), so it learns at entry —
+  // before that call.
   const wireRoutes = wireRoutesFor(deps).map((entry) => ({
     ...entry,
     handler: async (wire: WireContext) => {
-      deps.onRequestOrigin?.(wire.url.origin);
-      return entry.handler(wire);
+      if (entry.method !== "*") deps.onRequestOrigin?.(wire.url.origin);
+      const response = await entry.handler(wire);
+      if (entry.method === "*" && response !== undefined) deps.onRequestOrigin?.(wire.url.origin);
+      return response;
     },
   }));
   // Amortized on-request sweep bookkeeping — lives in the shared handler closure
@@ -343,9 +351,9 @@ function createWireHandler(deps: WireDeps): (request: Request) => Promise<Respon
   //   4. the CSRF json-mutation gate — before ANY route handler runs;
   //   5. await ready — schema before the first store touch;
   //   6. the route table (wireRoutes above; tick auth and the orgs seam are
-  //      ordinary entries at their old chain positions) — a matched handler
-  //      teaches the same-origin baseUrl default (onRequestOrigin, wrapped
-  //      above) before it runs, so a 404 can never poison the learned base;
+  //      ordinary entries at their old chain positions) — a TERMINALLY matched
+  //      handler teaches the same-origin baseUrl default (onRequestOrigin,
+  //      wrapped above), so a route-shaped 404 can never poison the learned base;
   //   7. no match → not-found.
   return async (request) => {
     // ONE sweep pass per request, shared with any route that drives the sweep

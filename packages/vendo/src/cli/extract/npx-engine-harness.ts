@@ -265,23 +265,24 @@ export function npxEngineHarness(options: NpxEngineHarnessOptions = {}): Extract
       // A repo-root `.npmrc` is read by `npm exec` from cwd, and its `registry`
       // / `@scope:registry` lines outrank the developer's own ~/.npmrc — so a
       // cloned repo could point THIS fetch at a malicious registry and get
-      // arbitrary package execution (the file half of VEGA-INFO-00078; the
-      // `npm_config_*` env half is already dropped upstream by the extraction
-      // allowlist). Env config outranks a project `.npmrc`, so the registry —
-      // and the package's own scope, which a scoped `.npmrc` line could redirect
-      // on its own — are pinned on the child to the developer's shell value or
-      // the public default, never the checkout. Forwarding still lets a key
-      // present only in the passed map authenticate the child, and gateway fuel
-      // (if applicable) wins last — mirrors claude-cli-harness.ts.
-      const registry = isSet(merged["npm_config_registry"]) ? merged["npm_config_registry"]! : DEFAULT_NPM_REGISTRY;
-      const scopedRegistry = merged["npm_config_@anthropic-ai:registry"];
+      // arbitrary package execution (VEGA-INFO-00078). Env config outranks a
+      // project `.npmrc`, so the registry and the package's own scope are pinned
+      // on the child — always to the PUBLIC DEFAULT, never any ambient value.
+      // When Vendo is itself launched via `npx`/`npm exec` from inside the
+      // scanned checkout, npm exports that checkout's `.npmrc` `registry` into
+      // THIS process's env as `npm_config_registry`, so a merged/ambient value
+      // is repo-influenced too and cannot be trusted. The npx last-resort rung
+      // therefore always fetches from the public registry (a corporate mirror
+      // configured only in ~/.npmrc is not honored on this rung — accepted).
+      // A credential present in the passed map still authenticates the child,
+      // and gateway fuel (if applicable) wins last — mirrors claude-cli-harness.ts.
       const result = await exec(args, {
         cwd: input.root,
         env: {
           ...merged,
           ...overlay,
-          npm_config_registry: registry,
-          "npm_config_@anthropic-ai:registry": isSet(scopedRegistry) ? scopedRegistry! : registry,
+          npm_config_registry: DEFAULT_NPM_REGISTRY,
+          "npm_config_@anthropic-ai:registry": DEFAULT_NPM_REGISTRY,
         },
         onStderrLine: input.onProgress,
       });

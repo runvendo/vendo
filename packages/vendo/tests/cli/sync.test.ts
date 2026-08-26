@@ -806,9 +806,12 @@ describe("sync judgment-pass integration", () => {
   });
 
   it("no key in .env.local and none in process env stays structural-only (#567)", async () => {
-    // Sentinel var that only a .env.local could carry — kept out of process
-    // env so the "neither present" branch is deterministic regardless of the
-    // developer/CI machine's real ANTHROPIC_API_KEY / VENDO_API_KEY.
+    // VENDO_API_KEY is on the extraction dotenv allowlist, and readEnvFiles
+    // merges the shell value — so a real key the developer/CI machine exports
+    // would flip this "neither present" branch to byo. Delete it (not blank it:
+    // this harness reads presence as `typeof key === "string"`, which an empty
+    // string satisfies) so the branch under test is deterministic.
+    vi.stubEnv("VENDO_API_KEY", undefined);
     const { dir, toolsPath } = await hostWithTools();
     const before = await readFile(toolsPath, "utf8");
     const messages = captureOutput();
