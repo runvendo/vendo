@@ -195,9 +195,7 @@ export const appMemorySchema = z.object({
  * already existed, so the provenance is a property of the app, not a row set:
  * the thing it was seeded from, and the version of that thing it started at.
  * `slot` is the placement the ✦ gesture came from (a convenience for the chrome,
- * never the location of record — that is a placement ROW), and `review` mirrors
- * the baseline's vestigial review flag (the review-kind venue it once gated is
- * gone; every fork renders sandboxed).
+ * never the location of record — that is a placement ROW).
  *
  * `wishes` is every change that LANDED on this remix, VERBATIM and in order, the
  * ✦ gesture's own first. There are no bare forks — the gesture collects the
@@ -240,7 +238,6 @@ export interface AppSeed {
    */
   props?: Record<string, Json>;
   slot?: string;
-  review?: boolean;
 }
 
 /** 01-core §9 */
@@ -258,7 +255,6 @@ export const appSeedSchema = z.object({
   unapplied: z.array(z.string()).optional(),
   props: z.record(z.unknown()).optional(),
   slot: z.string().optional(),
-  review: z.boolean().optional(),
 }).passthrough().transform(({ instruction, wishes, ...seed }) => ({
   ...seed,
   wishes: wishes ?? (instruction === undefined || instruction === "" ? [] : [instruction]),

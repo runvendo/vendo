@@ -106,7 +106,7 @@ export interface AppsRuntimeContext {
   ): Promise<void>;
   /** The `app-lifecycle` audit kind, under the calling principal. */
   reportLifecycle(
-    operation: "create" | "delete" | "fork" | "in-client-approve" | "seed" | "reseed" | "machine-provision" | "place" | "unplace",
+    operation: "create" | "delete" | "fork" | "seed" | "reseed" | "machine-provision" | "place" | "unplace",
     appId: AppId,
     ctx: RunContext,
     extra?: Record<string, Json>,

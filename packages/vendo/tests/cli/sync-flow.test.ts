@@ -698,7 +698,6 @@ describe("pin baselines reach Vendo Cloud (decision 4)", () => {
     hash: `sha256:${hash}`,
     exportable: false,
     capturedAt: "2026-08-02T00:00:00.000Z",
-    review: true,
   });
 
   async function hostWithBaselines(slots: Array<{ slot: string; hash: string }>): Promise<string> {

@@ -140,7 +140,6 @@ const seedFrom = async (
       baseline: baseline.hash,
       wishes: [input.instruction],
       ...(input.slot === undefined ? {} : { slot: input.slot }),
-      ...(baseline.review === undefined ? {} : { review: baseline.review }),
     },
   };
   // The row goes down BEFORE the port's paint because the paint builds on it:

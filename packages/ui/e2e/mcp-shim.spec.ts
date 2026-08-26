@@ -10,17 +10,8 @@ import { fileURLToPath } from "node:url";
 import { themeCssVariables } from "../src/theme.js";
 import { browserTreeFixture } from "./fixtures/tree.js";
 
-/** Only the server's hash-pin verdict unlocks the in-client mount. */
-const GRANTED = {
-  granted: true,
-  versionHash: "sha256:approved",
-  approvedBy: "host-console",
-  at: "2026-07-15T09:00:00.000Z",
-};
-
 const shimTree = {
   ...browserTreeFixture,
-  inClient: GRANTED,
   queries: [{ name: "total", tool: "host_invoice_total", input: { invoiceId: "inv_42" } }],
   nodes: [
     ...browserTreeFixture.nodes.map((node) => node.id === "root"
@@ -28,22 +19,17 @@ const shimTree = {
       : node),
     { id: "query-value", component: "Text", props: { text: { $path: "/total" } } },
     {
+      // A built-in Button carries the action: generated component SOURCE no
+      // longer runs in the host page, so the interactive proof rides a kit node.
       id: "shim-action",
-      component: "ShimAction",
-      source: "generated",
-      props: { onRun: { $action: "fn:refresh", payload: { source: "mcp-shim" } } },
+      component: "Button",
+      props: { label: "Run shim action", onClick: { $action: "fn:refresh", payload: { source: "mcp-shim" } } },
     },
   ],
-  components: {
-    ShimAction: `export default function ShimAction({ onRun }) {
-      return <button type="button" onClick={() => onRun()}>Run shim action</button>;
-    }`,
-  },
 };
 
 const themeProofTree = {
   formatVersion: "vendo-genui/v2",
-  inClient: GRANTED,
   root: "root",
   nodes: [
     { id: "root", component: "Surface", children: ["content"] },
@@ -54,24 +40,11 @@ const themeProofTree = {
       component: "Text",
       props: { text: "The host palette crosses both iframe boundaries.", variant: "caption" },
     },
-    { id: "proof", component: "ThemeProof", source: "generated" },
+    // A filled accent Button paints `var(--vendo-color-accent)`, so the host
+    // palette reaching a rendered kit component is the surviving seam now that
+    // generated component source no longer runs in the host page.
+    { id: "proof", component: "Button", props: { label: "Themed control", tone: "accent" } },
   ],
-  components: {
-    ThemeProof: `export default function ThemeProof() {
-      return <section data-theme-proof style={{
-        display: "grid",
-        gap: 6,
-        padding: 16,
-        color: "var(--vendo-color-accent-text)",
-        background: "var(--vendo-color-accent)",
-        borderRadius: "var(--vendo-radius-medium)",
-        fontFamily: "var(--vendo-font-family)",
-      }}>
-        <strong style={{ fontSize: 17 }}>Generated component</strong>
-        <span>The same --vendo-* tokens reached the generated component.</span>
-      </section>;
-    }`,
-  },
 };
 
 async function loadShim(page: Page, payload: unknown, theme?: VendoTheme): Promise<void> {
@@ -210,13 +183,13 @@ test("generated MCP Apps shim renders a branded HTTP link-out card", async ({ pa
   });
 });
 
-test("generated MCP Apps shim carries the Maple theme into the generated component", async ({ page }) => {
+test("generated MCP Apps shim carries the Maple theme into the rendered component", async ({ page }) => {
   const screenshotDir = new URL("../../../docs/verification/eng-274/", import.meta.url);
   await mkdir(screenshotDir, { recursive: true });
 
   await loadShim(page, themeProofTree as unknown as UIPayload);
   const unbrandedShim = page.frameLocator("#shim-frame");
-  await expect(unbrandedShim.locator("[data-theme-proof]")).toBeVisible();
+  await expect(unbrandedShim.getByRole("button", { name: "Themed control" })).toBeVisible();
   // Unbranded, the shim declares no `--vendo-*` at all: the tokens are the
   // HOST's to send, and the branded half below is the seam that matters.
   await expect.poll(() => unbrandedShim.locator("html").evaluate((element) =>
@@ -241,10 +214,11 @@ test("generated MCP Apps shim carries the Maple theme into the generated compone
     accent: getComputedStyle(element).getPropertyValue("--vendo-color-accent").trim(),
     radius: getComputedStyle(element).getPropertyValue("--vendo-radius-medium").trim(),
   }))).toEqual({ accent: "#111111", radius: "14px" });
-  await expect.poll(() => mapleShim.locator("[data-theme-proof]").evaluate((element) => ({
-    background: getComputedStyle(element).backgroundColor,
-    radius: getComputedStyle(element).borderRadius,
-  }))).toEqual({ background: "rgb(17, 17, 17)", radius: "14px" });
+  // The filled accent Button paints `var(--vendo-color-accent)`, so the host
+  // accent reaching a rendered kit component is the seam. Radius is already
+  // proven at :root above; Button uses the small token, not medium.
+  await expect.poll(() => mapleShim.getByRole("button", { name: "Themed control" })
+    .evaluate((element) => getComputedStyle(element).backgroundColor)).toBe("rgb(17, 17, 17)");
   await page.locator("#shim-frame").screenshot({
     path: fileURLToPath(new URL("eng-274-theme-maple.png", screenshotDir)),
     animations: "disabled",

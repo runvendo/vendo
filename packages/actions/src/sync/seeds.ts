@@ -67,7 +67,6 @@ export interface PinCaptureResult {
 interface WrapperSite {
   file: string;
   line: number;
-  review: boolean;
   /** The child's JSX tag ("NetWorthCard" or "Cards.NetWorth"). */
   childTag: string;
   /** Child attributes carrying function-typed values at the call site. */
@@ -181,16 +180,6 @@ function isRemixableTag(
   return text.slice(text.lastIndexOf(".") + 1) === "Remixable" && bindings.namespaces.has(namespace);
 }
 
-function reviewFlag(ts: typeof TS, attributes: TS.JsxAttributes): boolean {
-  for (const property of attributes.properties) {
-    if (!ts.isJsxAttribute(property) || !ts.isIdentifier(property.name) || property.name.text !== "review") continue;
-    const initializer = property.initializer;
-    if (initializer === undefined) return true; // <Remixable review>
-    return ts.isJsxExpression(initializer) && initializer.expression?.kind === ts.SyntaxKind.TrueKeyword;
-  }
-  return false;
-}
-
 function childAttributes(ts: typeof TS, child: TS.JsxElement | TS.JsxSelfClosingElement): TS.JsxAttributes {
   return ts.isJsxSelfClosingElement(child) ? child.attributes : child.openingElement.attributes;
 }
@@ -293,7 +282,6 @@ async function wrapperSites(
     sites.push({
       file,
       line,
-      review: reviewFlag(ts, node.openingElement.attributes),
       childTag: childName,
       functionProps: functionTypedProps(ts, child),
     });
@@ -384,7 +372,6 @@ function sameCapturedPayload(left: SeedBaseline | null, right: SeedBaseline): bo
     source: baseline.source,
     hash: baseline.hash,
     exportable: baseline.exportable,
-    review: baseline.review === true,
     sourceImports: baseline.sourceImports ?? {},
     subSources: baseline.subSources ?? {},
     sampleProps: baseline.sampleProps,
@@ -562,23 +549,19 @@ async function captureSlot(slot: string, sites: readonly ResolvedSite[], ctx: Ca
     return;
   }
   if (ignoreSlots.has(slot)) return;
-  const review = sites.some((site) => site.review);
-  if (review && sites.some((site) => !site.review)) {
-    result.warnings.push(`remixable component ${slot} is wrapped both with and without review; capturing review: true`);
-  }
   const baselineFile = path.resolve(remixableDir, `${slot}.json`);
   if (!isInside(remixableDir, baselineFile)) {
     result.errors.push(`${portablePath(root, primary.file)}:${primary.line} — remixable component name ${slot} is not a safe baseline filename; rename the component`);
     return;
   }
-  if (!review) {
-    const signals = [...new Set([
-      ...plumbingSignals(primary.source, primary.realFile),
-      ...sites.flatMap((site) => site.functionProps).map((name) => `receives the function-typed prop ${name}`),
-    ])];
-    if (signals.length > 0) {
-      result.warnings.push(`remixable component ${slot} reaches into host plumbing (${signals.join("; ")}) — plumbing does not cross the fork boundary`);
-    }
+  // Every fork renders sandboxed, so host plumbing never crosses the boundary —
+  // this warning is unconditional.
+  const signals = [...new Set([
+    ...plumbingSignals(primary.source, primary.realFile),
+    ...sites.flatMap((site) => site.functionProps).map((name) => `receives the function-typed prop ${name}`),
+  ])];
+  if (signals.length > 0) {
+    result.warnings.push(`remixable component ${slot} reaches into host plumbing (${signals.join("; ")}) — plumbing does not cross the fork boundary`);
   }
   const styles = result.styles;
   const walked = await captureClosure({
@@ -617,7 +600,6 @@ async function captureSlot(slot: string, sites: readonly ResolvedSite[], ctx: Ca
     hash,
     exportable: false,
     capturedAt: new Date().toISOString(),
-    ...(review ? { review: true } : {}),
     ...(Object.keys(sourceImports).length === 0 ? {} : { sourceImports }),
     ...(Object.keys(subSources).length === 0 ? {} : { subSources }),
     // On the baseline so the seed door grades the port with the SAME values

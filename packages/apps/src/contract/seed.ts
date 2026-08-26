@@ -25,10 +25,6 @@ export interface SeedBaseline {
   hash: string;
   exportable: boolean;
   capturedAt: IsoDateTime;
-  /** Vestigial capture metadata. The review-kind venue it once gated (a fork
-   *  mounting natively in the host page on approval) is gone, so it no longer
-   *  changes how a fork renders — every fork renders sandboxed. */
-  review?: boolean;
   sourceImports?: Record<string, string>;
   subSources?: Record<string, SeedSubSource>;
   sampleProps?: Record<string, Json>;
@@ -82,7 +78,6 @@ export const seedBaselineSchema = z.object({
   hash: z.string().startsWith("sha256:"),
   exportable: z.boolean(),
   capturedAt: isoDateTimeSchema,
-  review: z.boolean().optional(),
   sourceImports: z.record(z.string()).optional(),
   subSources: z.record(seedSubSourceSchema).optional(),
   sampleProps: z.record(z.unknown()).optional(),
