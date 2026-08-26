@@ -182,11 +182,19 @@ export async function installCommandFor(root: string): Promise<InstallCommand> {
   }
 }
 
+/** POSIX single-quote a token of a command shown to the user, matching
+    pastePath's rule (init.ts): nothing expands inside single quotes, so a cwd
+    or spec carrying a space or shell metachar cannot be misread by the shell it
+    is pasted into. `^` (as in ai@^6) is not special in POSIX sh, so caret specs
+    stay unquoted. */
+const shellQuote = (token: string): string =>
+  /^[\w.^/@+-]+$/.test(token) ? token : `'${token.replace(/'/g, "'\\''")}'`;
+
 /** The exact command line a human can paste — prefixed with a `cd` when the
     install must run somewhere other than the app dir. */
 function invocationFor(install: InstallCommand, specs: string[], appRoot: string): string {
-  const line = `${install.command} ${[...install.args, ...specs].join(" ")}`;
-  return resolve(install.cwd) === resolve(appRoot) ? line : `(cd ${install.cwd} && ${line})`;
+  const line = [install.command, ...install.args, ...specs].map(shellQuote).join(" ");
+  return resolve(install.cwd) === resolve(appRoot) ? line : `(cd ${shellQuote(install.cwd)} && ${line})`;
 }
 
 /** The paste-ready zod bump for this host's package manager and workspace
@@ -216,6 +224,13 @@ export function installStderrTail(): string {
   return stderrTail;
 }
 
+/** The `--ignore-scripts` flag for the package managers that accept it, so
+    Vendo's automatic dep repair never runs the host repo's lifecycle scripts.
+    yarn is absent on purpose — berry rejects the flag (yarnpkg/berry#5540) and
+    honors YARN_ENABLE_SCRIPTS on the child env instead. */
+export const ignoreScriptsArgs = (command: string): string[] =>
+  ["npm", "pnpm", "bun"].includes(command) ? ["--ignore-scripts"] : [];
+
 /** Package managers install as .cmd shims on Windows, so the spawn must go
     through the platform shell there — a shell-less spawn ENOENTs before the
     install starts. cmd.exe treats `^` (as in ai@^6) as an escape character
@@ -225,8 +240,13 @@ export const defaultRunner: InstallRunner = (command, args, cwd) =>
   new Promise((resolve) => {
     stderrTail = "";
     const windows = process.platform === "win32";
-    const child = spawn(command, windows ? args.map((arg) => `"${arg}"`) : args, {
+    const runArgs = [...args, ...ignoreScriptsArgs(command)];
+    const child = spawn(command, windows ? runArgs.map((arg) => `"${arg}"`) : runArgs, {
       cwd,
+      // An automatic repair must not run the host repo's lifecycle scripts.
+      // The flag above covers npm/pnpm/bun; these cover yarn (classic reads
+      // npm config, berry reads YARN_ENABLE_SCRIPTS), which rejects the flag.
+      env: { ...process.env, npm_config_ignore_scripts: "true", YARN_ENABLE_SCRIPTS: "0" },
       stdio: ["ignore", "ignore", "pipe"],
       shell: windows,
     });
