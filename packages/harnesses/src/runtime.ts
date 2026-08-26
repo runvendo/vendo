@@ -341,12 +341,24 @@ function redactingWriter(
   };
   // The model streams its prose in many text-delta parts, so a secret split
   // across deltas ("sk-", "ant-", …) is never whole inside one `walk` and would
-  // stream through — the common case. Carry the last (maxLen-1) chars of the
-  // running text (the only span a secret could straddle into the next delta),
-  // scan the accumulated tail, and flush what's held back the moment the text
-  // stream yields to any other part (its text-end, a mirrored tool call, or turn
-  // end). Bounded by the longest secret, so the buffer can never grow unbounded.
+  // stream through — the common case. So after redacting whole occurrences, hold
+  // back ONLY the span that could still grow into a secret: the longest suffix of
+  // the running text that is a strict prefix of some secret. Everything before it
+  // can never be part of a secret, so it flushes at once — which keeps the stream
+  // incremental (a mid-turn divider is delivered the instant it passes, never
+  // stalled behind a fixed tail) while still catching a secret straddling the
+  // next delta. Whatever is held is flushed the moment the text stream yields to
+  // any other part (its text-end, a mirrored tool call, or turn end). The held
+  // suffix is a proper prefix of a secret, so it is bounded by the longest secret
+  // and the buffer can never grow unbounded.
   const maxLen = Math.max(...secrets.map((secret) => secret.length));
+  const heldSuffixLength = (text: string): number => {
+    for (let hold = Math.min(text.length, maxLen - 1); hold > 0; hold -= 1) {
+      const tail = text.slice(text.length - hold);
+      if (secrets.some((secret) => secret.length > hold && secret.startsWith(tail))) return hold;
+    }
+    return 0;
+  };
   let carry = "";
   let carryId = "";
   const isTextDelta = (part: unknown): part is { type: "text-delta"; id: string; delta: string } =>
@@ -364,7 +376,7 @@ function redactingWriter(
       if (isTextDelta(part)) {
         if (part.id !== carryId) { flushCarry(); carryId = part.id; }
         const scanned = redactString(carry + part.delta);
-        const keep = Math.max(0, scanned.length - (maxLen - 1));
+        const keep = scanned.length - heldSuffixLength(scanned);
         carry = scanned.slice(keep);
         if (keep > 0) writer.write({ ...part, delta: scanned.slice(0, keep) });
         return;

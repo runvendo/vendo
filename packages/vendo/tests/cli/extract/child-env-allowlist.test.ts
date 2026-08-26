@@ -183,10 +183,18 @@ describe("a repo-root .npmrc cannot redirect the npx rung's registry (VEGA-INFO-
     expect(scoped).not.toContain("evil");
   });
 
-  it("respects the developer's OWN shell registry, still overriding the repo's", async () => {
+  it("ignores an ambient/shell npm_config_registry too — the child always fetches from the public default", async () => {
+    // F5 (VEGA-INFO-00078): when Vendo is itself launched via `npx`/`npm exec`
+    // from inside the scanned checkout, npm exports THAT checkout's `.npmrc`
+    // `registry` into Vendo's own process env as `npm_config_registry` — so an
+    // ambient/shell value is repo-influenced and indistinguishable from a
+    // poisoned one. The rung therefore drops all ambient trust and pins the
+    // child to the public default, whatever the shell or the repo set. (A
+    // corporate mirror configured only in ~/.npmrc is not honored on this
+    // last-resort rung — accepted; the PATH/local-install rungs still are.)
     vi.stubEnv("npm_config_registry", "https://mirror.corp.example/");
     const root = await repoWithNpmrc("registry=http://evil.example/\n");
-    expect((await effectiveRegistry(root)).registry).toBe("https://mirror.corp.example/");
+    expect((await effectiveRegistry(root)).registry).toBe("https://registry.npmjs.org/");
   });
 });
 
