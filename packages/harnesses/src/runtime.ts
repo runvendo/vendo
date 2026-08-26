@@ -351,9 +351,18 @@ function redactingWriter(
   // any other part (its text-end, a mirrored tool call, or turn end). The held
   // suffix is a proper prefix of a secret, so it is bounded by the longest secret
   // and the buffer can never grow unbounded.
-  const maxLen = Math.max(...secrets.map((secret) => secret.length));
+  //
+  // The suffix scan below is O(span²) per text-delta (a slice + startsWith at
+  // every hold length), so `span` is capped: a real inference credential is well
+  // under this, and an absurdly long env value (`inferenceSecrets()` puts no
+  // ceiling on the key) would otherwise make the per-delta scan quadratic and
+  // stall the stream — the same class of cliff as the divider stall. A secret
+  // longer than the cap is still redacted whole by `redactString`; it just gets
+  // no cross-delta reassembly, which nothing real needs.
+  const MAX_SCAN_SPAN = 512;
+  const span = Math.min(MAX_SCAN_SPAN, Math.max(...secrets.map((secret) => secret.length)));
   const heldSuffixLength = (text: string): number => {
-    for (let hold = Math.min(text.length, maxLen - 1); hold > 0; hold -= 1) {
+    for (let hold = Math.min(text.length, span - 1); hold > 0; hold -= 1) {
       const tail = text.slice(text.length - hold);
       if (secrets.some((secret) => secret.length > hold && secret.startsWith(tail))) return hold;
     }

@@ -196,6 +196,16 @@ export const prefixRoute: (method: string, prefix: string, handler: RouteHandler
 export const dispatchRoutes: (routes: readonly RouteEntry[], wire: WireContext) => Promise<Response | undefined> =
   dispatchHttpRoutes;
 
+/** Mark a route so the wire learns its same-origin base at handler ENTRY, not
+    after the handler returns — for the few handlers that USE that base DURING
+    their own dispatch: a turn that dials the internal MCP door off the learned
+    loopback origin (compose-wire.ts), or a doctor probe that calls the host on
+    it. Safe ONLY on a handler that ALWAYS responds; a route that can fall
+    through (return undefined) must never carry it, or a route-shaped 404 from a
+    spoofed Host reopens VEGA-INFO-00037. The wire's default is the safe one —
+    learn only after a non-undefined Response (server.ts). */
+export const learnsOriginAtEntry = (entry: RouteEntry): RouteEntry => ({ ...entry, learnsOriginAtEntry: true });
+
 /** Orgs are a Vendo Cloud capability, not an OSS one (kill-list A5): every
     /orgs route and every org-scoped param on /approvals and /grants answers
     this, unconditionally — there is no key-gated activation path left in the

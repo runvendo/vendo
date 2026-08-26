@@ -1,7 +1,7 @@
 import type { ExtractedTool } from "@vendoai/actions";
 import { principalSchema, type Principal, type ToolOutcome } from "@vendoai/core";
 import { tickSecret } from "../tick-enrolment.js";
-import { BASE_PATH, environment, json, route, type RouteEntry } from "./shared.js";
+import { BASE_PATH, environment, json, learnsOriginAtEntry, route, type RouteEntry } from "./shared.js";
 
 /** The composition probe surface, for anything that wants to check a running
     deployment over HTTP: the synthetic credential/actAs round-trip constants
@@ -57,6 +57,14 @@ export const doctorBaseUrlRoutes: RouteEntry[] = [
   }),
 ];
 
+/** The two POST probes make a same-origin HOST CALL during their own dispatch:
+    each doctor executor runs a probe tool whose route binding points at the
+    doctor echo path on the learned base (doctorPresentTool / doctorActAsTool
+    above), so the base must be learned at handler ENTRY, before the handler runs
+    (`learnsOriginAtEntry`, shared.ts). Marked route-by-route rather than by
+    method, because a method is not the tell: plenty of method-specific routes
+    fall through to a 404. */
+
 /** The PROBE surface — a composition that did not say it is development never
     gets these routes at all (server.ts mounts the group behind
     `deps.development`). Mounting is the
@@ -86,7 +94,7 @@ export const doctorRoutes: RouteEntry[] = [
     const accepted = parsed.success && parsed.data.subject === DOCTOR_ACT_AS_PRINCIPAL.subject;
     return json({ ok: accepted }, accepted ? 200 : 401);
   }),
-  route("POST", "/doctor/present", async ({ deps, context }) => {
+  learnsOriginAtEntry(route("POST", "/doctor/present", async ({ deps, context }) => {
     const outcome = await deps.doctor.present(await context("chat"));
     if (doctorProbeOk(outcome)) return json({ ok: true });
     return json({
@@ -96,8 +104,8 @@ export const doctorRoutes: RouteEntry[] = [
         message: "Present credentials did not reach the host API. Set VENDO_BASE_URL to the running host origin and restart the dev server.",
       },
     }, 409);
-  }),
-  route("POST", "/doctor/act-as", async ({ deps }) => {
+  })),
+  learnsOriginAtEntry(route("POST", "/doctor/act-as", async ({ deps }) => {
     const outcome = await deps.doctor.actAs();
     if (doctorProbeOk(outcome)) return json({ ok: true });
     // The probe executor calls the actions registry directly (no guard
@@ -133,5 +141,5 @@ export const doctorRoutes: RouteEntry[] = [
           : "actAs returned no usable AuthMaterial, or the composition's principal resolver did not accept it. Check the actAs seam and principal resolver.",
       },
     }, 409);
-  }),
+  })),
 ];

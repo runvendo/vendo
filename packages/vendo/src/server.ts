@@ -305,20 +305,25 @@ function createWireHandler(deps: WireDeps): (request: Request) => Promise<Respon
   // Assembled once per composition, not per request: what is mounted is a boot
   // fact. Each handler is wrapped so the same-origin baseUrl default is learned
   // ONLY from a request that TERMINALLY matched a real Vendo route (VEGA-INFO-
-  // 00037). A grouped ("*") route matches a PATH then dispatches by method
-  // inside, falling through (undefined) to a 404 when no inner method matches —
-  // so learning at its entry would let a route-shaped 404 with a spoofed Host
-  // poison the base. Such a route therefore learns only after it produced a real
-  // response. A method-specific route cannot fall through (matchRoute already
-  // pinned its method) and one may make a same-origin host call DURING its own
-  // dispatch (the /doctor probes, before they return), so it learns at entry —
-  // before that call.
+  // 00037). ANY handler — grouped ("*") OR method-specific — may match, run its
+  // side effects, then return undefined to fall through to a later entry (a 404
+  // when none answers): the router contract is `Promise<Response | undefined>`
+  // for every entry (agents/http/router.ts), so `POST /automations/:id/:op` on
+  // an op it does not serve is a method-specific route that 404s from a spoofed
+  // Host. So the DEFAULT is to learn only AFTER a non-undefined Response — never
+  // at entry, never by a method proxy. The exception is a handler that USES the
+  // learned base DURING its own dispatch and so needs it set before it runs — a
+  // turn that dials the internal MCP door off the learned loopback origin (POST
+  // /threads, /threads/warm) or a doctor probe that calls the host on it (the
+  // two POST /doctor routes). Those, and only those, opt in with
+  // `learnsOriginAtEntry` (shared.ts) — and only a handler that ALWAYS responds
+  // may, or it becomes a fall-through poisoning vector again.
   const wireRoutes = wireRoutesFor(deps).map((entry) => ({
     ...entry,
     handler: async (wire: WireContext) => {
-      if (entry.method !== "*") deps.onRequestOrigin?.(wire.url.origin);
+      if (entry.learnsOriginAtEntry) deps.onRequestOrigin?.(wire.url.origin);
       const response = await entry.handler(wire);
-      if (entry.method === "*" && response !== undefined) deps.onRequestOrigin?.(wire.url.origin);
+      if (!entry.learnsOriginAtEntry && response !== undefined) deps.onRequestOrigin?.(wire.url.origin);
       return response;
     },
   }));
