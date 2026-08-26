@@ -157,6 +157,29 @@ export interface SyncFlowResult {
 }
 
 /**
+ * The keys a project dotenv may contribute to the EXTRACTION env — the allowlist
+ * `readEnvFiles` applies on that path (see its `fileAllowlist`). Extraction
+ * forwards this env into the coding-agent child processes sync spawns, and the
+ * dotenv ships with the repo, so membership is exactly what extraction reads
+ * from a dotenv: a credential `vendo login`/BYO writes there, the extraction
+ * model pin, and the dev-server URL init writes to `.env.local`. Every
+ * redirect/injection var (NODE_OPTIONS, npm_config_*, VENDO_CLOUD_URL,
+ * ANTHROPIC_BASE_URL) earns its keep by being ABSENT, so it reaches a child only
+ * from the developer's own shell, never from the checkout.
+ */
+export const EXTRACTION_DOTENV_ALLOWLIST: ReadonlySet<string> = new Set([
+  "VENDO_API_KEY",
+  "ANTHROPIC_API_KEY",
+  "ANTHROPIC_AUTH_TOKEN",
+  "CLAUDE_CODE_OAUTH_TOKEN",
+  "OPENAI_API_KEY",
+  "GOOGLE_GENERATIVE_AI_API_KEY",
+  "VENDO_MODEL_EXTRACT",
+  "VENDO_BASE_URL",
+  "VENDO_URL",
+]);
+
+/**
  * `.env` then `.env.local` (local wins), then process.env — except that a
  * BLANK process value yields to a concrete file one. THE env reader for the
  * whole CLI: init read only `.env.local` (the defect — a key in `.env` was
@@ -164,19 +187,25 @@ export interface SyncFlowResult {
  * both through doctor's copy, and telemetry had a third. Minimal KEY=VALUE
  * parser: `export ` prefix, matching quotes, `#` comment lines.
  *
- * ONE exception, and it is a security boundary rather than a parsing rule:
- * the files may not supply AGENT_ENDPOINT_ENV_VAR. Everything downstream
- * sees a flat map and so cannot tell a shell value from a file one; this is
- * the last point where that provenance is still known, so it is where the
- * distinction gets made. Dropping the key here (rather than filtering it at
- * each consumer) carries provenance to every rung for free: below this line
- * the only remaining source is `processEnv`, and every consumer that
- * re-merges `process.env` over its input — both Claude rungs do — therefore
- * still honors the developer's own shell endpoint.
+ * A security boundary rides here, not a parsing rule, because this is the last
+ * point where file-vs-shell provenance is still known (everything downstream
+ * sees a flat map). `fileAllowlist` names the ONLY keys a project dotenv may
+ * contribute; the EXTRACTION path passes one (EXTRACTION_DOTENV_ALLOWLIST)
+ * because its env is forwarded into coding-agent child processes, so a repo file
+ * that set NODE_OPTIONS / npm_config_registry / VENDO_CLOUD_URL could otherwise
+ * inject code into or redirect them. A general reader (doctor's config checks)
+ * passes none and gets every file key — it never spawns a child with them — and
+ * either way AGENT_ENDPOINT_ENV_VAR is dropped, because no caller may take the
+ * coding-agent endpoint from a project file. Dropping here (rather than at each
+ * consumer) carries the guarantee to every rung for free: the only remaining
+ * source of a dropped key is `processEnv`, and every rung re-merges
+ * `process.env` over its input, so the developer's own shell value still reaches
+ * the child.
  */
 export async function readEnvFiles(
   root: string,
   processEnv: NodeJS.ProcessEnv = process.env,
+  fileAllowlist?: ReadonlySet<string>,
 ): Promise<Record<string, string | undefined>> {
   const fromFiles: Record<string, string> = {};
   for (const file of [".env", ".env.local"]) {
@@ -184,7 +213,10 @@ export async function readEnvFiles(
     if (source === null) continue;
     Object.assign(fromFiles, parseDotEnv(source));
   }
-  delete fromFiles[AGENT_ENDPOINT_ENV_VAR];
+  for (const key of Object.keys(fromFiles)) {
+    const denied = fileAllowlist === undefined ? key === AGENT_ENDPOINT_ENV_VAR : !fileAllowlist.has(key);
+    if (denied) delete fromFiles[key];
+  }
   const merged: Record<string, string | undefined> = { ...fromFiles, ...processEnv };
   for (const [key, value] of Object.entries(processEnv)) {
     if ((value ?? "").trim() === "" && fromFiles[key] !== undefined) merged[key] = fromFiles[key];
@@ -854,8 +886,11 @@ export async function runSyncFlow(options: SyncFlowOptions): Promise<SyncFlowRes
   // The credential env for the judgment pass and the Cloud key: the project's
   // dotenv must be visible, because `vendo login` and BYO keys land in
   // `.env.local` / `.env` and a fresh shell that never `source`d them would
-  // otherwise sync structural-only with no signal why (#567).
-  const env = await readEnvFiles(root);
+  // otherwise sync structural-only with no signal why (#567). This env is
+  // forwarded into the extraction children, so it is read through the allowlist:
+  // a repo file can contribute a credential but never a NODE_OPTIONS, a rogue
+  // npm registry, or a Cloud/agent endpoint.
+  const env = await readEnvFiles(root, process.env, EXTRACTION_DOTENV_ALLOWLIST);
 
   const report: SyncReportWithWarnings = await withSpin(
     options.spinner,

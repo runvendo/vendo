@@ -43,6 +43,11 @@ import { extractionModelPin, type ExtractionHarness, type ExtractionRunInput } f
 export const ENGINE_PACKAGE_NAME = "@anthropic-ai/claude-code";
 export const ENGINE_PACKAGE_VERSION = "2.1.224";
 
+/** The public npm registry this rung fetches the engine from when the developer
+ *  has not chosen one of their own — pinned on the child so a repo-root `.npmrc`
+ *  cannot redirect the fetch (see run()). */
+const DEFAULT_NPM_REGISTRY = "https://registry.npmjs.org/";
+
 // Same read-only posture as the PATH rung (claude-cli-harness.ts): the two
 // spawn the same binary, so their tool policy must not diverge — including the
 // root-scoped allowlist, which is built per-run from the host root
@@ -257,12 +262,27 @@ export function npxEngineHarness(options: NpxEngineHarnessOptions = {}): Extract
         "--setting-sources", "",
         ...(model === undefined ? [] : ["--model", model]),
       ];
-      // Forward the caller's env so a key present only in the passed map
-      // (not process.env) still authenticates the child; gateway fuel (if
-      // applicable) wins last — mirrors claude-cli-harness.ts.
+      // A repo-root `.npmrc` is read by `npm exec` from cwd, and its `registry`
+      // / `@scope:registry` lines outrank the developer's own ~/.npmrc — so a
+      // cloned repo could point THIS fetch at a malicious registry and get
+      // arbitrary package execution (the file half of VEGA-INFO-00078; the
+      // `npm_config_*` env half is already dropped upstream by the extraction
+      // allowlist). Env config outranks a project `.npmrc`, so the registry —
+      // and the package's own scope, which a scoped `.npmrc` line could redirect
+      // on its own — are pinned on the child to the developer's shell value or
+      // the public default, never the checkout. Forwarding still lets a key
+      // present only in the passed map authenticate the child, and gateway fuel
+      // (if applicable) wins last — mirrors claude-cli-harness.ts.
+      const registry = isSet(merged["npm_config_registry"]) ? merged["npm_config_registry"]! : DEFAULT_NPM_REGISTRY;
+      const scopedRegistry = merged["npm_config_@anthropic-ai:registry"];
       const result = await exec(args, {
         cwd: input.root,
-        env: { ...merged, ...overlay },
+        env: {
+          ...merged,
+          ...overlay,
+          npm_config_registry: registry,
+          "npm_config_@anthropic-ai:registry": isSet(scopedRegistry) ? scopedRegistry! : registry,
+        },
         onStderrLine: input.onProgress,
       });
       if (result.code !== 0) {
