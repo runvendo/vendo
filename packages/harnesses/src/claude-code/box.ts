@@ -705,6 +705,20 @@ export function inferenceEnv(): Record<string, string> {
   return env;
 }
 
+/**
+ * The reusable inference credential a boxed session holds, for a redactor to
+ * strip from anything the turn streams back to the user (VEGA-INFO-00021). It is
+ * exactly the value that becomes the box's `ANTHROPIC_API_KEY`, read through the
+ * SAME selection law as `inferenceEnv()` so the two can never name a different
+ * secret. Empty when the box gets no credential (a no-key BYO deployment) — then
+ * there is nothing to redact. The 8-char floor keeps a pathological short value
+ * from blanking legitimate output.
+ */
+export function inferenceSecrets(): readonly string[] {
+  const key = inferenceEnv()["ANTHROPIC_API_KEY"];
+  return key !== undefined && key.length >= 8 ? [key] : [];
+}
+
 /** The host the Agent SDK talks to when nothing overrides `ANTHROPIC_BASE_URL`. */
 const DEFAULT_INFERENCE_HOST = "api.anthropic.com";
 

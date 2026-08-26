@@ -57,6 +57,7 @@ import { createTurnTools, type MirrorEvent } from "./turn-tools.js";
 import { specificWireErrorMessage } from "./wire-error.js";
 import { emitWorkbench, openWorkbench } from "./workbench.js";
 import { TextChannel, writeDebug, writeError, writeMirror, writeNotice, writeStatus, writeTurnError, writeView } from "./wire.js";
+import { inferenceSecrets } from "./claude-code/box.js";
 
 /**
  * `turn.messages` is OURS and read-only (§1). A frozen array still hands out live
@@ -304,6 +305,47 @@ const rootCause = (error: unknown): unknown => {
   return deepest;
 };
 
+/**
+ * VEGA-INFO-00021 — a boxed agent holds a REUSABLE, non-expiring inference
+ * credential and streams its output straight to the end user, so a user can
+ * steer it into printing the key. Every part a turn puts on the wire passes
+ * through one `writer`, so stripping the literal value HERE guards the
+ * assistant's prose and any tool output alike, in a single seam. No secrets to
+ * strip (a no-key BYO deployment) → the writer is returned untouched, so
+ * redaction costs nothing when there is nothing to redact.
+ *
+ * Literal-value redaction only: it stops the key being echoed VERBATIM; a user
+ * who first asks the agent to transform it (base64, reversed, spelled out)
+ * defeats it. The complete fix is per-session, short-lived brokering so the box
+ * never holds a reusable key — deferred console work.
+ */
+function redactingWriter(
+  writer: UIMessageStreamWriter<UIMessage>,
+  secrets: readonly string[],
+): UIMessageStreamWriter<UIMessage> {
+  if (secrets.length === 0) return writer;
+  const walk = (value: unknown): unknown => {
+    if (typeof value === "string") {
+      let out = value;
+      for (const secret of secrets) out = out.split(secret).join("[redacted]");
+      return out;
+    }
+    if (Array.isArray(value)) return value.map(walk);
+    if (value !== null && typeof value === "object") {
+      const out: Record<string, unknown> = {};
+      for (const [key, item] of Object.entries(value)) out[key] = walk(item);
+      return out;
+    }
+    return value;
+  };
+  return {
+    write: (part) => writer.write(walk(part) as typeof part),
+    merge: writer.merge.bind(writer),
+    get onError() { return writer.onError; },
+    set onError(handler) { writer.onError = handler; },
+  };
+}
+
 export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
   const harnessState = deps.harnessState ?? memoryHarnessStateStore();
 
@@ -484,7 +526,10 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
       const stream = createUIMessageStream<UIMessage>({
         originalMessages: messages,
         generateId: () => assistantMessageId,
-        execute: async ({ writer }) => {
+        execute: async ({ writer: rawWriter }) => {
+          // VEGA-INFO-00021: redact the deployment's reusable inference
+          // credential from everything this turn streams — see `redactingWriter`.
+          const writer = redactingWriter(rawWriter, inferenceSecrets());
           turnWriter = writer;
           // The dev-only diagnostics channel, open for exactly this turn. Off
           // (the production case) this registers nothing and every emit below —
