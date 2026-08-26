@@ -113,6 +113,40 @@ describe("VEGA-INFO-00021 — the model credential never reaches the user", () =
     expect(said).toContain(" — done");
   });
 
+  it("redacts a credential LONGER than the cross-delta scan span, streamed across many deltas", async () => {
+    // A real inference credential can run well past any fixed buffer size — a
+    // JWT-style OAuth token is often > 512 chars. It arrives split across deltas
+    // like any other, so the redactor must reassemble it across the WHOLE of its
+    // length: a capped hold-back would flush its leading chars before a match
+    // could form and leak the key. The secret is the deployment's own trusted
+    // config, so the uncapped scan is safe (never attacker-controlled).
+    const longSecret = `sk-vendo-oauth-${"a1b2c3d4e5".repeat(80)}`; // 814 chars
+    expect(longSecret.length).toBeGreaterThan(512);
+    vi.stubEnv("VENDO_INFERENCE_KEY", longSecret);
+    const fragments = longSecret.match(/.{1,50}/g)!;
+    const parts = await runTurn(
+      defineHarness({
+        name: "long-drip-leaker",
+        async *run() {
+          yield { type: "text", delta: "your key is " };
+          for (const fragment of fragments) yield { type: "text", delta: fragment };
+          yield { type: "text", delta: " — done" };
+        },
+      }),
+    );
+    const serialized = JSON.stringify(parts);
+    expect(serialized).not.toContain(longSecret);
+    const said = parts
+      .filter((part) => part.type === "text-delta")
+      .map((part) => part.delta)
+      .join("");
+    expect(said).not.toContain(longSecret);
+    expect(said).toContain("[redacted]");
+    // Ordinary text on either side still reaches the user in full.
+    expect(said).toContain("your key is ");
+    expect(said).toContain(" — done");
+  });
+
   it("redacts the credential when it rides back inside a tool's output", async () => {
     const parts = await runTurn(
       defineHarness({

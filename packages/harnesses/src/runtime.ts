@@ -352,15 +352,14 @@ function redactingWriter(
   // suffix is a proper prefix of a secret, so it is bounded by the longest secret
   // and the buffer can never grow unbounded.
   //
-  // The suffix scan below is O(span²) per text-delta (a slice + startsWith at
-  // every hold length), so `span` is capped: a real inference credential is well
-  // under this, and an absurdly long env value (`inferenceSecrets()` puts no
-  // ceiling on the key) would otherwise make the per-delta scan quadratic and
-  // stall the stream — the same class of cliff as the divider stall. A secret
-  // longer than the cap is still redacted whole by `redactString`; it just gets
-  // no cross-delta reassembly, which nothing real needs.
-  const MAX_SCAN_SPAN = 512;
-  const span = Math.min(MAX_SCAN_SPAN, Math.max(...secrets.map((secret) => secret.length)));
+  // The hold-back span is the FULL length of the longest secret — uncapped, so a
+  // secret of any length (a JWT-style token can run past 512 chars) still gets
+  // cross-delta reassembly rather than having its leading chars flushed before a
+  // match can form. The suffix scan is O(span²) per text-delta, but `secrets`
+  // is the DEPLOYMENT'S OWN inference key (inferenceSecrets(), trusted config —
+  // never attacker-controlled) and a real key is at most a few KB, so the cost
+  // is negligible and there is no DoS surface to cap against.
+  const span = Math.max(...secrets.map((secret) => secret.length));
   const heldSuffixLength = (text: string): number => {
     for (let hold = Math.min(text.length, span - 1); hold > 0; hold -= 1) {
       const tail = text.slice(text.length - hold);
