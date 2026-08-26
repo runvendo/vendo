@@ -303,8 +303,17 @@ const wireRoutesFor = (deps: WireDeps): readonly RouteEntry[] => [
 
 function createWireHandler(deps: WireDeps): (request: Request) => Promise<Response> {
   // Assembled once per composition, not per request: what is mounted is a boot
-  // fact.
-  const wireRoutes = wireRoutesFor(deps);
+  // fact. Each handler is wrapped so the same-origin baseUrl default is learned
+  // ONLY once a request actually matched a real Vendo route — before that
+  // handler runs any host call, and never for a 404 (an unmatched path invokes
+  // no handler). A spoofed Host on a 404 therefore can never poison the base.
+  const wireRoutes = wireRoutesFor(deps).map((entry) => ({
+    ...entry,
+    handler: async (wire: WireContext) => {
+      deps.onRequestOrigin?.(wire.url.origin);
+      return entry.handler(wire);
+    },
+  }));
   // Amortized on-request sweep bookkeeping — lives in the shared handler closure
   // (persists across requests), NOT per-invocation. The serverless-safe leg:
   // Next.js gives no timer guarantee, so every request may trigger the sweep.
@@ -331,13 +340,13 @@ function createWireHandler(deps: WireDeps): (request: Request) => Promise<Respon
   //   2. the MCP door's paths — before relativePath's not-found AND the CSRF
   //      json-mutation gate (see the comment at the check);
   //   3. relativePath → not-found for non-wire paths;
-  //   4. onRequestOrigin — a validated wire route teaches the same-origin
-  //      baseUrl default;
-  //   5. the CSRF json-mutation gate — before ANY route handler runs;
-  //   6. await ready — schema before the first store touch;
-  //   7. the route table (wireRoutes above; tick auth and the orgs seam are
-  //      ordinary entries at their old chain positions);
-  //   8. no match → not-found.
+  //   4. the CSRF json-mutation gate — before ANY route handler runs;
+  //   5. await ready — schema before the first store touch;
+  //   6. the route table (wireRoutes above; tick auth and the orgs seam are
+  //      ordinary entries at their old chain positions) — a matched handler
+  //      teaches the same-origin baseUrl default (onRequestOrigin, wrapped
+  //      above) before it runs, so a 404 can never poison the learned base;
+  //   7. no match → not-found.
   return async (request) => {
     // ONE sweep pass per request, shared with any route that drives the sweep
     // itself (POST /tick) so a tick can never run two scans of the same
@@ -372,9 +381,6 @@ function createWireHandler(deps: WireDeps): (request: Request) => Promise<Respon
       }
       const path = relativePath(BASE_PATH, url);
       if (path === null) throw new VendoError("not-found", "unknown Vendo route");
-      // Learn the same-origin default only from a request that addresses a real
-      // Vendo route (defense in depth beyond the untrusted-forwarding rule).
-      deps.onRequestOrigin?.(url.origin);
       if (jsonMutationRequired(request, path) && !isJsonRequest(request)) {
         throw new VendoError("validation", "content-type must be application/json");
       }
