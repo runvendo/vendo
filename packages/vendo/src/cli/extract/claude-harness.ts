@@ -57,6 +57,22 @@ async function loadSdk(root: string): Promise<SdkModule | null> {
   return null;
 }
 
+/** Is the SDK RESOLVABLE from the CLI or the host app, without importing it?
+ *  `availability()` answers "is it here" with this — resolving a specifier runs
+ *  no module code, where `loadSdk`'s import would execute host-resolved code
+ *  just to probe. The resolution bases mirror loadSdk's exactly. */
+function sdkResolves(root: string): boolean {
+  for (const base of [import.meta.url, pathToFileURL(join(root, "package.json")).href]) {
+    try {
+      createRequire(base).resolve(SDK_PACKAGE);
+      return true;
+    } catch {
+      // try the next resolution base
+    }
+  }
+  return false;
+}
+
 /** `claude auth status` prints JSON with a `loggedIn` boolean. */
 function probeClaudeLogin(): Promise<boolean> {
   return new Promise((resolve) => {
@@ -80,14 +96,22 @@ export interface ClaudeHarnessOptions {
 export function claudeHarness(options: ClaudeHarnessOptions = {}): ExtractionHarness {
   const load = options.loadSdk ?? loadSdk;
   const probe = options.probeLogin ?? probeClaudeLogin;
+  // Presence for availability, WITHOUT executing host-resolved module code: in
+  // production resolve the specifier and never import it; a test's fake loadSdk
+  // imports nothing, so honoring it when supplied keeps that seam intact.
+  const present = async (root: string): Promise<boolean> =>
+    options.loadSdk === undefined ? sdkResolves(root) : (await options.loadSdk(root)) !== null;
   return {
     id: "claude-agent-sdk",
     async availability({ root, env }) {
-      if ((await load(root)) === null) return null;
+      // Credential first, so a repo with no credential never reaches the SDK
+      // probe — and the probe is a resolve, never an import.
       const key = env["ANTHROPIC_API_KEY"];
-      if (typeof key === "string" && key.trim().length > 0) return "your ANTHROPIC_API_KEY";
-      if (await probe()) return "your Claude Code login";
-      return null;
+      const label = typeof key === "string" && key.trim().length > 0
+        ? "your ANTHROPIC_API_KEY"
+        : (await probe()) ? "your Claude Code login" : null;
+      if (label === null) return null;
+      return (await present(root)) ? label : null;
     },
     async run(input: ExtractionRunInput): Promise<string> {
       const sdk = await load(input.root);
