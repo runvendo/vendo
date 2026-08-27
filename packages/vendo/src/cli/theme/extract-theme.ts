@@ -34,6 +34,27 @@ import { walk } from "./walk.js";
 
 const DEFAULT_RADIUS = { small: "4px", large: "12px" } as const;
 
+/**
+ * This slot is the default CONTROL radius, and a fully-round pill declares one
+ * far larger than its own height to get there — stock `create-next-app` ships
+ * `border-radius: 128px` on exactly such a button. Read literally, that value
+ * survives validation, `toVendoTheme` amplifies it to a 192px `large`, and
+ * every Vendo surface renders as an ellipse: the chat panel's composer row
+ * falls outside its own rounded box and Send stops being clickable. 24px
+ * already reads as fully round on a standard 40px control, so anything above
+ * it is a pill token mistaken for a scale. Bound rather than reject — the
+ * brand stays as round as it can actually be.
+ */
+const MAX_CONTROL_RADIUS_PX = 24;
+
+function normalizeControlRadius(value: string): string | null {
+  const length = normalizeLength(value);
+  if (length === null) return null;
+  return Number(length.slice(0, -2)) > MAX_CONTROL_RADIUS_PX
+    ? `${MAX_CONTROL_RADIUS_PX}px`
+    : length;
+}
+
 /** Slot values → the frozen runtime VendoTheme contract — one derivation law,
  *  never two (theme/provenance.ts leans on this exact derivation). */
 export function toVendoTheme(slots: ThemeSlotValues): VendoTheme {
@@ -366,7 +387,7 @@ function readExact(vars: CssVarDecl[]): ExactReads {
   }
   const radius = lastLightDecl(vars, ["--radius"]);
   const radiusResolved = radius === undefined ? null : resolveCssVarRefs(radius.value, vars);
-  put("radius", radius, radiusResolved === null ? null : normalizeLength(radiusResolved));
+  put("radius", radius, radiusResolved === null ? null : normalizeControlRadius(radiusResolved));
   const baseSize = lastLightDecl(vars, ["--font-size", "--text-base"]);
   const baseResolved = baseSize === undefined ? null : resolveCssVarRefs(baseSize.value, vars);
   put("baseSize", baseSize, baseResolved === null ? null : normalizeLength(baseResolved));
@@ -426,6 +447,7 @@ export function validateSlotValue(slot: SlotKey, raw: string): string | null {
   const value = raw.trim();
   switch (slot) {
     case "radius":
+      return normalizeControlRadius(value);
     case "baseSize":
       return normalizeLength(value);
     case "density":
