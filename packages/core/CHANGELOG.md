@@ -1,5 +1,300 @@
 # @vendoai/core
 
+## 0.52.1
+
+## 0.52.0
+
+### Minor Changes
+
+- 52f5b64: A conversation's harness state lives on the conversation, and `vendo_state` is gone
+
+  The bookmark a session-owning harness resumes on — `claudeCode()`'s native session
+  ref — rode `vendo_state` under a synthetic `app_id` of `harness_state:<threadId>`.
+  That bought "no new table" and paid for it everywhere else: thread deletion swept
+  the slot by hand in two places, a retention sweep needed a fence to stop the
+  app-state door from seeing a tenant it could not address, the erase cascade reached
+  it only through a second selector, and a routed door had to police an id grammar
+  whose whole job was keeping the two tenants off each other's rows.
+
+  It is one nullable `harness_state jsonb` column on `vendo_threads` now. ONE slot per
+  thread, on the row that already names the thread's owner — so every one of those
+  hand-wired cascades is just the row going away. The two `DELETE` statements, the
+  retention fence, the tenant carve-out and its `<appId>:<subject>` grammar, the
+  `validateId` hook nothing else used, and `harnessStateKey` are all deleted rather
+  than adapted.
+
+  `vendo_state`'s other tenant — an app's per-user state — is deleted with it. Nothing
+  had written it since the `appData` family took over: `getState`/`setState` on
+  `AppDataAccess` had no production caller at all, and the `$state` persistence bridge
+  in `@vendoai/ui` (`onStateChange`) was never wired to anything. The `$state` screen
+  dialect itself is untouched and still resolves in-session; only the never-connected
+  persistence half is gone. The reserved-name guards that refuse a storage collection
+  or a query named `state` stay exactly as they were.
+
+  **Breaking — `StoreOps.harness` and the `/harness/*` wire.** The slot is keyed by the
+  thread it belongs to, and now says so: `harness.get/set/clear(threadId, subject)`,
+  with wire bodies `{threadId, subject}` on `/harness/get`, `/harness/set`,
+  `/harness/clear` and on the `harness` part of `turn.load` and `turn.commit`.
+  `subject` is the thread's OWNER and is authority rather than decoration — a foreign
+  subject reads an empty slot and writes nothing, and `set` on a thread that does not
+  exist is refused instead of minting a bookmark no erase could reach. A skewed client
+  and mount fail CLOSED in both directions: `threadId` is required, so neither side can
+  read the other's body as a slot it may serve, and each answers an enveloped
+  `validation`. `/status`'s `ops` level is deliberately not touched — it is a monotone
+  count that only grows as ops are added, and this adds and removes none.
+
+  An app-scoped erase no longer clears harness state. That guarantee is dropped on
+  purpose: a bookmark belongs to a conversation, and uninstalling an app ends no
+  conversation. Thread deletion and subject erasure both still take it, and each is
+  proven end to end against the real store.
+
+  **Store schema v11 → v12.** `vendo_threads` gains `harness_state jsonb`. The
+  migration copies every `harness_state:<threadId>` row onto its thread, matching on
+  both legs of the old primary key — the id's thread suffix and the subject — then
+  `DROP TABLE vendo_state`. A row whose subject disagreed with its thread's owner was
+  unreachable by every read path and by the erase cascade already, so it dies with the
+  table rather than being promoted onto a row it never belonged to. Guarded on the
+  table's existence rather than on the version, in the v6 idiom, so it is idempotent
+  and a no-op on a database created fresh. The v2 backfill is deleted along with it:
+  it relocated legacy rows INTO this table, and there is nowhere left to put them.
+
+  The engine allowlist goes to v11, having lost `vendo_state`.
+
+## 0.51.2
+
+## 0.51.1
+
+## 0.51.0
+
+### Minor Changes
+
+- 54a3545: Remove dead in-client remnants (review-flag capture chain, stale MCP shim bundle now regenerated + drift-guarded, orphaned scenarios); keep the inClient strip and sandboxed-path constants.
+
+## 0.50.0
+
+## 0.49.1
+
+## 0.49.0
+
+## 0.48.1
+
+## 0.48.0
+
+### Minor Changes
+
+- 79f177f: An escalated build asks on the standard consent protocol instead of answering
+  as a success.
+
+  `vendo_make` used to return a `status: "ok"` receipt reading
+  `"awaiting-consent"` when the screen agent escalated to the builder, so the
+  parked approval was invisible to everything that routes on the outcome: no
+  in-thread approval card, and an outside agent over MCP was handed plain success
+  for work nobody had authorized. It now returns the ordinary
+  `pending-approval` outcome — which is what publishes the `data-vendo-approval`
+  part the thread renders the card from, and what the MCP door maps to its
+  approval-ref result.
+
+  `ToolOutcome`'s `pending-approval` gains three optional fields for the tool that
+  parks an ask of its OWN: `descriptor` (the ask's own — what a CARD derives its
+  words from), `approval` (`{ id, question, notes }` — the same ask already in
+  words, for a surface that renders no card) and `say` (the assistant's sentence
+  meanwhile). All three are optional and additive; every shipped producer and
+  reader is untouched.
+
+  The descriptor rides the `data-vendo-approval` part, so the in-thread card is
+  graded and worded off the BUILD. Graded off the calling tool it read
+  `vendo_make`'s "read", and told a person that spending a build machine reads
+  their data. And because a standing ask has no parked native call to render
+  from — nor may it have one, since the runtime abandons every still-parked ask
+  at the next turn — the thread now paints the shipped `ApprovalCard` from that
+  part directly, deciding over the wire like the queue and the toast, with no
+  `remember` disclosure. Before this the transcript showed only the calling
+  tool's beat, "wasn't allowed", for a question nobody had been asked yet.
+
+  Such a card also now SURVIVES the turn. A parked call is swept denied at turn
+  end so a live-but-dead card cannot accrete in the queue — which, for a build,
+  tombstoned the app the moment the turn that asked for it ended.
+
+  An answered card SETTLES, and the assistant stops talking over it. In-thread
+  consent cards resolve into the settled record on decide — including a decide the
+  wire says was already answered (or swept), which used to leave the buttons live
+  under an error on a closed question. And `say` is now the refusal the harness
+  hands the model for a tool that parked its own ask, so the model relays the one
+  sentence the door wrote ("I've asked for your go-ahead — the card above has the
+  details.") instead of narrating its own paragraphs under a card that is already
+  asking.
+
+  `MakeReceipt.status` drops `"awaiting-consent"`; nothing produces it any more.
+
+## 0.47.0
+
+### Minor Changes
+
+- 412d593: An escalated build asks on the standard consent protocol instead of answering
+  as a success.
+
+  `vendo_make` used to return a `status: "ok"` receipt reading
+  `"awaiting-consent"` when the screen agent escalated to the builder, so the
+  parked approval was invisible to everything that routes on the outcome: no
+  in-thread approval card, and an outside agent over MCP was handed plain success
+  for work nobody had authorized. It now returns the ordinary
+  `pending-approval` outcome — which is what publishes the `data-vendo-approval`
+  part the thread renders the card from, and what the MCP door maps to its
+  approval-ref result.
+
+  `ToolOutcome`'s `pending-approval` gains three optional fields for the tool that
+  parks an ask of its OWN: `descriptor` (the ask's own — what a CARD derives its
+  words from), `approval` (`{ id, question, notes }` — the same ask already in
+  words, for a surface that renders no card) and `say` (the assistant's sentence
+  meanwhile). All three are optional and additive; every shipped producer and
+  reader is untouched.
+
+  The descriptor rides the `data-vendo-approval` part, so the in-thread card is
+  graded and worded off the BUILD. Graded off the calling tool it read
+  `vendo_make`'s "read", and told a person that spending a build machine reads
+  their data. And because a standing ask has no parked native call to render
+  from — nor may it have one, since the runtime abandons every still-parked ask
+  at the next turn — the thread now paints the shipped `ApprovalCard` from that
+  part directly, deciding over the wire like the queue and the toast, with no
+  `remember` disclosure. Before this the transcript showed only the calling
+  tool's beat, "wasn't allowed", for a question nobody had been asked yet.
+
+  Such a card also now SURVIVES the turn. A parked call is swept denied at turn
+  end so a live-but-dead card cannot accrete in the queue — which, for a build,
+  tombstoned the app the moment the turn that asked for it ended.
+
+  An answered card SETTLES, and the assistant stops talking over it. In-thread
+  consent cards resolve into the settled record on decide — including a decide the
+  wire says was already answered (or swept), which used to leave the buttons live
+  under an error on a closed question. And `say` is now the refusal the harness
+  hands the model for a tool that parked its own ask, so the model relays the one
+  sentence the door wrote ("I've asked for your go-ahead — the card above has the
+  details.") instead of narrating its own paragraphs under a card that is already
+  asking.
+
+  `MakeReceipt.status` drops `"awaiting-consent"`; nothing produces it any more.
+
+## 0.46.0
+
+### Minor Changes
+
+- 5cee3a5: An escalated build asks on the standard consent protocol instead of answering
+  as a success.
+
+  `vendo_make` used to return a `status: "ok"` receipt reading
+  `"awaiting-consent"` when the screen agent escalated to the builder, so the
+  parked approval was invisible to everything that routes on the outcome: no
+  in-thread approval card, and an outside agent over MCP was handed plain success
+  for work nobody had authorized. It now returns the ordinary
+  `pending-approval` outcome — which is what publishes the `data-vendo-approval`
+  part the thread renders the card from, and what the MCP door maps to its
+  approval-ref result.
+
+  `ToolOutcome`'s `pending-approval` gains three optional fields for the tool that
+  parks an ask of its OWN: `descriptor` (the ask's own — what a CARD derives its
+  words from), `approval` (`{ id, question, notes }` — the same ask already in
+  words, for a surface that renders no card) and `say` (the assistant's sentence
+  meanwhile). All three are optional and additive; every shipped producer and
+  reader is untouched.
+
+  The descriptor rides the `data-vendo-approval` part, so the in-thread card is
+  graded and worded off the BUILD. Graded off the calling tool it read
+  `vendo_make`'s "read", and told a person that spending a build machine reads
+  their data. And because a standing ask has no parked native call to render
+  from — nor may it have one, since the runtime abandons every still-parked ask
+  at the next turn — the thread now paints the shipped `ApprovalCard` from that
+  part directly, deciding over the wire like the queue and the toast, with no
+  `remember` disclosure. Before this the transcript showed only the calling
+  tool's beat, "wasn't allowed", for a question nobody had been asked yet.
+
+  Such a card also now SURVIVES the turn. A parked call is swept denied at turn
+  end so a live-but-dead card cannot accrete in the queue — which, for a build,
+  tombstoned the app the moment the turn that asked for it ended.
+
+  An answered card SETTLES, and the assistant stops talking over it. In-thread
+  consent cards resolve into the settled record on decide — including a decide the
+  wire says was already answered (or swept), which used to leave the buttons live
+  under an error on a closed question. And `say` is now the refusal the harness
+  hands the model for a tool that parked its own ask, so the model relays the one
+  sentence the door wrote ("I've asked for your go-ahead — the card above has the
+  details.") instead of narrating its own paragraphs under a card that is already
+  asking.
+
+  `MakeReceipt.status` drops `"awaiting-consent"`; nothing produces it any more.
+
+## 0.45.0
+
+## 0.44.0
+
+### Minor Changes
+
+- 31c8e30: The agent has hands: one real `bash` over the user's own files.
+
+  Every deployment running the default `vendo()` harness — no keys, no config —
+  now projects one more tool: `bash`. It is a full shell (grep, sed, awk, jq, sort,
+  cut, find, pipes, redirection) running IN THIS PROCESS over the same per-user
+  workspace the file drawer already lives in, so a dropped CSV is something the
+  agent can actually work on instead of something it can only page through 200
+  lines at a time. There is no machine to provision, no sandbox key, and no network
+  or package manager inside the shell — the interpreter is
+  [just-bash](https://www.npmjs.com/package/just-bash) and the filesystem is the
+  store, so the mounts the workspace already enforces (`/user` and
+  `/orgs/<org>` writable, `/host` read-only, everything else `EACCES`) are the whole
+  containment story. Each session also gets an in-memory `/tmp` that lasts the
+  conversation and is never saved.
+
+  It rides the ONE guarded registry like every other tool: graded `write`, so the
+  host's rules, grants and the kill switch apply to it unchanged, and every call
+  lands an audit row.
+
+  One security default moves with it, and it is worth reading twice: the
+  `cautious` preset no longer raises an approval card for `bash`. It is the only
+  tool exempted, and only from the prompt — the `write` grade is exactly what keeps
+  the audit row, the host's own rules and the kill switch over it. A shell that
+  asked before every `wc -l` would be unusable in chat and simply cannot run in an
+  automation, which has nobody to answer the card. A deployment that wants the
+  confirmation back adds a rule of its own for `bash`, and it wins.
+
+  `createVendo({ shell: false })` withholds it; `createVendo({ shell: { limits } })`
+  moves its per-call wall clock (30 s) and output ceiling (1 MB). It composes for
+  the resident brain only — a harness that thinks on a machine already has a real
+  disk and reaches it its own way.
+
+## 0.43.0
+
+## 0.42.0
+
+### Minor Changes
+
+- 7bbfd3f: Retire the persistent per-app machine surface. A built app is now a sealed bundle the host serves, so nothing needs a machine that outlives the build: the `AppsRuntime.machine` lifecycle doors (`available`, `ping`, `report`), the §9.8 served-app proxy (`AppsRuntime.serve`, `GET /apps/:id/serve/**`), the editor-level box door (`AppsRuntime.box.request` / `.redact`, `POST /apps/:id/fn/:name`), the whole `/box/*` callback surface with its per-app bearer, and the embed keepalive (`POST /apps/:id/machine/ping`, `client.apps.pingMachine`) are all gone. The `ui` package loses `HttpFrame` and its keepalive wiring; `BundleFrame` and `bundleUrl` are what render an app now. `@vendoai/box-template` is deleted — the box image no longer bakes a per-app web template, and its harness keeps only the session half. `vendo_app_tokens` leaves the engine allowlist (v9), and the store's promote no longer re-owns a bearer that no longer exists. `packages/apps`' `prewired-schema` moves to `server/checking/`, beside the validator that reads it.
+- 7bbfd3f: add the sealed-bundle document shape: `AppBundle` and `AppBuildProposal` (with their schemas), the `bundle`/`proposal` fields and the `"bundle"` ui kind on `AppDocument`, and the `vendo_parked_build` engine collection
+- 7bbfd3f: Retire the server lane and the machine stack it keystoned. Generation's
+  `generation/lanes.ts` and the escalation box lane are gone, and with them the six
+  modules they held up — the in-box agent (`box-agent`), egress approval, the `fn`
+  runtime, the machine lifecycle, and the `vendo.json` manifest fold-in and its
+  triggers — plus the box-lane secret redaction. `AppsConfig.machine`, `BoxRequest`
+  and `BoxResponse` leave the runtime config, the served-app arms leave `open`,
+  `write-surface`, `apps-surface`, `edit-journal` and `app-validation`, the create
+  door's machine escalate path leaves `build-surface`, and the egress half leaves
+  `approval-flow`. In core the app document's `ui` enum narrows to `"tree" |
+"bundle"`, `machine` / `AppMachine` / `appMachineSchema` are gone, and the
+  `vendo_egress_approval` row leaves the engine allowlist (v10). The composition
+  loses the whole machine lane: the box inference door, the implicit egress domains
+  and the `VENDO_BOX_EDIT_TIMEOUT_MS` / `VENDO_BOX_EDIT_POLL_MS` knobs that only fed
+  it.
+- 7bbfd3f: Built apps, last mile: a standing consent card a person can actually answer. An approval that was already waiting when the page loaded now raises its card on mount instead of only after — a build ask can outlive the tab that raised it, and the yes is meant to work whenever it lands, so an ask that only existed while you were watching was not a standing one. The card also says what it is asking: it reads the same plain-words ladder the approval card and its queue row read (the ask as a question, then every real input under it) rather than a bare tool label, it offers Deny beside Approve, and `vendo_app_build` joins the shared title table, so the consent moment reads "Build this app for real?" instead of "Vendo app build". Once the yes lands, the build's own status line reaches the person on that same surface — a detached build has no turn to stream into, and `useApp` now hands back the `status` the build window's poll was already receiving and discarding. A toast's hint moved under its text rather than beside its buttons, which is where it has to be to carry a sentence.
+- 7bbfd3f: Built apps: the build now says what it is doing, and a sealed bundle renders in the host's own font. `BuildRequest.onStatus` was emitted by the build lane and supplied by nobody, so a build narrated itself to no one; the door now writes the lane's latest line onto the app row (`AppDocument.buildStatus`) and the pending poll answers with it (`PendingSurface.status`), which the forming card reads in place of the generic "Building …". One label, replaced each time — no stream, no subscription, no new route — and a status write that fails never fails the build. Brand fonts now travel with the brand tokens at render: `sendFrameTheme` carries the host's `.vendo/fonts.css` faces into the frame, which installs them as its own sheet, and the bundle route's CSP gains `font-src data:` so an inlined face can load. The seal still holds nothing font-related, and the frame still makes no network request of any kind.
+
+## 0.41.1
+
+## 0.41.0
+
+### Minor Changes
+
+- 61cb46e: Remove the native in-client remix execution and the remix review/approval flow (breaking: removes InClientMount, InClientVenue, ReviewStanding, apps.inClient.\*, apps.review.reviewer, and the `review` prop on Remixable). Instant sandboxed remix is unchanged.
+
+## 0.40.0
+
 ## 0.39.0
 
 ## 0.38.0

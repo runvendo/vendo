@@ -14,7 +14,6 @@ import { describe, expect, it } from "vitest";
 import { agentToolDescriptors } from "../src/server/doors/agent-tools.js";
 import { createApps, type AppsRuntime, type PlacementEntry } from "../src/server/index.js";
 import { authoringAssembler, scriptedAssembler } from "../src/server/testing/screen-assembler.js";
-import { fakeBoxSandbox } from "../src/server/testing/fake-box.js";
 import { bindTools, guardFixture } from "../src/server/testing/guard-fixture.js";
 import { memoryStore } from "../src/server/testing/memory-store.js";
 import { basicLanguageModel, scriptedLanguageModel } from "../src/server/testing/scripted-model.js";
@@ -622,8 +621,14 @@ describe("vendo_make — the slot a new app lands in", () => {
     tools: hostTools,
     catalog: [],
     model: basicLanguageModel(),
-    machine: { sandbox: fakeBoxSandbox(), buildEnv: () => ({ PORT: "8080" }), boxEditPollMs: 5 },
     screen: { async assemble() { return { kind: "escalate", why: "this needs real code" }; } },
+    // S3 — an escalation now ASKS before it builds, so the deployment needs a
+    // builder for the ask to be honest. What it never reaches is this stub's
+    // `build`: the card stands, undecided, for the whole of this test.
+    build: { available: () => true, async build() { return { kind: "failed", why: "never reached" }; } },
+    // The other half of the same capability: `build.available()` is false
+    // without somewhere to seal the bytes.
+    files: { put: async () => {}, get: async () => undefined, delete: async () => {} },
   });
 
   it("takes request, app, context, slot and component — request required, nothing else allowed", async () => {
@@ -730,11 +735,12 @@ describe("vendo_make — the slot a new app lands in", () => {
       args: { request: "match my invoices to payments", slot: "dashboard.hero" },
     }, ctx);
 
-    expect(outcome.status).toBe("ok");
-    const receipt = (outcome as { output: { id: string; status: string } }).output;
-    expect(receipt.status).toBe("ready");
+    // S3 — the escalated ask is now OFFERED, not built, and it answers on the
+    // standard park. The row and the slot still land at the mint, which is what
+    // this test is about.
+    expect(outcome.status).toBe("pending-approval");
     expect(await runtime.placements({}, ctx)).toEqual([
-      expect.objectContaining({ slot: "dashboard.hero", app: receipt.id }),
+      expect.objectContaining({ slot: "dashboard.hero", app: expect.stringMatching(/^app_/) }),
     ]);
   });
 

@@ -678,8 +678,8 @@ export function RangePicker() {
 }
 `);
 
-    const result = await capturePins(root, path.join(root, ".vendo"), new Set(), undefined,
-      (_file, slot) => (slot === "StatCard" ? { total: 7 } : undefined));
+    const result = await capturePins(root, path.join(root, ".vendo"),
+      { samplePropsFor: (_file, slot) => (slot === "StatCard" ? { total: 7 } : undefined) });
     expect(result.warnings).toEqual([]);
 
     const card = await baselineFor(root, "StatCard");

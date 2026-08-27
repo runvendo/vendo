@@ -956,8 +956,8 @@ describe("login telemetry (runLoginCommand)", () => {
       isTty: false,
       telemetry: ok.telemetry,
     })).toBe(0);
-    expect(ok.event("command_run").properties).toMatchObject({ command: "login", ok: true });
-    expect(typeof ok.event("command_run").properties.durationMs).toBe("number");
+    expect(ok.event("command_run").properties).toMatchObject({ command: "login", ok: "true" });
+    expect(Number(ok.event("command_run").properties.durationMs)).not.toBeNaN();
 
     const denied = await telemetryCapture();
     cleanup.push(() => rm(denied.home, { recursive: true, force: true }));
@@ -974,6 +974,6 @@ describe("login telemetry (runLoginCommand)", () => {
       isTty: false,
       telemetry: denied.telemetry,
     })).toBe(1);
-    expect(denied.event("command_run").properties).toMatchObject({ command: "login", ok: false });
+    expect(denied.event("command_run").properties).toMatchObject({ command: "login", ok: "false" });
   });
 });

@@ -20,7 +20,7 @@ That split is the point. A re-sync rewrites the machine layer and re-judges the 
 | --- | --- | --- |
 | `tools.json` | `vendo sync` | `vendo/tools@3`. Each tool's descriptor and execution `binding`, plus inferred field `semantics`, `srcHash`, `audience`, `outputSchema` when the source declares one, and `disabled` for anything extraction could not classify |
 | `judgments.json` | `vendo sync`, AI pass | `vendo/judgments@1`. Keyed by tool name: `description`, `title`, `risk`, `critical`, `disabled`, `audience`, `semantics` |
-| `overrides.json` | init, then you | `vendo/overrides@3`. Per-tool overrides plus `compounds`, `briefs`, per-surface tool menus (`surfaces.agent`, `surfaces.mcp`), and `remix.ignoreSlots` |
+| `overrides.json` | init, then you | `vendo/overrides@3`. Per-tool overrides plus `compounds`, `briefs`, per-surface tool menus (`surfaces.agent`, `surfaces.mcp`), and remix scanning (`remix.ignoreSlots`, `remix.sources`) |
 | `catalog.json` | `vendo sync` | `vendo/catalog@1`. The host components your `<VendoProvider>` map registers |
 | `policy.json` | init, then you | `vendo/policy@1` |
 | `theme.json` | init extraction, then you | `VendoTheme` |

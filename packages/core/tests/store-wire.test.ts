@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 import {
   STORE_WIRE_PATHS,
   STORE_WIRE_STATUS_BY_CODE,
@@ -37,6 +38,8 @@ import {
   storeWireHarnessGetRequestSchema,
   storeWireHarnessSetRequestSchema,
   storeWireHarnessClearRequestSchema,
+  storeWireTurnLoadRequestSchema,
+  storeWireTurnCommitRequestSchema,
   storeWireWorkspaceIndexRequestSchema,
   storeWireWorkspaceReadRequestSchema,
   storeWireWorkspaceCommitRequestSchema,
@@ -328,10 +331,55 @@ describe("vendo/store-wire@1", () => {
   });
 
   it("parses harness request DTOs", () => {
-    expect(storeWireHarnessGetRequestSchema.parse({ appId: "app_1", subject: "sub_1" }).appId).toBe("app_1");
-    expect(storeWireHarnessSetRequestSchema.parse({ appId: "app_1", subject: "sub_1", state: { step: 3 } }).state).toEqual({ step: 3 });
-    expect(storeWireHarnessClearRequestSchema.parse({ appId: "app_1", subject: "sub_1" }).subject).toBe("sub_1");
-    expect(storeWireHarnessClearRequestSchema.safeParse({ appId: "", subject: "s" }).success).toBe(false);
+    expect(storeWireHarnessGetRequestSchema.parse({ threadId: "thr_1", subject: "sub_1" }).threadId).toBe("thr_1");
+    expect(storeWireHarnessSetRequestSchema.parse({ threadId: "thr_1", subject: "sub_1", state: { step: 3 } }).state).toEqual({ step: 3 });
+    expect(storeWireHarnessClearRequestSchema.parse({ threadId: "thr_1", subject: "sub_1" }).subject).toBe("sub_1");
+    expect(storeWireHarnessClearRequestSchema.safeParse({ threadId: "", subject: "s" }).success).toBe(false);
+  });
+
+  /**
+   * The harness slot moved from `vendo_state` (keyed by an appId) onto the thread
+   * row, so the wire's key became the thread's id. That is a BREAKING change, and
+   * the one property that makes it safe to ship is that it cannot be MISREAD:
+   * neither side can mistake the other's body for a slot it may serve.
+   *
+   * `/status`'s `ops` level cannot express this — it is a monotone count that only
+   * grows as ops are ADDED, and no op is added or removed here — and the
+   * capabilities header is additive and describes answer shapes, not request keys.
+   * So the required field IS the mechanism, and this test is what holds it: both
+   * directions fail closed, which a mount answers as an enveloped `validation`.
+   */
+  it("harness bodies fail LOUDLY across a version skew, in both directions", () => {
+    const oldClientBody = { appId: "harness_state:thr_1", subject: "sub_1" };
+    const newClientBody = { threadId: "thr_1", subject: "sub_1" };
+
+    // An OLD client against a NEW mount: `threadId` is missing, so the body is
+    // refused rather than read as a slot under some other key.
+    for (const schema of [storeWireHarnessGetRequestSchema, storeWireHarnessClearRequestSchema]) {
+      expect(schema.safeParse(oldClientBody).success).toBe(false);
+    }
+    expect(storeWireHarnessSetRequestSchema.safeParse({ ...oldClientBody, state: {} }).success).toBe(false);
+
+    // A NEW client against an OLD mount is the mirror image, and it is the old
+    // schema — `appId: z.string().min(1)` — that refuses it. Restated here rather
+    // than imported, because the whole point is that the old shape is gone.
+    const oldGetSchema = z.object({
+      appId: z.string().min(1),
+      subject: z.string().min(1),
+    }).passthrough();
+    expect(oldGetSchema.safeParse(newClientBody).success).toBe(false);
+
+    // And the turn envelope embeds the same body, so it inherits the same guard
+    // rather than quietly accepting a shape the standalone op refuses.
+    expect(storeWireTurnLoadRequestSchema.safeParse({
+      thread: { id: "thr_1" },
+      index: {},
+      harness: oldClientBody,
+    }).success).toBe(false);
+    expect(storeWireTurnCommitRequestSchema.safeParse({
+      messages: { threadId: "thr_1", subject: "sub_1", messages: [{ id: "m1" }] },
+      harness: { ...oldClientBody, state: {} },
+    }).success).toBe(false);
   });
 
   it("parses workspace request DTOs", () => {

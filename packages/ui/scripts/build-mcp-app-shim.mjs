@@ -1,15 +1,26 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { build } from "vite";
+// Force production BEFORE importing vite: the committed artifact must be
+// byte-reproducible no matter the caller's ambient NODE_ENV. Under NODE_ENV=test
+// (e.g. the drift guard) vite/React would otherwise bundle the ~70KB-larger dev
+// build, so the same source would produce a different file for different callers.
+process.env.NODE_ENV = "production";
+const { build } = await import("vite");
 
 const packageDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const entry = resolve(packageDir, "src/tree/mcp-shim/entry.tsx");
-const output = resolve(packageDir, "../mcp/src/shim/shim-html.gen.ts");
+// VENDO_MCP_SHIM_OUT lets the drift guard (test/mcp-shim-bundle.test.ts) point
+// this generator at a temp file and byte-compare, without touching the
+// committed bundle.
+const output = process.env.VENDO_MCP_SHIM_OUT
+  ? resolve(process.env.VENDO_MCP_SHIM_OUT)
+  : resolve(packageDir, "../mcp/src/shim/shim-html.gen.ts");
 
 const result = await build({
   configFile: false,
   root: packageDir,
+  mode: "production",
   define: { "process.env.NODE_ENV": JSON.stringify("production") },
   build: {
     write: false,

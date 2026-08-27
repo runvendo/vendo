@@ -1,74 +1,54 @@
-# The box (execution-v2 Wave 3; agent engine = the `claudeCode()` runner)
+# The box
 
-The reproducible base box template: **Node + the in-box coding agent harness**.
-Every graduated app's machine boots from this snapshot. The agent lives in the
-box; "edit this app" sends a prompt to the box and the agent writes the server
-code, runs it, curls its own endpoints, and reports a structured result.
+The reproducible base box template: **Node + the Claude Code session runner**.
+A box boots from this snapshot, serves the conversational turn door, and
+supervises whatever process the app directory declares.
 
 ## Files (baked into the template)
 
 - `bootstrap.mjs` — the entrypoint the template's start command runs.
-- `harness.mjs` — `createHarness()`: the control-port server + app supervisor
-  (zero-dependency), and the `/agent/task` door's own half of the coding agent:
-  the box conventions the agent builds against, and the structured result the
-  host polls for (`/app/.vendo/report.json`, which the agent writes).
+- `harness.mjs` — `createHarness()`: the control-port server + app supervisor,
+  zero-dependency.
 - `build-template.mjs` — the e2b template builder (the recipe).
 - `turn-routes.mjs` and `claude-turn.mjs` are baked from `@vendoai/harnesses`
   (the claude-code driver owns its box-side half): the routes from that
   package's `box/turn-routes.mjs`, the runner from its compiled
   `dist/claude-code/claude-turn.js`, both staged in here at bake time for the
-  e2b `copy()` reason below. The supervisor delegates every `/session/*`
-  request to the routes — and its own `/agent/task` door drives the SAME
-  `claude-turn.mjs`. **ONE Claude Code integration**: the runner is also what
-  `machine: "local"` runs on a host. The Agent SDK (plus its peers) is
-  npm-installed into `/opt/vendo-box/node_modules` at **template-build time**,
-  so install size is a template concern, never a wake concern.
-- The universal app template — Vite + React 19 with `@vendoai/ui` installed —
-  is baked from `packages/box-template` (staged in here at bake time, for the
-  same e2b `copy()` reason as `claude-turn.mjs`). It lands at
-  `/opt/vendo-box/template`, its deps at `/opt/vendo-box/deps` with the
-  template's `node_modules` a symlink to them, so `cp -a template/. /app/` is a
-  warm start that copies a link rather than hundreds of megabytes. ONE universal
-  template, baked once per Vendo release: nothing company-specific is baked, and
-  the host's brand and components arrive as files under `/app/.vendo/host/`.
+  e2b `copy()` reason the builder explains. The supervisor delegates every
+  `/session/*` request to the routes. **ONE Claude Code integration**: the
+  runner is also what `machine: "local"` runs on a host. The Agent SDK (plus its
+  peers) is npm-installed into `/opt/vendo-box/node_modules` at
+  **template-build time**, so install size is a template concern, never a wake
+  concern.
 
 ## The two ports
 
-- **`$PORT`** (default 8080) — the **app** the agent writes: it serves
-  `POST /fn/<name>` and `GET /vendo.json`. The app owns this port.
-- **`8811`** (`VENDO_CONTROL_PORT`) — the **harness** control port, the host's
-  door to the agent (reached via `SandboxMachine.request({ port: 8811 })`):
+- **`$PORT`** (default 8080) — the app process the box supervises. The app owns
+  this port.
+- **`8811`** (`VENDO_CONTROL_PORT`) — the harness control port, the host's door
+  into the box (reached via `SandboxMachine.request({ port: 8811 })`):
+  - `/session/**` — the conversational turn door (`turn-routes.mjs`)
   - `GET  /agent/health`
   - `POST /agent/env { env }` — persist re-injected boundary env + restart app.
     The set is the WHOLE boundary and it replaces the provision-time one: the app
-    and the agent get it plus the machine's own vars (`PATH`, `HOME`, …), so a
-    secret the owner revoked is gone from the box at the next restart.
-  - `POST /agent/task { prompt, context? }` → `202 { taskId }` (one at a time)
-  - `GET  /agent/task/<id>` → `{ status, result?, log }`
+    gets it plus the machine's own vars (`PATH`, `HOME`, …), so a secret the
+    owner revoked is gone from the box at the next restart.
   - `POST /agent/restart-app`
 
-The control-port protocol is engine-agnostic and did NOT change when the task
-door moved onto `claude-turn.mjs` — nothing outside the box needed edits.
-
-## The app the agent maintains
+## The app directory
 
 - `/app/.vendo/run` — a Procfile-style one-line start command (e.g.
   `node server.js`). The supervisor runs it with the boundary env and restarts
   it on edits and env re-injection.
-- `/app/.vendo/report.json` — the agent's structured result for the task in
-  flight, written by the agent and read by the supervisor. Data, never
-  authority.
-- `/app/vendo.json` — the manifest (`schedules`, `egress`).
 
 ## Inference
 
 Reads `VENDO_INFERENCE_URL` / `VENDO_INFERENCE_KEY` (BYO Anthropic key, or the
 Cloud metered gateway behind the same two vars) and maps them onto the SDK's
 env auth: `ANTHROPIC_BASE_URL` / `ANTHROPIC_API_KEY`. `VENDO_INFERENCE_MODEL`
-still picks the model (default `claude-sonnet-4-5`; without the pin the SDK
-would default to its `sonnet` alias). On the Cloud rung the host injects
-`vendo-default` — the gateway serves only the curated aliases
-`vendo-default` / `vendo-fast` / `vendo-strong`.
+still picks the model. On the Cloud rung the host injects `vendo-default` — the
+gateway serves only the curated aliases `vendo-default` / `vendo-fast` /
+`vendo-strong`.
 
 ## Build
 

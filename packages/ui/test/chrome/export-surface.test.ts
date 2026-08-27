@@ -22,7 +22,7 @@ const VALUE_EXPORTS = [
   "ConnectCard",
   "GrantSetCard",
   // #1090 — the asks→rows mapping the thread consent surface shares with any
-  // host surface, public because the thread eject template imports it.
+  // host surface.
   "grantSetPermissions",
   // Build contract §9.4 — the viewer fork offer.
   "ForkOffer",
@@ -47,71 +47,30 @@ const VALUE_EXPORTS = [
   // a pin from its own control.
   "playPinCeremony",
   "usePinAction",
-  // ⚠️ TEST EDIT — `usePinNudge` joins them DELIBERATELY. The thread is an eject
-  // surface, so every import in `thread/parts.tsx` is public API by
-  // construction, and the pin button there needs its invite state. The action
-  // and the invitation are two halves of one affordance: a host that ejects the
-  // template and keeps the pin needs both or its pin goes quiet.
+  // The action and the invitation are two halves of one affordance: a host that
+  // renders its own pin button needs both or its pin goes quiet.
   "usePinNudge",
-  // ⚠️ TEST EDIT — placement is public for the SAME reason `usePinNudge` is:
-  // the thread card's bar renders `PlacementAction`, and every import in
-  // `thread/parts.tsx` is public API by construction. `AddToPicker` is the menu
-  // half on its own, for a surface that only ever wants the choice. (Their
-  // destinations come from `useSlots`, which the root surface exports.)
+  // `AddToPicker` is the destination menu on its own, for a surface that only
+  // ever wants the choice. (Its destinations come from `useSlots`, which the
+  // root surface exports.)
   "AddToPicker",
-  "PlacementAction",
-  // ⚠️ TEST EDIT — `useApprovalModal` joins them DELIBERATELY, for the same
-  // reason as the two above: `thread/parts.tsx` now mounts the approval modal
-  // per app card (a parked press must be able to ask its question in the chat),
-  // and every import in that eject template is public API by construction.
+  // A host building its own surface needs this seam to give a parked press an
+  // ask, the way `thread/parts.tsx` mounts the modal per app card.
   "useApprovalModal",
   "VendoTrigger",
   // Keystone graduates B7 — the remixable-surface affordance.
   "Remixable",
-  // The eject surface (§4 customization ladder): internals the ejected
-  // thread compiles against, exported deliberately so ejected chrome keeps
-  // data/wire logic as a package dependency and only forks pixels.
+  // Chrome internals a host composing its own surface builds against: one tool
+  // call's transcript beat, and the root that provides the chrome context.
   "BuildBeat",
-  // Spec §1 (2026-08-03) — the settled turn's summary row. Public because the
-  // ejected thread template renders it (the eject standalone guard requires
-  // every template import to be part of the chrome surface).
-  "BeatSummary",
-  // 2026-07 loading-state audit — the between-steps busy voice, now a beat at
-  // the transcript tail rather than a pill above the composer; the ejected
-  // thread template renders it, so it must be public (eject standalone rule).
-  "WorkingBeat",
-  "toolPresentation",
-  // 2026-07 split-view workspace — the overlay's expand/collapse machine;
-  // the ejected thread's app cards read the context via useSplitView.
-  "SplitViewContext",
-  "useSplitView",
   "ChromeRoot",
-  "useCopyFeedback",
-  "ConnectDockButton",
-  "ConnectTray",
-  "FluidThinking",
-  "previewArgs",
-  "toolkitDisplayName",
-  "toolTitle",
-  "Markdown",
-  "MorphToast",
-  "PrefillScopeContext",
-  "registerPrefillConsumer",
-  "LONG_TEXT_CAP",
-  "truncateHead",
   // Discoverability (ui-usage-dx §6) — the built-in greeting fallback (so
-  // hosts can extend rather than replace it) plus the fire-once store, which
-  // the ejected thread template imports (the eject standalone guard requires
-  // every template import to be public).
+  // hosts can extend rather than replace it) plus the fire-once store.
   "defaultVendoGreeting",
   "hasSeen",
   "markSeen",
-  // ui-lane-cards picks — the mobile approval sheet (1-H) and the morph's
-  // Activity-dock seam (4-C): the anchor attribute a host stamps and the
-  // bump event its badge listens for.
+  // ui-lane-cards pick 1-H — the mobile approval sheet.
   "ApprovalSheet",
-  "ACTIVITY_ANCHOR_ATTRIBUTE",
-  "ACTIVITY_BUMP_EVENT",
 ] as const;
 
 const TYPE_EXPORTS = [
@@ -133,9 +92,9 @@ const TYPE_EXPORTS = [
   // 2026-08-02 final shape: RemixContext died with the context-chip behavior
   // (remix always means fork now) — deliberately absent.
   "RemixableProps",
-  // Eject surface types.
+  // The shape of `VendoOverlayProps["thread"]`, so a host can type its own
+  // thread component.
   "VendoThreadProps",
-  "MorphToastProps",
   // Discoverability (ui-usage-dx §6) — the dial + greeting config shapes.
   "VendoDiscoverability",
   "VendoGreeting",

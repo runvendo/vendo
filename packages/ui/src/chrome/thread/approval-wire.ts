@@ -9,8 +9,8 @@ import type { ApprovalRequest, Json, JsonSchema, RiskLabel } from "@vendoai/core
 import { preview, SYNTHESIZED_CREATED_AT } from "./message-data.js";
 
 /** Only the field this builder reads off the host's `tools` map (a `ToolMetaMap`
-    at every call site). Structural, because the thread directory ships as an
-    eject template and may only import the PUBLIC package surface. */
+    at every call site). Structural, so this builder does not depend on the
+    wider `ToolMeta` shape. */
 type ToolDescriptions = Record<string, { description?: string } | undefined>;
 
 export interface ApprovalWirePart {

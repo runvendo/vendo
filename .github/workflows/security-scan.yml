@@ -1,0 +1,94 @@
+name: security-scan
+
+# SOC 2 static scanning, both OSS: GitLeaks for secrets, Opengrep for SAST.
+#
+# Deliberately NOT one of the required checks (ci, integration, conformance,
+# audit) — renaming or absorbing those breaks merges. Same posture as trivy.yml.
+# No merge_group trigger for the same reason: the queue only waits on the four
+# required checks, and adding a fifth to the queue's critical path buys nothing
+# a pull_request run has not already proved.
+#
+# Neither tool runs through its marketplace action. gitleaks-action has been
+# non-MIT since v2 and requires a paid GITLEAKS_LICENSE for repos owned by an
+# organization, which this one is; the plain binary is the same scanner with
+# none of that. Opengrep publishes no action at all. So both jobs fetch a
+# pinned release and run it directly.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  gitleaks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0 # the scan walks commits, so it needs their parents
+
+      - name: Install gitleaks
+        env:
+          GITLEAKS_VERSION: 8.30.1
+        run: |
+          curl -fsSL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin gitleaks
+
+      # Only the commits this event ADDS, never the whole history. A full-history
+      # scan takes minutes and lands on ~74 pre-existing fixture-key hits that no
+      # new PR can fix, so it would be red for everyone, forever; scoping it to
+      # the new commits keeps the gate about the change in front of it. That
+      # history was triaged by hand on 2026-08-26 and holds no real credential.
+      #
+      # --redact so a genuine hit never prints its own value into a public log.
+      # The run still names the rule, the file and the commit, which is all
+      # anyone needs to go look. The fixture allowlist lives in .gitleaks.toml,
+      # which gitleaks loads from the repo root on its own.
+      - name: Scan the new commits for secrets
+        env:
+          # A pull_request hands over base/head; a push hands over before/after.
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          case "$BASE" in
+            "" | 0000000000000000000000000000000000000000)
+              # A branch's first push reports an all-zero base; scan the tip.
+              RANGE="--max-count=1 $HEAD" ;;
+            *)
+              RANGE="$BASE..$HEAD" ;;
+          esac
+          gitleaks git --log-opts="$RANGE" --redact=100 --no-banner --exit-code 1 .
+
+  opengrep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Install opengrep
+        env:
+          OPENGREP_VERSION: v1.28.0
+        run: |
+          sudo curl -fsSL -o /usr/local/bin/opengrep \
+            "https://github.com/opengrep/opengrep/releases/download/${OPENGREP_VERSION}/opengrep_manylinux_x86"
+          sudo chmod +x /usr/local/bin/opengrep
+
+      # --severity filters the RULESET, not just the report: only ERROR-severity
+      # rules are loaded, so WARNING and INFO noise never runs and can never fail
+      # the job. --error is what turns a surviving finding red. Stock community
+      # rulesets only — nothing is authored here, so upstream fixes land free.
+      - name: Scan for ERROR-severity findings
+        run: |
+          opengrep scan \
+            --config p/typescript \
+            --config p/nodejs \
+            --severity ERROR \
+            --error \
+            .

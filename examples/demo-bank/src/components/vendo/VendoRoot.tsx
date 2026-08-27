@@ -27,8 +27,15 @@ const mapleToolMeta: ToolMetaMap = {
 
 export function VendoRoot({
   children,
+  fonts,
 }: {
   children: ReactNode;
+  /** The TEXT of `.vendo/fonts.css` (read server-side in `layout.tsx`), not a
+   *  stylesheet import: a sealed bundle renders in an opaque-origin iframe that
+   *  Maple's own stylesheets can never reach, so the brand's `@font-face` rules
+   *  are posted in at render (`sendFrameTheme`) or the app paints in the
+   *  fallback stack. */
+  fonts?: string;
 }) {
   const router = useRouter();
   return (
@@ -42,6 +49,7 @@ export function VendoRoot({
       // Without it the renderer paints `Unknown component "AreaChart"`.
       remixWiring={remixWiring}
       theme={mapleTheme}
+      {...(fonts === undefined ? {} : { fonts })}
       // No pin wiring: Maple's pages mount their own <VendoSlot>s, and a
       // mounted slot reports itself — so "Pin to dashboard" already knows
       // where it lands.

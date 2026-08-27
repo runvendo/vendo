@@ -1,9 +1,8 @@
 import { useEffect, useRef, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { useVendoTheme } from "../context.js";
 import { useMobileTakeover } from "../hooks/use-mobile-takeover.js";
 import { themeCssVariables } from "../theme.js";
-import { ensureChromeStyles } from "./chrome-root.js";
+import { ensureChromeStyles, useChromeTheme } from "./chrome-root.js";
 
 /**
  * Below the mobile breakpoint the newest pending approval
@@ -31,7 +30,11 @@ export function ApprovalSheet({ children, label }: {
   /** Accessible name for the dialog, e.g. `Approval for ${title}`. */
   label: string;
 }) {
-  const theme = useVendoTheme();
+  // The spawning surface's resolved theme, not the provider's: the sheet is the
+  // mobile presentation of a consent raised inside a thread, and it portals to
+  // <body>, so context is the only way that surface's own `theme` reaches it.
+  // Outside any boundary this is the provider's theme, unchanged.
+  const theme = useChromeTheme();
   const takeover = useMobileTakeover();
   const sheetRef = useRef<HTMLDivElement>(null);
 

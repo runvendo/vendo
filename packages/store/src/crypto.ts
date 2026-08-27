@@ -1,6 +1,11 @@
 import { VendoError } from "@vendoai/core";
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 
+/** GCM's full tag, pinned on both sides — Node otherwise verifies a tag at
+ *  whatever length the envelope carries, and a 4-byte one is forgeable. Every
+ *  envelope ever written carries 16 (the default), so nothing at rest changes. */
+const AUTH_TAG_BYTES = 16;
+
 /** 02-store §4 */
 export function validateEncryptionKey(value: string): Buffer {
   const validCharacters = /^[A-Za-z0-9+/]+={0,2}$/.test(value);
@@ -17,7 +22,7 @@ export function validateEncryptionKey(value: string): Buffer {
  *  value. */
 export function encryptSecret(value: string, key: Buffer, name: string): string {
   const iv = randomBytes(12);
-  const cipher = createCipheriv("aes-256-gcm", key, iv);
+  const cipher = createCipheriv("aes-256-gcm", key, iv, { authTagLength: AUTH_TAG_BYTES });
   cipher.setAAD(Buffer.from(name, "utf8"));
   const ciphertext = Buffer.concat([cipher.update(value, "utf8"), cipher.final()]);
   const tag = cipher.getAuthTag();
@@ -34,7 +39,9 @@ export function decryptSecret(value: string, key: Buffer, name: string): string 
     ) {
       throw new Error("invalid ciphertext envelope");
     }
-    const decipher = createDecipheriv("aes-256-gcm", key, Buffer.from(ivValue, "base64"));
+    const decipher = createDecipheriv("aes-256-gcm", key, Buffer.from(ivValue, "base64"), {
+      authTagLength: AUTH_TAG_BYTES,
+    });
     decipher.setAAD(Buffer.from(name, "utf8"));
     decipher.setAuthTag(Buffer.from(tagValue, "base64"));
     return Buffer.concat([

@@ -6,10 +6,6 @@ description: "The full removal checklist for everything vendo init writes, the C
 
 Everything Vendo adds to a repo is enumerable, so removal is too. There is no CLI verb for it: removal is deleting files.
 
-<Note>
-  `vendo eject` is not an uninstall. Despite the name it is a customization command that copies chrome source into your repo ([CLI reference](/reference/cli#vendo-eject)).
-</Note>
-
 ## Removal checklist
 
 Work through this in the app directory you ran `vendo init` in. Everything listed is Vendo-owned unless marked yours.
@@ -62,7 +58,6 @@ Only present when the matching feature was used.
 | Path | Written by |
 | --- | --- |
 | `.claude/skills/vendo-setup/` | init, when a `.claude/` directory exists |
-| `components/vendo/<surface>/` and its `.vendo-eject.json` | `vendo eject` |
 | `server.json`, `public/.well-known/mcp-registry-auth` | `vendo mcp` |
 | `~/.vendo/` | the CLI, across every project on the machine |
 

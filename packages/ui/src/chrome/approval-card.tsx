@@ -7,7 +7,7 @@ import {
 import { useState } from "react";
 import { useVendoTools } from "../context.js";
 import { ContainedNotice } from "../tree/notice.js";
-import { consentAsk, toolPresentation } from "./build-beat.js";
+import { consentAsk, toolPresentation, type ConsentAsk } from "./build-beat.js";
 import { CardActions, CardLine, CardShell, NOTE_SEPARATOR } from "./card-shell.js";
 import { ChromeRoot } from "./chrome-root.js";
 import { fieldRows } from "./field-rows.js";
@@ -75,6 +75,15 @@ export interface ApprovalCardProps {
    * this prop exists to remove.
    */
   venueName?: string;
+  /**
+   * The ask ALREADY IN WORDS, for the one surface that cannot derive them: an
+   * agent outside your product parks a call and ships only the rendered ask, so
+   * there is no `ApprovalRequest` here for the shared ladder to read. Given,
+   * `consentAsk` is skipped and these words render verbatim — not a second
+   * vocabulary, because the door composed them off the very descriptor the
+   * ladder would have read (apps' `BUILD_CONSENT_ASK`).
+   */
+  ask?: ConsentAsk;
 }
 
 /** The consumer's half of a refusal (spec §16 law 3) — the same defect the
@@ -101,7 +110,7 @@ function approvalDate(grantedAt: string): string {
 /** 01-core §5; 08-ui §4; spec §16 — the one consent surface, on the one card
     shell: the ask as a question, one quiet line carrying every real input the
     question doesn't already name plus what approving does, and two buttons. */
-export function ApprovalCard({ approval, onDecide, allowRemember = true, showContext = true, venueName }: ApprovalCardProps) {
+export function ApprovalCard({ approval, onDecide, allowRemember = true, showContext = true, venueName, ask: composed }: ApprovalCardProps) {
   const [remember, setRemember] = useState(false);
   const [scope, setScope] = useState<"exact" | "tool">("exact");
   const [duration, setDuration] = useState<"session" | "standing">("session");
@@ -126,7 +135,7 @@ export function ApprovalCard({ approval, onDecide, allowRemember = true, showCon
   );
   // Ruling 14 — ONE plain-words ladder, shared with the queue row (`consentAsk`
   // in build-beat.tsx). The descriptor's own description is never on it.
-  const ask = consentAsk(
+  const ask = composed ?? consentAsk(
     approval.descriptor.risk,
     presentation,
     fieldRows(approval.call.args, approval.descriptor.inputSchema, meta),
@@ -166,7 +175,8 @@ export function ApprovalCard({ approval, onDecide, allowRemember = true, showCon
           not something a person reads, and neither is a grade. They used to ride
           a visible chip; the attributes are their real home. */}
       <CardShell
-        label={`Approval for ${presentation.title}`}
+        // A pre-composed ask names itself; there is no tool here to humanize.
+        label={`Approval for ${composed === undefined ? presentation.title : composed.question}`}
         className="fl-approval fl-item-in"
         data-risk={approval.descriptor.risk}
         data-vendo-tool={tool}

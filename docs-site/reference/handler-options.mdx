@@ -24,7 +24,7 @@ Exactly one key is required: an identity, as `auth`.
 | `instructions` | The prose this deployment puts in front of the agent every turn. Override for `.vendo/brief.md`; a non-blank string wins, blank falls through |
 | `store` | Unset with `VENDO_API_KEY` set, the Cloud hosted store fills the slot |
 | `files` | Where every workspace file's content lives — one backing, no tiering. Set, `s3Files` or your own `FilesAdapter` holds all of them. Unset, the store's own blobs back it, capped at 5 MiB each, and the first over-cap write fails naming this key |
-| `sandbox` | Unlocks machine-backed apps. Unset, `VENDO_API_KEY` fills it with the Cloud sandbox; with neither, apps stay tree-only |
+| `sandbox` | Unlocks built apps: the disposable box one is sealed in. Unset, `VENDO_API_KEY` fills it with the Cloud sandbox; with neither, apps stay tree-only |
 | `harness` | Who thinks. Default `vendo()`, also `claudeCode()`, or your own via `defineHarness`. A harness declaring `requires: { sandbox: true }` with no sandbox is a boot error |
 | `knowledge` | Composes the `vendo_knowledge_search` tool. Unset, that tool does not exist |
 | `connectors` | One mixed list. A string names a Vendo Cloud toolkit and scopes discovery to it; a `Connector` object is used verbatim. `[]` means no connectors |
@@ -41,6 +41,7 @@ Exactly one key is required: an identity, as `auth`.
 | `profileDir` | The project root `.vendo/` is read under. Unset keeps the process cwd |
 | `fetch` | The fetch host route and OpenAPI bindings execute through. An explicit function always wins |
 | `profile` | The `.vendo/` pieces as in-memory compose-time inputs. See [below](#profile) |
+| `shell` | The agent's `bash` over the user's own files. On by default when the resident brain is `vendo()`; `false` withholds it, `{ limits }` moves its per-call wall clock and output ceiling |
 | `mcp` | Opens the MCP door. Off by default. See [below](#mcp) |
 | `oauth` | **Deprecated alias** for `auth.oauth` — the `HostOAuthAdapter` the door uses for session lookup and principal resolution. Still works; mutually exclusive with `auth`. One of the two is required when `mcp` is on |
 | `agent` | A whole agent built by `agent()`. This deployment adopts its harness, store, files adapter, sandbox, and instructions |
@@ -84,6 +85,8 @@ A name string is pinnable per seat with `VENDO_MODEL`, `VENDO_MODEL_APPS`, `VEND
 | `breakers.maxWritesPerRun` | 20 | Per run, counting `write` and `destructive` calls |
 
 Named presets: `"cautious"` lets reads run and asks before writes or destructive calls, `"readonly"` lets reads run and blocks everything else, `"autopilot"` runs everything.
+
+`"cautious"` makes one exception to that prompt: the agent's `bash` runs without asking. It is still graded `write`, so it takes an audit row per call and answers to your own rules and the kill switch — but an automation has nobody to answer an approval card, and a prompt here would mean the shell could never run unattended. Add your own rule for the `bash` tool to put the prompt back.
 
 `guard({ policy: {} })` reads the default `.vendo/policy.json`, which is what `vendo init` scaffolds. It reads fail-soft, so a missing file also auto-runs with no notice; keep the file in version control.
 
@@ -149,7 +152,7 @@ A check is `{ name, run(input) }` returning `Finding[]`, or `{ name, kind: "judg
 
 A `block` finding stops the ship and a `warn` rides along. A check that throws degrades to a `warn` naming it, so a broken check never takes an app down.
 
-Machine-backed apps have no flag. They are gated by a configured `sandbox` adapter alone, and served apps additionally need the mounted wire plus `VENDO_BASE_URL`.
+Built apps have no flag. They are gated by a configured `sandbox` adapter alone.
 
 ## `profile`
 

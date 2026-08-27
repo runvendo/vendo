@@ -161,13 +161,5 @@ describe("VendoSlot build states", () => {
       await screen.findByText(reason);
       expect(screen.queryByRole("button", { name: "Clear this slot" })).toBeNull();
     });
-
-    it("mounts the placed app — the http surface", async () => {
-      wire.state.httpApps.set("app_1", "/frame-target.html");
-      wire.state.placements.push({ slot: "hero", appId: "app_1" });
-      slot("hero");
-      const frame = await screen.findByTitle("Vendo app");
-      expect(frame.getAttribute("src")).toBe("/frame-target.html");
-    });
   });
 });

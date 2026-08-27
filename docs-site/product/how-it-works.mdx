@@ -122,9 +122,10 @@ can do what that person could already do by clicking, and nothing more.
 <Step title="A screen comes back instead of a paragraph">
 
 When the answer is one to look at, the agent calls `vendo_make` and Vendo
-assembles a screen — or a small app whose server code runs on a Cloud sandbox.
-It streams into the transcript as it forms and lands interactive, bound to live
-data from your own tools, ready to pin into a
+assembles a screen — or, with the person's yes, builds a small app once in a
+disposable Cloud sandbox and seals the result. It streams into the transcript
+as it forms and lands interactive, bound to live data from your own tools,
+ready to pin into a
 [`VendoSlot`](/product/mount-the-surface#slots) on your page.
 
 </Step>
@@ -140,7 +141,7 @@ data from your own tools, ready to pin into a
 | Your API and your database | Yours, untouched |
 | The model | The Vendo Cloud gateway keyed by `VENDO_API_KEY`, or your own provider when `models` selects one |
 | Threads, apps, grants, audit | Hosted Postgres behind the same key |
-| Server code inside a generated app | A Cloud sandbox behind the same key |
+| Building a generated app | A disposable Cloud sandbox behind the same key |
 
 One key fills the model, store, and sandbox slots your composition left unset —
 nothing to provision, and nothing to run.

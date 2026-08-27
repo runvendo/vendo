@@ -33,7 +33,6 @@ export {
 // The one-shot migration for appData that predates the owner stamp: without it
 // every such row goes invisible the moment a door flips onto the family.
 export { backfillAppDataStamps, type AppDataBackfillReport } from "./backfill-app-data.js";
-export { backfillAppRefKey, type AppRefKeyBackfillReport } from "./backfill-app-data.js";
 // The reserved-collection map (02-store §2): exported so remote StoreAdapters
 // (`hostedStore` below) can mirror this engine's per-collection
 // capability shape — claim on non-routed collections, atomic on generic
@@ -84,7 +83,7 @@ export { turnLoadOverOps } from "./helpers/turn.js";
 export { storeFiles, FILES_STORE_MAX_BYTES } from "./files-store.js";
 // The other side of the `files:` seam: a bucket instead of the store's blobs.
 export { s3Files, type S3FilesOptions } from "./s3-files.js";
-export { harnessStateKey, harnessStateRow, harnessStateStore } from "./harness-state.js";
+export { harnessStateRow, harnessStateStore } from "./harness-state.js";
 // The Cloud store: the same StoreAdapter and the same ops, over the console
 // wire instead of a local Postgres. It lives HERE so every helper above can be
 // served by it without the caller reaching for the umbrella.

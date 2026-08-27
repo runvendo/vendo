@@ -2,16 +2,14 @@
 import type { ReactNode } from "react"
 
 /**
- * The presentational quick-actions strip, remixable by Vendo behind review
- * (06-apps §8, 2026-08-02 final shape).
+ * The presentational quick-actions strip, remixable by Vendo (06-apps §8).
  *
  * Deliberately self-contained — React only — because a fork's module space is
  * React plus captured sub-sources: the lucide icons are inlined as SVG markup
- * and the Tailwind class names are plain strings (review-kind forks mount
- * natively in the page on approval, where the compiled Tailwind bundle
- * exists; they never render in the jail). The container (`quick-actions.tsx`)
- * owns the toast plumbing and passes `onAction` — a function prop that cannot
- * cross the fork boundary, which is exactly why this surface is review-kind.
+ * and the Tailwind class names are plain strings, so the captured source renders
+ * sandboxed in the fork venue. The container (`quick-actions.tsx`) owns the
+ * toast plumbing and passes `onAction` — a function prop that cannot cross the
+ * fork boundary.
  */
 
 // Lucide path data (lucide.dev, ISC), inlined so the captured source renders

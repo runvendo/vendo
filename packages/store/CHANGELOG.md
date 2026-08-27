@@ -1,5 +1,262 @@
 # @vendoai/store
 
+## 0.52.1
+
+### Patch Changes
+
+- 5abb36f: fix: pin the GCM authentication tag at 16 bytes when sealing and opening stored secrets
+
+  `createDecipheriv` without `authTagLength` verifies a tag at whatever length the
+  stored envelope happens to carry, and GCM permits tags as short as 4 bytes — so
+  an attacker who can write the envelope gets to attack a short tag instead of the
+  full one. Both the cipher and the decipher now pin 16. Every envelope this code
+  has ever written already carries Node's default 16-byte tag, so nothing at rest
+  changes and existing secrets keep decrypting.
+
+  - @vendoai/core@0.52.1
+  - @vendoai/apps@0.52.1
+
+## 0.52.0
+
+### Minor Changes
+
+- 52f5b64: A conversation's harness state lives on the conversation, and `vendo_state` is gone
+
+  The bookmark a session-owning harness resumes on — `claudeCode()`'s native session
+  ref — rode `vendo_state` under a synthetic `app_id` of `harness_state:<threadId>`.
+  That bought "no new table" and paid for it everywhere else: thread deletion swept
+  the slot by hand in two places, a retention sweep needed a fence to stop the
+  app-state door from seeing a tenant it could not address, the erase cascade reached
+  it only through a second selector, and a routed door had to police an id grammar
+  whose whole job was keeping the two tenants off each other's rows.
+
+  It is one nullable `harness_state jsonb` column on `vendo_threads` now. ONE slot per
+  thread, on the row that already names the thread's owner — so every one of those
+  hand-wired cascades is just the row going away. The two `DELETE` statements, the
+  retention fence, the tenant carve-out and its `<appId>:<subject>` grammar, the
+  `validateId` hook nothing else used, and `harnessStateKey` are all deleted rather
+  than adapted.
+
+  `vendo_state`'s other tenant — an app's per-user state — is deleted with it. Nothing
+  had written it since the `appData` family took over: `getState`/`setState` on
+  `AppDataAccess` had no production caller at all, and the `$state` persistence bridge
+  in `@vendoai/ui` (`onStateChange`) was never wired to anything. The `$state` screen
+  dialect itself is untouched and still resolves in-session; only the never-connected
+  persistence half is gone. The reserved-name guards that refuse a storage collection
+  or a query named `state` stay exactly as they were.
+
+  **Breaking — `StoreOps.harness` and the `/harness/*` wire.** The slot is keyed by the
+  thread it belongs to, and now says so: `harness.get/set/clear(threadId, subject)`,
+  with wire bodies `{threadId, subject}` on `/harness/get`, `/harness/set`,
+  `/harness/clear` and on the `harness` part of `turn.load` and `turn.commit`.
+  `subject` is the thread's OWNER and is authority rather than decoration — a foreign
+  subject reads an empty slot and writes nothing, and `set` on a thread that does not
+  exist is refused instead of minting a bookmark no erase could reach. A skewed client
+  and mount fail CLOSED in both directions: `threadId` is required, so neither side can
+  read the other's body as a slot it may serve, and each answers an enveloped
+  `validation`. `/status`'s `ops` level is deliberately not touched — it is a monotone
+  count that only grows as ops are added, and this adds and removes none.
+
+  An app-scoped erase no longer clears harness state. That guarantee is dropped on
+  purpose: a bookmark belongs to a conversation, and uninstalling an app ends no
+  conversation. Thread deletion and subject erasure both still take it, and each is
+  proven end to end against the real store.
+
+  **Store schema v11 → v12.** `vendo_threads` gains `harness_state jsonb`. The
+  migration copies every `harness_state:<threadId>` row onto its thread, matching on
+  both legs of the old primary key — the id's thread suffix and the subject — then
+  `DROP TABLE vendo_state`. A row whose subject disagreed with its thread's owner was
+  unreachable by every read path and by the erase cascade already, so it dies with the
+  table rather than being promoted onto a row it never belonged to. Guarded on the
+  table's existence rather than on the version, in the v6 idiom, so it is idempotent
+  and a no-op on a database created fresh. The v2 backfill is deleted along with it:
+  it relocated legacy rows INTO this table, and there is nowhere left to put them.
+
+  The engine allowlist goes to v11, having lost `vendo_state`.
+
+### Patch Changes
+
+- Updated dependencies [52f5b64]
+  - @vendoai/core@0.52.0
+  - @vendoai/apps@0.52.0
+
+## 0.51.2
+
+### Patch Changes
+
+- @vendoai/core@0.51.2
+- @vendoai/apps@0.51.2
+
+## 0.51.1
+
+### Patch Changes
+
+- @vendoai/core@0.51.1
+- @vendoai/apps@0.51.1
+
+## 0.51.0
+
+### Patch Changes
+
+- Updated dependencies [54a3545]
+  - @vendoai/core@0.51.0
+  - @vendoai/apps@0.51.0
+
+## 0.50.0
+
+### Patch Changes
+
+- @vendoai/core@0.50.0
+- @vendoai/apps@0.50.0
+
+## 0.49.1
+
+### Patch Changes
+
+- @vendoai/core@0.49.1
+- @vendoai/apps@0.49.1
+
+## 0.49.0
+
+### Patch Changes
+
+- @vendoai/core@0.49.0
+- @vendoai/apps@0.49.0
+
+## 0.48.1
+
+### Patch Changes
+
+- Updated dependencies [92e9094]
+  - @vendoai/apps@0.48.1
+  - @vendoai/core@0.48.1
+
+## 0.48.0
+
+### Patch Changes
+
+- Updated dependencies [79f177f]
+  - @vendoai/core@0.48.0
+  - @vendoai/apps@0.48.0
+
+## 0.47.0
+
+### Patch Changes
+
+- Updated dependencies [412d593]
+  - @vendoai/core@0.47.0
+  - @vendoai/apps@0.47.0
+
+## 0.46.0
+
+### Patch Changes
+
+- Updated dependencies [5cee3a5]
+  - @vendoai/core@0.46.0
+  - @vendoai/apps@0.46.0
+
+## 0.45.0
+
+### Patch Changes
+
+- @vendoai/core@0.45.0
+- @vendoai/apps@0.45.0
+
+## 0.44.0
+
+### Minor Changes
+
+- 31c8e30: Files live where the work lives, and are really deleted when it is.
+
+  A file dropped into chat used to go into one global drawer, live there forever,
+  and belong to nothing. Now it belongs to the CONVERSATION: the upload lands in a
+  staging area, and the turn that receives the message moves it to
+  `/user/threads/<thread>/files/<name>` and rewrites the message before storing it,
+  so the agent's shell finds it at a stable address and later turns on that thread
+  still can. `/user/files` is now what its name always suggested — a keep-shelf for
+  things the user asked you to save — and the three `vendo_user_files_*` tools say
+  so, so the model stops shelving everything by reflex. Staged files that were never
+  sent are swept by the next turn.
+
+  Two real leaks close with it, both of which existed before this change:
+
+  - Deleting a conversation deleted ONE row. Its messages stayed in
+    `vendo_thread_messages` forever, unreachable by any later erasure because the
+    join that identified them had gone with the row, and its harness state stayed
+    with them. The delete now runs the cascade that already existed — thread row,
+    messages and state in one transaction — and sweeps the conversation's files,
+    including the blobs behind them.
+  - Deleting an app never touched its workspace files or their objects. It now runs
+    the store's own app cascade, which does.
+
+  Nothing in the file model is harness-specific: a sandboxed harness materialises a
+  conversation's files exactly as it materialises everything else, with no new code.
+
+### Patch Changes
+
+- Updated dependencies [31c8e30]
+- Updated dependencies [31c8e30]
+  - @vendoai/apps@0.44.0
+  - @vendoai/core@0.44.0
+
+## 0.43.0
+
+### Patch Changes
+
+- @vendoai/core@0.43.0
+- @vendoai/apps@0.43.0
+
+## 0.42.0
+
+### Minor Changes
+
+- 7bbfd3f: Retire the persistent per-app machine surface. A built app is now a sealed bundle the host serves, so nothing needs a machine that outlives the build: the `AppsRuntime.machine` lifecycle doors (`available`, `ping`, `report`), the §9.8 served-app proxy (`AppsRuntime.serve`, `GET /apps/:id/serve/**`), the editor-level box door (`AppsRuntime.box.request` / `.redact`, `POST /apps/:id/fn/:name`), the whole `/box/*` callback surface with its per-app bearer, and the embed keepalive (`POST /apps/:id/machine/ping`, `client.apps.pingMachine`) are all gone. The `ui` package loses `HttpFrame` and its keepalive wiring; `BundleFrame` and `bundleUrl` are what render an app now. `@vendoai/box-template` is deleted — the box image no longer bakes a per-app web template, and its harness keeps only the session half. `vendo_app_tokens` leaves the engine allowlist (v9), and the store's promote no longer re-owns a bearer that no longer exists. `packages/apps`' `prewired-schema` moves to `server/checking/`, beside the validator that reads it.
+
+### Patch Changes
+
+- Updated dependencies [7bbfd3f]
+- Updated dependencies [7bbfd3f]
+- Updated dependencies [7bbfd3f]
+- Updated dependencies [7bbfd3f]
+- Updated dependencies [7bbfd3f]
+- Updated dependencies [7bbfd3f]
+- Updated dependencies [7bbfd3f]
+- Updated dependencies [7bbfd3f]
+- Updated dependencies [7bbfd3f]
+- Updated dependencies [7bbfd3f]
+- Updated dependencies [7bbfd3f]
+- Updated dependencies [7bbfd3f]
+- Updated dependencies [7bbfd3f]
+  - @vendoai/apps@0.42.0
+  - @vendoai/core@0.42.0
+
+## 0.41.1
+
+### Patch Changes
+
+- Updated dependencies [97be645]
+  - @vendoai/apps@0.41.1
+  - @vendoai/core@0.41.1
+
+## 0.41.0
+
+### Minor Changes
+
+- 61cb46e: Remove the native in-client remix execution and the remix review/approval flow (breaking: removes InClientMount, InClientVenue, ReviewStanding, apps.inClient.\*, apps.review.reviewer, and the `review` prop on Remixable). Instant sandboxed remix is unchanged.
+
+### Patch Changes
+
+- Updated dependencies [61cb46e]
+  - @vendoai/apps@0.41.0
+  - @vendoai/core@0.41.0
+
+## 0.40.0
+
+### Patch Changes
+
+- @vendoai/core@0.40.0
+- @vendoai/apps@0.40.0
+
 ## 0.39.0
 
 ### Patch Changes

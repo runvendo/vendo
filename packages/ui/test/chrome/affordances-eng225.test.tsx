@@ -123,6 +123,14 @@ describe("drag-drop attach + previews (ENG-225)", () => {
 });
 
 describe("toasts (ENG-225)", () => {
+  /** ⚠️ CONTRACT CHANGE (standing consent) — the stack shows EVERY ask waiting
+   *  on the user now, backlog included, so a bare "Approve" query is ambiguous.
+   *  This picks the button on the card for one named ask. */
+  const approveOn = (text: string) => within(
+    [...document.querySelectorAll<HTMLElement>(".fl-toasts-card")]
+      .find(card => card.textContent?.includes(text))!,
+  ).getByRole("button", { name: "Approve" });
+
   it("renders an imperative toast and dismisses it", async () => {
     const wire = await createWireServer();
     const client = createVendoClient({ baseUrl: wire.url });
@@ -192,16 +200,21 @@ describe("toasts (ENG-225)", () => {
     await wire.close();
   });
 
-  it("raises a toast for an approval that parks AFTER mount, not the backlog", async () => {
+  /** ⚠️ CONTRACT CHANGE (standing consent) — this asserted the OPPOSITE first
+   *  line: the backlog present at mount was baseline and must not toast. That
+   *  baseline is what made a standing ask unanswerable after a reload (0 cards
+   *  against an ask still pending on the wire), and FINAL SPEC v1's law is "the
+   *  yes, whenever". The rest of the test — one card per ask, no re-toast on a
+   *  poll tick, Approve decides and withdraws — is unchanged. */
+  it("raises a toast for every approval waiting on the user, backlog included", async () => {
     const wire = await createWireServer();
     const client = createVendoClient({ baseUrl: wire.url });
     render(<VendoProvider client={client}><VendoToasts approvals pollMs={40} /></VendoProvider>);
 
-    // The pre-existing approval is baseline — it must NOT toast.
-    await new Promise(resolve => setTimeout(resolve, 120));
-    expect(screen.queryByText(/Waiting on you:/)).toBeNull();
+    // The ask already pending when the page loaded is answerable here.
+    await screen.findByText(/Waiting on you:/);
 
-    // A newly parked approval does.
+    // A newly parked approval raises its own.
     wire.state.approvals.push({
       ...wire.state.approvals[0]!,
       id: "apr_2",
@@ -213,7 +226,7 @@ describe("toasts (ENG-225)", () => {
     expect(screen.getAllByText(/Waiting on you: Invoice delete/)).toHaveLength(1);
 
     // Approving from the toast decides it and withdraws the card.
-    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    fireEvent.click(approveOn("Invoice delete"));
     await waitFor(() => expect(wire.state.approvals.some(item => item.id === "apr_2")).toBe(false));
     await waitFor(() => expect(screen.queryByText(/Waiting on you: Invoice delete/)).toBeNull());
     await wire.close();
@@ -236,7 +249,7 @@ describe("toasts (ENG-225)", () => {
 
     // The wire rejects the next decide (server 500 / dropped connection).
     wire.state.failures.push({ method: "POST", path: "/approvals/decide", code: "boom", message: "kaboom", status: 500 });
-    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    fireEvent.click(approveOn("Invoice delete"));
     await waitFor(() => expect(
       wire.requests.filter(request => request.method === "POST" && request.path === "/approvals/decide"),
     ).toHaveLength(1));
@@ -246,7 +259,7 @@ describe("toasts (ENG-225)", () => {
     expect(screen.queryByText(/Waiting on you: Invoice delete/)).not.toBeNull();
 
     // The failure consumed, a second Approve decides it and withdraws the card.
-    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    fireEvent.click(approveOn("Invoice delete"));
     await waitFor(() => expect(wire.state.approvals.some(item => item.id === "apr_2")).toBe(false));
     await waitFor(() => expect(screen.queryByText(/Waiting on you: Invoice delete/)).toBeNull());
     await wire.close();

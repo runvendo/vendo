@@ -26,7 +26,6 @@ import type {
   LimitsCallback,
   Membership,
   Principal,
-  RunContext,
   RunId,
   SecretsProvider,
   Skill,
@@ -43,6 +42,7 @@ import type {
   VendoTheme,
 } from "@vendoai/apps/contract";
 import type { GuardRules, PolicyFile, VendoGuard } from "@vendoai/guard";
+import type { ShellLimits } from "@vendoai/harnesses/vendo";
 import type { HostOAuthAdapter } from "@vendoai/mcp";
 import type { VendoStore } from "@vendoai/store";
 import type { VendoAgentTools } from "./agent-tools.js";
@@ -368,10 +368,10 @@ export interface CreateVendoConfig {
       wins; unset is today's console lines, unchanged. */
   logger?: VendoLogger;
   telemetry?: boolean;
-  /** Development-only surfaces: the injection seams (/dev/inclient-approval),
-      the `vendo sync` blast-radius probe (POST /sync/impact), and the
-      composition probes (/doctor/machines, /doctor/present, /doctor/act-as
-      and their echoes) — none of them even mounted without this.
+  /** Development-only surfaces: the `vendo sync` blast-radius probe
+      (POST /sync/impact), and the composition probes (/doctor/machines,
+      /doctor/present, /doctor/act-as and their echoes) — none of them even
+      mounted without this.
       NODE_ENV=development enables them; `false` disables the environment
       default. Unset with any other NODE_ENV — or none, or a runtime with no
       `process` at all — leaves them closed. /doctor/base-url is the one
@@ -448,6 +448,23 @@ export interface CreateVendoConfig {
     federation?: { secret: string };
     serviceAuth?: { keys: readonly string[] };
   };
+  /** The agent's hands over the user's own files (spec 2026-08-23 §1): one
+      in-process `bash` over the workspace, on the same guarded registry as
+      everything else. ON by default — a deployment's users drop files into chat
+      whether or not anyone configured anything, and an agent that cannot open
+      them is the whole problem this exists to fix.
+
+      `false` withholds the tool entirely. The object form keeps it and moves its
+      ceilings: `limits.maxExecutionTimeMs` (default 30 000) is one call's wall
+      clock, `limits.maxOutputBytes` (default 1 000 000) is how much one call may
+      produce before the shell stops it.
+
+      It rides the RESIDENT BRAIN, not the deployment: `vendo()` runs in this
+      process and has the workspace in hand, so the tool composes for it and for
+      an `agent()` that adopted it. A harness that thinks on a MACHINE
+      (`claudeCode()`) already has a real disk and reaches it its own way, so this
+      flag is silently irrelevant there rather than half-wired. */
+  shell?: boolean | { limits?: ShellLimits };
   /** 10-mcp §3 plus its additive prebuilt flow — the host's session + identity
       seam. REQUIRED when `mcp` is true: the door cannot mint principals
       without it.
@@ -528,19 +545,6 @@ export interface CreateVendoConfig {
       `vendo.apps` runtime handle stays: unmounting is about what the agent and
       the wire offer, never about taking your server code's API away. */
   apps?: false | {
-    /** Remix review (round-2 hardening 2026-08-02) — the host's reviewer
-        assertion for the review-kind remix lifecycle: whether THIS caller may
-        read the full review queue, reject, and approve review-kind remixes.
-        Reviewing crosses owner boundaries, so it is never inferred from a
-        principal alone. Unset, the dev review-queue route serves only the
-        caller's own submissions, reject refuses naming this hook, and a user
-        can never approve their own review-kind remix. The same gate rides the
-        runtime surface (`vendo.apps.review` / `vendo.apps.inClient.approve`)
-        — the production path a self-hoster mounts an admin-authenticated
-        route over; Cloud's console is the hosted equivalent. */
-    review?: {
-      reviewer?(ctx: RunContext): boolean | Promise<boolean>;
-    };
     /** The island smoke-render gate: every generated island renders once in a
         headless DOM before it can reach a screen. ON unless explicitly false. */
     pipeline?: AppsConfig["pipeline"];

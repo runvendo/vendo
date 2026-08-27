@@ -92,7 +92,7 @@ describe("degraded data never changes the card", () => {
     // humanized label (what the card's title always read) and the consequence
     // CLASS says what approving DOES — that half still never names the tool.
     expect(container.querySelector(".fl-approval-ask")!.textContent).toBe("Thing do?");
-    expect(notesOf(container)).toContain("This changes something in your account, as you.");
+    expect(notesOf(container)).toContain("This changes something in your account, and it runs as you.");
     expect(rowsOf(container)).toEqual([["Note", "hi"]]);
     // The prettified id, never the raw slug (ENG-216).
     expect(screen.queryByText("host_thing_do")).toBeNull();
@@ -313,14 +313,14 @@ describe("the plain-words line says what happens, not which tool", () => {
     const bare = show(money({ schema: false }));
     // The GRADE says what it does, not the name (Yousef's D1). This read "This
     // moves money, as you." only because the tool id contains "transfer".
-    expect(notesOf(bare)).toContain("This makes a change you can’t undo, as you.");
+    expect(notesOf(bare)).toContain("This makes a change you can’t undo, and it runs as you.");
     expect(does(bare)).not.toContain("Send money");
     expect(does(bare)).not.toContain("Vendo will run");
     cleanup();
     // A tool whose words name no known verb still never reads its own label
     // back at the person on the what-it-DOES half: the risk class carries it.
     const unknown = show(ask({ args: { note: "hi" } }));
-    expect(notesOf(unknown)).toContain("This changes something in your account, as you.");
+    expect(notesOf(unknown)).toContain("This changes something in your account, and it runs as you.");
     expect(does(unknown)).not.toContain("Thing do");
   });
 
@@ -339,7 +339,7 @@ describe("the plain-words line says what happens, not which tool", () => {
     } as Partial<ApprovalRequest>));
     expect(question(container)).toBe("Send money?");
     expect(question(container)).not.toContain("$1.99");
-    expect(notesOf(container)).toContain("This changes something in your account, as you.");
+    expect(notesOf(container)).toContain("This changes something in your account, and it runs as you.");
     // Never fold on uncertainty: both amounts stay in plain sight.
     expect(container.querySelector(".fl-approval-details")).toBeNull();
     expect(rowsOf(container)).toEqual([
@@ -363,7 +363,7 @@ describe("the plain-words line says what happens, not which tool", () => {
     );
     // "Send 5% to Acme Utilities?" was a real possible question here.
     expect(question(container)).toBe("Send money?");
-    expect(notesOf(container)).toContain("This changes something in your account, as you.");
+    expect(notesOf(container)).toContain("This changes something in your account, and it runs as you.");
     expect(rowsOf(container)).toEqual([["Rate", "5%"], ["Recipient name", "Acme Utilities"]]);
   });
 
@@ -382,7 +382,7 @@ describe("the plain-words line says what happens, not which tool", () => {
       descriptor: { name: "host_transferMoney", title: "Send money", description: "", inputSchema: {}, risk: "write" },
     } as Partial<ApprovalRequest>));
     expect(question(container)).toBe("Send money?");
-    expect(notesOf(container)).toContain("This changes something in your account, as you.");
+    expect(notesOf(container)).toContain("This changes something in your account, and it runs as you.");
     // Both amounts stay in plain sight, formatted, with nothing folded.
     expect(container.querySelector(".fl-approval-details")).toBeNull();
     expect(rowsOf(container)).toEqual([

@@ -342,6 +342,10 @@ export async function createWireServer(options: WireServerOptions = {}) {
      *  screen, and "not ready yet" is the build window's pending, never a
      *  failure (persistence/open.ts, wire/apps.ts). */
     pendingScreens: new Map<string, number>(),
+    /** ⚠️ TEST EDIT (infrastructure) — the line a build last said about itself
+     *  (app id → `PendingSurface.status`), carried by the pending answers above.
+     *  The whole progress channel FINAL SPEC v1 allows. */
+    buildStatus: new Map<string, string>(),
     /** An app whose build LANDED and whose screen no longer opens (app id →
      *  reason): the placement is honestly "ready" and `open` still answers
      *  {kind:"failed"} — a stale app whose screen stopped compiling, which is
@@ -1253,12 +1257,6 @@ export async function createWireServer(options: WireServerOptions = {}) {
         response.end(Buffer.from([0, 1, 255]));
         return;
       }
-      const pingMatch = url.pathname.match(/^\/apps\/([^/]+)\/machine\/ping$/);
-      if (pingMatch && method === "POST") {
-        const id = decodeURIComponent(pingMatch[1] ?? "");
-        if (!state.apps.some(item => item.id === id)) return wireError(response, "not-found", "App not found", 404);
-        return json(response, { state: "awake" });
-      }
       // The ✦ share toggle's transport. The principal rides the path
       // percent-encoded, because `org:acme` carries a ":" and a team a "/".
       const grantsMatch = url.pathname.match(/^\/apps\/([^/]+)\/grants(?:\/(.+))?$/);
@@ -1321,8 +1319,9 @@ export async function createWireServer(options: WireServerOptions = {}) {
           const screenPolls = state.pendingScreens.get(id) ?? 0;
           if (screenPolls > 0) {
             state.pendingScreens.set(id, screenPolls - 1);
+            const label = state.buildStatus.get(id);
             return url.searchParams.get("pending") === "1"
-              ? json(response, { kind: "pending" })
+              ? json(response, { kind: "pending", ...(label === undefined ? {} : { status: label }) })
               : wireError(response, "not-found", `app ${id} has no screen yet`, 404);
           }
           const dead = state.deadScreens.get(id);

@@ -1,5 +1,442 @@
 # @vendoai/harnesses
 
+## 0.52.1
+
+### Patch Changes
+
+- @vendoai/core@0.52.1
+- @vendoai/guard@0.52.1
+- @vendoai/apps@0.52.1
+
+## 0.52.0
+
+### Patch Changes
+
+- Updated dependencies [52f5b64]
+  - @vendoai/core@0.52.0
+  - @vendoai/apps@0.52.0
+  - @vendoai/guard@0.52.0
+
+## 0.51.2
+
+### Patch Changes
+
+- @vendoai/core@0.51.2
+- @vendoai/guard@0.51.2
+- @vendoai/apps@0.51.2
+
+## 0.51.1
+
+### Patch Changes
+
+- b333af7: fix: redact reusable model credentials from chat output so end users can't extract them via the in-box agent
+
+  A boxed agent holds a reusable, non-expiring inference credential and streams
+  its output straight to the end user, so a user could steer it into printing the
+  key. The runtime now strips the literal credential value from everything a turn
+  puts on the wire — the assistant's prose and any tool output alike — through the
+  single writer every user-facing part crosses. This is defense in depth, not the
+  complete fix: a user who first asks the agent to transform the key defeats a
+  literal match. The full fix is per-session, short-lived brokering so the box
+  never holds a reusable key.
+
+  - @vendoai/core@0.51.1
+  - @vendoai/guard@0.51.1
+  - @vendoai/apps@0.51.1
+
+## 0.51.0
+
+### Patch Changes
+
+- Updated dependencies [54a3545]
+  - @vendoai/core@0.51.0
+  - @vendoai/apps@0.51.0
+  - @vendoai/guard@0.51.0
+
+## 0.50.0
+
+### Patch Changes
+
+- @vendoai/core@0.50.0
+- @vendoai/guard@0.50.0
+- @vendoai/apps@0.50.0
+
+## 0.49.1
+
+### Patch Changes
+
+- @vendoai/core@0.49.1
+- @vendoai/guard@0.49.1
+- @vendoai/apps@0.49.1
+
+## 0.49.0
+
+### Patch Changes
+
+- @vendoai/core@0.49.0
+- @vendoai/guard@0.49.0
+- @vendoai/apps@0.49.0
+
+## 0.48.1
+
+### Patch Changes
+
+- Updated dependencies [92e9094]
+  - @vendoai/apps@0.48.1
+  - @vendoai/core@0.48.1
+  - @vendoai/guard@0.48.1
+
+## 0.48.0
+
+### Minor Changes
+
+- 79f177f: An escalated build asks on the standard consent protocol instead of answering
+  as a success.
+
+  `vendo_make` used to return a `status: "ok"` receipt reading
+  `"awaiting-consent"` when the screen agent escalated to the builder, so the
+  parked approval was invisible to everything that routes on the outcome: no
+  in-thread approval card, and an outside agent over MCP was handed plain success
+  for work nobody had authorized. It now returns the ordinary
+  `pending-approval` outcome — which is what publishes the `data-vendo-approval`
+  part the thread renders the card from, and what the MCP door maps to its
+  approval-ref result.
+
+  `ToolOutcome`'s `pending-approval` gains three optional fields for the tool that
+  parks an ask of its OWN: `descriptor` (the ask's own — what a CARD derives its
+  words from), `approval` (`{ id, question, notes }` — the same ask already in
+  words, for a surface that renders no card) and `say` (the assistant's sentence
+  meanwhile). All three are optional and additive; every shipped producer and
+  reader is untouched.
+
+  The descriptor rides the `data-vendo-approval` part, so the in-thread card is
+  graded and worded off the BUILD. Graded off the calling tool it read
+  `vendo_make`'s "read", and told a person that spending a build machine reads
+  their data. And because a standing ask has no parked native call to render
+  from — nor may it have one, since the runtime abandons every still-parked ask
+  at the next turn — the thread now paints the shipped `ApprovalCard` from that
+  part directly, deciding over the wire like the queue and the toast, with no
+  `remember` disclosure. Before this the transcript showed only the calling
+  tool's beat, "wasn't allowed", for a question nobody had been asked yet.
+
+  Such a card also now SURVIVES the turn. A parked call is swept denied at turn
+  end so a live-but-dead card cannot accrete in the queue — which, for a build,
+  tombstoned the app the moment the turn that asked for it ended.
+
+  An answered card SETTLES, and the assistant stops talking over it. In-thread
+  consent cards resolve into the settled record on decide — including a decide the
+  wire says was already answered (or swept), which used to leave the buttons live
+  under an error on a closed question. And `say` is now the refusal the harness
+  hands the model for a tool that parked its own ask, so the model relays the one
+  sentence the door wrote ("I've asked for your go-ahead — the card above has the
+  details.") instead of narrating its own paragraphs under a card that is already
+  asking.
+
+  `MakeReceipt.status` drops `"awaiting-consent"`; nothing produces it any more.
+
+### Patch Changes
+
+- Updated dependencies [79f177f]
+  - @vendoai/core@0.48.0
+  - @vendoai/apps@0.48.0
+  - @vendoai/guard@0.48.0
+
+## 0.47.0
+
+### Minor Changes
+
+- 412d593: An escalated build asks on the standard consent protocol instead of answering
+  as a success.
+
+  `vendo_make` used to return a `status: "ok"` receipt reading
+  `"awaiting-consent"` when the screen agent escalated to the builder, so the
+  parked approval was invisible to everything that routes on the outcome: no
+  in-thread approval card, and an outside agent over MCP was handed plain success
+  for work nobody had authorized. It now returns the ordinary
+  `pending-approval` outcome — which is what publishes the `data-vendo-approval`
+  part the thread renders the card from, and what the MCP door maps to its
+  approval-ref result.
+
+  `ToolOutcome`'s `pending-approval` gains three optional fields for the tool that
+  parks an ask of its OWN: `descriptor` (the ask's own — what a CARD derives its
+  words from), `approval` (`{ id, question, notes }` — the same ask already in
+  words, for a surface that renders no card) and `say` (the assistant's sentence
+  meanwhile). All three are optional and additive; every shipped producer and
+  reader is untouched.
+
+  The descriptor rides the `data-vendo-approval` part, so the in-thread card is
+  graded and worded off the BUILD. Graded off the calling tool it read
+  `vendo_make`'s "read", and told a person that spending a build machine reads
+  their data. And because a standing ask has no parked native call to render
+  from — nor may it have one, since the runtime abandons every still-parked ask
+  at the next turn — the thread now paints the shipped `ApprovalCard` from that
+  part directly, deciding over the wire like the queue and the toast, with no
+  `remember` disclosure. Before this the transcript showed only the calling
+  tool's beat, "wasn't allowed", for a question nobody had been asked yet.
+
+  Such a card also now SURVIVES the turn. A parked call is swept denied at turn
+  end so a live-but-dead card cannot accrete in the queue — which, for a build,
+  tombstoned the app the moment the turn that asked for it ended.
+
+  An answered card SETTLES, and the assistant stops talking over it. In-thread
+  consent cards resolve into the settled record on decide — including a decide the
+  wire says was already answered (or swept), which used to leave the buttons live
+  under an error on a closed question. And `say` is now the refusal the harness
+  hands the model for a tool that parked its own ask, so the model relays the one
+  sentence the door wrote ("I've asked for your go-ahead — the card above has the
+  details.") instead of narrating its own paragraphs under a card that is already
+  asking.
+
+  `MakeReceipt.status` drops `"awaiting-consent"`; nothing produces it any more.
+
+### Patch Changes
+
+- Updated dependencies [412d593]
+  - @vendoai/core@0.47.0
+  - @vendoai/apps@0.47.0
+  - @vendoai/guard@0.47.0
+
+## 0.46.0
+
+### Minor Changes
+
+- 5cee3a5: An escalated build asks on the standard consent protocol instead of answering
+  as a success.
+
+  `vendo_make` used to return a `status: "ok"` receipt reading
+  `"awaiting-consent"` when the screen agent escalated to the builder, so the
+  parked approval was invisible to everything that routes on the outcome: no
+  in-thread approval card, and an outside agent over MCP was handed plain success
+  for work nobody had authorized. It now returns the ordinary
+  `pending-approval` outcome — which is what publishes the `data-vendo-approval`
+  part the thread renders the card from, and what the MCP door maps to its
+  approval-ref result.
+
+  `ToolOutcome`'s `pending-approval` gains three optional fields for the tool that
+  parks an ask of its OWN: `descriptor` (the ask's own — what a CARD derives its
+  words from), `approval` (`{ id, question, notes }` — the same ask already in
+  words, for a surface that renders no card) and `say` (the assistant's sentence
+  meanwhile). All three are optional and additive; every shipped producer and
+  reader is untouched.
+
+  The descriptor rides the `data-vendo-approval` part, so the in-thread card is
+  graded and worded off the BUILD. Graded off the calling tool it read
+  `vendo_make`'s "read", and told a person that spending a build machine reads
+  their data. And because a standing ask has no parked native call to render
+  from — nor may it have one, since the runtime abandons every still-parked ask
+  at the next turn — the thread now paints the shipped `ApprovalCard` from that
+  part directly, deciding over the wire like the queue and the toast, with no
+  `remember` disclosure. Before this the transcript showed only the calling
+  tool's beat, "wasn't allowed", for a question nobody had been asked yet.
+
+  Such a card also now SURVIVES the turn. A parked call is swept denied at turn
+  end so a live-but-dead card cannot accrete in the queue — which, for a build,
+  tombstoned the app the moment the turn that asked for it ended.
+
+  An answered card SETTLES, and the assistant stops talking over it. In-thread
+  consent cards resolve into the settled record on decide — including a decide the
+  wire says was already answered (or swept), which used to leave the buttons live
+  under an error on a closed question. And `say` is now the refusal the harness
+  hands the model for a tool that parked its own ask, so the model relays the one
+  sentence the door wrote ("I've asked for your go-ahead — the card above has the
+  details.") instead of narrating its own paragraphs under a card that is already
+  asking.
+
+  `MakeReceipt.status` drops `"awaiting-consent"`; nothing produces it any more.
+
+### Patch Changes
+
+- Updated dependencies [5cee3a5]
+  - @vendoai/core@0.46.0
+  - @vendoai/apps@0.46.0
+  - @vendoai/guard@0.46.0
+
+## 0.45.0
+
+### Patch Changes
+
+- @vendoai/core@0.45.0
+- @vendoai/guard@0.45.0
+- @vendoai/apps@0.45.0
+
+## 0.44.0
+
+### Minor Changes
+
+- 31c8e30: Files live where the work lives, and are really deleted when it is.
+
+  A file dropped into chat used to go into one global drawer, live there forever,
+  and belong to nothing. Now it belongs to the CONVERSATION: the upload lands in a
+  staging area, and the turn that receives the message moves it to
+  `/user/threads/<thread>/files/<name>` and rewrites the message before storing it,
+  so the agent's shell finds it at a stable address and later turns on that thread
+  still can. `/user/files` is now what its name always suggested — a keep-shelf for
+  things the user asked you to save — and the three `vendo_user_files_*` tools say
+  so, so the model stops shelving everything by reflex. Staged files that were never
+  sent are swept by the next turn.
+
+  Two real leaks close with it, both of which existed before this change:
+
+  - Deleting a conversation deleted ONE row. Its messages stayed in
+    `vendo_thread_messages` forever, unreachable by any later erasure because the
+    join that identified them had gone with the row, and its harness state stayed
+    with them. The delete now runs the cascade that already existed — thread row,
+    messages and state in one transaction — and sweeps the conversation's files,
+    including the blobs behind them.
+  - Deleting an app never touched its workspace files or their objects. It now runs
+    the store's own app cascade, which does.
+
+  Nothing in the file model is harness-specific: a sandboxed harness materialises a
+  conversation's files exactly as it materialises everything else, with no new code.
+
+- 31c8e30: The shell can write and run JavaScript.
+
+  `bash` now carries `js-exec`: the agent writes a script and runs it in a QuickJS
+  sandbox on a worker thread — 64 MiB, 30 seconds, no network — with
+  `require("node:fs")` bound to the SAME virtual workspace bash sees. That is the
+  difference between "reshape this spreadsheet" being a page of `awk` and being
+  five lines of the language the model writes best.
+
+  It is a capability, not a flag: on a runtime with no `node:worker_threads` (edge,
+  Workers) the shell is still the whole shell — bash, the coreutils, the parsers —
+  and the tool simply does not advertise `js-exec` to the model.
+
+- 31c8e30: The agent has hands: one real `bash` over the user's own files.
+
+  Every deployment running the default `vendo()` harness — no keys, no config —
+  now projects one more tool: `bash`. It is a full shell (grep, sed, awk, jq, sort,
+  cut, find, pipes, redirection) running IN THIS PROCESS over the same per-user
+  workspace the file drawer already lives in, so a dropped CSV is something the
+  agent can actually work on instead of something it can only page through 200
+  lines at a time. There is no machine to provision, no sandbox key, and no network
+  or package manager inside the shell — the interpreter is
+  [just-bash](https://www.npmjs.com/package/just-bash) and the filesystem is the
+  store, so the mounts the workspace already enforces (`/user` and
+  `/orgs/<org>` writable, `/host` read-only, everything else `EACCES`) are the whole
+  containment story. Each session also gets an in-memory `/tmp` that lasts the
+  conversation and is never saved.
+
+  It rides the ONE guarded registry like every other tool: graded `write`, so the
+  host's rules, grants and the kill switch apply to it unchanged, and every call
+  lands an audit row.
+
+  One security default moves with it, and it is worth reading twice: the
+  `cautious` preset no longer raises an approval card for `bash`. It is the only
+  tool exempted, and only from the prompt — the `write` grade is exactly what keeps
+  the audit row, the host's own rules and the kill switch over it. A shell that
+  asked before every `wc -l` would be unusable in chat and simply cannot run in an
+  automation, which has nobody to answer the card. A deployment that wants the
+  confirmation back adds a rule of its own for `bash`, and it wins.
+
+  `createVendo({ shell: false })` withholds it; `createVendo({ shell: { limits } })`
+  moves its per-call wall clock (30 s) and output ceiling (1 MB). It composes for
+  the resident brain only — a harness that thinks on a machine already has a real
+  disk and reaches it its own way.
+
+- 31c8e30: The shell can open the formats people actually send.
+
+  `pdftotext`, `xlsx2csv` and `docx2txt` are now commands inside the agent's shell.
+  They write text to stdout, so they pipe into `grep`, `awk` and everything else —
+  `pdftotext invoice.pdf | grep -o 'Total.*'` is one call, not a capability
+  conversation. A PDF, a spreadsheet or a Word document dropped into chat stops
+  being a file the agent can only name.
+
+  They run in the host process against the same virtual filesystem the shell has
+  (unpdf's serverless pdf.js, SheetJS Community Edition, and a zip read with
+  fflate — no native code, no conversion service, no network), and each library
+  loads the first time its format is actually parsed, so a deployment that never
+  sees a PDF never pays for pdf.js.
+
+### Patch Changes
+
+- Updated dependencies [31c8e30]
+- Updated dependencies [31c8e30]
+  - @vendoai/apps@0.44.0
+  - @vendoai/core@0.44.0
+  - @vendoai/guard@0.44.0
+
+## 0.43.0
+
+### Patch Changes
+
+- @vendoai/core@0.43.0
+- @vendoai/guard@0.43.0
+- @vendoai/apps@0.43.0
+
+## 0.42.0
+
+### Minor Changes
+
+- 7bbfd3f: Built apps: the build lane. A consented build now runs the person's ask inside a disposable box — npm from the registry, the code written and tested in the box, the files sealed by the host — and the box is handed no store credentials at all. Approving a build card comes straight back instead of holding the request open for the whole build, and a reseal that fails keeps the app it was rebuilding. `@vendoai/harnesses` gains a `./claude-code/box` entry point carrying the box pool and the env/egress it boots with, so composition can reach them without the Agent SDK.
+- 7bbfd3f: Built apps: five fixes found by a live proof against a real box. The build brief now sends the in-box agent to a real disk path, so the bundle it produces is where the host actually reads it — every build previously landed on "the build's own test did not pass" while a working bundle sat on the box. The build watchdog waits longer than the box's own message budget instead of killing real builds at four minutes. An app awaiting the person's yes now reads as pending rather than "This app can't be opened any more". A failed build keeps the app's name instead of renaming it to a cut of the prompt. And a propose that cannot finish takes its standing card back instead of leaving an ask with no build behind it. `@vendoai/harnesses` exports `BOX_WORKSPACE_ROOT` and `MESSAGE_BUDGET_MS`.
+- 7bbfd3f: Built apps: reviewer triage on the build lane. Escalating now ENDS the screen agent's turn, so a run cannot write a screen after asking for a build. A build is only offered where the deployment can also seal it, a refusal reads the app row at the moment it refuses (so a watchdog can no longer tombstone an app that has since been sealed, or stand one back up that was deleted mid-build), a seal clears any failure an earlier terminal write recorded, and a rejected seal writes no orphan blobs. The sealed bundle's document escapes a script end tag in any case, the frame answers a host call the host refused instead of leaving the app loading, re-sends the brand tokens when the host's palette or fonts change after boot, and requires the protocol's stamp on the boot handshake. The build's progress line is a live region, `useApp`'s `status` clears when the app lands, and a whitespace-only inference credential is treated as no credential.
+
+### Patch Changes
+
+- Updated dependencies [7bbfd3f]
+- Updated dependencies [7bbfd3f]
+- Updated dependencies [7bbfd3f]
+- Updated dependencies [7bbfd3f]
+- Updated dependencies [7bbfd3f]
+- Updated dependencies [7bbfd3f]
+- Updated dependencies [7bbfd3f]
+- Updated dependencies [7bbfd3f]
+- Updated dependencies [7bbfd3f]
+- Updated dependencies [7bbfd3f]
+- Updated dependencies [7bbfd3f]
+- Updated dependencies [7bbfd3f]
+- Updated dependencies [7bbfd3f]
+  - @vendoai/apps@0.42.0
+  - @vendoai/core@0.42.0
+  - @vendoai/guard@0.42.0
+
+## 0.41.1
+
+### Patch Changes
+
+- 49ca762: A tool call the model emitted as broken JSON now costs the turn one step instead
+  of killing it.
+
+  When a tool call's input text does not parse — malformed JSON, or a generation
+  truncated at `max_tokens` mid-object — the AI SDK keeps the RAW STRING as that
+  call's input, marks the call invalid, enqueues a `tool-error` as its output, and
+  carries on. That string then rides into the assistant message appended to the
+  running prompt, and on the very next step the Anthropic provider serializes it
+  verbatim as `tool_use.input`. The provider rejects the whole request —
+  `tool_use.input: Input should be an object` — so a single bad call took the
+  entire turn down, several steps of real work with it. Seen live on Cloud managed
+  inference.
+
+  The turn loop's `prepareStep` now normalizes every outgoing prompt: any
+  `tool-call` part whose input is not an object is sent as `{}`. That is the one
+  seam that sees every step, so it covers the projected history, the SDK's in-turn
+  accumulation and the overflow retry's resume path alike. Nothing is lost — the
+  paired tool result already carries the invalid-input error, so the model simply
+  re-issues the call with real arguments. Tool results are never rewritten, and a
+  prompt with no broken call is passed through untouched.
+
+- Updated dependencies [97be645]
+  - @vendoai/apps@0.41.1
+  - @vendoai/core@0.41.1
+  - @vendoai/guard@0.41.1
+
+## 0.41.0
+
+### Patch Changes
+
+- Updated dependencies [61cb46e]
+  - @vendoai/apps@0.41.0
+  - @vendoai/core@0.41.0
+  - @vendoai/guard@0.41.0
+
+## 0.40.0
+
+### Patch Changes
+
+- @vendoai/core@0.40.0
+- @vendoai/guard@0.40.0
+- @vendoai/apps@0.40.0
+
 ## 0.39.0
 
 ### Patch Changes

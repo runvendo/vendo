@@ -79,6 +79,26 @@ describe("VendoThread and VendoOverlay exports", () => {
     });
   });
 
+  it("settles a card the wire has already answered, rather than leaving live buttons on it", { timeout: 20_000 }, async () => {
+    // No guard record for this turn's ask, so the wire answers the decision "not
+    // found" — the shape of an ask already answered (or swept) elsewhere, which
+    // is the ordinary end of one that outlived its turn. The question is closed
+    // either way, so the card records it instead of standing there with two live
+    // buttons and an error underneath.
+    render(<VendoProvider client={client}><VendoThread threadId="thr_1" /></VendoProvider>);
+    expect(await screen.findByText("Existing thread")).toBeTruthy();
+    const composer = screen.getByRole("textbox", { name: "Message" });
+    fireEvent.change(composer, { target: { value: "Send the email" } });
+    fireEvent.keyDown(composer, { key: "Enter" });
+
+    await screen.findByLabelText("Approval for Send the report");
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+
+    const receipt = await screen.findByLabelText(/^Approval — This request isn’t waiting on you any more/);
+    expect(receipt.textContent).toContain("Send the report");
+    expect(screen.queryByRole("button", { name: "Approve" })).toBeNull();
+  });
+
   it("brings a new approval into view even while the transcript keeps re-rendering", { timeout: 20_000 }, async () => {
     // A build's approval lands below a tall generated view, off-screen, so the
     // thread scrolls it into view 80ms after it appears. That effect marked the

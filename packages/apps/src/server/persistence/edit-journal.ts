@@ -28,13 +28,10 @@ export const rungFor = (
   app: AppDocument,
   declared?: VersionEntry["rung"],
 ): VersionEntry["rung"] => {
-  // execution-v2 Wave 4 — a machine-served surface is layer 3 (the layer ladder);
-  // rung 4 is a served document with no machine (a de-graduated doc), which has
-  // no surface anywhere — see `open`'s http branch.
-  if (app.ui === "http") return app.machine !== undefined ? 3 : 4;
-  // execution-v2 — a machine (Wave 1 Lane B) is layer 2; presence, never a
-  // stored rung, is the source of truth.
-  if (app.machine !== undefined) return declared === 3 ? 3 : 2;
+  // FINAL SPEC v1 — a sealed bundle is layer 2: real code, built in a box that
+  // died, rendered from immutable bytes. Presence of the seal is the source of
+  // truth, never a stored rung.
+  if (app.ui === "bundle") return declared === 3 ? 3 : 2;
   return 1;
 };
 

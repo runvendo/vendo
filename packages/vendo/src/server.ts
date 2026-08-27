@@ -20,14 +20,12 @@ import type { CreateVendoConfig, Vendo } from "./types.js";
 import { appRoutes } from "./wire/apps.js";
 import { approvalRoutes, grantRoutes } from "./wire/approvals.js";
 import { automationRoutes, runRoutes } from "./wire/automations.js";
-import { boxRoutes, fnProxyRoutes, servedProxyRoutes } from "./wire/box.js";
 import { channelRoutes } from "./wire/channels.js";
 import { connectionRoutes } from "./wire/connections.js";
 import { createContextResolver } from "./wire/context.js";
 import { doctorBaseUrlRoutes, doctorRoutes } from "./wire/doctor.js";
 import {
   activityRoutes,
-  devRoutes,
   orgsRoutes,
   statusRoutes,
   syncImpactRoutes,
@@ -252,19 +250,17 @@ function jsonMutationRequired(request: Request, path: string): boolean {
 /** The wire route TABLE (kill-list B4): every route as (method, pattern,
     handler), assembled from the per-area modules under src/wire/. Entries are
     matched IN ORDER, preserving the old if-chain's precedence exactly:
-    1. the dev-only injection seams (fall through in production),
-    2. /doctor/base-url, then the doctor probe routes — mounted only in a
+    1. /doctor/base-url, then the doctor probe routes — mounted only in a
        development composition,
-    3. the machine surfaces — webhooks, tick, sync impact — all raw-path
+    2. the machine surfaces — webhooks, tick, sync impact — all raw-path
        matches ahead of any segment decoding,
-    4. the user surfaces: threads → approvals → connections → grants →
+    3. the user surfaces: threads → approvals → connections → grants →
        the orgs cloud-required seam → apps → automations → runs →
        activity/status.
     A handler returning undefined falls through to later entries (grouped
     handlers keep the old chain's method/operation fall-out), and no match at
     all answers not-found. */
 const wireRoutesFor = (deps: WireDeps): readonly RouteEntry[] => [
-  ...devRoutes,
   // Mounted everywhere on purpose — it reports a PRODUCTION misconfiguration.
   ...doctorBaseUrlRoutes,
   // The doctor probes take no principal, and one of them (POST /doctor/act-as)
@@ -279,11 +275,6 @@ const wireRoutesFor = (deps: WireDeps): readonly RouteEntry[] => [
   // between it and an anonymous caller. A composition that did not say it is
   // development never gets the route.
   ...(deps.development ? syncImpactRoutes : []),
-  // execution-v2 Lane C: the box callback surface is a machine surface like
-  // webhooks/tick — raw prefix match, bearer-authenticated, ahead of the user
-  // surfaces; the fn proxy sits just before the grouped /apps arm so
-  // /apps/:id/fn/:name resolves here, not through the grouped fall-through.
-  ...boxRoutes,
   ...threadRoutes,
   // The drop door sits beside the turns it feeds: a file is saved first, and
   // the message that follows carries only where it landed.
@@ -299,10 +290,6 @@ const wireRoutesFor = (deps: WireDeps): readonly RouteEntry[] => [
   // is nothing to open, fork, serve or import, so the door is not there either.
   ...(deps.mounted.apps
     ? [
-      ...fnProxyRoutes,
-      // Build contract §9.8 — ahead of the grouped /apps arm for the same reason
-      // the fn proxy is: /apps/:id/serve/** must resolve here, not fall through it.
-      ...servedProxyRoutes,
       ...appRoutes,
       // The slot registry rides the same mount: with `apps: false` nothing can
       // be built for a slot, so there is nothing to register one for either.
@@ -316,8 +303,30 @@ const wireRoutesFor = (deps: WireDeps): readonly RouteEntry[] => [
 
 function createWireHandler(deps: WireDeps): (request: Request) => Promise<Response> {
   // Assembled once per composition, not per request: what is mounted is a boot
-  // fact.
-  const wireRoutes = wireRoutesFor(deps);
+  // fact. Each handler is wrapped so the same-origin baseUrl default is learned
+  // ONLY from a request that TERMINALLY matched a real Vendo route (VEGA-INFO-
+  // 00037). ANY handler — grouped ("*") OR method-specific — may match, run its
+  // side effects, then return undefined to fall through to a later entry (a 404
+  // when none answers): the router contract is `Promise<Response | undefined>`
+  // for every entry (agents/http/router.ts), so `POST /automations/:id/:op` on
+  // an op it does not serve is a method-specific route that 404s from a spoofed
+  // Host. So the DEFAULT is to learn only AFTER a non-undefined Response — never
+  // at entry, never by a method proxy. The exception is a handler that USES the
+  // learned base DURING its own dispatch and so needs it set before it runs — a
+  // turn that dials the internal MCP door off the learned loopback origin (POST
+  // /threads, /threads/warm) or a doctor probe that calls the host on it (the
+  // two POST /doctor routes). Those, and only those, opt in with
+  // `learnsOriginAtEntry` (shared.ts) — and only a handler that ALWAYS responds
+  // may, or it becomes a fall-through poisoning vector again.
+  const wireRoutes = wireRoutesFor(deps).map((entry) => ({
+    ...entry,
+    handler: async (wire: WireContext) => {
+      if (entry.learnsOriginAtEntry) deps.onRequestOrigin?.(wire.url.origin);
+      const response = await entry.handler(wire);
+      if (!entry.learnsOriginAtEntry && response !== undefined) deps.onRequestOrigin?.(wire.url.origin);
+      return response;
+    },
+  }));
   // Amortized on-request sweep bookkeeping — lives in the shared handler closure
   // (persists across requests), NOT per-invocation. The serverless-safe leg:
   // Next.js gives no timer guarantee, so every request may trigger the sweep.
@@ -344,13 +353,13 @@ function createWireHandler(deps: WireDeps): (request: Request) => Promise<Respon
   //   2. the MCP door's paths — before relativePath's not-found AND the CSRF
   //      json-mutation gate (see the comment at the check);
   //   3. relativePath → not-found for non-wire paths;
-  //   4. onRequestOrigin — a validated wire route teaches the same-origin
-  //      baseUrl default;
-  //   5. the CSRF json-mutation gate — before ANY route handler runs;
-  //   6. await ready — schema before the first store touch;
-  //   7. the route table (wireRoutes above; tick auth and the orgs seam are
-  //      ordinary entries at their old chain positions);
-  //   8. no match → not-found.
+  //   4. the CSRF json-mutation gate — before ANY route handler runs;
+  //   5. await ready — schema before the first store touch;
+  //   6. the route table (wireRoutes above; tick auth and the orgs seam are
+  //      ordinary entries at their old chain positions) — a TERMINALLY matched
+  //      handler teaches the same-origin baseUrl default (onRequestOrigin,
+  //      wrapped above), so a route-shaped 404 can never poison the learned base;
+  //   7. no match → not-found.
   return async (request) => {
     // ONE sweep pass per request, shared with any route that drives the sweep
     // itself (POST /tick) so a tick can never run two scans of the same
@@ -385,9 +394,6 @@ function createWireHandler(deps: WireDeps): (request: Request) => Promise<Respon
       }
       const path = relativePath(BASE_PATH, url);
       if (path === null) throw new VendoError("not-found", "unknown Vendo route");
-      // Learn the same-origin default only from a request that addresses a real
-      // Vendo route (defense in depth beyond the untrusted-forwarding rule).
-      deps.onRequestOrigin?.(url.origin);
       if (jsonMutationRequired(request, path) && !isJsonRequest(request)) {
         throw new VendoError("validation", "content-type must be application/json");
       }

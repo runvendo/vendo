@@ -53,6 +53,14 @@ export interface RouteEntry<W extends RouteContext> {
   method: string;
   pattern: RoutePattern;
   handler: RouteHandler<W>;
+  /** Opt-in: this handler makes a same-origin HOST CALL during its OWN dispatch,
+      so a caller that learns a same-origin default from route matches must learn
+      it at handler ENTRY for this entry (before the call), not after the handler
+      returns. Off by default — the safe default is to learn only from a handler
+      that TERMINALLY answered (returned a non-undefined Response), so a route
+      that matched then fell through (returned undefined → 404) never teaches it.
+      Consumed by @vendoai/vendo's wire wrapper; see server.ts. */
+  learnsOriginAtEntry?: boolean;
 }
 
 /** Table entry from a pattern string: no `:param` and no trailing `/*` means

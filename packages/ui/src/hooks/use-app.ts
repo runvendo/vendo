@@ -36,6 +36,11 @@ export interface AppOptions {
 export function useApp(appId: AppId, { enabled = true }: AppOptions = {}): {
   app: AppDocument | undefined;
   surface: OpenSurface | undefined;
+  /** What the build last said about itself while the surface is still pending
+   *  (`PendingSurface.status`) — the whole progress channel FINAL SPEC v1
+   *  allows. The poll below read it and threw it away, so a caller waiting on a
+   *  detached build had nothing to show but a spinner. */
+  status: string | undefined;
   error: Error | undefined;
   isLoading: boolean;
   call(ref: string, args: Json): Promise<ToolOutcome>;
@@ -46,6 +51,7 @@ export function useApp(appId: AppId, { enabled = true }: AppOptions = {}): {
   const { client } = useVendoProvider();
   const [app, setApp] = useState<AppDocument>();
   const [surface, setSurface] = useState<OpenSurface>();
+  const [status, setStatus] = useState<string>();
   const [error, setError] = useState<Error>();
   const [isLoading, setIsLoading] = useState(true);
   const generationRef = useRef(0);
@@ -69,6 +75,7 @@ export function useApp(appId: AppId, { enabled = true }: AppOptions = {}): {
         ]);
         if (!current()) return;
         if (nextSurface.kind === "pending") {
+          if (nextSurface.status !== undefined) setStatus(nextSurface.status);
           if (Date.now() >= deadline) {
             setError(new Error(`app ${appId} was still being generated when the build window ran out`));
             setIsLoading(false);
@@ -81,6 +88,9 @@ export function useApp(appId: AppId, { enabled = true }: AppOptions = {}): {
         }
         setApp(nextApp);
         setSurface(nextSurface);
+        // The line was what the build said WHILE it was pending. The app is
+        // here now, so it is no longer true of anything.
+        setStatus(undefined);
         loadedRef.current = true;
         setIsLoading(false);
         return;
@@ -104,6 +114,7 @@ export function useApp(appId: AppId, { enabled = true }: AppOptions = {}): {
     loadedRef.current = false;
     setApp(undefined);
     setSurface(undefined);
+    setStatus(undefined);
     setError(undefined);
     // Nothing is loading while the surface is off, so say so rather than
     // leaving a consumer on a skeleton that will never resolve.
@@ -133,5 +144,5 @@ export function useApp(appId: AppId, { enabled = true }: AppOptions = {}): {
     [appId, client],
   );
 
-  return { app, surface, error, isLoading, call, edit, history, refresh };
+  return { app, surface, status, error, isLoading, call, edit, history, refresh };
 }

@@ -13,6 +13,7 @@ import {
   VendoError,
   VENDO_TOOL_TITLES,
   type Principal,
+  type ThreadId,
   type ToolDescriptor,
   type ToolOutcome,
   type ToolRegistry,
@@ -25,32 +26,78 @@ import type { CreateVendoConfig } from "./types.js";
 /** §3.1's frozen drawer: per subject, and outliving every conversation. */
 export const USER_FILES = "/user/files";
 
-/** Does this message part address the drawer rather than carry bytes? */
-export const isUserFilePath = (path: string): boolean => path.startsWith(`${USER_FILES}/`);
+/** Where a dropped file LANDS, for the moments between `POST /files` and the
+    turn that claims it. A drop finishes before the conversation it belongs to
+    exists (the composer uploads pre-send, and a first turn's thread id is minted
+    server-side), so there has to be an address that means "received, not yet
+    homed". Nothing but the re-homer and its sweep ever reads it. */
+export const USER_UPLOADS = "/user/uploads";
+
+/** Where a file BELONGS once a turn has claimed it: with the conversation, like
+    a Claude Code project — so it is in reach of every later turn on that thread,
+    and it dies when the thread does. */
+export const USER_THREADS = "/user/threads";
+
+/** Does this message part address bytes the SERVER holds, rather than carry
+    them? All three addresses answer yes: the shelf, a staged drop, and a
+    conversation's own files. */
+export const isUserFilePath = (path: string): boolean =>
+  path.startsWith(`${USER_FILES}/`)
+  || path.startsWith(`${USER_UPLOADS}/`)
+  || path.startsWith(`${USER_THREADS}/`);
 
 /**
- * The ONE name check every door into the drawer shares, so a file lands and is
- * fetched at the same address by the same rule.
+ * The ONE name check every door into a user's files shares, so a file lands and
+ * is fetched at the same address by the same rule.
  *
  * A name is a FILE name, never a path. Refusing `/`, `\` and the `.`/`..`
- * dot-segments AT THE SOURCE is what contains the whole feature — the path is
- * built below from a name that provably carries no separator, so there is
+ * dot-segments AT THE SOURCE is what contains the whole feature — every path
+ * below is BUILT from a name that provably carries no separator, so there is
  * nothing to escape with. Same posture as the route-tool traversal fix
  * (b9392b92c): reject the segment rather than sanitize it, because the values
  * reaching here are steerable by end-user chat.
  */
-export function userFilePath(name: string): string {
-  const bad = name.length === 0 || name.length > 200
+/** The longest leaf any door accepts. Named because the re-homer builds a leaf
+    out of one staging already prefixed and has to cut it to the same limit. */
+export const MAX_LEAF_NAME = 200;
+
+function leafName(name: string): string {
+  const bad = name.length === 0 || name.length > MAX_LEAF_NAME
     || /[/\\]/.test(name) || name === "." || name === ".."
     || [...name].some((char) => char < " ");
   if (bad) {
     throw new VendoError(
       "validation",
-      `${JSON.stringify(name)} is not a file name. Send one name — no slashes, no control characters, at most 200 characters — and it lands in the user's files as exactly that.`,
+      `${JSON.stringify(name)} is not a file name. Send one name — no slashes, no control characters, at most ${MAX_LEAF_NAME} characters — and it lands in the user's files as exactly that.`,
     );
   }
-  return `${USER_FILES}/${name}`;
+  return name;
 }
+
+/** The keep-shelf's address. */
+export function userFilePath(name: string): string {
+  return `${USER_FILES}/${leafName(name)}`;
+}
+
+/** A staged drop's address. The random prefix is OURS, never the caller's: two
+    conversations may drop `report.pdf` in the same second and neither may
+    overwrite the other before its turn claims it. */
+export function uploadStagingPath(name: string): string {
+  return `${USER_UPLOADS}/${globalThis.crypto.randomUUID().slice(0, 8)}-${leafName(name)}`;
+}
+
+/** Everything one conversation owns. The delete cascade sweeps this whole
+    subtree, so nothing may live under it that should outlive the thread.
+
+    The id goes through the SAME rule as a name: it is a path segment like any
+    other, and the only shape the wire checks is `thr_` + `.+` (core ids.ts),
+    whose `.+` matches a slash. Without this a client-chosen id climbed out of
+    this mount — and took the delete cascade's recursive rm with it. */
+export const threadFilesDir = (threadId: ThreadId): string => `${USER_THREADS}/${leafName(threadId)}`;
+
+/** One file, homed with its conversation. */
+export const threadFilePath = (threadId: ThreadId, name: string): string =>
+  `${threadFilesDir(threadId)}/files/${leafName(name)}`;
 
 /** What one caller may push into the drawer in one go by DEFAULT, and the same
     number at every door into it; `createVendo({ uploadMaxBytes })` moves it. It
@@ -148,9 +195,10 @@ const descriptors: ToolDescriptor[] = [
     name: VENDO_USER_FILES_LIST_TOOL,
     title: VENDO_TOOL_TITLES[VENDO_USER_FILES_LIST_TOOL]!,
     description:
-      "List the files this user has shared with you. They are saved and stay available in EVERY conversation, "
-      + "not just the one they were dropped in — so call this whenever the user refers to something they gave "
-      + "you and you cannot see it in this conversation.",
+      "List the files this user has kept — their shelf, which outlives every conversation. "
+      + "This is NOT where a file they dropped into chat lives: that is in the conversation's own "
+      + "files, under /user/threads/<thread>/files, and the bash tool reads it directly. Call this "
+      + "when the user refers to something they told you to save.",
     inputSchema: { $schema: DRAFT_2020_12, type: "object", properties: {}, additionalProperties: false },
     risk: "read",
   },
@@ -158,12 +206,12 @@ const descriptors: ToolDescriptor[] = [
     name: VENDO_USER_FILES_READ_TOOL,
     title: VENDO_TOOL_TITLES[VENDO_USER_FILES_READ_TOOL]!,
     description:
-      "Read one of the files this user has shared with you, by its name. "
+      "Read one of the files this user has kept, by its name. "
       + `It comes back at most ${LINES_PER_READ} lines at a time: when the result says truncated, call again with `
       + "offset set to the nextOffset it gave you, and keep going until it stops. offset counts LINES from the "
       + "start of the file, never characters. "
-      + "A file that is not text — a PDF, an image, a spreadsheet workbook, a parquet or database file — answers "
-      + "with its type and size and no content: say what it is instead of guessing at what is inside it.",
+      + "For a file dropped into THIS conversation, or for anything that is not plain text, use bash instead — "
+      + "it reads the same workspace and can parse PDFs, spreadsheets and Word documents.",
     inputSchema: {
       $schema: DRAFT_2020_12,
       type: "object",
@@ -180,9 +228,12 @@ const descriptors: ToolDescriptor[] = [
     name: VENDO_USER_FILES_PUT_TOOL,
     title: VENDO_TOOL_TITLES[VENDO_USER_FILES_PUT_TOOL]!,
     description:
-      "Save a file into this user's own files, under a name. It stays available in EVERY conversation, and a "
-      + "file already saved under that name is replaced. Send text as content; send anything else base64-encoded "
-      + `with encoding set to base64. Any type can be SAVED, but only ${READABLE_EXTENSIONS} read back as text.`,
+      "Put a file on this user's shelf, under a name — for something they asked you to keep, so it is "
+      + "there in EVERY future conversation. A file already kept under that name is replaced. "
+      + "Do NOT use this to stash working files: anything you produce for THIS conversation belongs in "
+      + "/user/threads/<thread>/files, which bash writes to directly. "
+      + "Send text as content; send anything else base64-encoded with encoding set to base64. "
+      + `Any type can be SAVED, but only ${READABLE_EXTENSIONS} read back as text here.`,
     inputSchema: {
       $schema: DRAFT_2020_12,
       type: "object",

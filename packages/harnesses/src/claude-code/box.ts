@@ -69,6 +69,16 @@ export interface SandboxMachineLike {
 
 /** The supervisor's control port, as `box-agent.ts` names it. */
 const CONTROL_PORT = 8811;
+/**
+ * Where the host's workspace is mounted ON THE BOX'S DISK. The session door
+ * maps every workspace path the host speaks onto this root (`toDisk`,
+ * `box/turn-routes.mjs`) and opens the in-box session with it as `cwd`.
+ *
+ * Exported because anything a PROMPT sends the in-box agent to has to be spelled
+ * from here: the agent has a shell, so it reads a bare `/user/apps/<id>` as the
+ * filesystem root and writes where `collect` never looks.
+ */
+export const BOX_WORKSPACE_ROOT = "/workspace";
 /** How long a box may sit between messages before it is destroyed. */
 export const BOX_IDLE_TTL_MS = 5 * 60_000;
 /** The box holds each poll open this long before answering empty. */
@@ -280,7 +290,7 @@ export async function boxMachine(options: BoxMachineOptions): Promise<SessionMac
       env: {
         ...options.env,
         VENDO_BOX_TOKEN: token,
-        VENDO_WORKSPACE_ROOT: "/workspace",
+        VENDO_WORKSPACE_ROOT: BOX_WORKSPACE_ROOT,
         // The dev port is DECLARED here, at create, from the same core constant
         // the template's vite config resolves. A preview URL is minted from it
         // before the dev server has necessarily booted, so it can never be
@@ -434,7 +444,7 @@ export async function boxMachine(options: BoxMachineOptions): Promise<SessionMac
     carriesSession: box.warm,
 
     // The frozen layout (§3.1) one level under the box's root.
-    pluginPath: "/workspace/host",
+    pluginPath: `${BOX_WORKSPACE_ROOT}/host`,
 
     tree: box.tree,
 
@@ -601,6 +611,172 @@ export async function boxMachine(options: BoxMachineOptions): Promise<SessionMac
       armIdle(key, box, idleTtlMs);
     },
   };
+}
+
+/* ─── what a box is BOOTED with ──────────────────────────────────────────────
+   Its model door and its network boundary, beside the pool that hands them to
+   the provider. They live here rather than in `claude-code/index.ts` because
+   composition needs them WITHOUT the driver: that module reaches the Agent SDK
+   (through `local.ts`'s dynamic import), which does not bundle for a Worker
+   target, and the umbrella's server entry has to. Re-exported from there, so
+   the names a host knows have not moved. */
+
+/**
+ * Every env var the Agent SDK reads a MODEL ID from — the default, the small/fast
+ * step, subagent spawns, and the four family aliases.
+ *
+ * Taken from the SDK's own model-env array (`_Ne` in `sdk.mjs`,
+ * `@anthropic-ai/claude-agent-sdk@0.3.214`) rather than guessed. The rest of that
+ * array is display metadata (`_NAME`, `_DESCRIPTION`,
+ * `_SUPPORTED_CAPABILITIES`) and `ANTHROPIC_SMALL_FAST_MODEL_AWS_REGION`, none of
+ * which name a model to ask for.
+ *
+ * Pinning the default alone is what shipped, and it was not enough: a step on any
+ * other slot asked the Cloud gateway for the SDK's built-in `claude-opus-4-8` and
+ * the `400 Unknown model id` reached an end user's chat verbatim.
+ */
+const SDK_MODEL_SLOT_ENV = [
+  "ANTHROPIC_MODEL",
+  "ANTHROPIC_SMALL_FAST_MODEL",
+  "CLAUDE_CODE_SUBAGENT_MODEL",
+  "ANTHROPIC_DEFAULT_OPUS_MODEL",
+  "ANTHROPIC_DEFAULT_SONNET_MODEL",
+  "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+  "ANTHROPIC_DEFAULT_FABLE_MODEL",
+] as const;
+
+/**
+ * The recorded v0 inference exception (design §9): a boxed harness must reach a
+ * model to think, and that is the ONLY credential in the machine.
+ *
+ * SELECTION LAW, the same one `boxInference()` in the umbrella obeys: the
+ * explicit VENDO_INFERENCE_URL+KEY pair — which is what the box env door sets —
+ * wins; otherwise VENDO_API_KEY funds the box's model through the console's
+ * Anthropic-compatible gateway at `<console>/api/v1`; otherwise the box gets no
+ * inference credential at all.
+ *
+ * A stray ANTHROPIC_API_KEY / ANTHROPIC_BASE_URL selects NOTHING. It used to
+ * outrank both rungs, so a provider key sitting in the deployment's environment
+ * silently decided which account every box billed. Naming an own endpoint is
+ * still fully supported — as the explicit pair, which is config.
+ */
+export function inferenceEnv(): Record<string, string> {
+  const source = globalThis.process?.env ?? {};
+  const set = (name: string): string | undefined => {
+    // Trimmed, because a blank line in a `.env` is the same misconfiguration as
+    // an empty one — and taking it as a credential boots a configured box whose
+    // every call comes back 401.
+    const value = source[name]?.trim();
+    return value === undefined || value === "" ? undefined : value;
+  };
+  const env: Record<string, string> = {
+    // Nothing the CLI reaches for on the side: its telemetry and update hosts are
+    // not on the box's allowlist (`boxEgress` below), so those calls fail rather
+    // than answer — and a stalled one is a hung turn.
+    CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
+    DISABLE_AUTOUPDATER: "1",
+  };
+  // The PAIR, both halves or neither: half an endpoint is a misconfiguration, and
+  // quietly completing it from somewhere else is how a box ends up billing an
+  // account nobody chose.
+  const pairKey = set("VENDO_INFERENCE_KEY");
+  const pairUrl = set("VENDO_INFERENCE_URL");
+  const cloudKey = set("VENDO_API_KEY");
+  let key: string | undefined;
+  let url: string | undefined;
+  if (pairKey !== undefined && pairUrl !== undefined) {
+    key = pairKey;
+    url = pairUrl;
+  } else if (cloudKey !== undefined) {
+    const base = (set("VENDO_CLOUD_URL") ?? "https://console.vendo.run").replace(/\/+$/, "");
+    key = cloudKey;
+    url = base.endsWith("/api/v1") ? base : `${base}/api/v1`;
+    // The gateway serves the vendo model family as literal ids, so EVERY slot is
+    // pinned to the family name — each one the SDK leaves unset falls back to a
+    // raw claude-* id, which this gateway answers `400 Unknown model id`. Env
+    // only: an explicit `options.model` rides the session-open payload, which
+    // beats ANTHROPIC_MODEL.
+    for (const slot of SDK_MODEL_SLOT_ENV) env[slot] = "vendo";
+  }
+  if (key === undefined || url === undefined) return env;
+  env["ANTHROPIC_API_KEY"] = key;
+  // The bare origin: the SDK re-appends /v1 and wants no trailing slash.
+  env["ANTHROPIC_BASE_URL"] = url.replace(/\/+$/, "").replace(/\/v1$/, "");
+  return env;
+}
+
+/**
+ * The reusable inference credential a boxed session holds, for a redactor to
+ * strip from anything the turn streams back to the user (VEGA-INFO-00021). It is
+ * exactly the value that becomes the box's `ANTHROPIC_API_KEY`, read through the
+ * SAME selection law as `inferenceEnv()` so the two can never name a different
+ * secret. Empty when the box gets no credential (a no-key BYO deployment) — then
+ * there is nothing to redact. The 8-char floor keeps a pathological short value
+ * from blanking legitimate output.
+ */
+export function inferenceSecrets(): readonly string[] {
+  const key = inferenceEnv()["ANTHROPIC_API_KEY"];
+  return key !== undefined && key.length >= 8 ? [key] : [];
+}
+
+/** The host the Agent SDK talks to when nothing overrides `ANTHROPIC_BASE_URL`. */
+const DEFAULT_INFERENCE_HOST = "api.anthropic.com";
+
+/** Domains compare case-insensitively and may carry stray spacing — the same
+ *  normalization `normalizeEgressDomain` applies to a declaration. */
+const normalizeDomain = (domain: string): string => domain.trim().toLowerCase();
+
+const hostOf = (url: string | undefined): string | undefined => {
+  if (url === undefined || url === "") return undefined;
+  try {
+    return new URL(url).hostname.toLowerCase();
+  } catch {
+    return undefined;
+  }
+};
+
+/**
+ * The conversational box's outbound allowlist — the ONE place its network
+ * boundary is assembled.
+ *
+ * Same shape as the served-app machine's (`boxAllowlist` in `@vendoai/apps`
+ * `egress-approval.ts`): the box's OWN skin rides unconditionally, and
+ * everything else is filtered out at the provider's DOMAIN layer.
+ *
+ * Do not rely on that for anything: the filtering is real against ordinary
+ * clients and is BYPASSABLE by
+ * a client that omits SNI (`openssl s_client -noservername` reaches arbitrary
+ * IPs even under an empty list — measured). It is a provider-level gap this
+ * repo cannot close. So this list raises the cost of exfiltration and stops
+ * every ordinary client; it does not make the box unable to reach the network.
+ *
+ * Two skin entries, because a session box needs exactly two things to function:
+ *
+ *   1. the INFERENCE host — the SDK runs the model from inside the box, so a box
+ *      that cannot reach it cannot think. Read off the env the box is actually
+ *      handed, never guessed, so a managed-inference gateway
+ *      (`VENDO_INFERENCE_URL` → `ANTHROPIC_BASE_URL`) is allowed and
+ *      `api.anthropic.com` is not.
+ *   2. the DOOR origin — every host tool travels the host's MCP door now
+ *      (10-mcp §3b), so this is what replaced "the box holds nothing and reaches
+ *      nothing". Per DEPLOYMENT, so it arrives from composition's `toolDoor`
+ *      rather than being written down here.
+ *
+ * Nothing else: no npm registry, no telemetry, no update endpoint. The SDK is
+ * baked into the machine image, and the CLI's side traffic is switched off in
+ * `inferenceEnv()`.
+ */
+export function boxEgress(
+  inference: Record<string, string>,
+  doorUrl: string | undefined,
+  extra: readonly string[] = [],
+): string[] {
+  const domains = [
+    hostOf(inference["ANTHROPIC_BASE_URL"]) ?? DEFAULT_INFERENCE_HOST,
+    hostOf(doorUrl),
+    ...extra.map(normalizeDomain),
+  ].filter((domain): domain is string => domain !== undefined && domain !== "");
+  return [...new Set(domains)];
 }
 
 /** Test + shutdown seam: drop every live box. */

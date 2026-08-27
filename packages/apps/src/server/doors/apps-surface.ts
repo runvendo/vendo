@@ -9,6 +9,7 @@ import {
   VendoError,
 } from "@vendoai/core";
 import {
+  refuseBundleArtifact,
   type AppDocument,
 } from "../../contract/index.js";
 import { createAgentTools } from "./agent-tools.js";
@@ -20,10 +21,10 @@ import type { AppsRuntime } from "../runtime/types.js";
 
 const createAppReadDoors = (
   deps: Pick<AppsRuntimeContext,
-    "config" | "engine" | "caller" | "history" | "review" | "opener" | "owned" | "requireOwned"
+    "config" | "engine" | "caller" | "history" | "opener" | "owned" | "requireOwned"
     | "grantedRecords">,
 ): Pick<AppsRuntime, "get" | "list" | "history" | "open" | "call" | "seen"> => {
-  const { config, engine, caller, history, review, opener, owned, requireOwned } = deps;
+  const { config, engine, caller, history, opener, owned, requireOwned } = deps;
   const { grantedRecords } = deps;
   const appSeen = appSeenStore(engine);
   return {
@@ -89,11 +90,7 @@ const createAppReadDoors = (
       // automation resolves a surface, and neither is a person looking at a
       // screen — marking here cleared a human's dot for an app only Claude ever
       // saw. The person's own render route does the marking (wire/apps.ts).
-      // Review-kind (2026-08-02): an unapproved current version is invisible —
-      // open() serves the newest APPROVED version from the existing history
-      // instead (or the pending state when none was ever approved). Instant
-      // kind passes through untouched.
-      return opener(await review.serveDocFor(app), ctx, options);
+      return opener(app, ctx, options);
     },
 
     async call(appId, ref, args, ctx) {
@@ -128,26 +125,12 @@ const createAppCopyDoors = (
   return {
     async fork(appId, ctx) {
       const source = await requireOwned(appId, ctx, "viewer");
-      // Wave 4 — a served (layer-3) app's ENTIRE surface lives in its machine,
-      // and machines never travel with a copy: the fork would be an app that
-      // can never open (ui: http, no tree, no machine). Refuse loudly instead
-      // of minting a broken document. Scoped to machine-backed docs — a
-      // retired v1 `server`-ref doc keeps its established fork semantics (the
-      // copy drops the dead ref; see the 09 §3 wire test).
-      if (source.ui === "http" && source.machine !== undefined) {
-        throw new VendoError(
-          "conflict",
-          "a served (layer-3) app cannot be forked: its surface lives in its machine, which never travels with a copy — create a new app instead",
-        );
-      }
+      refuseBundleArtifact(source, "forked");
       const fork: AppDocument = {
         ...structuredClone(source),
         id: `app_${globalThis.crypto.randomUUID()}`,
         forkedFrom: source.id,
       };
-      // execution-v2 — a fork never carries the machine; the copy re-graduates
-      // on its own.
-      delete fork.machine;
       // Lane E grant hygiene — egress approval never travels with a copy; the
       // fork re-approves its declaration.
       delete fork.egressApproved;
@@ -169,6 +152,7 @@ const createAppCopyDoors = (
 
     async share(appId, ctx) {
       const app = await requireOwned(appId, ctx, "owner");
+      refuseBundleArtifact(app, "shared");
       if (config.cloud === undefined) {
         throw new VendoError("cloud-required", "Vendo Cloud requires VENDO_API_KEY");
       }
@@ -182,6 +166,7 @@ const createAppCopyDoors = (
 
     async publish(appId, ctx) {
       const app = await requireOwned(appId, ctx, "owner");
+      refuseBundleArtifact(app, "published");
       if (config.cloud === undefined) {
         throw new VendoError("cloud-required", "Vendo Cloud requires VENDO_API_KEY");
       }
@@ -195,34 +180,35 @@ const createAppCopyDoors = (
 /** The app-record slice of `AppsRuntime`. */
 export const createAppsSurface = (
   deps: Pick<AppsRuntimeContext,
-    "config" | "engine" | "caller" | "data" | "history" | "review" | "opener" | "interchange"
-    | "inClientApprovals" | "egressApprovals" | "parkedActions" | "placementRows"
-    | "lifecycle" | "owned" | "requireOwned"
+    "config" | "engine" | "caller" | "data" | "history" | "opener" | "interchange"
+    | "parkedActions" | "parkedBuilds" | "placementRows" | "owned" | "requireOwned"
     | "grantedRecords" | "reportLifecycle" | "claimSlot" | "markUnbuilt"
     | "runtime">,
 ): Pick<AppsRuntime,
   "get" | "list" | "delete" | "fork" | "share" | "publish" | "seen"
   | "exportApp" | "importApp" | "history" | "open" | "call" | "agentTools"> => {
-  const { config, engine, data, history, review, inClientApprovals } = deps;
-  const { egressApprovals, parkedActions, placementRows, lifecycle } = deps;
+  const { config, engine, data, history } = deps;
+  const { parkedActions, parkedBuilds, placementRows } = deps;
   const { requireOwned, reportLifecycle, claimSlot, markUnbuilt, runtime } = deps;
   return {
     ...createAppReadDoors(deps),
     ...createAppCopyDoors(deps),
     async delete(appId, ctx) {
       const app = await requireOwned(appId, ctx, "owner");
-      // execution-v2 — deleting the app reaps its machine (live sandbox +
-      // stored snapshot) directly, without rewriting the doomed document: a
-      // graduated tree's fn: refs would fail a machine-cleared re-validation
-      // and otherwise strand the provider snapshot.
-      await lifecycle.destroyResources(app);
       await data.clear(app, ctx.principal.subject, await history.documents(appId));
       await history.clear(appId);
-      await inClientApprovals.clear(appId);
-      await review.clear(appId);
-      await egressApprovals.clearForApp(appId);
       await parkedActions.clearForApp(appId);
+      await parkedBuilds.clearForApp(appId);
       await engine.delete(APPS_COLLECTION, appId);
+      // The app's workspace documents and the blobs behind them. Everything
+      // above this line clears a drawer this package owns; `/user/apps/<id>/…`
+      // and `/orgs/<org>/apps/<id>/…` belong to the WORKSPACE, and only the
+      // store's own cascade can reach the blobs those rows point at (a `rm`
+      // leaves them: history is append-only and becomes the pointer). Called
+      // after the row so the cascade's own "app row first, then its data" order
+      // is preserved — `eraseAppData` needs no app row and re-deleting an absent
+      // one is a zero-count no-op.
+      await config.ops?.lifecycle.erase({ appId });
       // A deleted app can never mount again, so its placement rows are dead
       // weight — and a row with no app record reads as a build in flight, which
       // would park a skeleton in the slot until the build window elapsed and

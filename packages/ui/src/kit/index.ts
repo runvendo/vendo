@@ -155,7 +155,7 @@ export { KIT_CSS, ensureKitStyles } from "./kit-css.js";
 // it — reachable from a generated app's box, where `@vendoai/ui`'s root barrel
 // (the client, the surfaces, the voice stage) is not what an app should import.
 export { defaultVendoTheme, resolveTheme, themeCssVariables } from "../theme.js";
-export { applyThemeVars, postToHost, startFrameProtocol } from "../embedded-runtime.js";
+export { applyThemeVars, callHost, postToHost, startFrameProtocol } from "../embedded-runtime.js";
 
 // ---------------------------------------------------------------------------
 // The code-land runtime (blueprint §5.4) — what a generated app imports inside

@@ -396,7 +396,11 @@ export interface OverridesFile {
   compounds?: CompoundTool[];
   briefs?: CapabilityBrief[];
   surfaces?: OverridesSurfaces;
-  remix?: { ignoreSlots: string[] };
+  /** `ignoreSlots` — slots that resolve but must not be captured. `sources` —
+   *  extra directories `vendo sync` scans for `<Remixable>` wrappers, resolved
+   *  from the project root and free to sit outside it (a repo whose app is
+   *  `host/` and whose screens are `../demos/`). */
+  remix?: { ignoreSlots?: string[]; sources?: string[] };
 }
 
 export const overridesFileSchema = z.object({
@@ -406,7 +410,8 @@ export const overridesFileSchema = z.object({
   briefs: z.array(capabilityBriefSchema).optional(),
   surfaces: overridesSurfacesSchema.optional(),
   remix: z.object({
-    ignoreSlots: z.array(z.string().min(1)),
+    ignoreSlots: z.array(z.string().min(1)).optional(),
+    sources: z.array(z.string().min(1)).optional(),
   }).strict().optional(),
 }).strict() satisfies z.ZodType<OverridesFile, z.ZodTypeDef, unknown>;
 
@@ -541,8 +546,10 @@ export interface SyncReport {
   /** `pruned` (absent when empty) — stale baselines deleted because no
    *  `<Remixable>` wrapper names their slot anymore. `ported` (absent when
    *  empty) — the slots the wiring file covers, which is what makes the report
-   *  say the wiring's TWO hookup call sites out loud. */
-  pins: { captured: string[]; drifted: string[]; pruned?: string[]; ported?: string[] };
+   *  say the wiring's TWO hookup call sites out loud. `unattributed` (absent
+   *  when empty) — `<Remixable>` wrappers sync FOUND and could not trace back
+   *  to `@vendoai/ui`, each one "file:line — what to do about it". */
+  pins: { captured: string[]; drifted: string[]; pruned?: string[]; ported?: string[]; unattributed?: string[] };
   catalog: { discovered: number; registered: number };
   /** Registered host components whose source sync captured, so the console can
    *  render them for real. `skipped` = could not be captured at all;

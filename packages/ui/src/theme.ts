@@ -9,4 +9,5 @@ export {
   defaultVendoTheme,
   resolveTheme,
   themeCssVariables,
+  type VendoTheme,
 } from "@vendoai/apps/contract";

@@ -24,7 +24,6 @@ import {
   type Membership,
   type PlacementEntry,
   type Principal,
-  type ReviewStanding,
   type RunId,
   type ThreadId,
   type ToolOutcome,
@@ -49,18 +48,16 @@ export interface SlotEntry {
 }
 import type { UIMessage } from "ai";
 
-export type { PlacementEntry, ReviewStanding };
+export type { PlacementEntry };
 
-/** 06-apps §1/§8/§9 — the app-generation half of the wire. One definition,
+/** 06-apps §1/§8 — the app-generation half of the wire. One definition,
  *  on the producer's browser-safe contract door. */
 export type {
   AppListRow,
   EditResult,
-  InClientVenue,
   OpenSurface,
   PendingSurface,
   SeedDrift,
-  ShipDiff,
   VersionEntry,
 } from "@vendoai/apps/contract";
 

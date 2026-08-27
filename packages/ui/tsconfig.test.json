@@ -5,12 +5,7 @@
     "rootDir": ".",
     "declaration": false,
     "declarationMap": false,
-    "sourceMap": false,
-    // eject-templates.test.ts imports this package's own
-    // `scripts/eject-templates-lib.mjs`, which has no `.d.ts` — same reason
-    // `apps`, `vendo` and `harnesses` set this. There is no `.js` under `src`
-    // or `test`, so it widens nothing else.
-    "allowJs": true
+    "sourceMap": false
   },
   "include": ["src", "test"]
 }

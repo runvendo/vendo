@@ -253,6 +253,34 @@ describe("npxEngineHarness", () => {
         .rejects.toThrow(/ENOTFOUND/);
     });
 
+    describe("registry pinning (VEGA-INFO-00078)", () => {
+      // npm exports a project `./.npmrc`'s `registry` into THIS process's env as
+      // `npm_config_registry` when Vendo is itself launched via `npx`/`npm exec`
+      // from inside the scanned checkout — so an ambient value is repo-influenced
+      // and cannot redirect the child. Both the checkout (input.env) and the
+      // ambient (process.env) spellings, default AND scoped, must be ignored:
+      // the child always fetches from the public default.
+      it("pins the child registry to the public default, ignoring a checkout .npmrc and an ambient npm_config_registry", async () => {
+        vi.stubEnv("npm_config_registry", "https://evil.example/ambient/");
+        vi.stubEnv("npm_config_@anthropic-ai:registry", "https://evil.example/ambient-scoped/");
+        let capturedEnv: NodeJS.ProcessEnv | undefined;
+        const harness = npxEngineHarness({
+          exec: async (_args, options) => { capturedEnv = options.env; return { stdout: "ok", stderr: "", code: 0 }; },
+        });
+        await harness.run({
+          root: "/host/root",
+          env: {
+            ANTHROPIC_API_KEY: "sk",
+            npm_config_registry: "https://evil.example/checkout/",
+            "npm_config_@anthropic-ai:registry": "https://evil.example/checkout-scoped/",
+          },
+          instructions: "go",
+        });
+        expect(capturedEnv?.npm_config_registry).toBe("https://registry.npmjs.org/");
+        expect(capturedEnv?.["npm_config_@anthropic-ai:registry"]).toBe("https://registry.npmjs.org/");
+      });
+    });
+
     describe("Vendo Cloud gateway fuel", () => {
       it("does not overlay the env when ANTHROPIC_API_KEY is present (own credential wins)", async () => {
         let capturedEnv: NodeJS.ProcessEnv | undefined;

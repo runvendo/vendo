@@ -140,7 +140,6 @@ const seedFrom = async (
       baseline: baseline.hash,
       wishes: [input.instruction],
       ...(input.slot === undefined ? {} : { slot: input.slot }),
-      ...(baseline.review === undefined ? {} : { review: baseline.review }),
     },
   };
   // The row goes down BEFORE the port's paint because the paint builds on it:
@@ -150,9 +149,7 @@ const seedFrom = async (
   await deps.engine.put(APPS_COLLECTION, appRecordInput(minted, ctx.principal.subject, false, "seed"));
   // The version that says where this app came from. `seed.from` is the one
   // create that does not go through `persistEdit`, so it is the one create that
-  // has to append its own — without it a remix arrives with no history at all,
-  // and a review-kind remix fails closed to pending the moment its current
-  // version stops being approved (`serveDocFor`, remix/review.ts).
+  // has to append its own — without it a remix arrives with no history at all.
   await deps.history.append(minted.id, minted, {
     at: new Date().toISOString(),
     intent: `Remix the host component "${baseline.slot}"`,

@@ -19,7 +19,6 @@ import {
 // The screen engine, by its own path: the contract door does not carry it yet.
 import { SCREEN_FILE } from "../../contract/genui/component/index.js";
 import { formingTreeOf } from "./forming.js";
-import type { InClientVenueState } from "../remix/inclient.js";
 import { bundleOf, seedDrift, type SeedBaseline } from "../../contract/index.js";
 import type { OpenSurface } from "../runtime/runtime.js";
 
@@ -51,23 +50,9 @@ const attachSeedFurnishings = (tree: Tree, app: AppDocument): void => {
   }
 };
 
-/**
- * execution-v2 Wave 4 — the layer-3 served surface seam the runtime injects:
- * `enabled` mirrors the host's experimental flag, and `urlFor` wakes the app's
- * machine (wake-on-open) and resolves its public ingress URL for $PORT.
- */
-export interface ServedSurface {
-  /** Build contract §9.8 — EVERY served app is answered with this deployment's
-      authenticated proxy url, re-checked per request. It takes no ctx because
-      there is nothing left to decide per caller: a second answer for a second
-      kind of caller is exactly the door that leaked. */
-  urlFor(app: AppDocument): Promise<string>;
-}
-
 /** The seams an open reads a venue verdict through, passed as one so the two
  *  artifact paths can share them without a five-argument call. */
 interface VenueSeams {
-  inClient: ((app: AppDocument) => Promise<InClientVenueState | undefined>) | undefined;
   venueState: ((app: AppDocument, ctx: RunContext) => Promise<Record<string, unknown> | undefined>) | undefined;
   seedBaselines: readonly SeedBaseline[];
 }
@@ -77,8 +62,7 @@ interface VenueSeams {
  *
  * Its own function because it carries the SAME venue states the tree path does —
  * they are facts about the app and its viewer, not about which artifact the app
- * happens to be written in, and a screen that skipped them opened a review-kind
- * remix with no verdict on it at all.
+ * happens to be written in.
  */
 const paintedScreenSurface = async (
   app: AppDocument,
@@ -94,10 +78,10 @@ const paintedScreenSurface = async (
     root: painted.root,
     nodes: Object.values(painted.nodes) as unknown as Json,
   };
-  // Written HERE, after the render, so nothing a screen produced can forge one.
-  const inClient = await seams.inClient?.(app);
-  if (inClient !== undefined) payload.inClient = inClient as unknown as Json;
   for (const [key, value] of Object.entries(await additionalVenueState(seams.venueState, app, ctx))) {
+    // `inClient` stays reserved even though nothing authors a verdict anymore:
+    // venueState must never be able to smuggle a forged one onto the payload,
+    // where a client still carrying the executor could act on it.
     if (key === "inClient" || key === "data" || key === "seedDrift" || key === "seedUnapplied"
       || key === "dataUnavailable") continue;
     payload[key] = value as Json;
@@ -111,14 +95,6 @@ const paintedScreenSurface = async (
   // does not ride it reaches nobody, and a change the person asked for goes
   // missing in silence.
   if (app.seed?.unapplied !== undefined) payload.seedUnapplied = [...app.seed.unapplied];
-  // The review-kind gate, for the same reason and with the same teeth as the
-  // tree path's: an unapproved review-kind version ships NO executable source.
-  // A screen's `interactive` half IS that source — the compiled module plus the
-  // query answers it rendered on — so it is what must not leave here. The client
-  // keeps the ORIGINAL host component and surfaces the standing `inClient`.
-  if (inClient?.granted === false && inClient.reason === "pending-review") {
-    return { kind: "tree", payload: payload as unknown as UIPayload };
-  }
   payload.interactive = painted.interactive as unknown as Json;
   attachSeedFurnishings(payload as unknown as Tree, app);
   return app.components === undefined
@@ -150,8 +126,6 @@ const additionalVenueState = async (
  *  `createAppOpener` below is what callers get; this is its servable half. */
 const serveOpenApp = (
   seedBaselines: readonly SeedBaseline[] = [],
-  inClientVenue: ((app: AppDocument) => Promise<InClientVenueState | undefined>) | undefined,
-  served: ServedSurface,
   /**
    * The COMPONENT screen half of an open: the app's own `app.tsx`, RUN.
    *
@@ -164,7 +138,7 @@ const serveOpenApp = (
   /**
    * Build contract §9.9 — the ADDITIVE venue-state slot, ctx-aware because the
    * states that ride it are per-caller (lane H's adoption card is served only
-   * to `can(editor)`). Its keys spread onto the payload beside `inClient`; the
+   * to `can(editor)`). Its keys spread onto the payload; the
    * server-authoritative strip has already run, so nothing here can be forged
    * by a document. Composable by construction: a second additive state is
    * another key, not another parameter.
@@ -184,23 +158,12 @@ const serveOpenApp = (
       ...(app.buildFailed.prompt === undefined ? {} : { prompt: app.buildFailed.prompt }),
     };
   }
-  if (app.ui === "http") {
-    // A served document without a machine has NO surface anywhere (a v1-era
-    // import or a de-graduated doc): say so instead of a confusing wake error.
-    if (app.machine === undefined) {
-      throw new VendoError(
-        "validation",
-        "this served app has no machine — its surface is gone; re-graduate it with an edit or re-create the app",
-      );
-    }
-    // No wake on open: the URL is this deployment's proxy, and the proxy wakes
-    // the machine on the first forwarded request — after it has re-checked
-    // access. The host shows its ordinary loading state for that wake latency
-    // (no v1 cover or screenshot machinery); the embed's keepalive ping is what
-    // notices a machine that went back to sleep.
-    return { kind: "http", url: await served.urlFor(app) };
+  // FINAL SPEC v1 — a sealed bundle IS the app: the hash is all the surface
+  // needs, because the bytes are immutable and the frame fetches them itself
+  // (`GET /apps/:id/bundle/:hash`, behind BUNDLE_CSP).
+  if (app.ui === "bundle" && app.bundle !== undefined) {
+    return { kind: "bundle", entry: app.bundle.entry };
   }
-
   // A COMPONENT screen (`app.tsx`) is the whole artifact: a screen's tree is what
   // RENDERING it produces, so the screen is re-run HERE, on every open — its
   // queries resolve against the world as it is this instant and the payload
@@ -227,7 +190,6 @@ const serveOpenApp = (
     // The venue states this payload carries are the tree path's, on identical
     // terms (`paintedScreenSurface`).
     return await paintedScreenSurface(app, ctx, painted, {
-      inClient: inClientVenue,
       venueState,
       seedBaselines,
     });
@@ -241,6 +203,13 @@ const serveOpenApp = (
   // here is what left the ✦ pill on "Remixing…" until a page reload.
   if (app.seed !== undefined) {
     throw new VendoError("not-found", `app ${app.id} has no screen yet`);
+  }
+  // Offered and unanswered. The row exists precisely so the slot can show the
+  // standing ask (`proposeRow`, doors/build-door.ts), and "can't be opened any
+  // more" is the one thing it must not say to someone who has just been asked
+  // whether to build it. Same not-found as the remix above, for the same reason.
+  if (app.proposal !== undefined) {
+    throw new VendoError("not-found", `app ${app.id} is waiting on its build to be approved`);
   }
   // Nothing left to open. A document with no screen is one written back when a
   // stored tree was the artifact; that field is gone, so there is no layout to
@@ -283,6 +252,10 @@ export const createAppOpener = (...args: Parameters<typeof serveOpenApp>): (
       throw new VendoError("not-found", `app ${app.id} is still being built`, { appId: app.id });
     }
     const tree = formingTreeOf(app.id);
-    return tree === undefined ? { kind: "pending" } : { kind: "pending", tree };
+    return {
+      kind: "pending",
+      ...(app.buildStatus === undefined ? {} : { status: app.buildStatus }),
+      ...(tree === undefined ? {} : { tree }),
+    };
   };
 };

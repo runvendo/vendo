@@ -277,7 +277,7 @@ describe("VendoOverlay split view", () => {
   });
 
   /** A stored thread carrying two finished app embeds, adopted via a custom
-   *  Thread component (the overlay's eject seam). */
+   *  Thread component (the overlay's `thread` prop). */
   function embedsFixture(): { thread: Thread; ThreadWithEmbeds: (props: VendoThreadProps) => React.JSX.Element } {
     const NOW = "2026-07-22T12:00:00.000Z";
     const view = (appId: string, name: string) => ({

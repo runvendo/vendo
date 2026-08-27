@@ -86,8 +86,27 @@ import type { Db } from "./db-postgres.js";
     selector reaches it, so ADDITIVE_DDL empties the table ONCE, guarded on the
     old column's existence. Same load-bearing bump as v5 — the DDL loop only runs
     while version < SCHEMA_VERSION, so without it no existing database would ever
-    create the new table. */
-export const SCHEMA_VERSION = 11;
+    create the new table.
+
+    v12 moves harness continuity onto the thread row and DELETES `vendo_state`.
+    The bookmark a session-owning harness resumes on (its native-session ref) rode
+    `vendo_state` under a synthetic `app_id` of `harness_state:<threadId>`, which
+    bought "no new table" at the price of a slot that no table cascade covered:
+    thread deletion swept it by hand in two places (ops.ts, helpers/threads.ts), a
+    retention sweep needed a fence to keep the app-state door from seeing it, and
+    the erase cascade reached it only through a second selector. It is one
+    nullable `harness_state jsonb` column on `vendo_threads` now — ONE slot per
+    thread, on the row that already carries the thread's owner — so every one of
+    those hand-wired cascades is simply the row going away.
+
+    `vendo_state`'s OTHER tenant, an app's per-user state, is dropped rather than
+    migrated: nothing has written it since the appData family took over, so the
+    table's only live rows were the harness slots the backfill below relocates.
+    The v2 backfill goes with it — it relocated legacy rows INTO this table, and
+    there is no longer anywhere to put them. Any legacy `vendo_records` row under
+    collection `vendo_state` simply stays where it is, unread, rather than being
+    moved into a table that is about to be dropped. */
+export const SCHEMA_VERSION = 12;
 
 /** 02-store §2 */
 export const DDL = [
@@ -107,14 +126,17 @@ export const DDL = [
     namespace text NOT NULL, key text NOT NULL, bytes bytea NOT NULL, content_type text,
     created_at timestamptz NOT NULL, PRIMARY KEY (namespace, key)
   )`,
-  `CREATE TABLE IF NOT EXISTS vendo_state (
-    app_id text NOT NULL, subject text NOT NULL, data jsonb NOT NULL,
-    updated_at timestamptz NOT NULL, PRIMARY KEY (app_id, subject)
-  )`,
   // v6 (build contract §6): the thread row is metadata only — `messages` moved
   // to vendo_thread_messages, one row per message.
+  // v12: `harness_state` is the conversation's harness continuity — the opaque
+  // native-session ref a session-OWNING harness resumes on. NULLable, because
+  // most threads never have one; ONE slot per thread, because a conversation has
+  // one thinker at a time (a foreign harness DESTROYS the slot rather than
+  // shadowing it). It is a column rather than a table so that deleting the
+  // thread deletes the bookmark — the row IS the cascade.
   `CREATE TABLE IF NOT EXISTS vendo_threads (
     id text PRIMARY KEY, subject text NOT NULL,
+    harness_state jsonb,
     created_at timestamptz NOT NULL, updated_at timestamptz NOT NULL
   )`,
   "CREATE INDEX IF NOT EXISTS vendo_threads_subject_idx ON vendo_threads (subject)",
@@ -310,9 +332,6 @@ export const DDL = [
 
 // Additive columns stay compatible with same-version development databases (02 §2
 // allows additive columns within the version train; key columns are untouched).
-// vendo_state gains a stable record id (generated from the app_id:subject PK, so
-// point lookups hit an index instead of seq-scanning) and its own created_at, so
-// the seam can expose a creation timestamp that survives updates.
 const ADDITIVE_DDL = [
   "ALTER TABLE vendo_records ADD COLUMN IF NOT EXISTS revision bigint NOT NULL DEFAULT 1",
   "ALTER TABLE vendo_approvals ADD COLUMN IF NOT EXISTS session_id text",
@@ -324,16 +343,6 @@ const ADDITIVE_DDL = [
   "ALTER TABLE vendo_approvals ADD COLUMN IF NOT EXISTS voided_at timestamptz",
   "ALTER TABLE vendo_approvals ADD COLUMN IF NOT EXISTS call_id text",
   "CREATE INDEX IF NOT EXISTS vendo_approvals_subject_status_call_idx ON vendo_approvals (subject, status, call_id)",
-  "ALTER TABLE vendo_state ADD COLUMN IF NOT EXISTS id text GENERATED ALWAYS AS (app_id || ':' || subject) STORED",
-  // created_at is the pagination cursor column, so it must never be NULL. DEFAULT now()
-  // fills the column for any direct INSERT that omits it (the table map is public); our
-  // own write paths always populate it explicitly.
-  "ALTER TABLE vendo_state ADD COLUMN IF NOT EXISTS created_at timestamptz DEFAULT now()",
-  // ADD COLUMN IF NOT EXISTS SKIPS when the column already exists, so databases that
-  // booted before the DEFAULT was introduced would keep a default-less column forever.
-  // SET DEFAULT is idempotent, so it runs every boot like the rest of this block.
-  "ALTER TABLE vendo_state ALTER COLUMN created_at SET DEFAULT now()",
-  "CREATE INDEX IF NOT EXISTS vendo_state_id_idx ON vendo_state (id)",
   // Keyset pagination lists order by (created_at, id) DESC — compared at millisecond
   // precision via date_trunc (helpers/utils.ts cursorMs; cursors round-trip through JS
   // Dates) — with a matching `<` tuple predicate (records.ts / routing.ts). These btree
@@ -404,6 +413,10 @@ const ADDITIVE_DDL = [
   // can do guarded read-merge-write instead of last-write-wins. DEFAULT backfills
   // existing rows on ALTER; every write path bumps it.
   "ALTER TABLE vendo_threads ADD COLUMN IF NOT EXISTS revision bigint NOT NULL DEFAULT 1",
+  // v12: harness continuity's new home. Additive AND in the CREATE above, like
+  // every other column here, so a database already at v12 and one created fresh
+  // reach the same shape.
+  "ALTER TABLE vendo_threads ADD COLUMN IF NOT EXISTS harness_state jsonb",
   // Wave 7: the same counter for vendo_apps, so the machine lifecycle and the
   // schedule engine's fire claims (updateAppRow's read-mutate-CAS) stop
   // degrading to read-then-put on the dev store — a multi-process dev host
@@ -430,52 +443,19 @@ const ADDITIVE_DDL = [
   // every hot list from a seq scan + sort into a top-N index scan. They live here rather
   // than in DDL because ADDITIVE_DDL runs on every ensureSchema: behind a version bump
   // they would never reach a database already at the current version.
-  // vendo_state's created_at and id are ALTERed in above, so these must stay after them.
   "CREATE INDEX IF NOT EXISTS vendo_threads_created_idx    ON vendo_threads    (date_trunc('milliseconds', created_at, 'UTC') DESC, id DESC)",
   "CREATE INDEX IF NOT EXISTS vendo_apps_created_idx       ON vendo_apps       (date_trunc('milliseconds', created_at, 'UTC') DESC, id DESC)",
   "CREATE INDEX IF NOT EXISTS vendo_automations_created_idx ON vendo_automations (date_trunc('milliseconds', created_at, 'UTC') DESC, id DESC)",
   "CREATE INDEX IF NOT EXISTS vendo_runs_started_idx       ON vendo_runs       (date_trunc('milliseconds', started_at, 'UTC') DESC, id DESC)",
   "CREATE INDEX IF NOT EXISTS vendo_approvals_created_idx  ON vendo_approvals  (date_trunc('milliseconds', created_at, 'UTC') DESC, id DESC)",
   "CREATE INDEX IF NOT EXISTS vendo_grants_granted_idx     ON vendo_grants     (date_trunc('milliseconds', granted_at, 'UTC') DESC, id DESC)",
-  "CREATE INDEX IF NOT EXISTS vendo_state_created_idx      ON vendo_state      (date_trunc('milliseconds', created_at, 'UTC') DESC, id DESC)",
   "CREATE INDEX IF NOT EXISTS vendo_app_grants_created_idx ON vendo_app_grants (date_trunc('milliseconds', created_at, 'UTC') DESC, id DESC)",
   "CREATE INDEX IF NOT EXISTS vendo_effects_at_idx         ON vendo_effects    (date_trunc('milliseconds', at, 'UTC') DESC, key DESC)",
   "CREATE INDEX IF NOT EXISTS vendo_threads_subject_created_idx   ON vendo_threads   (subject, date_trunc('milliseconds', created_at, 'UTC') DESC, id DESC)",
   "CREATE INDEX IF NOT EXISTS vendo_runs_status_started_idx       ON vendo_runs      (status,  date_trunc('milliseconds', started_at, 'UTC') DESC, id DESC)",
   "CREATE INDEX IF NOT EXISTS vendo_approvals_status_created_idx  ON vendo_approvals (status,  date_trunc('milliseconds', created_at, 'UTC') DESC, id DESC)",
-  "CREATE INDEX IF NOT EXISTS vendo_state_subject_created_idx     ON vendo_state     (subject, date_trunc('milliseconds', created_at, 'UTC') DESC, id DESC)",
   "CREATE INDEX IF NOT EXISTS vendo_audit_app_at_idx              ON vendo_audit     (app_id,  date_trunc('milliseconds', at, 'UTC') DESC, id DESC)",
   "CREATE INDEX IF NOT EXISTS vendo_grants_app_granted_idx        ON vendo_grants    (app_id,  date_trunc('milliseconds', granted_at, 'UTC') DESC, id DESC)",
-] as const;
-
-// v2 backfill (runs once, only when upgrading from a version < 2 — 02 §4 keys
-// migrations by vendo_meta.schema_version, forward-only). Three moves:
-//   1. Relocate legacy vendo_state singletons that a pre-fix deployment wrote into
-//      vendo_records (collection 'vendo_state', id `${app_id}:${subject}`) into the
-//      dedicated table. App ids are colon-free and non-empty (`^app_[^:]+$`), so the
-//      FIRST colon splits id into app_id + subject unambiguously; the
-//      `id ~ '^app_[^:]+:.'` predicate relocates only rows whose leading segment is a
-//      real app id AND whose subject is non-empty — the SAME shape the state door
-//      (splitStateId) enforces. Anything else (colon-less rows, ids whose first
-//      segment is not app-shaped, or empty-subject ids like 'app_x:') SURVIVES in
-//      vendo_records rather than being silently destroyed or misrouted.
-//   2. The DELETE is scoped to the identical predicate as the INSERT — only the rows
-//      actually relocated are removed.
-//   3. Both write doors were live pre-fix (the helper wrote the dedicated table, the
-//      seam wrote vendo_records), so a legacy row can be NEWER than an existing
-//      dedicated row. Resolve by timestamp (`WHERE vendo_state.updated_at <
-//      EXCLUDED.updated_at`) so the newer write wins instead of DO NOTHING dropping it.
-//   4. Relocated rows set created_at = updated_at on insert (the column now DEFAULTs to
-//      now(), so it must be given the legacy timestamp explicitly); the trailing UPDATE
-//      still backfills created_at for any pre-existing row that predates the column.
-const DATA_BACKFILL = [
-  `INSERT INTO vendo_state (app_id, subject, data, updated_at, created_at)
-   SELECT split_part(id, ':', 1), substring(id FROM position(':' IN id) + 1), data, updated_at, updated_at
-   FROM vendo_records WHERE collection = 'vendo_state' AND id ~ '^app_[^:]+:.'
-   ON CONFLICT (app_id, subject) DO UPDATE SET data = EXCLUDED.data, updated_at = EXCLUDED.updated_at
-     WHERE vendo_state.updated_at < EXCLUDED.updated_at`,
-  "DELETE FROM vendo_records WHERE collection = 'vendo_state' AND id ~ '^app_[^:]+:.'",
-  "UPDATE vendo_state SET created_at = updated_at WHERE created_at IS NULL",
 ] as const;
 
 // v6 backfill (build contract §6): split every existing vendo_threads.messages
@@ -535,6 +515,45 @@ const DATA_BACKFILL_V6 = [
    $$`,
 ] as const;
 
+// v12 backfill: harness continuity moves onto the thread row, then the table it
+// rode goes.
+//
+// Guarded on `vendo_state`'s EXISTENCE rather than on the version, exactly as the
+// v6 split is guarded on its column — the two must agree. A fresh database is
+// created by the v12 DDL above and never had the table, so a version gate alone
+// would run this SQL against a table that does not exist. The information_schema
+// check makes the whole step idempotent and safe to re-apply on every boot.
+//
+// The copy matches on BOTH legs of the old primary key: the synthetic app id
+// (`harness_state:<threadId>`, whose suffix is the thread) and the subject, which
+// had to equal the thread's own owner for the row to be reachable by the erase
+// cascade in the first place. A row whose subject disagrees with its thread's is
+// one no read path could ever return — it is left to die with the table rather
+// than promoted onto a row it never belonged to.
+//
+// The table's OTHER tenant — an app's per-user state — is dropped with it. It has
+// had no writer since appData took over, so this destroys no live data; and the
+// DROP is what makes the whole point of the move true, that there is exactly one
+// place a bookmark can live.
+const DATA_BACKFILL_V12 = [
+  `DO $$
+   BEGIN
+     IF EXISTS (
+       SELECT 1 FROM information_schema.tables
+       WHERE table_schema = current_schema() AND table_name = 'vendo_state'
+     ) THEN
+       UPDATE vendo_threads t
+          SET harness_state = s.data
+         FROM vendo_state s
+        WHERE s.app_id = 'harness_state:' || t.id
+          AND s.subject = t.subject;
+
+       DROP TABLE vendo_state;
+     END IF;
+   END
+   $$`,
+] as const;
+
 type Query = Db["query"];
 
 async function migrate(query: Query): Promise<void> {
@@ -560,16 +579,12 @@ async function migrate(query: Query): Promise<void> {
   // Additive columns are safe to re-apply every run (IF NOT EXISTS); they keep
   // same-version development databases compatible without a version bump.
   for (const statement of ADDITIVE_DDL) await query(statement);
-  // The v2 backfill is destructive-adjacent (it DELETEs from vendo_records), so it
-  // runs ONLY while upgrading past ITS version (< 2) — never unconditionally, or a
-  // newer vendo_records write in a mixed-version deploy would be repeatedly
-  // relocated/lost, and never on later bumps (v2→v3 adds tables only).
-  if (version === undefined || version < 2) {
-    for (const statement of DATA_BACKFILL) await query(statement);
-  }
   // The v6 split is guarded on the column itself (see DATA_BACKFILL_V6), so it
   // is safe on every boot — including a fresh database, where it does nothing.
   for (const statement of DATA_BACKFILL_V6) await query(statement);
+  // Same rule, same reason: guarded on the table it reads, so it is a no-op the
+  // moment the move has already happened.
+  for (const statement of DATA_BACKFILL_V12) await query(statement);
   await query(
     `INSERT INTO vendo_meta (key, value) VALUES ('boot_id', $1::jsonb)
      ON CONFLICT (key) DO NOTHING`,

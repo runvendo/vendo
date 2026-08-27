@@ -504,6 +504,38 @@ function advanceCacheBreakpoint(messages: readonly ModelMessage[]): ModelMessage
   return stripped;
 }
 
+/** A tool input the provider will accept: a JSON object, not a string or array. */
+const objectInput = (input: unknown): boolean =>
+  typeof input === "object" && input !== null && !Array.isArray(input);
+
+/**
+ * Force every tool call's input to an object.
+ *
+ * When a model's tool-call input text does not parse — malformed JSON, or a
+ * generation truncated at `max_tokens` — `parseToolCall` keeps the RAW STRING as
+ * that call's input, marks it invalid, and the step loop continues. The assistant
+ * message appended after it carries that string, and the next step serializes it
+ * verbatim as `tool_use.input`, which Anthropic rejects outright: `tool_use.input:
+ * Input should be an object`. One bad call kills the turn instead of costing it a
+ * step. {@link wellFormed} cannot catch it: that runs once, on the step-0 history,
+ * and this message is minted by the SDK mid-turn.
+ *
+ * `{}` is not lossy — the paired tool result already says the input was invalid,
+ * so the model re-issues the call. Repairing here rather than through
+ * `repairToolCall` is deliberate: a repaired call is re-parsed and EXECUTED, and
+ * this one would run for real with empty arguments.
+ */
+function objectToolInputs(messages: readonly ModelMessage[]): ModelMessage[] {
+  return messages.map((message) => {
+    if (typeof message.content === "string") return message;
+    const broken = (part: (typeof message.content)[number]): boolean =>
+      part.type === "tool-call" && !objectInput(part.input);
+    if (!message.content.some(broken)) return message;
+    const content = message.content.map((part) => (broken(part) ? { ...part, input: {} } : part));
+    return { ...message, content } as ModelMessage;
+  });
+}
+
 export interface TurnLoopOptions {
   model: LanguageModel;
   /** §4.1 item 3 — the rungs BELOW `model`, tried in order when a provider fails
@@ -643,18 +675,19 @@ export async function startTurn(options: TurnLoopOptions): Promise<TurnLoop> {
     // on the very next step. This gates the model's CHOICE only — every tool
     // still executes through the guard-bound registry; there is no unguarded path.
     ...(active === undefined ? {} : { activeTools: active }),
-    // One hook, two rails. `prepareStep` used to be built only when a loadout
+    // One hook, three rails. `prepareStep` used to be built only when a loadout
     // existed, which is why a step's growing tool results were never cached —
     // the turn with the most to cache had no hook at all. It is returned on
     // every turn now, and the loadout rides the same result rather than growing
-    // a second per-step hook beside it.
+    // a second per-step hook beside it; input normalization rides it too, since
+    // this is the one seam that sees every outgoing prompt.
     prepareStep: ({ messages, stepNumber }) => {
       const active = activeTools?.();
       step = stepNumber;
       stepStartedAt = Date.now();
       debug({ kind: "step-start", step, maxSteps, activeTools: active ?? [] });
       return {
-        messages: advanceCacheBreakpoint(messages),
+        messages: advanceCacheBreakpoint(objectToolInputs(messages)),
         ...(active === undefined ? {} : { activeTools: active }),
       };
     },

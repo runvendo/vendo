@@ -52,6 +52,10 @@ export interface FsStat {
   mode: number;
   size: number;
   mtime: Date;
+  /** Stable filesystem identity when the backend can expose it safely. */
+  dev?: number | bigint;
+  ino?: number | bigint;
+  identity?: string;
 }
 
 export interface MkdirOptions {

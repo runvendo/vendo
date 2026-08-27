@@ -17,7 +17,7 @@ describe("build deadlines", () => {
   });
 
   it("the UI cutoff strictly exceeds the watchdog and derives from it", () => {
-    expect(BUILD_WATCHDOG_MS).toBe(4 * 60_000);
+    expect(BUILD_WATCHDOG_MS).toBe(20 * 60_000);
     expect(APP_BUILD_UI_DEADLINE_MS).toBeGreaterThan(BUILD_WATCHDOG_MS);
     expect(APP_BUILD_UI_DEADLINE_MS).toBe(BUILD_WATCHDOG_MS + 60_000);
   });

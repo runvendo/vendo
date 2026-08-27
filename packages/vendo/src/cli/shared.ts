@@ -6,7 +6,7 @@ import { stdin, stdout } from "node:process";
 import { initTelemetry, repoHost, type Telemetry } from "@vendoai/telemetry";
 import { walk } from "./theme/walk.js";
 
-export const CLI_VERSION = "0.39.0";
+export const CLI_VERSION = "0.52.1";
 
 export interface Output {
   log(message: string): void;
@@ -179,7 +179,6 @@ export type CommandName =
   | "login"
   | "extract"
   | "theme"
-  | "eject"
   | "sync"
   | "cloud-init"
   | "mcp"

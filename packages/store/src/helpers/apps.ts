@@ -61,7 +61,6 @@ export function appStore(store: VendoStore): {
       if (result.rows.length === 0) throw new VendoError("not-found", `App ${id} was not found`);
     },
     async delete(id) {
-      await db.query("DELETE FROM vendo_state WHERE app_id = $1", [id]);
       await db.query("DELETE FROM vendo_apps WHERE id = $1", [id]);
     },
     async promote(id, from, orgId) {
@@ -75,7 +74,7 @@ export function appStore(store: VendoStore): {
       if (result.rows.length === 0) {
         throw new VendoError("conflict", `app ${id} belongs to another subject`);
       }
-      // Per-user app data (vendo_state, the app's record collections) is keyed
+      // Per-user app data (the app's record collections) is keyed
       // by app id and stays subject-partitioned, so it needs nothing: the org
       // now owns the app, and each member still sees only their own rows.
     },

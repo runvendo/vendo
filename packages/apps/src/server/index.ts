@@ -35,22 +35,6 @@ export type {
   SlotRegistry,
 } from "./persistence/slots.js";
 export type { SandboxAdapter, SandboxMachine, SandboxResumePolicy } from "./escalation/sandbox.js";
-// execution-v2 skin contract (Lane C): the per-app box token and the box env
-// assembly Lane B consumes at provision.
-export {
-  createAppTokens,
-  type AppTokens,
-} from "./persistence/app-token.js";
-export {
-  buildEnv,
-  type BuildEnvContext,
-  type BuiltBoxEnv,
-  type InferenceResolver,
-} from "./escalation/box-env.js";
-// The doctor's view of a machine-bearing app — what `AppsRuntime.machine.report`
-// answers with. The converter's own shapes stay internal to it: no public door
-// hands one out, and an export is additive the day one does.
-export type { AppMachineStatus } from "./escalation/manifest-triggers.js";
 export {
   shareSnapshotSchema,
   publishRecordSchema,
@@ -58,11 +42,9 @@ export {
   type PublishRecord,
   type ShareSnapshot,
 } from "./persistence/cloud.js";
-export { inClientApprovalSchema, type InClientApproval } from "./remix/inclient.js";
-// The two app-scoped persistence doors, exported so `@vendoai/store` — a
-// declared consumer of this package — can prove its erase cascade against the
-// REAL writers instead of a hand-rolled copy of the rows they produce.
-export { createInClientApprovals, type InClientApprovalAccess } from "./remix/inclient.js";
+// The app-history persistence door, exported so `@vendoai/store` — a declared
+// consumer of this package — can prove its erase cascade against the REAL
+// writer instead of a hand-rolled copy of the rows it produces.
 export { createAppHistory, type AppHistoryAccess } from "./persistence/history.js";
 export {
   seedBaselineSchema,
@@ -71,24 +53,6 @@ export {
   type SeedBaseline,
   type SeedDrift,
 } from "../contract/index.js";
-export { appVersionHash } from "./remix/version-hash.js";
-export {
-  type InClientVenueState,
-  type InClientVerdict,
-  type ReviewStanding,
-} from "./remix/inclient.js";
-// The review-kind lifecycle vocabulary: the queue entry the console seam lists
-// and the rejection record the note surfaces from (AppsRuntime.review is the
-// behavior surface).
-export type {
-  RemixRejection,
-  ReviewQueueEntry,
-} from "./remix/review.js";
-export {
-  type ShipDiff,
-  type ShipDiffGenerated,
-  type ShipDiffPin,
-} from "./remix/ship-diff.js";
 // HostToolInfo is the tool slice GenerationDependencies (and external
 // harnesses) speak.
 export type { HostToolInfo } from "./generation/engine.js";
@@ -117,10 +81,28 @@ export { buildingAppsSkill } from "./skills/building-apps.js";
 // it lives outside this package: a sandboxed harness holds a `WorkspaceFs` and
 // never a store, so composition binds the store side once and hands these to
 // whoever is materializing an app.
+// The seal door beside it, plus the app row's compare-and-swap writer, exported
+// for the same reason `createAppHistory` is: `@vendoai/store` holds both the
+// bytes and the row revision a seal depends on, so it proves the whole seal —
+// content-addressed blobs, last-CAS-wins, loser kept as a version — against the
+// REAL writers rather than a hand-rolled copy of what they produce.
 export {
   commitApp,
+  readBundleBlob,
+  sealBundleBlobs,
   type AppSourceSeam,
 } from "./persistence/app-source.js";
+export { updateAppRow } from "./persistence/persistence.js";
+// The one classifier for what goes on a failed build's record. Public because
+// the BUILD engine now lives outside this package too (`AppsConfig.build`), and
+// a lane that classified its own throws would grow a second vocabulary for the
+// same failures — and would surface the provider's raw words, which this one
+// deliberately never does.
+export { buildFailureReason } from "./doors/build-messages.js";
+// The sealed bundle's response headers. Public because the ROUTE that serves
+// them lives in the umbrella (`wire/apps.ts`), and a wire that restated the CSP
+// would be a second copy of the one enforcer a rendered bundle has.
+export { BUNDLE_CSP, BUNDLE_HEADERS } from "./doors/build-door.js";
 // The hot-path render seam (§1.6) — the commit-intercepting wrap that paints a
 // landing `app.tsx`. Public because the workspace it wraps lives
 // outside this package: composition fills the harness runtime's `wrapWorkspace`

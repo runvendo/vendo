@@ -219,12 +219,17 @@ export function validateTree(input: unknown): TreeValidation {
 }
 
 /**
- * 06-apps §§8–9 — the in-client venue field and the pin-drift report are
- * SERVER-AUTHORITATIVE. The stored tree is model-written or imported from an
- * untrusted `.vendoapp`, so a forged `inClient` or `pinDrift` riding the
- * document must never reach the client: strip both before the verified
- * verdict and the computed drift (when any) are attached — and strip at
- * persist time too (the runtime shares this helper), streamed or at rest.
+ * 06-apps §8 — the pin-drift report is SERVER-AUTHORITATIVE. The stored tree is
+ * model-written or imported from an untrusted `.vendoapp`, so a forged
+ * `pinDrift` riding the document must never reach the client: strip it before
+ * the computed drift (when any) is attached — and strip at persist time too (the
+ * runtime shares this helper), streamed or at rest.
+ *
+ * `inClient` is stripped for a harder reason. In-client native execution is
+ * gone, but the verdict field still exists in the wire schema, and no verdict is
+ * ever authored now — so any `inClient` on a document is a forgery. Left on the
+ * wire it could hand a `granted` verdict to a client that still carries the
+ * executor and make it run native code, so it is always dropped.
  *
  * `dataUnavailable` joins them: only the code that ran the queries and watched
  * them fail may tell the user their data did not load. Document-carried it would

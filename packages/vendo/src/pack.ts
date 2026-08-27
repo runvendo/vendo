@@ -88,6 +88,9 @@ function appRefTitleFromPrompt(prompt: unknown): string {
  * laundering a partial receipt through it leaves a caller waiting on a completion
  * that already came, and drops the one sentence that says what is missing.
  *
+ * An offered BUILD needs no clause here: it is a `pending-approval` outcome now,
+ * so it never reaches a receipt at all.
+ *
  * Local to the PACK on purpose. `vendo/app-ref@1` means "accepted, still
  * streaming, NOT built yet"; only this fast-return path can honestly say that.
  * The MCP door runs `vendo_make` to completion, so it answers the receipt — see

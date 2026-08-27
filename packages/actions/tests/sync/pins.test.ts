@@ -72,7 +72,6 @@ describe("wrapper pin capture", () => {
 
     expect(result.errors).toEqual([]);
     expect(result.captured).toEqual(["Card"]);
-    expect(baseline.review).toBeUndefined();
     expect(baseline.exportable).toBe(false);
     expect(baseline.sampleProps).toBeUndefined();
     expect(baseline.sourceImports).toEqual({ "./Direct": "src/components/Direct.tsx" });
@@ -147,23 +146,6 @@ describe("wrapper pin capture", () => {
     ]);
     expect(result.errors[0]).toContain("src/components/Card.tsx");
     expect(result.errors[0]).toContain("src/components/other/Card.tsx");
-  });
-
-  it("writes review: true into the baseline from <Remixable review>", async () => {
-    const root = await temporaryRoot();
-    await write(root, "src/components/TransferPanel.tsx", "export function TransferPanel() { return <div>transfer</div>; }");
-    await write(root, "src/app/page.tsx", `
-      import { Remixable } from "${UI_CHROME}";
-      import { TransferPanel } from "../components/TransferPanel";
-      export default function Page() {
-        return <Remixable review><TransferPanel /></Remixable>;
-      }
-    `);
-
-    const result = await capturePins(root, path.join(root, ".vendo"));
-
-    expect(result.captured).toEqual(["TransferPanel"]);
-    expect((await baselineFor(root, "TransferPanel")).review).toBe(true);
   });
 
   it("errors loudly on an inline-JSX child, naming the file and line", async () => {
@@ -250,7 +232,7 @@ describe("wrapper pin capture", () => {
     await expect(fs.access(path.join(root, ".vendo/remixable/Card.json"))).rejects.toThrow();
   });
 
-  it("suggests <Remixable review> for a plumbing-heavy child and stays quiet once review is set", async () => {
+  it("warns unconditionally that a plumbing-heavy child reaches into host plumbing", async () => {
     const root = await temporaryRoot();
     await write(root, "src/components/Plumbed.tsx", `
       import { useRouter } from "next/navigation";
@@ -267,23 +249,14 @@ describe("wrapper pin capture", () => {
       }
     `);
 
+    // Every fork renders sandboxed, so plumbing never crosses the boundary and
+    // the warning is unconditional — there is no longer a flag that quiets it.
     const warned = await capturePins(root, path.join(root, ".vendo"));
     expect(warned.captured).toEqual(["Plumbed"]);
-    const warning = warned.warnings.find((entry) => entry.includes("<Remixable review>"));
+    const warning = warned.warnings.find((entry) => entry.includes("reaches into host plumbing"));
     expect(warning).toContain("imports next/navigation");
     expect(warning).toContain("calls useRouter()");
     expect(warning).toContain("receives the function-typed prop onSelect");
-
-    await write(root, "src/app/page.tsx", `
-      import { Remixable } from "${UI_CHROME}";
-      import { Plumbed } from "../components/Plumbed";
-      export default function Page() {
-        return <Remixable review><Plumbed onSelect={() => {}} /></Remixable>;
-      }
-    `);
-    const reviewed = await capturePins(root, path.join(root, ".vendo"));
-    expect(reviewed.warnings.filter((entry) => entry.includes("<Remixable review>"))).toEqual([]);
-    expect((await baselineFor(root, "Plumbed")).review).toBe(true);
   });
 
   it("refuses a sub-import whose realpath escapes the host root", async () => {
@@ -558,7 +531,7 @@ describe("stale baseline pruning", () => {
       import { FIXTURES } from "../data/fixtures";
       export function Card() { return <div>{FIXTURES.length}</div>; }
     `);
-    const result = await capturePins(root, path.join(root, ".vendo"), new Set(), 2_000);
+    const result = await capturePins(root, path.join(root, ".vendo"), { budgetBytes: 2_000 });
 
     expect(result.captured).toEqual([]);
     expect(result.drifted).toEqual([]);
@@ -574,7 +547,7 @@ describe("stale baseline pruning", () => {
     await fs.mkdir(path.join(root, ".vendo/remixable"), { recursive: true });
     await fs.writeFile(path.join(root, ".vendo/remixable/Ignored.json"), "{}\n", "utf8");
 
-    const result = await capturePins(root, path.join(root, ".vendo"), new Set(["Ignored"]));
+    const result = await capturePins(root, path.join(root, ".vendo"), { ignoreSlots: new Set(["Ignored"]) });
 
     expect(result.pruned).toEqual([]);
     await expect(fs.access(path.join(root, ".vendo/remixable/Ignored.json"))).resolves.toBeUndefined();

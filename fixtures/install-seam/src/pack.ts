@@ -117,11 +117,20 @@ export async function vendorInto(targetDir: string, packed: Packed): Promise<voi
   const overrides = packed.tarballs
     .map((tarball) => `  "${tarball.name}": "file:vendor/${tarball.fileName}"`)
     .join("\n");
-  // pnpm 11 fails an install whose dependencies carry unapproved build scripts.
-  // These two are the ones the umbrella's tree brings and genuinely needs
-  // (esbuild and sharp both fetch a platform binary in theirs), so a real
-  // stranger has to approve them too — noted rather than hidden.
-  const allowBuilds = ["esbuild", "sharp"].map((name) => `  ${name}: true`).join("\n");
+  // pnpm 11 fails an install whose dependencies carry unapproved build scripts,
+  // so a real stranger writes these same four entries — noted rather than hidden.
+  // esbuild and sharp are approved: both fetch a platform binary in theirs.
+  // zstd and lzma are DENIED — they are just-bash's optional native tar
+  // backends, behind guarded imports nothing calls, so `false` compiles neither
+  // and still satisfies strictDepBuilds. Consumers meet the same two denials in
+  // docs-site/index.mdx; changing this line without changing that one would
+  // green the seam while every real install still exits 1.
+  const allowBuilds = [
+    "'@mongodb-js/zstd': false",
+    "esbuild: true",
+    "node-liblzma: false",
+    "sharp: true",
+  ].map((entry) => `  ${entry}`).join("\n");
   await fs.writeFile(
     path.join(targetDir, "pnpm-workspace.yaml"),
     `overrides:\n${overrides}\nallowBuilds:\n${allowBuilds}\n`,

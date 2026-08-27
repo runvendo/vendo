@@ -78,9 +78,10 @@ describe("Remixable — one door into the chat, one ✦ menu on the remix", () =
   /** The same mark WITHOUT assuming what it says — the word is the state. */
   const pill = () => wrapper().querySelector<HTMLButtonElement>(".fl-remix-pill")!;
   const revealed = () => wrapper().hasAttribute("data-vendo-revealed");
-  // An instant remix carries no in-client approval, so the fork surface IS the
-  // contained drop-back notice — the one venue a generated node has left.
-  const forkSurface = () => screen.queryByRole("note", { name: "Not approved for this page" });
+  // In jsdom the mock's fork surface is a bare `source: "generated"` node, and
+  // generated source no longer runs natively, so the fork surface IS the
+  // contained can't-render notice — the proxy for "the fork mounted".
+  const forkSurface = () => screen.queryByRole("note", { name: "Can't render here" });
   const opens = () => wire.requests.filter(r => r.method === "GET" && /\/apps\/.+\/open/.test(r.path));
 
   /** The remix the CHAT minted — the wrapper no longer mints anything itself. */
@@ -378,29 +379,6 @@ describe("Remixable — one door into the chat, one ✦ menu on the remix", () =
     await waitFor(() => expect(screen.getByText("Blue Bottle")).toBeTruthy());
     // And the door is back — the component is unremixed again.
     expect(screen.getByRole("button", { name: "Remix this view with Vendo" })).toBeTruthy();
-  });
-
-  // The founder's binding rule (2026-08-02): until a reviewer approves, the
-  // ORIGINAL host component stays rendered, untouched.
-  it("keeps the ORIGINAL rendered for a review-kind remix awaiting review", async () => {
-    await seedRemix();
-    mount(<Remixable review><TopMerchants title="Top merchants" /></Remixable>);
-    await waitFor(() => expect(pill()).toBeTruthy());
-    await waitFor(() => expect(opens().length).toBeGreaterThan(0));
-    await new Promise(resolve => setTimeout(resolve, 60));
-    expect(screen.getByText("Blue Bottle")).toBeTruthy();
-    expect(forkSurface()).toBeNull();
-    // The pending state is never an in-page notice replacing the host component.
-    expect(screen.queryByText(/sent for review/i)).toBeNull();
-  });
-
-  it("mounts a review-kind remix natively once the server grants the venue", async () => {
-    const forked = await seedRemix();
-    wire.state.surfaces.get(forked.id)!["inClient"] = {
-      granted: true, versionHash: "sha256:v1", approvedBy: "host-admin", at: "2026-08-02T00:00:00.000Z",
-    };
-    mount(<Remixable review><TopMerchants title="Top merchants" /></Remixable>);
-    await waitFor(() => expect(screen.queryByText("Blue Bottle")).toBeNull(), { timeout: 2000 });
   });
 
   it("a remix that never builds leaves the host's own component alone and adds NO error surface of its own", async () => {

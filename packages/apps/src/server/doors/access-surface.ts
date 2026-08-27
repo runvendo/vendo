@@ -7,13 +7,14 @@
  * naming a tenant needs membership in it.
  */
 import { VendoError, encodeGrantPrincipal, parseGrantPrincipal, type AppId, type RunContext } from "@vendoai/core";
+import { refuseBundleArtifact } from "../../contract/index.js";
 import { APPS_COLLECTION } from "../persistence/persistence.js";
 import type { AppsRuntimeContext } from "../runtime/runtime-context.js";
 import type { AppsRuntime } from "../runtime/types.js";
 
-export type AccessSurfaceDeps = Pick<AppsRuntimeContext, "config" | "engine" | "holds">;
+export type AccessSurfaceDeps = Pick<AppsRuntimeContext, "config" | "engine" | "holds" | "requireOwned">;
 
-export const createAccessSurface = ({ config, engine, holds }: AccessSurfaceDeps): AppsRuntime["access"] => {
+export const createAccessSurface = ({ config, engine, holds, requireOwned }: AccessSurfaceDeps): AppsRuntime["access"] => {
   /** The seam the WRITES need. `levelFor` and `list` degenerate honestly without
       one, but a grant has nowhere to go. `createVendo` always composes it
       (compose-apps.ts:384 → :187), so this is unreachable there — but
@@ -122,7 +123,11 @@ export const createAccessSurface = ({ config, engine, holds }: AccessSurfaceDeps
       return config.appAccess === undefined ? [] : await config.appAccess.list(ctx, appId);
     },
     async grant(appId, principal, level, ctx) {
-      await require(appId, ctx, "owner");
+      // `requireOwned` for the same owner gate `require` applies, at the same
+      // one read, because THIS is the share a person performs — the ✦ toggle
+      // reaches `access.grant`, never `AppsRuntime.share` — and the artifact
+      // check needs the document that gate already read.
+      refuseBundleArtifact(await requireOwned(appId, ctx, "owner"), "shared");
       requireMembership(principal, ctx);
       await promoteBeforeSharing(appId, principal, ctx);
       await writable().grant(ctx, appId, principal, level);

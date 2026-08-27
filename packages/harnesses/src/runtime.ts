@@ -57,6 +57,7 @@ import { createTurnTools, type MirrorEvent } from "./turn-tools.js";
 import { specificWireErrorMessage } from "./wire-error.js";
 import { emitWorkbench, openWorkbench } from "./workbench.js";
 import { TextChannel, writeDebug, writeError, writeMirror, writeNotice, writeStatus, writeTurnError, writeView } from "./wire.js";
+import { inferenceSecrets } from "./claude-code/box.js";
 
 /**
  * `turn.messages` is OURS and read-only (§1). A frozen array still hands out live
@@ -304,6 +305,107 @@ const rootCause = (error: unknown): unknown => {
   return deepest;
 };
 
+/**
+ * VEGA-INFO-00021 — a boxed agent holds a REUSABLE, non-expiring inference
+ * credential and streams its output straight to the end user, so a user can
+ * steer it into printing the key. Every part a turn puts on the wire passes
+ * through one `writer`, so stripping the literal value HERE guards the
+ * assistant's prose and any tool output alike, in a single seam. No secrets to
+ * strip (a no-key BYO deployment) → the writer is returned untouched, so
+ * redaction costs nothing when there is nothing to redact.
+ *
+ * Literal-value redaction only: it stops the key being echoed VERBATIM; a user
+ * who first asks the agent to transform it (base64, reversed, spelled out)
+ * defeats it. The complete fix is per-session, short-lived brokering so the box
+ * never holds a reusable key — deferred console work.
+ */
+function redactingWriter(
+  writer: UIMessageStreamWriter<UIMessage>,
+  secrets: readonly string[],
+): UIMessageStreamWriter<UIMessage> {
+  if (secrets.length === 0) return writer;
+  const redactString = (value: string): string => {
+    let out = value;
+    for (const secret of secrets) out = out.split(secret).join("[redacted]");
+    return out;
+  };
+  const walk = (value: unknown): unknown => {
+    if (typeof value === "string") return redactString(value);
+    if (Array.isArray(value)) return value.map(walk);
+    if (value !== null && typeof value === "object") {
+      const out: Record<string, unknown> = {};
+      for (const [key, item] of Object.entries(value)) out[key] = walk(item);
+      return out;
+    }
+    return value;
+  };
+  // The model streams its prose in many text-delta parts, so a secret split
+  // across deltas ("sk-", "ant-", …) is never whole inside one `walk` and would
+  // stream through — the common case. So after redacting whole occurrences, hold
+  // back ONLY the span that could still grow into a secret: the longest suffix of
+  // the running text that is a strict prefix of some secret. Everything before it
+  // can never be part of a secret, so it flushes at once — which keeps the stream
+  // incremental (a mid-turn divider is delivered the instant it passes, never
+  // stalled behind a fixed tail) while still catching a secret straddling the
+  // next delta. Whatever is held is flushed the moment the text stream yields to
+  // any other part (its text-end, a mirrored tool call, or turn end). The held
+  // suffix is a proper prefix of a secret, so it is bounded by the longest secret
+  // and the buffer can never grow unbounded.
+  //
+  // The hold-back span is the FULL length of the longest secret — uncapped, so a
+  // secret of any length (a JWT-style token can run past 512 chars) still gets
+  // cross-delta reassembly rather than having its leading chars flushed before a
+  // match can form. The suffix scan is O(span²) per text-delta, but `secrets`
+  // is the DEPLOYMENT'S OWN inference key (inferenceSecrets(), trusted config —
+  // never attacker-controlled) and a real key is at most a few KB, so the cost
+  // is negligible and there is no DoS surface to cap against.
+  const span = Math.max(...secrets.map((secret) => secret.length));
+  const heldSuffixLength = (text: string): number => {
+    for (let hold = Math.min(text.length, span - 1); hold > 0; hold -= 1) {
+      const tail = text.slice(text.length - hold);
+      if (secrets.some((secret) => secret.length > hold && secret.startsWith(tail))) return hold;
+    }
+    return 0;
+  };
+  let carry = "";
+  let carryId = "";
+  const isTextDelta = (part: unknown): part is { type: "text-delta"; id: string; delta: string } =>
+    typeof part === "object" && part !== null
+    && (part as { type?: unknown }).type === "text-delta"
+    && typeof (part as { id?: unknown }).id === "string"
+    && typeof (part as { delta?: unknown }).delta === "string";
+  const flushCarry = (): void => {
+    if (carry === "") return;
+    writer.write({ type: "text-delta", id: carryId, delta: carry } as never);
+    carry = "";
+  };
+  return {
+    write: (part) => {
+      if (isTextDelta(part)) {
+        if (part.id !== carryId) { flushCarry(); carryId = part.id; }
+        const scanned = redactString(carry + part.delta);
+        const keep = scanned.length - heldSuffixLength(scanned);
+        carry = scanned.slice(keep);
+        if (keep > 0) writer.write({ ...part, delta: scanned.slice(0, keep) });
+        return;
+      }
+      flushCarry();
+      writer.write(walk(part) as typeof part);
+    },
+    // `merge` splices another chunk stream straight onto the wire, so its
+    // content must pass through the same scrub as `write` above — no path uses
+    // it today, but an unscrubbed merge would be a silent hole in the redactor.
+    merge: (stream) => {
+      type Chunk = Parameters<typeof writer.write>[0];
+      writer.merge(stream.pipeThrough(new TransformStream<Chunk, Chunk>({
+        transform: (chunk, controller) => controller.enqueue(walk(chunk) as Chunk),
+      })));
+    },
+    get onError() { return writer.onError; },
+    set onError(handler) { writer.onError = handler; },
+  };
+}
+
 export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
   const harnessState = deps.harnessState ?? memoryHarnessStateStore();
 
@@ -484,7 +586,10 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
       const stream = createUIMessageStream<UIMessage>({
         originalMessages: messages,
         generateId: () => assistantMessageId,
-        execute: async ({ writer }) => {
+        execute: async ({ writer: rawWriter }) => {
+          // VEGA-INFO-00021: redact the deployment's reusable inference
+          // credential from everything this turn streams — see `redactingWriter`.
+          const writer = redactingWriter(rawWriter, inferenceSecrets());
           turnWriter = writer;
           // The dev-only diagnostics channel, open for exactly this turn. Off
           // (the production case) this registers nothing and every emit below —

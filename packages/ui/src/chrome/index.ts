@@ -16,12 +16,10 @@ export { defaultVendoGreeting, hasSeen, markSeen, type VendoDiscoverability, typ
 export { openVendoConversation, type OpenConversationOptions } from "./overlay-registry.js";
 export { Remixable, type RemixableProps } from "./remixable.js";
 export { playPinCeremony, usePinAction, usePinNudge, type PinCeremonyOptions } from "./pin-ceremony.js";
-// Placement — public because the in-thread card (an eject template) is built
-// out of it. `PlacementAction` is the whole affordance (the registry decides
-// whether that is the verb or the menu); `AddToPicker` is the menu alone, for a
-// surface that only ever wants the choice. Destinations come from `useSlots` on
-// the root surface.
-export { AddToPicker, PlacementAction } from "./add-to-picker.js";
+// Placement — `AddToPicker` is the destination menu on its own, for a surface
+// that only ever wants the choice. Destinations come from `useSlots` on the
+// root surface.
+export { AddToPicker } from "./add-to-picker.js";
 export { VendoTrigger, type VendoTriggerProps } from "./vendo-trigger.js";
 export { VendoPalette, type VendoCommand } from "./vendo-palette.js";
 export { type HotkeyChord, type PaletteHotkey } from "./palette-hotkey.js";
@@ -29,29 +27,13 @@ export { VendoSlot } from "./vendo-slot.js";
 /** Re-exported beside VendoSlot: it is the shape of that component's
     `onParked` prop, and defined with the tree that fires it. */
 export type { ParkedPress } from "../tree/renderer.js";
-/** Public because the thread is an eject surface: `thread/parts.tsx` mounts the
-    approval modal per app card, so the hook is API by construction — and a host
-    building its own surface needs the same seam to give parked presses an ask. */
+/** A host building its own surface needs this seam to give parked presses an
+    ask — `thread/parts.tsx` mounts the same modal per app card. */
 export { useApprovalModal, type ParkedApproval } from "./approval-modal.js";
 export { VendoThread, type VendoThreadProps } from "./thread/index.js";
 export { VendoToasts, vendoToast, dismissAllVendoToasts, type VendoToastsProps, type VendoToastInput, type VendoToastAction } from "./vendo-toasts.js";
 
-/** The eject surface: internals the ejected thread compiles against
-    (scripts/eject-templates-lib.mjs enforces this list at build). Exported
-    deliberately — ejected chrome keeps data/wire logic as a package
-    dependency and only forks pixels (§4 customization ladder). */
-export { BeatSummary, BuildBeat, WorkingBeat, toolPresentation } from "./build-beat.js";
+/** Chrome internals a host composing its own surface builds against: one tool
+    call's transcript beat, and the root that provides the chrome context. */
+export { BuildBeat } from "./build-beat.js";
 export { ChromeRoot } from "./chrome-root.js";
-export { useCopyFeedback } from "./clipboard.js";
-export { ConnectDockButton, ConnectTray } from "./connect-dock.js";
-export { FluidThinking } from "./fluid-thinking.js";
-export {
-  useSplitView,
-  SplitViewContext,
-  type SplitViewContextValue,
-} from "./split-view.js";
-export { previewArgs, toolkitDisplayName, toolTitle } from "./humanize.js";
-export { Markdown } from "./markdown.js";
-export { ACTIVITY_ANCHOR_ATTRIBUTE, ACTIVITY_BUMP_EVENT, MorphToast, type MorphToastProps } from "./morph-toast.js";
-export { PrefillScopeContext, registerPrefillConsumer } from "./overlay-registry.js";
-export { LONG_TEXT_CAP, truncateHead } from "./truncate.js";

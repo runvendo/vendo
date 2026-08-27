@@ -7,7 +7,7 @@ import {
 } from "@vendoai/apps/contract";
 import type { SeedSubSource } from "../formats.js";
 import {
-  isInside,
+  insideBounds,
   isPackageSpecifier,
   parseModuleSource,
   resolveImportSource,
@@ -241,6 +241,10 @@ interface CaptureTask {
 export async function captureClosure(options: {
   root: string;
   realRoot: string;
+  /** Realpathed directories outside `realRoot` that also hold host source
+   *  (`remix.sources`). Captured ids stay relative to `realRoot`, so a module
+   *  under one of these reads as `../demos/…`. */
+  extraRoots?: readonly string[];
   label: string;
   primaryFile: string;
   primarySource: string;
@@ -248,6 +252,8 @@ export async function captureClosure(options: {
   warnings: string[];
 }): Promise<ClosureResult> {
   const { root, realRoot, label, primaryFile, primarySource } = options;
+  const extraRoots = options.extraRoots ?? [];
+  const bounds = [realRoot, ...extraRoots];
   const budgetBytes = options.budgetBytes ?? DEFAULT_CAPTURE_BUDGET_BYTES;
   const missed: string[] = [];
   const unsupported = new Set<string>();
@@ -304,7 +310,7 @@ export async function captureClosure(options: {
         else unloadablePackages[specifier] = pinned.why;
         continue;
       }
-      const resolved = await resolveImportSource(task.file, specifier, root);
+      const resolved = await resolveImportSource(task.file, specifier, root, "default", extraRoots);
       if (resolved === null) {
         drop("could not be resolved");
         continue;
@@ -316,7 +322,7 @@ export async function captureClosure(options: {
         drop("could not be resolved safely");
         continue;
       }
-      if (!isInside(realRoot, realFile)) {
+      if (!insideBounds(bounds, realFile)) {
         drop("resolves outside the host root");
         continue;
       }

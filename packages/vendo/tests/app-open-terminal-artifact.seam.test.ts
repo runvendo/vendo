@@ -2,8 +2,7 @@
  * A REFUSED OPEN SAYS WHY, AND CLAIMS NOTHING MORE THAN IT KNOWS.
  *
  * `open()` refuses a stored app it cannot serve with a `validation` VendoError —
- * a served row whose machine is gone, or a screen the floor would not pass
- * (`persistence/open.ts:191`, `:221`). The wire's build window only rescued
+ * a screen the floor would not pass. The wire's build window only rescued
  * `not-found`, so those reached the caller as a bare HTTP 400: no reason, and a
  * status every agent reads as "try again". One did, on the identical response,
  * for 7.7 minutes until its turn budget died.
@@ -18,8 +17,7 @@
  * refused opens fine once its dependency answers.
  *
  * The producer is a shipped write door (`authoredScreen` for a screen that went
- * bad after it landed, `importApp` for a served document whose machine never
- * crosses interchange) over a real store; the consumer is the real
+ * bad after it landed) over a real store; the consumer is the real
  * `GET /apps/:id/open` on the real composed handler. Nothing is stubbed on either
  * side, and the screen really renders — and really crashes — in the sealed VM.
  *
@@ -34,8 +32,6 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  VENDO_APP_FORMAT,
-  type AppDocument,
   type AppId,
   type Json,
   type Principal,
@@ -143,26 +139,6 @@ describe("opening an app that can never be served answers terminally, not 400", 
     // The embed's flagged poll gets the same terminal answer, never a `pending`
     // it would spin on to its deadline.
     expect(await answer(await open(vendo, "app_broken_screen", "?pending=1"))).toEqual({ status, body });
-  }, 60_000);
-
-  it("a served app whose machine is gone says its surface is gone, and names the fix", async () => {
-    const vendo = await setup();
-    // A machine ref never crosses interchange, so importing a served document is
-    // the shipped way one lands with `ui: "http"` and nothing to serve.
-    const imported = await vendo.apps.importApp({
-      format: VENDO_APP_FORMAT,
-      id: "app_served_import" as AppId,
-      name: "Served app",
-      ui: "http",
-    } as AppDocument, ctx);
-
-    const { status, body } = await answer(await open(vendo, imported.id));
-
-    expect(status).toBe(200);
-    expect(body.kind).toBe("failed");
-    expect(body.reason).toContain("has no machine");
-    expect(body.reason).toContain("re-create the app");
-    expect(body.retryable).toBeUndefined();
   }, 60_000);
 
   it("does not call a recoverable refusal permanent — the same app opens once its query answers", async () => {

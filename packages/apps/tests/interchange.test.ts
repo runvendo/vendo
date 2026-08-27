@@ -61,11 +61,6 @@ describe(".vendoapp interchange through createApps", () => {
     const source = await runtime.importApp(document({ forkedFrom: "app_template" }), ada);
     guard.grants[0] = { ...guard.grants[0]!, appId: source.id };
     await store.records(`app:${source.id}:invoices`).put({ id: "invoice_1", data: { total: 42 } });
-    await store.records("vendo_state").put({
-      id: `${source.id}:user_ada`,
-      data: { selected: "invoice_1" },
-      refs: { subject: "user_ada", app_id: source.id },
-    });
 
     const bytes = await runtime.exportApp(source.id, ada);
     const copy = await runtime.importApp(bytes, grace);
@@ -78,7 +73,6 @@ describe(".vendoapp interchange through createApps", () => {
     expect(await runtime.get(copy.id, ada)).toBeNull();
     expect(await runtime.get(source.id, ada)).toEqual(source);
     expect(await store.records(`app:${copy.id}:invoices`).list()).toEqual({ records: [] });
-    expect(await store.records("vendo_state").get(`${copy.id}:user_grace`)).toBeNull();
     expect(guard.grants).toHaveLength(1);
     expect(guard.grants.some((grant) => grant.appId === copy.id)).toBe(false);
     const operationOf = (event: { detail?: unknown }) => (event.detail as { operation?: string } | undefined)?.operation;
@@ -86,16 +80,15 @@ describe(".vendoapp interchange through createApps", () => {
     expect(guard.audit.filter((event) => operationOf(event) === "import")).toHaveLength(2);
   });
 
-  it("exports only the document, without identity, lineage, or machine state", async () => {
+  it("exports only the document, without identity or lineage", async () => {
     const store = memoryStore();
     const runtime = createApps({ store, guard: guardFixture(), tools, catalog: [] });
     const ctx = context("user_ada");
-    // Export is document-only: it never writes identity, lineage, machine state
-    // (or any app/ directory).
+    // Export is document-only: it never writes identity, lineage (or any app/
+    // directory).
     const legacy = document({
       id: "app_legacy",
       forkedFrom: "app_template",
-      machine: { snapshotRef: "fake:snap_legacy", provisionedAt: "2026-07-19T00:00:00.000Z" },
     });
     await seedAppRow(engineOverAdapter(store), legacy, "user_ada");
 
@@ -103,7 +96,6 @@ describe(".vendoapp interchange through createApps", () => {
     expect(Object.keys(archive)).toEqual(["app.json"]);
     const exported = JSON.parse(decoder.decode(archive["app.json"])) as Record<string, unknown>;
     expect(exported).not.toHaveProperty("id");
-    expect(exported).not.toHaveProperty("machine");
     expect(exported).not.toHaveProperty("forkedFrom");
     expect(exported.storage).toEqual(legacy.storage);
   });
@@ -242,9 +234,8 @@ describe(".vendoapp interchange through createApps", () => {
       "app/server.js": encoder.encode("export const ready = true;"),
     });
 
-    const imported = await runtime.importApp(archive, context("user_ada"));
+    await runtime.importApp(archive, context("user_ada"));
 
-    expect(imported.machine).toBeUndefined();
     expect(guard.audit.at(-1)?.detail).toMatchObject({
       operation: "import",
       appDirectory: "ignored",

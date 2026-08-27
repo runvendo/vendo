@@ -85,9 +85,9 @@ export const EVENT_ALLOWLIST: Record<EventName, ReadonlySet<string>> = {
   // One row per tracked CLI command run — each a standalone `vendo <command>`
   // except cloud-init, which fires from the cloud step inside `vendo init`
   // (the standalone run of the same claim ceremony is `login`).
-  // `command` is a closed enum: login | extract | theme | eject
-  // | sync | cloud-init | mcp | knowledge. (Retired values — playground,
-  // refine, try — survive only in historical rows.)
+  // `command` is a closed enum: login | extract | theme | sync | cloud-init
+  // | mcp | knowledge. (Retired values — playground, refine, try, eject —
+  // survive only in historical rows.)
   // failedStep/errorClass are short enums/class names, never message text.
   command_run: new Set([
     ...BASE_PROP_KEYS,
@@ -104,3 +104,16 @@ export const EVENT_ALLOWLIST: Record<EventName, ReadonlySet<string>> = {
   agent_run: new Set([...BASE_PROP_KEYS]),
   error_class: new Set([...BASE_PROP_KEYS, "errorClass"]),
 } as const;
+
+/**
+ * The events that are operational records rather than product analytics: they
+ * say "this ran, here is how it went", and nobody funnels or retains them.
+ * They go to PostHog's Logs product instead of `/capture/` — same key, same
+ * consent, same allowlist, but a store with enforced 30-day retention. The
+ * split is by destination only; an event is never sent to both.
+ */
+export const LOG_EVENTS: ReadonlySet<EventName> = new Set<EventName>([
+  "doctor_run",
+  "command_run",
+  "agent_run",
+]);

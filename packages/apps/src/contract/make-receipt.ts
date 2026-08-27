@@ -29,8 +29,14 @@
  *    agent over MCP — read plain success off a half-built app (2026-08-11). Not
  *    `"failed"`, which means nothing is painted and sends the agent to rebuild:
  *    this view is real, reopenable, and worth keeping.
- * 5. **No consent ceremony.** Cost governance is host config, never a question
- *    asked here.
+ * 5. **A BUILD never gets a receipt at all.** A build spends a machine, and FINAL
+ *    SPEC v1's law is that no machine is spent without the person's explicit yes
+ *    — so the tool parks the ask and answers with the standard `pending-approval`
+ *    outcome, which is what every consent surface already routes on. There was an
+ *    `"awaiting-consent"` status here, and it was a receipt saying `status: "ok"`:
+ *    invisible to the card, to the MCP door and to every other reader that
+ *    branches on the outcome. Not `"building"` either, which would have the agent
+ *    narrate work nobody has authorized yet.
  */
 import { z } from "zod";
 import { appIdSchema, type AppId } from "@vendoai/core";

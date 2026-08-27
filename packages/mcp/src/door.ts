@@ -895,8 +895,12 @@ class Door {
       // OpenSurface envelope — the same unwrap the OAuth leg does below. Both
       // legs share one mount and one `apps` config, so they cannot disagree
       // about whether a saved app renders.
-      if (name === "vendo_apps_open" && this.#config.apps !== undefined && result.status === "ok") {
-        return textResult(await this.#mcpAppsOpenOutput(result.output, args, turn.ctx, identity));
+      if (name === "vendo_apps_open" && this.#config.apps !== undefined) {
+        if (result.status === "ok") {
+          return textResult(await this.#mcpAppsOpenOutput(result.output, args, turn.ctx, identity));
+        }
+        const waiting = result.status === "error" ? buildWaitSay(result.error) : undefined;
+        if (waiting !== undefined) return textResult({ kind: "pending", say: waiting });
       }
       return turnResult(result);
     }
@@ -921,9 +925,18 @@ class Door {
     // apps.agentTools()) returns an OpenSurface envelope ({kind,payload}); the
     // MCP Apps shim renders a bare format-tagged UIPayload (core §8), so unwrap
     // it exactly as the door's own apps path does before mapping the result.
-    if (name === "vendo_apps_open" && this.#config.apps !== undefined && outcome.status === "ok") {
-      const output = await this.#mcpAppsOpenOutput(outcome.output, args, state.context, identity);
-      return mapOutcome({ status: "ok", output: output as Json }, identity.name);
+    if (name === "vendo_apps_open" && this.#config.apps !== undefined) {
+      if (outcome.status === "ok") {
+        const output = await this.#mcpAppsOpenOutput(outcome.output, args, state.context, identity);
+        return mapOutcome({ status: "ok", output: output as Json }, identity.name);
+      }
+      // A build the person has not approved, and one still running, both refuse
+      // the open with a not-found (06-apps, `persistence/open.ts`). Neither is a
+      // broken tool — an agent has to be able to narrate the wait — so the door
+      // names them here, on the leg the registry owns the tool on, exactly as it
+      // does on its own apps path (`#executeAppsTool`).
+      const waiting = outcome.status === "error" ? buildWaitSay(outcome.error) : undefined;
+      if (waiting !== undefined) return textResult({ kind: "pending", say: waiting });
     }
     return mapOutcome(outcome, identity.name, { descriptor, args });
   }
@@ -1018,9 +1031,16 @@ class Door {
       }
       return { status: "ok", output: await apps.call(appId, args.ref as string, args.args as Json, ctx) };
     } catch (error) {
+      // An app whose build is not through yet refuses the open with a not-found
+      // (06-apps, `persistence/open.ts`). That is a WAIT, not a broken tool, and
+      // an outside agent has to be able to narrate it — so the door names the
+      // two of them instead of handing back a failure.
+      const failure = { code: errorCode(error), message: errorMessage(error) };
+      const waiting = buildWaitSay(failure);
+      if (waiting !== undefined) return { status: "ok", output: { kind: "pending", say: waiting } };
       // Preserve the VendoError taxonomy (e.g. "cloud-required",
       // "sandbox-unavailable") — 00-overview's "one error taxonomy" convention.
-      return { status: "error", error: { code: errorCode(error), message: errorMessage(error) } };
+      return { status: "error", error: failure };
     }
   }
 
@@ -1069,7 +1089,7 @@ class Door {
     identity: HostIdentity,
   ): Promise<unknown> {
     let appName: string | undefined;
-    if (isHttpOpenSurface(output) && typeof args.appId === "string") {
+    if ((isHttpOpenSurface(output) || isBundleOpenSurface(output)) && typeof args.appId === "string") {
       try {
         appName = (await this.#config.apps!.list(ctx)).find((app) => app.id === args.appId)?.name;
       } catch {
@@ -1077,7 +1097,13 @@ class Door {
         // a secondary list failure must not hide the safe link-out path.
       }
     }
-    return projectAppsOpenOutput(output, { productName: identity.name, appName });
+    return projectAppsOpenOutput(output, {
+      productName: identity.name,
+      // The deployment's canonical public base (10-mcp §5), which is the only
+      // address the door knows a person can open this product at.
+      ...(this.#publicOrigin === undefined ? {} : { productUrl: this.#publicOrigin + this.#publicBasePath }),
+      appName,
+    });
   }
 
   async #sweepIdleSessions(): Promise<void> {
@@ -1619,6 +1645,10 @@ function isHttpOpenSurface(output: unknown): output is { kind: "http"; url: stri
   return isRecord(output) && output.kind === "http" && typeof output.url === "string";
 }
 
+function isBundleOpenSurface(output: unknown): output is { kind: "bundle"; entry: string } {
+  return isRecord(output) && output.kind === "bundle" && typeof output.entry === "string";
+}
+
 interface OpenInProductPayload {
   kind: typeof OPEN_IN_PRODUCT_KIND;
   url: string;
@@ -1634,16 +1664,36 @@ interface OpenInProductPayload {
  * for non-door hosts that send unresolved trees directly. */
 function projectAppsOpenOutput(
   output: unknown,
-  details: { productName: string; appName?: string },
+  details: { productName: string; productUrl?: string; appName?: string },
 ): unknown {
-  if (isHttpOpenSurface(output)) {
+  // A build that terminally failed never becomes servable (06-apps §1). The
+  // reason is written for a person, so the door speaks it instead of leaving an
+  // agent to paraphrase a JSON record.
+  if (isRecord(output) && output.kind === "failed" && typeof output.reason === "string") {
+    const retry = output.retryable === true ? " Asking for it again may work." : "";
+    return { ...output, say: `${output.reason}${retry}` };
+  }
+  // FINAL SPEC v1 — a SEALED bundle IS the app, and it is not a page: it boots
+  // inside the host's own UI, in a sandboxed frame whose only way out is the
+  // host's postMessage bridge (`ui/src/tree/frame-bridge.ts`). So the link-out
+  // names the PRODUCT, which is where the person opens it — the same card an
+  // app with a url of its own takes, because the sentence is the same sentence.
+  const url = isHttpOpenSurface(output)
+    ? output.url
+    : isBundleOpenSurface(output) ? details.productUrl : undefined;
+  if (url !== undefined) {
     const projected: OpenInProductPayload = {
       kind: OPEN_IN_PRODUCT_KIND,
-      url: output.url,
+      url,
       productName: details.productName,
       ...(details.appName === undefined ? {} : { appName: details.appName }),
     };
     return projected;
+  }
+  // A deployment that named no public URL has no link to give, so the sealed
+  // bundle says the one thing left that is true and useful — never its hash.
+  if (isBundleOpenSurface(output)) {
+    return { ...output, say: `This app is built and ready to open in ${details.productName}.` };
   }
   // FIX E — the registry's vendo_apps_open returns an OpenSurface envelope
   // (`{ kind: "tree", payload } | { kind: "http", url } | { kind: "resuming" }`);
@@ -1660,6 +1710,21 @@ function projectAppsOpenOutput(
   delete projected.queries;
   return projected;
 }
+
+/** The two answers the build window refuses an open with (`persistence/open.ts`):
+ *  a build nobody has approved yet, and one still running. Both are waits, and
+ *  this is what the door says instead of reporting them as failures. */
+function buildWaitSay(error: { code: string; message: string }): string | undefined {
+  const { code, message } = error;
+  if (code !== "not-found") return undefined;
+  if (message.endsWith("is waiting on its build to be approved")) {
+    return "This app is waiting on the user's build approval. Once they approve it, open it again.";
+  }
+  return message.endsWith("is still being built")
+    ? "This app is still being built. Open it again in a moment."
+    : undefined;
+}
+
 function replayKey(tool: string, args: Record<string, unknown>): string {
   return `${tool}\0${canonicalJson(args)}`;
 }
@@ -1775,7 +1840,7 @@ function mapOutcome(
 function textResult(output: unknown): CallToolResult {
   const text = isOpenInProductPayload(output)
     ? `Open ${output.appName ?? "this app"} in ${output.productName}: ${output.url}`
-    : stringify(output);
+    : appAnswerSay(output) ?? stringify(output);
   return {
     content: [{ type: "text", text }],
     structuredContent: isRecord(output) ? output : { [VENDO_RESULT_VALUE]: output },
@@ -1788,6 +1853,19 @@ function inBandError(text: string): CallToolResult {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** The answers an open gives that are not a surface to render: the build
+ *  window's waits, a build that failed for good, and a sealed bundle with no
+ *  product url to link to. The door mints `say` where it projects the answer
+ *  (`projectAppsOpenOutput`), so it speaks one line the agent can narrate while
+ *  the record still rides intact as `structuredContent` for a loop reading
+ *  `kind`. */
+const SAID_OPEN_KINDS: ReadonlySet<unknown> = new Set(["pending", "failed", "bundle"]);
+
+function appAnswerSay(value: unknown): string | undefined {
+  if (!isRecord(value) || !SAID_OPEN_KINDS.has(value.kind)) return undefined;
+  return typeof value.say === "string" ? value.say : undefined;
 }
 
 function isOpenInProductPayload(value: unknown): value is OpenInProductPayload {

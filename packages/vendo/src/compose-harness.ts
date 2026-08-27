@@ -8,6 +8,7 @@ import { awayRunner } from "@vendoai/agents";
 import {
   CONNECTOR_DISCOVERY_TOOLS,
   VENDO_AUTOMATE_TOOL,
+  VENDO_BASH_TOOL,
   VENDO_MAKE_TOOL,
   type AgentRunner,
   type Harness,
@@ -48,10 +49,17 @@ import { registerTurnSteer } from "./turn-liveness.js";
  *  A name with nothing behind it costs nothing: `computeInitialLoadout` filters
  *  the turn's OWN listings through this set (tool-search.ts), so on a deployment
  *  that never opted into texts it simply never matches — no `channels` gate. */
-const PROMPT_TAUGHT_TOOLS: readonly string[] = [
+export const PROMPT_TAUGHT_TOOLS: readonly string[] = [
   VENDO_MAKE_TOOL,
   VENDO_AUTOMATE_TOOL,
   VENDO_TEXT_ME_TOOL,
+  // The shell has no `vendo_` prefix on purpose (it is the `bash` every model
+  // already knows), so it is not covered by the always-active exemption that
+  // prefix buys. Named here instead: a deployment past the loadout cap must not
+  // lose the one tool that opens the user's files. An entry with no matching
+  // listing costs nothing — a deployment with the shell withheld simply has
+  // nothing for this name to exempt.
+  VENDO_BASH_TOOL,
   ...CONNECTOR_DISCOVERY_TOOLS,
 ];
 
@@ -207,7 +215,7 @@ const harnessTurnDoorSeams = (
 const harnessTurnConfig = (
   composition: VendoComposition,
 ): Parameters<typeof createHarnessTurns>[0] => {
-  const { harness, sandbox, store, files, guard, boundTools, capability, catalog } = composition;
+  const { harness, sandbox, store, files, guard, boundTools, capability, catalog, ops } = composition;
   const { inference, system, toolSearch, capabilityMiss } = composition;
   const { serviceCatalog, toolOutputCap, connectGate, membershipsSeam } = composition;
   // The host's `surfaces.agent` menu, bound at the harness door's registry
@@ -226,6 +234,7 @@ const harnessTurnConfig = (
     // The SAME adapter the erase cascade deletes through (selectStore) — the
     // whole point of resolving it once.
     files,
+    ...(ops === undefined ? {} : { ops }),
     guard,
     tools: menuBoundTools,
     skills: capability.skills,
@@ -314,6 +323,14 @@ const harnessDoorFor = (composition: VendoComposition): HarnessTurns => {
     putUserFile: async (input) => {
       await ready();
       return harnessTurns.putUserFile(input);
+    },
+    stageUpload: async (input) => {
+      await ready();
+      return harnessTurns.stageUpload(input);
+    },
+    writeUserBytes: async (principal, path, content) => {
+      await ready();
+      return harnessTurns.writeUserBytes(principal, path, content);
     },
     threads: {
       get: async (id, ctx) => {

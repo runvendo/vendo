@@ -31,7 +31,7 @@ import { createStore, type VendoStore } from "@vendoai/store";
 import { createGuard, type PolicyConfig, type VendoGuard } from "@vendoai/guard";
 import { createActions } from "@vendoai/actions";
 import { connectorDiscoveryRegistry } from "@vendoai/vendo";
-import { createApps, type AppsRuntime, type SandboxAdapter } from "@vendoai/apps";
+import { createApps, type AppsRuntime } from "@vendoai/apps";
 import {
   automationsInternals,
   createAutomations,
@@ -232,10 +232,6 @@ export interface StackOptions {
    *  a blocking hold tool) AFTER binding — the wrapped extras bypass the
    *  guard on purpose; authority stays under test for the real host tools. */
   wrapTools?: (bound: ToolRegistry) => ToolRegistry;
-  /** A v2 box adapter, for suites about MACHINE apps. Composes the apps runtime
-   *  with machines enabled and its create seam bound to this stack's own
-   *  automations engine — the umbrella's wiring, not a stand-in for it. */
-  sandbox?: SandboxAdapter;
 }
 
 /**
@@ -305,13 +301,6 @@ export async function createStack(options: StackOptions = {}): Promise<Stack> {
     tools: bound,
     catalog: [],
     automations: appsAutomationsSeam(automations, internals.create),
-    ...(options.sandbox === undefined ? {} : {
-      machine: {
-        sandbox: options.sandbox,
-        // Idle auto-sleep is irrelevant here; a no-op clock keeps boxes awake.
-        clock: { setTimeout: () => 0, clearTimeout: () => undefined },
-      },
-    }),
   });
 
   return {

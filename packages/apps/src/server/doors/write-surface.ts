@@ -21,10 +21,7 @@ import {
 } from "../../contract/index.js";
 import { rememberedMemory } from "../persistence/app-memory.js";
 import { commitApp, inlineSourceFile } from "../persistence/app-source.js";
-import { NO_MACHINE } from "./build-messages.js";
 import { rungFor } from "../persistence/edit-journal.js";
-import { findingLine } from "./build-messages.js";
-import { generationDependencies } from "../runtime/generation-context.js";
 import type { AppData } from "../../contract/index.js";
 import { APPS_COLLECTION, appRecordInput, onAppRow, rowFromRecord } from "../persistence/persistence.js";
 import type { AppsRuntimeContext } from "../runtime/runtime-context.js";
@@ -313,57 +310,11 @@ const createRefusedScreenDoor = (
   };
 };
 
-/** A SERVED app has no tree, so its edits go to the in-box agent whole. */
-const createServedAppEditor = (
-  deps: Pick<AppsRuntimeContext,
-    "history" | "requireOwned" | "editServerViaBox" | "failedEdit" | "pruneHistory">,
-) => {
-  const { history, requireOwned, editServerViaBox, failedEdit, pruneHistory } = deps;
-  return async (
-    previous: AppDocument,
-    appId: AppId,
-    instruction: string,
-    ctx: RunContext,
-  ): Promise<EditResult> => {
-    const box = await editServerViaBox(previous, instruction, ctx, { served: true });
-    if (!box.ok) {
-      return failedEdit(previous, instruction, [
-        `the in-box agent could not change the served app: ${box.result.summary}`,
-      ]);
-    }
-    const landed = await requireOwned(appId, ctx);
-    const boxVersion: VersionEntry = {
-      at: new Date().toISOString(),
-      intent: instruction,
-      rung: rungFor(landed),
-    };
-    // The box already landed its own write, so this version is real history
-    // the moment it is appended — and the cap applies to it right here.
-    await history.append(landed.id, previous, boxVersion);
-    await pruneHistory(landed.id);
-    return ({
-      app: landed,
-      version: { ...boxVersion },
-      graduated: true,
-      box: {
-        ok: box.result.ok,
-        summary: box.result.summary,
-        ...(box.result.fns === undefined ? {} : { fns: box.result.fns }),
-        filesChanged: box.result.filesChanged,
-      },
-    });
-  };
-};
-
 const createEditDoor = (
   deps: Pick<AppsRuntimeContext,
-    "config" | "lifecycle" | "requireOwned" | "assembleEdit" | "failedEdit"
-    | "takeEditVersion" | "generationToolContext" | "runServerWork"> & {
-    editServedApp: ReturnType<typeof createServedAppEditor>;
-  },
+    "config" | "requireOwned" | "assembleEdit" | "failedEdit" | "takeEditVersion">,
 ): AppsRuntime["edit"] => {
-  const { config, lifecycle, requireOwned, assembleEdit, failedEdit } = deps;
-  const { takeEditVersion, generationToolContext, runServerWork, editServedApp } = deps;
+  const { config, requireOwned, assembleEdit, failedEdit, takeEditVersion } = deps;
   return async (appId, instruction, ctx) => {
     // Permission before capability (§9.4): a viewer must hear "you can't
     // change the team's copy" — the sentence the fork offer renders from —
@@ -371,13 +322,6 @@ const createEditDoor = (
     const previous = await requireOwned(appId, ctx);
     if (config.model === undefined) {
       throw new VendoError("not-implemented", "generation requires a model");
-    }
-    // A SERVED app has no tree — its whole surface is the code in its machine —
-    // so there is nothing for the brain to edit as text. Every instruction goes
-    // to the in-box agent instead, through the same conversation the person is
-    // already having with the app.
-    if (previous.ui === "http" && previous.machine !== undefined) {
-      return await editServedApp(previous, appId, instruction, ctx);
     }
     // A `.vendo` screen edit goes to the ONE builder: the assembler opens this
     // app's own document, rewrites it and saves it. The save lands through
@@ -399,42 +343,12 @@ const createEditDoor = (
     let graduated: boolean | undefined;
     const issues: string[] = [];
     // ── The escalation ladder, from an app that already exists ──────────────
-    // The assembler could not make this change out of components, so it asked
-    // for the builder — the same §4.5 hand-off a create takes, landing
-    // ADDITIVELY on the stored app: a box that writes real code.
+    // An edit the assembler cannot make out of components used to reach for a
+    // persistent machine. That lane is gone: a bundle app resells through the
+    // build door's consent, and a screen edit that needs more than components
+    // is an honest refusal rather than a machine spent without a yes.
     if (edited.kind === "escalate") {
-      const deps = generationDependencies(config, config.model, await generationToolContext(ctx));
-      // The SAME gate create runs — one door, one test.
-      if (!lifecycle.available()) {
-        return failedEdit(previous, instruction, [NO_MACHINE], false);
-      }
-      try {
-        const served = await runServerWork({
-          document: previous,
-          request: instruction,
-          why: edited.why,
-        }, ctx, deps);
-        if (served.failed !== undefined) {
-          // The server work could not be built, so no edit happened: the stored
-          // app is untouched and says why.
-          return failedEdit(previous, instruction, served.failed);
-        }
-        app = served.document;
-        automation = served.automation;
-        graduated = served.graduated;
-        issues.push(...(served.issues ?? []));
-        for (const finding of served.findings) {
-          console.info(findingLine(finding));
-        }
-      } catch (error) {
-        const reason = safeErrorMessage(error);
-        log({
-          code: "apps.edit-build-skipped",
-          level: "warn",
-          message: `[vendo] the build this edit asked for did not run for ${appId}: ${reason}`,
-        });
-        return failedEdit(previous, instruction, [reason]);
-      }
+      return failedEdit(previous, instruction, [edited.why], false);
     }
     // `authored` appended this edit's own version under the person's words
     // (see `editIntents`), so the version reported here IS that row — read
@@ -458,20 +372,19 @@ const createEditDoor = (
 /** The write slice of `AppsRuntime`. */
 export const createWriteSurface = (
   deps: Pick<AppsRuntimeContext,
-    "config" | "engine" | "caller" | "history" | "holds" | "buildingNow" | "lifecycle" | "requireOwned"
+    "config" | "engine" | "caller" | "history" | "holds" | "buildingNow" | "requireOwned"
     | "updateAppDocument" | "assembleEdit" | "failedEdit" | "takeEditVersion"
-    | "generationToolContext" | "runServerWork" | "editServerViaBox" | "pruneHistory"
+    | "generationToolContext" | "pruneHistory"
     | "reportLifecycle" | "reportDocumentEdit" | "discardVersion"
     | "editIntents" | "editVersions" | "editRefusals">,
 ): Pick<AppsRuntime,
   "authoredScreen" | "refusedScreen" | "commitSource" | "edit" | "remember" | "schedule"> => {
   const { config, engine, requireOwned, updateAppDocument } = deps;
   const saveAuthoredDocument = createAuthoredSaver(deps);
-  const editServedApp = createServedAppEditor(deps);
   return {
     authoredScreen: createAuthoredScreenDoor({ ...deps, saveAuthoredDocument }),
     refusedScreen: createRefusedScreenDoor(deps),
-    edit: createEditDoor({ ...deps, editServedApp }),
+    edit: createEditDoor(deps),
     async commitSource(input, ctx) {
       // §9.7 — the app's ADDRESS comes from its OWNER, and the row's subject is
       // the authoritative answer (§9.5: a promoted app's row subject IS the org

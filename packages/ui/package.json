@@ -1,6 +1,6 @@
 {
   "name": "@vendoai/ui",
-  "version": "0.39.0",
+  "version": "0.52.1",
   "description": "Headless hooks + optional chrome for Vendo: the client, every surface, and the vendo-genui/v2 tree renderer.",
   "keywords": [
     "ai",
@@ -52,7 +52,6 @@
   "scripts": {
     "prebuild": "pnpm run check:icons",
     "build": "tsc -p tsconfig.json",
-    "postbuild": "node scripts/build-eject-templates.mjs",
     "pretest": "pnpm run check:icons",
     "test": "vitest run",
     "pretypecheck": "pnpm run check:icons",

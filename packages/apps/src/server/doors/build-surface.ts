@@ -32,7 +32,6 @@ import {
   buildFailureReason,
   buildWatchdogMs,
   fallbackAppName,
-  findingLine,
 } from "./build-messages.js";
 // The screen engine, by its own path: the contract door does not carry it yet.
 import { SCREEN_FILE } from "../../contract/genui/component/index.js";
@@ -46,7 +45,7 @@ import { generationDependencies, resolveProvider } from "../runtime/generation-c
 import type { EngineOps } from "../persistence/engine.js";
 import { APPS_COLLECTION, appRecordInput, documentFromRecord, withoutSession } from "../persistence/persistence.js";
 import type { AppsRuntimeContext } from "../runtime/runtime-context.js";
-import type { AppsRuntime, CreateServerWork } from "../runtime/types.js";
+import type { AppsRuntime } from "../runtime/types.js";
 
 /** What `create` is handed, named once so the helpers below can take it. */
 type CreateInput = Parameters<AppsRuntime["create"]>[0];
@@ -214,11 +213,9 @@ const routeThroughAssembler = async (
 
 const createCreateDoor = (
   deps: Pick<AppsRuntimeContext,
-    "config" | "engine" | "lifecycle" | "claimSlot" | "generationToolContext"
-    | "reportLifecycle" | "runServerWork">,
+    "config" | "engine" | "claimSlot">,
 ): AppsRuntime["create"] => {
-  const { config, engine, lifecycle, claimSlot, generationToolContext } = deps;
-  const { reportLifecycle, runServerWork } = deps;
+  const { config, engine, claimSlot } = deps;
   return async (input, ctx) => {
     if (config.model === undefined) {
       throw new VendoError("not-implemented", "generation requires a model");
@@ -232,122 +229,32 @@ const createCreateDoor = (
     // it routes (it minted earlier), so it passes no slot down.
     if (input.slot !== undefined) await claimSlot(appId, input.slot, ctx);
     const watchdog = startBuildWatchdog(engine, appId, input.prompt, ctx.principal.subject);
-    const generationDeps = generationDependencies(config, config.model, await generationToolContext(ctx));
-
     const failBuild = createBuildFailer({ engine, appId, prompt: input.prompt, subject: ctx.principal.subject, watchdog });
 
     // The front door has already routed this ask through the screen agent when
     // it hands over a `why` (`vendo_make`), so re-routing would spend a second
     // full agent run on an answer it already has.
-    let why = input.why;
-    if (why === undefined) {
+    if (input.why === undefined) {
       const routed = await routeThroughAssembler(
         { config, engine, appId, createStartedAt, watchdog, failBuild }, input, ctx);
-      if (routed.kind === "assembled") return routed.document;
-      why = routed.why;
-    }
-    // ── The ask is the brief ────────────────────────────────────────────────
-    // Nothing re-plans it and nothing outlines it: the escalation is the claim
-    // that assembly cannot serve this ask, and the box is the only lane that can
-    // find out what can. The person's own words travel to it verbatim, with the
-    // escalation's one-line `why` beside them.
-    //
-    // Sandbox-gated up front rather than after the build spends its latency to
-    // arrive at nothing.
-    if (!lifecycle.available()) {
-      return failBuild(NO_MACHINE, false, [NO_MACHINE], "not-implemented");
-    }
-    // No screen yet: the box has not written anything for one to show. The row
-    // is what makes this a real app — it lists, opens and takes an edit.
-    let app: AppDocument = {
-      format: "vendo/app@1",
-      id: appId,
-      name: fallbackAppName(input.prompt),
-      ui: "tree",
-    };
-
-    let unsavedReason: string | undefined;
-    try {
-      await engine.put(APPS_COLLECTION, appRecordInput(app, ctx.principal.subject, false, "screen-agent"));
-    } catch (error) {
-      // A persist failure degrades the app to view-only — it renders, it just
-      // is not in the user's list and cannot be reopened. Far better than
-      // discarding a working view, but never silent.
-      unsavedReason = safeErrorMessage(error);
-      log({
-        code: "apps.create-not-saved",
-        level: "error",
-        message: `[vendo] app not saved (${appId}): the view rendered but the store rejected it — ${unsavedReason}`,
-      });
-    }
-    clearTimeout(watchdog);
-    if (unsavedReason !== undefined) {
-      // The server lane writes through the same store the persist just failed
-      // on, and it assumes a stored app — so an unsaved create ends here.
-      input.onUnsaved?.(unsavedReason);
-      return structuredClone(app);
-    }
-    await reportLifecycle("create", app.id, ctx);
-    // A create used to swallow this whole lane: `edit` read `served.failed` and
-    // refused, `create` read nothing at all and the catch below only warned, so
-    // an app whose server side never got built painted its skeleton and reported
-    // itself complete — a live empty app declared successful (2026-08-11). The
-    // app still RESOLVES, because it is real and on screen; what it no longer
-    // does is claim the server work landed.
-    let serverWorkFailed: string[] | undefined;
-    try {
-      const served = await runServerWork({
-        document: app,
-        request: input.prompt,
-        why,
-      }, ctx, generationDeps);
-      app = served.document;
-      if (served.failed !== undefined) serverWorkFailed = served.failed;
-      for (const finding of served.findings) {
-        console.info(findingLine(finding));
+      if (routed.kind === "assembled") {
+        // No `create` audit event here: the assembly WRITE path already emits
+        // it (`write-surface.ts` authoredScreen, on a first save), and the one
+        // this branch replaced belonged to the escalation lane, which wrote its
+        // row directly and so had to report its own.
+        log({
+          code: "apps.gen-create-complete",
+          level: "info",
+          message: `[vendo] gen create complete app=${appId} total=${((Date.now() - createStartedAt) / 1000).toFixed(1)}s`,
+        });
+        return routed.document;
       }
-      // #881 — hand the lane's outcome to the caller, exactly as EditResult
-      // carries it for an edit: the automation envelope raises the thread
-      // card, and failure sentences reach the person instead of dying in
-      // this log.
-      const work: CreateServerWork = {
-        ...(served.automation === undefined ? {} : { automation: served.automation }),
-        ...(served.graduated === undefined ? {} : { graduated: served.graduated }),
-        // Failure sentences — `served.failed`, collected into serverWorkFailed
-        // above — are the outside failure report's to carry, exactly once. The envelope
-        // carries what the SUCCESS half produced: the automation that raises
-        // the thread card, and non-escalated caveat issues.
-        ...((served.issues ?? []).length === 0 || serverWorkFailed === served.issues ? {} : { issues: served.issues }),
-      };
-      // `graduated` alone is not a callback-worthy event — a box succeeding is
-      // the normal case, and a clean build stays SILENT (the failure-only
-      // contract this door shipped with). The envelope fires when it carries
-      // an automation or caveat issues; graduated rides along.
-      if (work.automation !== undefined || work.issues !== undefined) {
-        input.onServerWork?.(work);
-      }
-    } catch (error) {
-      serverWorkFailed = [safeErrorMessage(error)];
     }
-    // Reported OUTSIDE the try on purpose: reporting from inside it let a
-    // throwing consumer re-enter this very catch as a second "server work
-    // failed" and call the callback twice. The failure rides the same
-    // CreateServerWork envelope the success path publishes (#881) — `failed`
-    // is its failure half.
-    if (serverWorkFailed !== undefined) {
-      input.onServerWork?.({ failed: serverWorkFailed });
-      log({
-        code: "apps.server-work-failed",
-        level: "error",
-        message: `[vendo] server work failed for ${appId} (the screen stands, its server side does not): ${serverWorkFailed.join("; ")}`,
-      });
-    }
-    log({
-      code: "apps.gen-create-complete",
-      level: "info",
-      message: `[vendo] gen create complete${serverWorkFailed === undefined ? "" : " (server work failed)"} app=${appId} total=${((Date.now() - createStartedAt) / 1000).toFixed(1)}s`,
-    });
-    return structuredClone(app);
+    // FINAL SPEC v1 — an escalated ask no longer builds HERE. `vendo_make`
+    // routes it to the build door, which asks the person before a box is spent
+    // and starts the build on their yes. Reaching this line means the ask
+    // needs a real build and this door is not the lane that runs one.
+    return failBuild(NO_MACHINE, false, [NO_MACHINE], "not-implemented");
   };
 };
 
@@ -549,8 +456,8 @@ const createValidateDoor = (
 /** The build slice of `AppsRuntime`. */
 export const createBuildSurface = (
   deps: Pick<AppsRuntimeContext,
-    "config" | "engine" | "caller" | "lifecycle" | "claimSlot" | "generationToolContext"
-    | "reportLifecycle" | "runServerWork" | "requireOwned" | "runtime">,
+    "config" | "engine" | "caller" | "claimSlot" | "generationToolContext"
+    | "reportLifecycle" | "requireOwned" | "runtime">,
 ): Pick<AppsRuntime, "create" | "toolShapeBrief" | "floor" | "agentToolRisk" | "validate"> => {
   const { config, generationToolContext } = deps;
   return {

@@ -5,7 +5,7 @@ import {
   type RouteEntry as HttpRouteEntry,
   type RouteHandler as HttpRouteHandler,
 } from "@vendoai/agents/http";
-import type { AppsRuntime, AppTokens } from "@vendoai/apps";
+import type { AppsRuntime } from "@vendoai/apps";
 import type { SandboxVenue } from "@vendoai/apps";
 import type { AutomationsEngine } from "@vendoai/automations";
 import {
@@ -93,7 +93,7 @@ export interface WireDeps {
       §3.3/§6), and a store that offers neither a SQL handle nor a StoreOps
       surface refuses THAT TURN, loudly, naming both options — where the old
       probe silently routed the whole deployment onto the legacy door. */
-  harness: Pick<HarnessTurns, "stream" | "threads" | "putUserFile">;
+  harness: Pick<HarnessTurns, "stream" | "threads" | "stageUpload">;
   guard: VendoGuard;
   /** Which optional subsystems this deployment mounted (`createVendo({ apps:
       false })` / `{ automations: false }`). An unmounted subsystem's routes are
@@ -105,9 +105,6 @@ export interface WireDeps {
       automations execute through); the /box tools callback rides it so
       approvals and audit see box-originated calls like any other. */
   tools: ToolRegistry;
-  /** execution-v2 Lane C — verify a presented per-app box bearer
-      (createAppTokens over the composed store; mint lives with provision). */
-  appTokens: Pick<AppTokens, "verify">;
   automations: AutomationsEngine;
   /** Existing-agents Lane B — the per-approval state read `<VendoApprovalEmbed>`
       polls: pending (with the full request for the consent card), executed
@@ -198,6 +195,16 @@ export const route: (method: string, pattern: string, handler: RouteHandler) => 
 export const prefixRoute: (method: string, prefix: string, handler: RouteHandler) => RouteEntry = httpPrefixRoute;
 export const dispatchRoutes: (routes: readonly RouteEntry[], wire: WireContext) => Promise<Response | undefined> =
   dispatchHttpRoutes;
+
+/** Mark a route so the wire learns its same-origin base at handler ENTRY, not
+    after the handler returns — for the few handlers that USE that base DURING
+    their own dispatch: a turn that dials the internal MCP door off the learned
+    loopback origin (compose-wire.ts), or a doctor probe that calls the host on
+    it. Safe ONLY on a handler that ALWAYS responds; a route that can fall
+    through (return undefined) must never carry it, or a route-shaped 404 from a
+    spoofed Host reopens VEGA-INFO-00037. The wire's default is the safe one —
+    learn only after a non-undefined Response (server.ts). */
+export const learnsOriginAtEntry = (entry: RouteEntry): RouteEntry => ({ ...entry, learnsOriginAtEntry: true });
 
 /** Orgs are a Vendo Cloud capability, not an OSS one (kill-list A5): every
     /orgs route and every org-scoped param on /approvals and /grants answers

@@ -1,5 +1,285 @@
 # @vendoai/agents
 
+## 0.52.1
+
+### Patch Changes
+
+- Updated dependencies [5abb36f]
+  - @vendoai/store@0.52.1
+  - @vendoai/core@0.52.1
+  - @vendoai/actions@0.52.1
+  - @vendoai/guard@0.52.1
+  - @vendoai/apps@0.52.1
+  - @vendoai/automations@0.52.1
+  - @vendoai/harnesses@0.52.1
+  - @vendoai/mcp@0.52.1
+
+## 0.52.0
+
+### Patch Changes
+
+- Updated dependencies [52f5b64]
+  - @vendoai/core@0.52.0
+  - @vendoai/store@0.52.0
+  - @vendoai/apps@0.52.0
+  - @vendoai/mcp@0.52.0
+  - @vendoai/actions@0.52.0
+  - @vendoai/automations@0.52.0
+  - @vendoai/guard@0.52.0
+  - @vendoai/harnesses@0.52.0
+
+## 0.51.2
+
+### Patch Changes
+
+- Updated dependencies [7bd9764]
+  - @vendoai/actions@0.51.2
+  - @vendoai/core@0.51.2
+  - @vendoai/store@0.51.2
+  - @vendoai/guard@0.51.2
+  - @vendoai/apps@0.51.2
+  - @vendoai/automations@0.51.2
+  - @vendoai/harnesses@0.51.2
+  - @vendoai/mcp@0.51.2
+
+## 0.51.1
+
+### Patch Changes
+
+- Updated dependencies [b333af7]
+- Updated dependencies [b333af7]
+  - @vendoai/actions@0.51.1
+  - @vendoai/harnesses@0.51.1
+  - @vendoai/core@0.51.1
+  - @vendoai/store@0.51.1
+  - @vendoai/guard@0.51.1
+  - @vendoai/apps@0.51.1
+  - @vendoai/automations@0.51.1
+  - @vendoai/mcp@0.51.1
+
+## 0.51.0
+
+### Patch Changes
+
+- Updated dependencies [54a3545]
+  - @vendoai/core@0.51.0
+  - @vendoai/apps@0.51.0
+  - @vendoai/actions@0.51.0
+  - @vendoai/mcp@0.51.0
+  - @vendoai/automations@0.51.0
+  - @vendoai/guard@0.51.0
+  - @vendoai/harnesses@0.51.0
+  - @vendoai/store@0.51.0
+
+## 0.50.0
+
+### Patch Changes
+
+- Updated dependencies [bfc70a0]
+  - @vendoai/actions@0.50.0
+  - @vendoai/core@0.50.0
+  - @vendoai/store@0.50.0
+  - @vendoai/guard@0.50.0
+  - @vendoai/apps@0.50.0
+  - @vendoai/automations@0.50.0
+  - @vendoai/harnesses@0.50.0
+  - @vendoai/mcp@0.50.0
+
+## 0.49.1
+
+### Patch Changes
+
+- @vendoai/core@0.49.1
+- @vendoai/store@0.49.1
+- @vendoai/actions@0.49.1
+- @vendoai/guard@0.49.1
+- @vendoai/apps@0.49.1
+- @vendoai/automations@0.49.1
+- @vendoai/harnesses@0.49.1
+- @vendoai/mcp@0.49.1
+
+## 0.49.0
+
+### Patch Changes
+
+- @vendoai/core@0.49.0
+- @vendoai/store@0.49.0
+- @vendoai/actions@0.49.0
+- @vendoai/guard@0.49.0
+- @vendoai/apps@0.49.0
+- @vendoai/automations@0.49.0
+- @vendoai/harnesses@0.49.0
+- @vendoai/mcp@0.49.0
+
+## 0.48.1
+
+### Patch Changes
+
+- Updated dependencies [92e9094]
+  - @vendoai/apps@0.48.1
+  - @vendoai/actions@0.48.1
+  - @vendoai/harnesses@0.48.1
+  - @vendoai/mcp@0.48.1
+  - @vendoai/store@0.48.1
+  - @vendoai/core@0.48.1
+  - @vendoai/guard@0.48.1
+  - @vendoai/automations@0.48.1
+
+## 0.48.0
+
+### Patch Changes
+
+- Updated dependencies [79f177f]
+- Updated dependencies [79f177f]
+  - @vendoai/core@0.48.0
+  - @vendoai/apps@0.48.0
+  - @vendoai/harnesses@0.48.0
+  - @vendoai/mcp@0.48.0
+  - @vendoai/actions@0.48.0
+  - @vendoai/automations@0.48.0
+  - @vendoai/guard@0.48.0
+  - @vendoai/store@0.48.0
+
+## 0.47.0
+
+### Patch Changes
+
+- Updated dependencies [412d593]
+- Updated dependencies [412d593]
+  - @vendoai/core@0.47.0
+  - @vendoai/apps@0.47.0
+  - @vendoai/harnesses@0.47.0
+  - @vendoai/mcp@0.47.0
+  - @vendoai/actions@0.47.0
+  - @vendoai/automations@0.47.0
+  - @vendoai/guard@0.47.0
+  - @vendoai/store@0.47.0
+
+## 0.46.0
+
+### Patch Changes
+
+- Updated dependencies [5cee3a5]
+  - @vendoai/core@0.46.0
+  - @vendoai/apps@0.46.0
+  - @vendoai/harnesses@0.46.0
+  - @vendoai/actions@0.46.0
+  - @vendoai/automations@0.46.0
+  - @vendoai/guard@0.46.0
+  - @vendoai/mcp@0.46.0
+  - @vendoai/store@0.46.0
+
+## 0.45.0
+
+### Patch Changes
+
+- @vendoai/core@0.45.0
+- @vendoai/store@0.45.0
+- @vendoai/actions@0.45.0
+- @vendoai/guard@0.45.0
+- @vendoai/apps@0.45.0
+- @vendoai/automations@0.45.0
+- @vendoai/harnesses@0.45.0
+- @vendoai/mcp@0.45.0
+
+## 0.44.0
+
+### Patch Changes
+
+- Updated dependencies [31c8e30]
+- Updated dependencies [31c8e30]
+- Updated dependencies [31c8e30]
+- Updated dependencies [31c8e30]
+  - @vendoai/apps@0.44.0
+  - @vendoai/harnesses@0.44.0
+  - @vendoai/store@0.44.0
+  - @vendoai/core@0.44.0
+  - @vendoai/guard@0.44.0
+  - @vendoai/actions@0.44.0
+  - @vendoai/mcp@0.44.0
+  - @vendoai/automations@0.44.0
+
+## 0.43.0
+
+### Patch Changes
+
+- @vendoai/core@0.43.0
+- @vendoai/store@0.43.0
+- @vendoai/actions@0.43.0
+- @vendoai/guard@0.43.0
+- @vendoai/apps@0.43.0
+- @vendoai/automations@0.43.0
+- @vendoai/harnesses@0.43.0
+- @vendoai/mcp@0.43.0
+
+## 0.42.0
+
+### Patch Changes
+
+- Updated dependencies [7bbfd3f]
+- Updated dependencies [7bbfd3f]
+- Updated dependencies [7bbfd3f]
+- Updated dependencies [7bbfd3f]
+- Updated dependencies [7bbfd3f]
+- Updated dependencies [7bbfd3f]
+- Updated dependencies [7bbfd3f]
+- Updated dependencies [7bbfd3f]
+- Updated dependencies [7bbfd3f]
+- Updated dependencies [7bbfd3f]
+- Updated dependencies [7bbfd3f]
+- Updated dependencies [7bbfd3f]
+- Updated dependencies [7bbfd3f]
+  - @vendoai/apps@0.42.0
+  - @vendoai/harnesses@0.42.0
+  - @vendoai/core@0.42.0
+  - @vendoai/store@0.42.0
+  - @vendoai/actions@0.42.0
+  - @vendoai/mcp@0.42.0
+  - @vendoai/automations@0.42.0
+  - @vendoai/guard@0.42.0
+
+## 0.41.1
+
+### Patch Changes
+
+- Updated dependencies [97be645]
+- Updated dependencies [49ca762]
+  - @vendoai/apps@0.41.1
+  - @vendoai/harnesses@0.41.1
+  - @vendoai/actions@0.41.1
+  - @vendoai/mcp@0.41.1
+  - @vendoai/store@0.41.1
+  - @vendoai/core@0.41.1
+  - @vendoai/guard@0.41.1
+  - @vendoai/automations@0.41.1
+
+## 0.41.0
+
+### Patch Changes
+
+- Updated dependencies [61cb46e]
+  - @vendoai/apps@0.41.0
+  - @vendoai/core@0.41.0
+  - @vendoai/store@0.41.0
+  - @vendoai/actions@0.41.0
+  - @vendoai/harnesses@0.41.0
+  - @vendoai/mcp@0.41.0
+  - @vendoai/automations@0.41.0
+  - @vendoai/guard@0.41.0
+
+## 0.40.0
+
+### Patch Changes
+
+- @vendoai/core@0.40.0
+- @vendoai/store@0.40.0
+- @vendoai/actions@0.40.0
+- @vendoai/guard@0.40.0
+- @vendoai/apps@0.40.0
+- @vendoai/automations@0.40.0
+- @vendoai/harnesses@0.40.0
+- @vendoai/mcp@0.40.0
+
 ## 0.39.0
 
 ### Patch Changes

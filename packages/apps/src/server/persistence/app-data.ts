@@ -2,7 +2,6 @@ import {
   type AppDataTarget,
   type AppId,
   type BlobStore,
-  type Json,
   type RecordStore,
   type StoreAdapter,
   type StoreOps,
@@ -87,8 +86,6 @@ const clearBlobs = async (blobs: BlobStore): Promise<void> => {
 };
 
 export interface AppDataAccess {
-  getState(appId: AppId, subject: string): Promise<Json | null>;
-  setState(appId: AppId, subject: string, data: Json): Promise<void>;
   records(app: AppDocument, name: string, owner: string): RecordStore;
   blobs(app: AppDocument, name: string, owner: string): BlobStore;
   clear(app: AppDocument, subject: string, historical?: readonly AppDocument[]): Promise<void>;
@@ -144,17 +141,6 @@ const recordByteLength = (record: Parameters<RecordStore["put"]>[0]): number => 
 export const createAppData = (
   { ops, store }: { ops: StoreOps | undefined; store: StoreAdapter },
 ): AppDataAccess => ({
-  async getState(appId, subject) {
-    const record = await store.records("vendo_state").get(`${appId}:${subject}`);
-    return record === null ? null : structuredClone(record.data);
-  },
-  async setState(appId, subject, data) {
-    await store.records("vendo_state").put({
-      id: `${appId}:${subject}`,
-      data: structuredClone(data),
-      refs: { subject, app_id: appId },
-    });
-  },
   records(app, name, owner) {
     const declaration = declaredStorage(app, name, "records");
     const storage = backingFor(ops, store, { appId: app.id, collection: name, owner }, declaration);
@@ -208,7 +194,6 @@ export const createAppData = (
       if (storage.kind === "records") await clearRecords(storage.records);
       else await clearBlobs(storage.blobs);
     }
-    await store.records("vendo_state").delete(`${app.id}:${subject}`);
     await clearBlobs(store.blobs(`app:${app.id}`));
   },
 });

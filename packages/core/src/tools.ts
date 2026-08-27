@@ -62,6 +62,17 @@ export const VENDO_AUTOMATE_TOOL = "vendo_automate";
 export const VENDO_APPS_PIN_TOOL = "vendo_apps_pin";
 export const VENDO_APPS_UNPIN_TOOL = "vendo_apps_unpin";
 
+/**
+ * The ask the BUILD door parks a standing card for (FINAL SPEC v1: no machine is
+ * spent without the person's explicit yes).
+ *
+ * No model is ever handed it — the door calls the guard with it directly — but
+ * the door that authors the descriptor and every surface that renders its card
+ * hold this string, and the card IS the consent moment, so it is named once here
+ * beside its title rather than spelled out on each side.
+ */
+export const VENDO_APP_BUILD_TOOL = "vendo_app_build";
+
 /** The read that makes those two callable: the slot ids the host's own pages
  *  have reported. Named here beside them because a model that invents a slot id
  *  aims a placement at a spot no page renders, and this is the only answer to
@@ -123,6 +134,10 @@ export const VENDO_TOOL_TITLES: Readonly<Record<string, string>> = {
   vendo_make: "Make you a screen",
   vendo_automate: "Set this to run on its own",
   vendo_apps_open: "Open the app",
+  // The one title a PERSON reads before anything is spent: this tool exists
+  // only to raise the consent card, and the card fell back to the prettified
+  // slug ("Vendo app build") on the one screen that has to be legible.
+  [VENDO_APP_BUILD_TOOL]: "Build this app for real",
   vendo_apps_reseed: "Refresh a remixed piece",
   vendo_apps_pin: "Pin the app to your page",
   vendo_apps_unpin: "Take the app off your page",
@@ -134,6 +149,7 @@ export const VENDO_TOOL_TITLES: Readonly<Record<string, string>> = {
   vendo_user_files_list: "See the files you shared",
   vendo_user_files_read: "Read a file you shared",
   vendo_user_files_put: "Save a file to your files",
+  bash: "Work on your files",
   vendo_text_me: "Text me",
   // The verbs and `ask_user` authored these titles inline first; they moved here
   // verbatim so the CLIENT can say them too — a live browser proof caught a verb
@@ -221,6 +237,21 @@ export type GradedRiskLabel = "read" | "write" | "destructive";
  *  name with two definitions drifts silently: the registry that implements it,
  *  and the loop that ends a turn on it. */
 export const ASK_USER_TOOL = "ask_user";
+
+/** The agent's hands over the user's own files: one shell, in this process,
+ *  over the workspace (spec 2026-08-23 §1). Named here for `ASK_USER_TOOL`'s
+ *  reason — the registry that implements it lives in `@vendoai/harnesses` and the
+ *  composition that mounts it lives in `@vendoai/vendo`, and a tool name with two
+ *  spellings is a tool the guard grades under one and the loadout exempts under
+ *  the other.
+ *
+ *  Deliberately NOT `vendo_bash`: this is the same `bash` every model already
+ *  knows from every other agent harness, and the name is what teaches it. The
+ *  cost of leaving the `vendo_` prefix behind is that it is not covered by the
+ *  loadout's always-active exemption for our own tools, so composition names it
+ *  explicitly (`PROMPT_TAUGHT_TOOLS`) and the agent-menu projection exempts it
+ *  beside the connector four (`withAgentMenu`). */
+export const VENDO_BASH_TOOL = "bash";
 
 /** The connector dispatcher — the one tool whose real action is an ARGUMENT
  *  rather than its name, because a single
@@ -392,6 +423,24 @@ const connectRequiredSchema = z.object({
   message: z.string(),
 }).passthrough() satisfies z.ZodType<ConnectRequired>;
 
+/** 01-core §4 — the parked ask in words, for the surfaces that render no card:
+ *  an outside agent over MCP, a text message, a transcript. `question` is what
+ *  the person is being asked; `notes` are the quiet lines under it — the same
+ *  pair the in-thread card composes (`consentAsk`, ui/chrome/build-beat.tsx),
+ *  never a second vocabulary for one ask. */
+export interface PendingApproval {
+  id: ApprovalId;
+  question: string;
+  notes: string[];
+}
+
+/** 01-core §4 */
+const pendingApprovalSchema = z.object({
+  id: approvalIdSchema,
+  question: z.string().min(1),
+  notes: z.array(z.string()),
+}).passthrough() satisfies z.ZodType<PendingApproval>;
+
 /** 01-core §4
  *
  *  `blocked.cause` narrows WHY nothing ran when the reason is nobody's doing:
@@ -405,7 +454,25 @@ const connectRequiredSchema = z.object({
 export type ToolOutcome =
   | { status: "ok"; output: Json }
   | { status: "error"; error: { code: string; message: string } }
-  | { status: "pending-approval"; approvalId: ApprovalId }
+  // `approval`/`say`/`descriptor` are FIELDS on the existing status, never a
+  // status of their own — the same trade `blocked.cause` makes above. A tool
+  // that parks an ask of its OWN (the built-app door: the ask is about a build,
+  // not about calling that tool) is the one that knows what the card says and
+  // what to tell the person meanwhile; a park the guard raised on the tool's own
+  // descriptor is already described by it, so all three stay optional and every
+  // shipped producer and reader is untouched.
+  //
+  // `descriptor` is the ask's own — what the CARD reads. `approval` is the same
+  // ask already in words, for the surfaces that render no card, and both are
+  // authored off the one descriptor (build-door.ts), so a card and an outside
+  // agent can never be told different things about one ask.
+  | {
+      status: "pending-approval";
+      approvalId: ApprovalId;
+      approval?: PendingApproval;
+      say?: string;
+      descriptor?: ToolDescriptor;
+    }
   | { status: "blocked"; reason: string; cause?: "expired" }
   | { status: "connect-required"; connect: ConnectRequired };
 
@@ -416,7 +483,13 @@ export const toolOutcomeSchema = z.discriminatedUnion("status", [
     status: z.literal("error"),
     error: z.object({ code: z.string(), message: z.string() }).passthrough(),
   }).passthrough(),
-  z.object({ status: z.literal("pending-approval"), approvalId: approvalIdSchema }).passthrough(),
+  z.object({
+    status: z.literal("pending-approval"),
+    approvalId: approvalIdSchema,
+    approval: pendingApprovalSchema.optional(),
+    say: z.string().min(1).optional(),
+    descriptor: toolDescriptorSchema.optional(),
+  }).passthrough(),
   z.object({
     status: z.literal("blocked"),
     reason: z.string(),

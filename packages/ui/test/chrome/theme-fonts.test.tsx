@@ -7,10 +7,9 @@ import { VendoProvider } from "../../src/context.js";
 import { TreeView, type WalkTree } from "../../src/tree/index.js";
 
 /**
- * Generated code mounts natively in the host page now (`InClientMount`), so the
- * document the chrome injects into IS the document a generated screen renders
- * in. That makes this the whole delivery path for a host's brand faces — there
- * is no second venue to hand them to.
+ * The chrome injects the host's brand faces into the document it mounts in, and
+ * that is the whole delivery path for those faces — there is no second venue to
+ * hand them to.
  */
 
 const FONTS_CSS = "@font-face { font-family: 'Inter'; font-style: normal; "

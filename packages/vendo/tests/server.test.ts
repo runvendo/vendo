@@ -717,51 +717,6 @@ describe("09 §3 public wire", () => {
     expect(custom.resume).not.toHaveBeenCalled();
   });
 
-  it("fork never touches the Cloud sandbox: the copy carries no machine", async () => {
-    // execution-v2 Wave 1.5 — the v1 fork path (resume → snapshot → stop
-    // through config.sandbox) is deleted: a fork carries no machine, so even
-    // with the Cloud sandbox selected the console sees no traffic.
-    vi.stubEnv("E2B_API_KEY", "");
-    vi.stubEnv("MODAL_TOKEN_ID", "");
-    vi.stubEnv("MODAL_TOKEN_SECRET", "");
-    vi.stubEnv("VENDO_API_KEY", "vnd_cloud_key");
-    vi.stubEnv("VENDO_CLOUD_URL", "https://cloud-rung.test");
-    const machineId = `m_${"a".repeat(24)}`;
-    const consoleCalls: Array<{ url: string; method: string; authorization: string | null }> = [];
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const sent = new Request(input, init);
-      consoleCalls.push({
-        url: sent.url,
-        method: sent.method,
-        authorization: sent.headers.get("authorization"),
-      });
-      const url = new URL(sent.url);
-      if (url.pathname === "/api/v1/sandboxes/resume") {
-        return Response.json({ id: machineId, url: `https://m-${machineId}.vendo.run` });
-      }
-      if (url.pathname.endsWith("/snapshot")) {
-        return Response.json({ ref: `vendo:snap_${"b".repeat(40)}` });
-      }
-      return Response.json({ ok: true });
-    }));
-
-    const { vendo } = await setup();
-    expect((await vendo.handler(request("GET", "/status"))).status).toBe(200);
-    await vendo.store.records("vendo_apps").put({
-      id: "app_cloud",
-      data: {
-        subject: principal.subject,
-        enabled: true,
-        doc: { ...app("app_cloud"), ui: "http" },
-      },
-      refs: { subject: principal.subject },
-    });
-
-    const fork = await vendo.apps.fork("app_cloud", ctx);
-    expect(fork).not.toHaveProperty("machine");
-    expect(consoleCalls.filter((call) => call.url.includes("/api/v1/sandboxes"))).toEqual([]);
-  });
-
   it("selects the connections adapter with the adapter-rule precedence", async () => {
     // Adapter rule (2026-07-17 cloud definition): explicit adapter → BYO
     // brokers → VENDO_API_KEY defaults the Cloud adapter → unconfigured.
@@ -1178,9 +1133,7 @@ describe("09 §3 public wire", () => {
     // The gate used to be a per-request `NODE_ENV === "production"` refusal on
     // the /doctor/ prefix, so ABSENCE of configuration read as "not production"
     // and served the whole probe surface unauthenticated: /doctor/machines
-    // enumerates every machine-bearing app in the deployment (id, name,
-    // provisioned-at, awake-right-now, and each declared cron + fn) across every
-    // subject, and reports whether VENDO_TICK_SECRET guards /tick;
+    // reports whether VENDO_TICK_SECRET guards /tick;
     // POST /doctor/act-as makes the composition mint host actAs material for a
     // synthetic principal on demand. NODE_ENV is unset on plenty of Node deploys
     // and `process` does not exist at all on edge runtimes, where
@@ -1230,98 +1183,6 @@ describe("09 §3 public wire", () => {
     // this export Next.js would 405 a PATCH before it ever reached the wire's
     // own cloud-required seam (the /orgs routes match ANY method).
     expect((await next.PATCH(request("PATCH", "/orgs/org_1/members/user_1", { role: "admin" }))).status).toBe(402);
-  });
-});
-
-describe("06-apps §9 in-client venue over the wire", () => {
-  const seedApp = async (vendo: Vendo, doc: AppDocument, subject = principal.subject) => {
-    await vendo.store.ensureSchema();
-    await vendo.store.records("vendo_apps").put({
-      id: doc.id,
-      data: { subject, enabled: true, doc },
-      refs: { subject },
-    });
-  };
-
-  it("serves the owner-scoped ship-diff for an app", async () => {
-    const { vendo } = await setup();
-    await seedApp(vendo, app("app_diff"));
-    const response = await vendo.handler(request("GET", "/apps/app_diff/ship-diff"));
-    expect(response.status).toBe(200);
-    const shipDiff = await response.json();
-    expect(shipDiff).toMatchObject({
-      appId: "app_diff",
-      versionHash: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
-      pins: [],
-      generated: [],
-    });
-  });
-
-  it("keeps ship-diff owner-scoped — another subject sees not-found", async () => {
-    const { vendo } = await setup(vi.fn(async () => ({ kind: "user", subject: "user_other" } as Principal)));
-    await seedApp(vendo, app("app_diff"), principal.subject);
-    const response = await vendo.handler(request("GET", "/apps/app_diff/ship-diff"));
-    expect(response.status).toBe(404);
-  });
-
-  it("injects an approval in development and open() rides the hash-pinned verdict end to end", async () => {
-    const { vendo } = await setup(vi.fn(async () => principal), { development: true });
-    const doc = app("app_venue");
-    await seedApp(vendo, doc);
-
-    // Default: no approval → the payload carries no inClient field (jail).
-    const before = await (await vendo.handler(request("GET", "/apps/app_venue/open"))).json();
-    expect(before.payload.inClient).toBeUndefined();
-
-    const approve = await vendo.handler(request("POST", "/dev/inclient-approval", {
-      appId: "app_venue",
-      approvedBy: "demo-reviewer",
-    }));
-    expect(approve.status).toBe(200);
-    const approval = await approve.json();
-    expect(approval).toMatchObject({
-      appId: "app_venue",
-      approvedBy: "demo-reviewer",
-      versionHash: expect.stringMatching(/^sha256:/),
-    });
-
-    const granted = await (await vendo.handler(request("GET", "/apps/app_venue/open"))).json();
-    expect(granted.payload.inClient).toMatchObject({
-      granted: true,
-      versionHash: approval.versionHash,
-      approvedBy: "demo-reviewer",
-    });
-
-    // A new version (any content change) drops the venue back, loudly.
-    await seedApp(vendo, { ...doc, name: "Wire app v2" });
-    const dropped = await (await vendo.handler(request("GET", "/apps/app_venue/open"))).json();
-    expect(dropped.payload.inClient).toMatchObject({
-      granted: false,
-      reason: "version-changed",
-    });
-    expect(dropped.payload.inClient.versionHash).not.toBe(approval.versionHash);
-  });
-
-  it("rejects approval injection from an ephemeral principal", async () => {
-    const ephemeral: Principal = { kind: "user", subject: "visitor", ephemeral: true };
-    const { vendo } = await setup(vi.fn(async () => ephemeral), { development: true });
-    const response = await vendo.handler(request("POST", "/dev/inclient-approval", {
-      appId: "app_venue",
-    }));
-    expect(response.status).toBe(401);
-    expect(await response.json()).toEqual({
-      error: { code: "blocked", message: "in-client approval injection requires a host-resolved principal" },
-    });
-  });
-
-  it("does not mount the injection route outside development", async () => {
-    vi.stubEnv("NODE_ENV", "production");
-    const { vendo } = await setup();
-    const response = await vendo.handler(request("POST", "/dev/inclient-approval", {
-      appId: "app_venue",
-    }));
-    expect(response.status).toBe(404);
-    expect(await response.json()).toEqual({ error: { code: "not-found", message: "unknown Vendo route" } });
   });
 });
 
@@ -1479,6 +1340,77 @@ describe("09 §2 composition", () => {
     expect(await probe.json()).toEqual({ ok: true });
   });
 
+  /**
+   * The FALL-THROUGH variant of the poisoning attack. A grouped ("*") route
+   * matches a path then dispatches by method inside — `/threads/:id` serves GET
+   * and DELETE and falls through to a 404 for anything else. Learning the base
+   * at handler ENTRY (once the PATH matched) let an attacker freeze it from a
+   * route-shaped 404 that never reached a real route, partially reopening
+   * VEGA-INFO-00037. The learner now fires only for a TERMINAL match, so the
+   * fall-through never teaches the base and a real loopback request still can.
+   */
+  it("SECURITY: a route-shaped 404 (grouped route, unhandled method) never becomes the learned base", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    vi.stubEnv("VENDO_BASE_URL", "");
+    const { vendo } = await setup();
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const target = input instanceof Request ? input : new Request(input, init);
+      return vendo.handler(target);
+    }));
+
+    // The attacker's Host arrives FIRST, on a path that MATCHES the grouped
+    // /threads/:id route but with a method it does not serve — so the handler
+    // falls through to a 404. Before the fix, matching the pattern already froze
+    // the base to attacker.evil.
+    const notFound = await vendo.handler(requestFrom("https://attacker.evil", "PUT", "/threads/thr_x", {}));
+    expect(notFound.status).toBe(404);
+
+    // A real loopback request can therefore still become the learned, TRUSTED
+    // base — the fall-through 404 did not poison it — so the present probe's
+    // credentials round-trip to it.
+    const probe = await vendo.handler(requestFrom("http://localhost:3000", "POST", "/doctor/present", {}, {
+      authorization: "Bearer vendo-doctor-present",
+      cookie: "vendo_doctor_present=1",
+    }));
+    expect(await probe.json()).toEqual({ ok: true });
+  });
+
+  /**
+   * The METHOD-SPECIFIC variant of the same attack, and why "method !== '*'" was
+   * never a safe proxy for "cannot fall through". The router contract is
+   * `Promise<Response | undefined>` for EVERY entry (agents/http/router.ts), so a
+   * method-specific route can match, run its side effects, then return undefined
+   * to fall through to a 404. `POST /automations/:id/:op` does exactly that for an
+   * op it does not serve (wire/automations.ts). Learning the base at entry for
+   * every non-"*" route let this route-shaped 404 with a spoofed Host freeze it,
+   * reopening VEGA-INFO-00037. The learner now fires only for a TERMINAL match
+   * (a non-undefined Response), whatever the method.
+   */
+  it("SECURITY: a method-specific route that falls through (unknown op) never becomes the learned base", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    vi.stubEnv("VENDO_BASE_URL", "");
+    const { vendo } = await setup();
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const target = input instanceof Request ? input : new Request(input, init);
+      return vendo.handler(target);
+    }));
+
+    // The attacker's Host arrives FIRST, on the method-specific
+    // `POST /automations/:id/:op` route with an op it does not serve — the
+    // handler resolves context, then returns undefined and falls through to 404.
+    const notFound = await vendo.handler(requestFrom("https://attacker.evil", "POST", "/automations/aut_x/bogus", {}));
+    expect(notFound.status).toBe(404);
+
+    // A real loopback request can therefore still become the learned, TRUSTED
+    // base — the method-specific fall-through 404 did not poison it — so the
+    // present probe's credentials round-trip to it.
+    const probe = await vendo.handler(requestFrom("http://localhost:3000", "POST", "/doctor/present", {}, {
+      authorization: "Bearer vendo-doctor-present",
+      cookie: "vendo_doctor_present=1",
+    }));
+    expect(await probe.json()).toEqual({ ok: true });
+  });
+
   it("09-vendo §2 install-dx wave 1.1: logs one loud console.error at composition when NODE_ENV=production and VENDO_BASE_URL is unset", async () => {
     vi.stubEnv("NODE_ENV", "production");
     vi.stubEnv("VENDO_BASE_URL", "");
@@ -1566,15 +1498,6 @@ describe("09 §2 composition", () => {
       data: { subject: principal.subject, enabled: true, doc: app() },
       refs: { subject: principal.subject },
     });
-    await vendo.store.records("vendo_apps").put({
-      id: "app_http",
-      data: {
-        subject: principal.subject,
-        enabled: true,
-        doc: { ...app("app_http"), ui: "http" },
-      },
-      refs: { subject: principal.subject },
-    });
     const byName = new Map((await vendo.actions.descriptors()).map((descriptor) => [descriptor.name, descriptor]));
     // Yousef's ruling (2026-07-28): an app edit does not need approval. Editing
     // your own view is the same act as creating it, so it runs — in EVERY venue,
@@ -1592,14 +1515,6 @@ describe("09 §2 composition", () => {
         args: { app: "app_wire", request: "Persist this to the database" },
       }, edit, venue)).resolves.toMatchObject({ action: "run" });
     }
-    // Including an edit of an already-served app: the request rides the box,
-    // and what the BOX then does is gated on its own terms (egress approval,
-    // per-tool risk), never by a prompt about rearranging a view.
-    await expect(vendo.guard.check({
-      id: "call_http",
-      tool: edit.name,
-      args: { app: "app_http", request: "Make the heading blue" },
-    }, edit, chat)).resolves.toMatchObject({ action: "run" });
     // The ceremony stays where it belongs: writing the app's stored rows asks.
     const dataPut = byName.get("vendo_apps_data_put")!;
     expect(dataPut.risk).toBe("write");
@@ -3831,37 +3746,6 @@ describe("unified try surface (Task 15a) — in-memory profile", () => {
       profile: { tools: [profileTool("host_invoices_list")] },
     });
     expect(unset.guard.status().posture).toBe("unconfigured");
-  });
-});
-
-describe("execution-v2 — box-edit env knobs", () => {
-  it("rejects malformed VENDO_BOX_EDIT_TIMEOUT_MS/POLL_MS at compose time instead of passing NaN into the machine config", async () => {
-    // A units-suffixed operator value like "8m" would flow as NaN into
-    // runBoxEdit, where NaN defeats the ?? defaults: deadline = NaN makes
-    // every box edit "time out after NaNs" instantly (and roll the edit
-    // back), and pollIntervalMs = NaN hot-polls the box control port. Same
-    // posture as validateSweepConfig: fail loudly at compose time.
-    const store = await tempStore("vendo-box-env-");
-    const identity = { principal: async () => principal };
-    vi.stubEnv("VENDO_BOX_EDIT_TIMEOUT_MS", "8m");
-    let thrown: unknown;
-    try {
-      createVendo({ models: { default: {} as LanguageModel }, store, ...identity });
-    } catch (error) {
-      thrown = error;
-    }
-    expect(thrown).toBeInstanceOf(VendoError);
-    expect((thrown as VendoError).code).toBe("validation");
-    expect((thrown as VendoError).message).toContain("VENDO_BOX_EDIT_TIMEOUT_MS");
-
-    vi.stubEnv("VENDO_BOX_EDIT_TIMEOUT_MS", "480000");
-    vi.stubEnv("VENDO_BOX_EDIT_POLL_MS", "0");
-    expect(() => createVendo({ models: { default: {} as LanguageModel }, store, ...identity }))
-      .toThrowError(/VENDO_BOX_EDIT_POLL_MS/);
-
-    // Valid positive-integer values still compose.
-    vi.stubEnv("VENDO_BOX_EDIT_POLL_MS", "2500");
-    expect(() => createVendo({ models: { default: {} as LanguageModel }, store, ...identity })).not.toThrow();
   });
 });
 

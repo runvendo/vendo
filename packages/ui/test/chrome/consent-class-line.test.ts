@@ -38,9 +38,9 @@ import { grantRowWord } from "../../src/chrome/grant-set-card.js";
 
 /** One sentence per grade, and the ungraded state is NOT one of the three. */
 const BY_GRADE = {
-  read: "This reads your data, as you.",
-  write: "This changes something in your account, as you.",
-  destructive: "This makes a change you can’t undo, as you.",
+  read: "This reads your data, and it runs as you.",
+  write: "This changes something in your account, and it runs as you.",
+  destructive: "This makes a change you can’t undo, and it runs as you.",
 } as const;
 
 const UNGRADED_LINE = "This hasn’t been checked, so we can’t say what it changes — it runs as you.";

@@ -1,5 +1,217 @@
 # @vendoai/actions
 
+## 0.52.1
+
+### Patch Changes
+
+- @vendoai/core@0.52.1
+- @vendoai/apps@0.52.1
+
+## 0.52.0
+
+### Patch Changes
+
+- Updated dependencies [52f5b64]
+  - @vendoai/core@0.52.0
+  - @vendoai/apps@0.52.0
+
+## 0.51.2
+
+### Patch Changes
+
+- 7bd9764: The generated wiring file imports the host's own modules even when the project
+  root is reached through a symlink.
+
+  `remix-wiring.ts` binds each ported slot by importing the host's functions and
+  components relative to itself, and the two ends of that relative path were
+  measured in different spaces: `resolveImportSource` realpaths every module it
+  returns, while the generated directory came straight off the root as given. A
+  root behind a symlink — a macOS temp directory, a linked checkout — made the two
+  disagree, and the emitted import climbed out of the project into an absolute
+  machine path (`../../../../../../../../private/var/folders/…/src/lib/api-client`)
+  baked into a file the host commits. The generated directory is realpathed before
+  the split measures against it, so both ends count the same tree and the import
+  comes out as `../../src/lib/api-client` on every machine.
+
+  - @vendoai/core@0.51.2
+  - @vendoai/apps@0.51.2
+
+## 0.51.1
+
+### Patch Changes
+
+- b333af7: fix: fail closed on actAs host credentials when the request origin is untrusted; stop 404s from poisoning the learned base URL
+  - @vendoai/core@0.51.1
+  - @vendoai/apps@0.51.1
+
+## 0.51.0
+
+### Minor Changes
+
+- 54a3545: Remove dead in-client remnants (review-flag capture chain, stale MCP shim bundle now regenerated + drift-guarded, orphaned scenarios); keep the inClient strip and sandboxed-path constants.
+
+### Patch Changes
+
+- Updated dependencies [54a3545]
+  - @vendoai/core@0.51.0
+  - @vendoai/apps@0.51.0
+
+## 0.50.0
+
+### Minor Changes
+
+- bfc70a0: `vendo sync` finds `<Remixable>` behind a re-export shim, outside the sync root,
+  and never misses one in silence.
+
+  Three things a real host repo needed and did not have:
+
+  **Shims are followed, not pattern-matched.** A wrapper's `Remixable` used to be
+  recognized by testing the import's module name against `@vendoai/ui`, so a host
+  that forbids deep `@vendoai/*` imports and re-exports through its own kit
+  module (`import { Remixable } from "@host/vendo-kit"`) captured nothing. Sync
+  now READS the shim's exports and follows them back to `@vendoai/ui` —
+  `export { Remixable } from`, `export * from`, `import` then `export`, aliases,
+  namespaces, relative or tsconfig-aliased, through as many host-local hops as it
+  takes. Proof, not a guess: a chain that never reaches `@vendoai/ui` is still
+  never captured, so a same-named component from somewhere else stays out.
+
+  **The silent miss is loud.** `pins: 0 captured, 0 drifted` printed over a file
+  with `<Remixable>` right there in it was the real bug. Every wrapper sync finds
+  and cannot attribute is now reported on the line under that count, naming the
+  file, the line, the specifier it did not recognize, and the two exact edits that
+  fix it. Carried on the report as `pins.unattributed` for `--json` and
+  programmatic callers. It is a warning, not an exit code — sync cannot prove
+  someone else's `Remixable` is Vendo's, so it says so instead of failing a build
+  on the guess. An unattributed wrapper also blocks baseline pruning: a host who
+  just moved imports behind a shim still has every wrapper they had yesterday, and
+  pruning on that reading would delete the baselines their forks live on.
+
+  **Sources outside the root.** New `remix.sources` in `.vendo/overrides.json` —
+  extra directories sync scans for wrappers, resolved from the project root and
+  free to sit outside it, for the repo whose app is `host/` and whose screens are
+  `../demos/`. Captured module ids stay relative to the project root (a file under
+  an extra source reads as `../demos/…`), so ids remain unique and existing
+  baselines do not move. A configured path that names nothing warns instead of
+  quietly contributing nothing. `remix.ignoreSlots` is now optional, so a project
+  can set `sources` alone.
+
+### Patch Changes
+
+- @vendoai/core@0.50.0
+- @vendoai/apps@0.50.0
+
+## 0.49.1
+
+### Patch Changes
+
+- @vendoai/core@0.49.1
+- @vendoai/apps@0.49.1
+
+## 0.49.0
+
+### Patch Changes
+
+- @vendoai/core@0.49.0
+- @vendoai/apps@0.49.0
+
+## 0.48.1
+
+### Patch Changes
+
+- Updated dependencies [92e9094]
+  - @vendoai/apps@0.48.1
+  - @vendoai/core@0.48.1
+
+## 0.48.0
+
+### Patch Changes
+
+- Updated dependencies [79f177f]
+  - @vendoai/core@0.48.0
+  - @vendoai/apps@0.48.0
+
+## 0.47.0
+
+### Patch Changes
+
+- Updated dependencies [412d593]
+  - @vendoai/core@0.47.0
+  - @vendoai/apps@0.47.0
+
+## 0.46.0
+
+### Patch Changes
+
+- Updated dependencies [5cee3a5]
+  - @vendoai/core@0.46.0
+  - @vendoai/apps@0.46.0
+
+## 0.45.0
+
+### Patch Changes
+
+- @vendoai/core@0.45.0
+- @vendoai/apps@0.45.0
+
+## 0.44.0
+
+### Patch Changes
+
+- Updated dependencies [31c8e30]
+- Updated dependencies [31c8e30]
+  - @vendoai/apps@0.44.0
+  - @vendoai/core@0.44.0
+
+## 0.43.0
+
+### Patch Changes
+
+- @vendoai/core@0.43.0
+- @vendoai/apps@0.43.0
+
+## 0.42.0
+
+### Patch Changes
+
+- Updated dependencies [7bbfd3f]
+- Updated dependencies [7bbfd3f]
+- Updated dependencies [7bbfd3f]
+- Updated dependencies [7bbfd3f]
+- Updated dependencies [7bbfd3f]
+- Updated dependencies [7bbfd3f]
+- Updated dependencies [7bbfd3f]
+- Updated dependencies [7bbfd3f]
+- Updated dependencies [7bbfd3f]
+- Updated dependencies [7bbfd3f]
+- Updated dependencies [7bbfd3f]
+- Updated dependencies [7bbfd3f]
+- Updated dependencies [7bbfd3f]
+  - @vendoai/apps@0.42.0
+  - @vendoai/core@0.42.0
+
+## 0.41.1
+
+### Patch Changes
+
+- Updated dependencies [97be645]
+  - @vendoai/apps@0.41.1
+  - @vendoai/core@0.41.1
+
+## 0.41.0
+
+### Patch Changes
+
+- Updated dependencies [61cb46e]
+  - @vendoai/apps@0.41.0
+  - @vendoai/core@0.41.0
+
+## 0.40.0
+
+### Patch Changes
+
+- @vendoai/core@0.40.0
+- @vendoai/apps@0.40.0
+
 ## 0.39.0
 
 ### Patch Changes

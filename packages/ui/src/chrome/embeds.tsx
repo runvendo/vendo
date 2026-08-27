@@ -117,7 +117,7 @@ function BeatLine({ state, children }: { state: "working" | "done" | "error"; ch
  *  the line, and the line in danger colour. Muting the failure to the same grey
  *  as "Approved — ran" left the WORDS as the only difference between a call
  *  that landed and one that didn't, on a receipt people scan rather than read. */
-function ResolvedApprovalCard({ summary, ok, line, detail }: {
+export function ResolvedApprovalCard({ summary, ok, line, detail }: {
   summary: string;
   ok: boolean;
   line: string;
@@ -184,7 +184,7 @@ function executedCard(summary: string, outcome: ToolOutcome | undefined): ReactN
  * `GET /approvals/:id` and resolves in place to the executed outcome,
  * "declined", or "expired" (the frozen `VendoApprovalEmbedState` vocabulary).
  */
-export function VendoApprovalEmbed({ refValue }: VendoApprovalEmbedProps) {
+export function VendoApprovalEmbed({ refValue, theme }: VendoApprovalEmbedProps) {
   const { client } = useVendoProvider();
   const { approvalId, summary } = refValue;
 
@@ -261,7 +261,7 @@ export function VendoApprovalEmbed({ refValue }: VendoApprovalEmbedProps) {
   }
 
   return (
-    <ChromeRoot>
+    <ChromeRoot theme={theme}>
       <div data-vendo-embed="approval">{body}</div>
     </ChromeRoot>
   );
@@ -272,7 +272,7 @@ export function VendoApprovalEmbed({ refValue }: VendoApprovalEmbedProps) {
  * build streams, then the live app. In-app interactions go over the wire
  * (`apps.call`), never through the host's agent loop.
  */
-export function VendoAppEmbed({ refValue }: VendoAppEmbedProps) {
+export function VendoAppEmbed({ refValue, theme }: VendoAppEmbedProps) {
   const { client, components } = useVendoProvider();
   const { appId, title } = refValue;
   // A press inside the embedded app that parks on the guard asks its question
@@ -289,6 +289,10 @@ export function VendoAppEmbed({ refValue }: VendoAppEmbedProps) {
   // across polls that carry none, so a draft that stops painting for a beat
   // leaves the silhouette up instead of snapping back to the bare skeleton.
   const [forming, setForming] = useState<UIPayload>();
+  // "Progress = chat status lines only" (FINAL SPEC v1) — the build's own latest
+  // line, off the SAME poll. Held like the silhouette: a poll that carries none
+  // leaves the last line up rather than snapping back to the generic bar.
+  const [status, setStatus] = useState<string>();
 
   useEffect(() => {
     setActiveAppId(appId);
@@ -298,6 +302,7 @@ export function VendoAppEmbed({ refValue }: VendoAppEmbedProps) {
     setSurface(undefined);
     setFailed(undefined);
     setForming(undefined);
+    setStatus(undefined);
     const startedAt = Date.now();
     let cancelled = false;
     let done = false;
@@ -347,6 +352,7 @@ export function VendoAppEmbed({ refValue }: VendoAppEmbedProps) {
           resolveSurface(next);
           return;
         }
+        if (next.status !== undefined) setStatus(next.status);
         // Geometry only — the server ships no figure a repair round could
         // change (apps wire-types.ts), so this paints assembly, never a draft.
         if (next.tree !== undefined) setForming(next.tree);
@@ -380,6 +386,7 @@ export function VendoAppEmbed({ refValue }: VendoAppEmbedProps) {
     setSurface(undefined);
     setFailed(undefined);
     setForming(undefined);
+    setStatus(undefined);
     try {
       const created = await client.apps.create({ prompt });
       setActiveAppId(created.id);
@@ -396,14 +403,19 @@ export function VendoAppEmbed({ refValue }: VendoAppEmbedProps) {
   const shown: OpenSurface | undefined = surface
     ?? (forming === undefined ? undefined : { kind: "tree", payload: forming });
   return (
-    <ChromeRoot>
+    <ChromeRoot theme={theme}>
       {/* The thread lane's app boundary: the bar narrates forming → live via
           the shared data-state contract ("building" | "ready"). */}
       <div className="fl-uihost fl-appcard" data-vendo-embed="app">
         <div className="fl-appcard-bar" data-state={building ? "building" : "ready"}>
           <span className="fl-appcard-dot" aria-hidden="true" />
           <span className="fl-boot-labels fl-appcard-name">
-            <span className="fl-boot-building" aria-hidden={!building}>Building {title}…</span>
+            {/* The build's own line when it has one — same slot, same type, so
+                a status is a change of words and never of geometry. */}
+            {/* A live region, because this line is the WHOLE progress channel
+                for a detached build: the words change under the reader without
+                anything else on the page moving, so nothing else would say so. */}
+            <span className="fl-boot-building" role="status" aria-live="polite" aria-hidden={!building}>{status ?? `Building ${title}…`}</span>
             <span className="fl-boot-ready" aria-hidden={building}>{title}</span>
           </span>
           {/* The placement affordance, only once the view is READY — the same
@@ -444,6 +456,9 @@ export function VendoAppEmbed({ refValue }: VendoAppEmbedProps) {
           ) : shown !== undefined ? (
             <AppFrame
               surface={shown}
+              // A sealed bundle is addressed by app — its frame's src is
+              // `/apps/<id>/bundle/<hash>`, so the id is not optional here.
+              appId={activeAppId}
               components={components}
               onParked={approval.onParked}
               // Actions bind to the app actually being SHOWN: after a retry
@@ -471,14 +486,18 @@ export function VendoAppEmbed({ refValue }: VendoAppEmbedProps) {
  * embed by `parseVendoToolEnvelope` — or nothing for plain data (the action
  * executed cleanly; the agent already consumed the result).
  */
-export function VendoToolResult({ output }: VendoToolResultProps) {
+export function VendoToolResult({ output, theme }: VendoToolResultProps) {
   const envelope = parseVendoToolEnvelope(output);
   if (envelope === null) return null;
-  if (envelope.kind === VENDO_APP_REF_KIND) return <VendoAppEmbed refValue={envelope} />;
+  if (envelope.kind === VENDO_APP_REF_KIND) return <VendoAppEmbed refValue={envelope} theme={theme} />;
   // The record it just armed, in the card the thread already renders
   // automations with — the envelope's one line IS the rule sentence.
   if (envelope.kind === VENDO_AUTOMATION_REF_KIND) {
-    return <AutomationCard name={envelope.summary} enabled={envelope.armed} />;
+    return (
+      <ChromeRoot theme={theme}>
+        <AutomationCard name={envelope.summary} enabled={envelope.armed} />
+      </ChromeRoot>
+    );
   }
-  return <VendoApprovalEmbed refValue={envelope} />;
+  return <VendoApprovalEmbed refValue={envelope} theme={theme} />;
 }

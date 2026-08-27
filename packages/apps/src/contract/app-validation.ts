@@ -12,6 +12,7 @@ import {
   safeErrorMessage,
   TOOL_NAME_PATTERN,
   VENDO_APP_FORMAT,
+  VendoError,
   appDocumentSchema,
   type AppDocument,
 } from "@vendoai/core";
@@ -21,7 +22,6 @@ export type AppDocumentValidation =
   | { ok: true; app: AppDocument }
   | { ok: false; error: { code: string; message: string } };
 
-const SERVER_REFERENCE_PATTERN = /^[a-z0-9][a-z0-9+.-]*:.+$/;
 const HOST_REFERENCE_PATTERN = /^host\.[A-Za-z0-9_][A-Za-z0-9_.-]*$/;
 
 const fail = (code: string, message: string): AppDocumentValidation => ({
@@ -89,12 +89,8 @@ const storageError = (app: AppDocument): AppDocumentValidation | null => {
   return null;
 };
 
-/** The reference-shaped fields: the box the app runs on and its fork
- *  provenance. */
+/** The reference-shaped fields: the app's fork provenance. */
 const referenceFieldsError = (app: AppDocument): AppDocumentValidation | null => {
-  if (app.machine !== undefined && !SERVER_REFERENCE_PATTERN.test(app.machine.snapshotRef)) {
-    return fail("validation", `invalid machine snapshot reference "${app.machine.snapshotRef}"`);
-  }
   if (app.seed !== undefined) {
     if (app.seed.component.length === 0) {
       return fail("validation", "seed component must be non-empty");
@@ -105,6 +101,16 @@ const referenceFieldsError = (app: AppDocument): AppDocumentValidation | null =>
   }
   return null;
 };
+
+/** `proposal` is `building`'s half-step BACK — a build that has been offered
+ *  and not answered — so a document carrying both claims a box was spent on an
+ *  ask nobody has said yes to yet. The shape schema cannot say this (it parses
+ *  fields, not their relationship), and the propose path is the first writer
+ *  that could produce it. */
+const buildStateError = (app: AppDocument): AppDocumentValidation | null =>
+  app.proposal !== undefined && app.building !== undefined
+    ? fail("validation", "a document cannot carry both proposal and building")
+    : null;
 
 const validateAppDocumentUnsafe = (input: unknown): AppDocumentValidation => {
   if (typeof input !== "object" || input === null || Array.isArray(input)) {
@@ -129,11 +135,34 @@ const validateAppDocumentUnsafe = (input: unknown): AppDocumentValidation => {
     ?? componentToolsError(app)
     ?? sourceError(app)
     ?? storageError(app)
-    ?? referenceFieldsError(app);
+    ?? referenceFieldsError(app)
+    ?? buildStateError(app);
   if (violation !== null) return violation;
 
   return { ok: true, app };
 };
+
+/**
+ * FINAL SPEC v1 — a BUILT app never leaves its owner, refused at each of the
+ * four doors a copy travels through (share, fork, export, placement).
+ *
+ * The bundle is arbitrary code whose one door is the guarded tool bridge, so a
+ * copy would run its author's code with the recipient's own permissions. That
+ * seam ships with its own egress/consent story; screens are untouched.
+ *
+ * EITHER signal refuses. The two are written by one CAS, but a seal that dies
+ * between them — or the `ui: "bundle"` a build sets before its first seal —
+ * leaves a row carrying one and not the other, and both of those are still a
+ * built app.
+ */
+export function refuseBundleArtifact(doc: AppDocument, operation: string): void {
+  if (doc.ui !== "bundle" && doc.bundle === undefined) return;
+  throw new VendoError(
+    "blocked",
+    `a built app cannot be ${operation}: its bundle would run someone else's code with the recipient's`
+    + " own permissions, and that seam ships with its own consent story — only screens travel today",
+  );
+}
 
 /** 01-core §9 */
 export function validateAppDocument(input: unknown): AppDocumentValidation {

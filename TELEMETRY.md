@@ -21,7 +21,7 @@ Every event carries the base properties `vendoVersion`, `osPlatform`, `nodeVersi
 
 `init_completed` fields are all small integers, bools, or short enums: `command` is `init` only; `typescript` and `themeExtracted` are bools; `router` is the closed enum `app` | `pages` | `none`; `engine` (which AI-polish engine ran) is `claude` | `codex` | `npx-engine` | `none`; `apiDetectMethod` is `route-scan` | `zod` | `none`; `routeCount` is the count of route-bound tools. `frameworkVersion`/`reactVersion`/`zodVersion`/`typescriptVersion` are bare dependency version strings from the host `package.json` with range prefixes stripped (`^15.3.1` → `15.3.1`) — non-identifying, omitted when the dependency is absent.
 
-`init_failed` and `command_run` carry `failedStep` (a short step enum) and `errorClass` (the error's constructor name, e.g. `TypeError`) — never message text. `command_run` fires once per tracked CLI command run; its `command` is the closed enum `login` | `extract` | `theme` | `eject` | `sync` | `cloud-init` | `mcp` | `knowledge` — each a standalone `vendo <command>` except `cloud-init`, which fires from the cloud step inside `vendo init` (the standalone run of the same claim ceremony is `login`) — with `ok` a bool and `durationMs` an integer. Retired values (`playground`, `refine`, `try`, and the retired `extract_completed` event) survive only in historical rows. `doctor_run` carries the health-check's hard-`failures` count, `warnings` count, and a `wired` bool. `star_prompt` reports interactive init's consented star ask: `outcome` is the closed enum `starred` | `star-failed` | `declined`, and the event never fires on non-interactive runs. No event carries component names, ids, labels, file paths, keys, or any other content — counts and enums only.
+`init_failed` and `command_run` carry `failedStep` (a short step enum) and `errorClass` (the error's constructor name, e.g. `TypeError`) — never message text. `command_run` fires once per tracked CLI command run; its `command` is the closed enum `login` | `extract` | `theme` | `sync` | `cloud-init` | `mcp` | `knowledge` — each a standalone `vendo <command>` except `cloud-init`, which fires from the cloud step inside `vendo init` (the standalone run of the same claim ceremony is `login`) — with `ok` a bool and `durationMs` an integer. Retired values (`playground`, `refine`, `try`, `eject`, and the retired `extract_completed` event) survive only in historical rows. `doctor_run` carries the health-check's hard-`failures` count, `warnings` count, and a `wired` bool. `star_prompt` reports interactive init's consented star ask: `outcome` is the closed enum `starred` | `star-failed` | `declined`, and the event never fires on non-interactive runs. No event carries component names, ids, labels, file paths, keys, or any other content — counts and enums only.
 
 Example payload:
 
@@ -85,7 +85,16 @@ Set `"optedOut": false` in `~/.vendo/telemetry.json` to clear the local opt-out 
 
 ## Where Data Goes
 
-Product events are sent to PostHog US Cloud using a write-only project key. Set `VENDO_POSTHOG_HOST` to send them to your own PostHog instead (`VENDO_POSTHOG_KEY` sets the project key); the path is always `/capture/`.
+Events are sent to PostHog US Cloud using a write-only project key. Set `VENDO_POSTHOG_HOST` to send them to your own PostHog instead (`VENDO_POSTHOG_KEY` sets the project key).
+
+There are two destinations, chosen by event, and nothing is ever sent to both:
+
+| Destination | Events | Path | Retention |
+| --- | --- | --- | --- |
+| Product analytics | `init_started`, `init_completed`, `init_failed`, `star_prompt`, `error_class` | `/capture/` | Kept |
+| Logs | `doctor_run`, `command_run`, `agent_run` | `/i/v1/logs` | 30 days, enforced |
+
+`doctor_run`, `command_run`, and `agent_run` are operational records — "this ran, here is how it went" — not funnel steps, so they go to PostHog's Logs product, which enforces a 30-day retention window. They are sent as OTLP/JSON with `service.name` `vendo-sdk`; the event name rides as both the log record's `eventName` and an `event` attribute, the anonymous id as a `distinct_id` attribute, and each allowlisted property as an attribute of the same name. The allowlist, the scrubbing, and every opt-out below apply identically on both paths — moving an event changes only where it is stored and for how long.
 
 Network calls are fire-and-forget, use a short timeout, and failures are swallowed so telemetry cannot break builds or dev servers. The capture socket is unref'd the moment it exists, so a telemetry POST can never keep the CLI running after a command finishes — on a captive-portal network that accepts the connection and never answers, `vendo init` still exits as soon as it prints its summary.
 

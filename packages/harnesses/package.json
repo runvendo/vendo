@@ -1,6 +1,6 @@
 {
   "name": "@vendoai/harnesses",
-  "version": "0.39.0",
+  "version": "0.52.1",
   "description": "The harness runtime: runs any Harness safely, and vendo() — the default in-process thinker.",
   "keywords": [
     "ai",
@@ -39,6 +39,10 @@
       "types": "./dist/claude-code/index.d.ts",
       "default": "./dist/claude-code/index.js"
     },
+    "./claude-code/box": {
+      "types": "./dist/claude-code/box.d.ts",
+      "default": "./dist/claude-code/box.js"
+    },
     "./inference": {
       "types": "./dist/inference/model.d.ts",
       "default": "./dist/inference/model.js"
@@ -68,9 +72,13 @@
   },
   "dependencies": {
     "@ai-sdk/anthropic": "3.0.12",
+    "@e965/xlsx": "0.20.3",
     "@vendoai/apps": "workspace:*",
     "@vendoai/core": "workspace:*",
     "@vendoai/guard": "workspace:*",
+    "fflate": "^0.8.3",
+    "just-bash": "^3.4.2",
+    "unpdf": "^1.8.1",
     "zod": "^3.25.0"
   },
   "peerDependencies": {
@@ -83,7 +91,6 @@
     "@ai-sdk/openai-compatible": "2.0.9",
     "@types/node": "^22.0.0",
     "ai": "6.0.28",
-    "just-bash": "^3.1.0",
     "typescript": "^5.6.0",
     "vitest": "^3.2.6"
   },

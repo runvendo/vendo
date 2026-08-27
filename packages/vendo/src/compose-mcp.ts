@@ -25,12 +25,13 @@ const appsPortFor = (composition: VendoComposition): McpDoorConfig["apps"] => {
       list: (ctx) => apps.list(ctx),
       async open(appId, ctx) {
         const opened = await apps.open(appId, ctx);
-        if (opened.kind === "tree") return { kind: "tree", payload: opened.payload };
-        if (opened.kind === "http") return { kind: "http", url: opened.url };
-        throw new VendoError(
-          "not-implemented",
-          "This is a server app resuming in-product; open it in the host to use it over MCP.",
-        );
+        // Only the tree needs narrowing (its resolved payload is what the shim
+        // renders). Every other surface — a sealed bundle, a build that failed —
+        // travels as itself, because the DOOR is what turns an open into
+        // something an agent can say (`projectAppsOpenOutput`), and a port that
+        // refused here answered every BUILT app with "this is a server app
+        // resuming in-product" — a rung that no longer exists.
+        return opened.kind === "tree" ? { kind: "tree", payload: opened.payload } : opened;
       },
       call: (appId, ref, args, ctx) => apps.call(appId, ref, args, ctx),
   };

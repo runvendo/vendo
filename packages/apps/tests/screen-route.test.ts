@@ -14,10 +14,10 @@
  *    leave the first as a card that builds forever; a failure reported against a
  *    different id would leave the same orphan.
  * 2. **A deployment that cannot build says so, BEFORE it spends anything.** No
- *    sandbox means no machine, so the receipt fails honestly rather than
- *    provisioning nothing and reporting it late. Nothing re-plans the ask on the
+ *    builder means nowhere to build, so the receipt fails honestly rather than
+ *    asking and reporting it late. Nothing re-plans the ask on the
  *    way either: the person's own words and the escalation's one-line `why` are
- *    the whole brief the box gets.
+ *    the whole brief the build gets.
  * 3. **An unwired or unserving assembler surfaces LOUDLY.** Composition forgetting
  *    the slot, an assembler that threw, an `unavailable`, and an `assembled` that
  *    left no row are four different bugs and four failed receipts — never a
@@ -37,7 +37,6 @@ import type {
 import { describe, expect, it } from "vitest";
 import { createAgentTools } from "../src/server/doors/agent-tools.js";
 import { authoringAssembler, scriptedAssembler } from "../src/server/testing/screen-assembler.js";
-import { fakeBoxSandbox } from "../src/server/testing/fake-box.js";
 import { guardFixture } from "../src/server/testing/guard-fixture.js";
 import { memoryStore } from "../src/server/testing/memory-store.js";
 import { basicLanguageModel } from "../src/server/testing/scripted-model.js";
@@ -59,17 +58,12 @@ const tools: ToolRegistry = {
  *  this must stay empty: the ASK is the brief and nothing re-plans it. */
 const briefs: string[] = [];
 
-/** Every task the in-box builder was handed — where the build's brief actually
- *  lives now. */
-const boxTasks: string[] = [];
-
 const runtimeWith = (screen?: ScreenAssembler, options: {
-  /** Configure a sandbox — the ONE thing that decides whether an escalation
-   *  becomes a build. Its presence is the opt-in; there is no flag. */
+  /** Configure a builder — the ONE thing that decides whether an escalation
+   *  becomes an ask. Its presence is the opt-in; there is no flag. */
   sandbox?: boolean;
 } = {}) => {
   briefs.length = 0;
-  boxTasks.length = 0;
   // `LanguageModel` includes a bare model-id string, which cannot be spread.
   const model = basicLanguageModel() as Exclude<ReturnType<typeof basicLanguageModel>, string>;
   const watched = {
@@ -92,15 +86,19 @@ const runtimeWith = (screen?: ScreenAssembler, options: {
     model: watched,
     ...(options.sandbox === true
       ? {
-        machine: {
-          sandbox: fakeBoxSandbox({
-            agent: ({ prompt, context }) => {
-              boxTasks.push(`${prompt}\n${context ?? ""}`);
-              return { ok: true, summary: "built the matcher", fns: ["matchInvoices"], filesChanged: [], testsRun: 0 };
-            },
-          }),
-          buildEnv: () => ({ PORT: "8080" }),
-          boxEditPollMs: 5,
+        // S3 — a composed builder is what makes the escalation an honest ASK.
+        // It is never reached here: the card stands undecided.
+        build: {
+          available: () => true,
+          build: async () => ({ kind: "failed" as const, why: "never reached" }),
+        },
+        // The other half of the same capability: `build.available()` is false
+        // without somewhere to seal the bytes, so a builder alone is not a
+        // deployment that can be asked to build.
+        files: {
+          put: async () => {},
+          get: async () => undefined,
+          delete: async () => {},
         },
       }
       : {}),
@@ -110,7 +108,6 @@ const runtimeWith = (screen?: ScreenAssembler, options: {
     runtime,
     store,
     briefs,
-    boxTasks,
     agentTools: createAgentTools(runtime, {
       data: {} as never,
       requireOwned: async () => { throw new Error("unused"); },
@@ -184,31 +181,34 @@ export default function Spending() {
 const EDITED = SCREEN.replace("This month", "Last month");
 
 describe("an escalation and the build that finishes it share ONE app id", () => {
-  it("the build runs at the id the screen agent was handed, briefed with the ask itself", async () => {
+  it("the ASK is offered at the id the screen agent was handed, holding the ask itself, with nothing spent", async () => {
     const { seen, assembler } = recordingAssembler({ kind: "escalate", why: "this needs real code" });
-    const { agentTools, briefs, boxTasks } = runtimeWith(assembler, { sandbox: true });
+    const { agentTools, briefs, store } = runtimeWith(assembler, { sandbox: true });
 
     const outcome = await make(agentTools);
 
-    expect(outcome.status).toBe("ok");
-    const receipt = (outcome as { output: { id: string; status: string } }).output;
+    // S3 — an escalation with somewhere to build is an ASK, not a build, and it
+    // answers on the standard park so every consent surface downstream sees it.
+    if (outcome.status !== "pending-approval") throw new Error(`expected a park, got ${outcome.status}`);
     // The assembler was consulted ONCE, before anything was built — the seam
-    // routes, the caller does not, and an escalation carries its `why` into
-    // `create` so the build never runs a second agent over the same ask.
+    // routes, the caller does not, and an escalation carries its `why` into the
+    // proposal so the build never runs a second agent over the same ask.
     expect(seen).toHaveLength(1);
-    // …and that consultation, plus the app the build went on to make, is at ONE
-    // id. This is the assertion that stops a stranded second stream.
-    expect(seen[0]?.appId).toBe(receipt.id);
-    // An escalation with somewhere to build is a BUILD, not a failure.
-    expect(receipt.status).toBe("ready");
-    // THE ASK IS THE BRIEF, and it reached the builder as written — the person's
-    // own words rather than a second, unrelated answer to the same ask.
-    expect(boxTasks.join("\n")).toContain("Show my spending by category");
-    // The escalation's one-line `why` travels beside it: the box hears why this
-    // cannot happen in the browser, and nothing else was decided for it.
-    expect(boxTasks.join("\n")).toContain("this needs real code");
-    // AND NOTHING RE-PLANNED IT. There is no middleman between the ask and the
-    // box, so no model was asked what to build.
+    // THE ASK IS THE BRIEF, and it is held as written — the person's own words
+    // rather than a second, unrelated answer to the same ask. It waits on the
+    // proposal because the yes may land long after this turn — and that proposal
+    // is at the id the screen agent was handed, carrying the very approval the
+    // caller was answered with. This is what stops a stranded second stream.
+    const row = await store.records("vendo_apps").get(seen[0]!.appId);
+    const proposal = (row?.data as {
+      doc: { proposal?: { approvalId: string; prompt: string; why: string } };
+    }).doc.proposal;
+    expect(proposal?.approvalId).toBe(outcome.approvalId);
+    expect(proposal?.prompt).toContain("Show my spending by category");
+    // The escalation's one-line `why` travels beside it: the box will hear why
+    // this cannot happen in the browser, and nothing else was decided for it.
+    expect(proposal?.why).toContain("this needs real code");
+    // NOTHING RE-PLANNED IT and NOTHING WAS SPENT: no model call.
     expect(briefs).toHaveLength(0);
   });
 
@@ -351,28 +351,6 @@ describe("the public create/edit API runs the one engine", () => {
     // stored is exactly the failure the one-engine rule exists to stop.
     expect((await runtime.get(app.id, ctx))?.name).toBe("Spending");
     expect((await runtime.list(ctx)).map(({ id }) => id)).toContain(app.id);
-    // Assembly answered it, so nothing was built: no machine, no box task.
-    expect(app.machine).toBeUndefined();
-    expect(composed.boxTasks).toHaveLength(0);
-  });
-
-  it("`create` escalates into the box lane when assembly cannot serve the ask", async () => {
-    const composed = runtimeWith(
-      { assemble: async () => ({ kind: "escalate" as const, why: "this needs real matching code" }) },
-      { sandbox: true },
-    );
-
-    const app = await composed.runtime.create({ prompt: "Match my invoices against payments" }, ctx);
-
-    // Nothing has painted a screen yet, so the row goes down under the ask
-    // itself — the person's own words are the only title that exists.
-    expect(app.name).toBe("Match my invoices against payments");
-    // A REAL box: provisioned, and briefed with the ask and the why verbatim.
-    expect(app.machine).toBeDefined();
-    expect(composed.boxTasks.join("\n")).toContain("this needs real matching code");
-    expect(composed.boxTasks.join("\n")).toContain("Match my invoices against payments");
-    // No middleman between the two: not one model call.
-    expect(composed.briefs).toHaveLength(0);
   });
 
   it("`create` with no assembler composed fails honestly — it never quietly finds another engine", async () => {

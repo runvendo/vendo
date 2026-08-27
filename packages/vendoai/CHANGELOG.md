@@ -1,5 +1,146 @@
 # vendoai
 
+## 0.52.1
+
+### Patch Changes
+
+- @vendoai/vendo@0.52.1
+
+## 0.52.0
+
+### Patch Changes
+
+- Updated dependencies [52f5b64]
+  - @vendoai/vendo@0.52.0
+
+## 0.51.2
+
+### Patch Changes
+
+- @vendoai/vendo@0.51.2
+
+## 0.51.1
+
+### Patch Changes
+
+- Updated dependencies [b333af7]
+- Updated dependencies [b333af7]
+- Updated dependencies [b333af7]
+  - @vendoai/vendo@0.51.1
+
+## 0.51.0
+
+### Patch Changes
+
+- Updated dependencies [54a3545]
+  - @vendoai/vendo@0.51.0
+
+## 0.50.0
+
+### Patch Changes
+
+- Updated dependencies [bfc70a0]
+  - @vendoai/vendo@0.50.0
+
+## 0.49.1
+
+### Patch Changes
+
+- @vendoai/vendo@0.49.1
+
+## 0.49.0
+
+### Patch Changes
+
+- @vendoai/vendo@0.49.0
+
+## 0.48.1
+
+### Patch Changes
+
+- @vendoai/vendo@0.48.1
+
+## 0.48.0
+
+### Patch Changes
+
+- Updated dependencies [79f177f]
+- Updated dependencies [79f177f]
+- Updated dependencies [79f177f]
+  - @vendoai/vendo@0.48.0
+
+## 0.47.0
+
+### Patch Changes
+
+- Updated dependencies [412d593]
+- Updated dependencies [412d593]
+  - @vendoai/vendo@0.47.0
+
+## 0.46.0
+
+### Patch Changes
+
+- Updated dependencies [5cee3a5]
+  - @vendoai/vendo@0.46.0
+
+## 0.45.0
+
+### Patch Changes
+
+- Updated dependencies [f6da3b0]
+  - @vendoai/vendo@0.45.0
+
+## 0.44.0
+
+### Patch Changes
+
+- Updated dependencies [31c8e30]
+- Updated dependencies [31c8e30]
+  - @vendoai/vendo@0.44.0
+
+## 0.43.0
+
+### Patch Changes
+
+- Updated dependencies [95af11a]
+  - @vendoai/vendo@0.43.0
+
+## 0.42.0
+
+### Patch Changes
+
+- Updated dependencies [7bbfd3f]
+- Updated dependencies [7bbfd3f]
+- Updated dependencies [7bbfd3f]
+- Updated dependencies [7bbfd3f]
+- Updated dependencies [7bbfd3f]
+- Updated dependencies [7bbfd3f]
+- Updated dependencies [7bbfd3f]
+- Updated dependencies [7bbfd3f]
+- Updated dependencies [7bbfd3f]
+  - @vendoai/vendo@0.42.0
+
+## 0.41.1
+
+### Patch Changes
+
+- @vendoai/vendo@0.41.1
+
+## 0.41.0
+
+### Patch Changes
+
+- Updated dependencies [61cb46e]
+  - @vendoai/vendo@0.41.0
+
+## 0.40.0
+
+### Patch Changes
+
+- Updated dependencies [3310b54]
+  - @vendoai/vendo@0.40.0
+
 ## 0.39.0
 
 ### Patch Changes

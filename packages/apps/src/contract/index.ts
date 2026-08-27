@@ -16,6 +16,8 @@
 // (`core/src/conformance/memory-store.ts`), and core may not reach upward. The
 // door is what matters, so it is re-exported here and consumers read one place.
 export {
+  appBuildProposalSchema,
+  appBundleSchema,
   appDocumentSchema,
   appMemorySchema,
   appSourceFileSchema,
@@ -23,13 +25,15 @@ export {
   seedComponentName,
   storageDeclSchema,
   type AppBuildFailure,
+  type AppBuildProposal,
+  type AppBundle,
   type AppDocument,
   type AppMemory,
   type AppSeed,
   type AppSourceFile,
   type StorageDecl,
 } from "@vendoai/core";
-export { validateAppDocument, type AppDocumentValidation } from "./app-validation.js";
+export { refuseBundleArtifact, validateAppDocument, type AppDocumentValidation } from "./app-validation.js";
 // the one door in — every app write passes admission; validateAppDocument above
 // is its inner half
 export * from "./admission.js";
@@ -48,7 +52,6 @@ export {
 } from "@vendoai/core";
 export type { PathBinding, ReshapeStep, StateBinding, TreeNode, UIPayload } from "@vendoai/core";
 export * from "./screen-tools-scan.js";
-export * from "./inclient-modules.js";
 // genui/tree — the compiled tree
 export * from "./genui/tree.js";
 export { checkBindingShapes, type BindingShapeError } from "./genui/shape-check.js";
@@ -66,6 +69,8 @@ export * from "./briefing.js";
 export * from "./theme.js";
 // screen + floor + checking contract
 export * from "./screen.js";
+// build — the other engine's seam
+export * from "./build.js";
 export * from "./app-floor.js";
 // seed — remix provenance
 export * from "./seed.js";

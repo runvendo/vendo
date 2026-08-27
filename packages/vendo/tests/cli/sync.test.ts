@@ -493,8 +493,8 @@ describe("sync telemetry", () => {
 
     const ok = await telemetryCapture();
     expect(await runSync({ targetDir: ".", output, fetchImpl, sync: async () => report(), telemetry: ok.telemetry })).toBe(0);
-    expect(ok.event("command_run").properties).toMatchObject({ command: "sync", ok: true });
-    expect(typeof ok.event("command_run").properties.durationMs).toBe("number");
+    expect(ok.event("command_run").properties).toMatchObject({ command: "sync", ok: "true" });
+    expect(Number(ok.event("command_run").properties.durationMs)).not.toBeNaN();
 
     const gated = await telemetryCapture();
     expect(await runSync({
@@ -505,7 +505,7 @@ describe("sync telemetry", () => {
       sync: async () => report([{ tool: "host_x", change: "removed" }]),
       telemetry: gated.telemetry,
     })).toBe(2);
-    expect(gated.event("command_run").properties).toMatchObject({ command: "sync", ok: false });
+    expect(gated.event("command_run").properties).toMatchObject({ command: "sync", ok: "false" });
 
     await rm(ok.home, { recursive: true, force: true });
     await rm(gated.home, { recursive: true, force: true });
@@ -545,7 +545,7 @@ describe("telemetry project attribution + cloud-key sourcing (P1 review)", () =>
     dirs.push(tele.home);
     await runSync({ targetDir: dir, output: quiet, fetchImpl: offline, sync: async () => report(), telemetry: tele.telemetry });
     const props = tele.event("command_run").properties;
-    expect(props.cloud).toBe(true);
+    expect(props.cloud).toBe("true");
     expect(props.cloudKeyHash).toBe(createHash("sha256").update(CLOUD_KEY).digest("hex"));
   });
 
@@ -763,12 +763,14 @@ describe("sync judgment-pass integration", () => {
 
   it("resolves a model key that lives only in the sync dir's .env.local (#567)", async () => {
     // The ONLY credential lives in the project's .env.local, exactly the case
-    // that previously fell through to structural-only. A sentinel var name
-    // keeps the assertion deterministic no matter what real ANTHROPIC_API_KEY /
-    // VENDO_API_KEY the developer/CI machine exports (which, with process env
-    // winning, would otherwise mask the .env.local value under test).
+    // that previously fell through to structural-only. VENDO_API_KEY is on the
+    // extraction dotenv allowlist (a repo file may carry a credential); the
+    // shell value is blanked so the file value is the one under test rather than
+    // a real key the developer/CI machine exports (which, process env winning,
+    // would otherwise mask it).
+    vi.stubEnv("VENDO_API_KEY", "");
     const { dir, judgmentsPath } = await hostWithTools();
-    await writeFile(join(dir, ".env.local"), "VENDO_TEST_ONLY_MODEL_KEY=sk-only-in-dotenv\n", "utf8");
+    await writeFile(join(dir, ".env.local"), "VENDO_API_KEY=sk-only-in-dotenv\n", "utf8");
     const messages = captureOutput();
     let seenKey: string | undefined;
     const responses = [...HARDENING];
@@ -782,7 +784,7 @@ describe("sync judgment-pass integration", () => {
         harnesses: [{
           id: "npx-engine",
           availability: async ({ env }: { env: Record<string, string | undefined> }) =>
-            (typeof env.VENDO_TEST_ONLY_MODEL_KEY === "string" ? "byo (.env.local)" : null),
+            (typeof env.VENDO_API_KEY === "string" ? "byo (.env.local)" : null),
           run: async () => {
             const next = responses.shift();
             if (next === undefined) throw new Error("scripted harness exhausted");
@@ -790,8 +792,8 @@ describe("sync judgment-pass integration", () => {
           },
         }],
         resolveCredential: async ({ env }) => {
-          seenKey = env.VENDO_TEST_ONLY_MODEL_KEY;
-          return typeof env.VENDO_TEST_ONLY_MODEL_KEY === "string"
+          seenKey = env.VENDO_API_KEY;
+          return typeof env.VENDO_API_KEY === "string"
             ? { rung: "env-key", provider: "anthropic", envVar: "ANTHROPIC_API_KEY" }
             : { rung: "none" };
         },
@@ -804,9 +806,12 @@ describe("sync judgment-pass integration", () => {
   });
 
   it("no key in .env.local and none in process env stays structural-only (#567)", async () => {
-    // Sentinel var that only a .env.local could carry — kept out of process
-    // env so the "neither present" branch is deterministic regardless of the
-    // developer/CI machine's real ANTHROPIC_API_KEY / VENDO_API_KEY.
+    // VENDO_API_KEY is on the extraction dotenv allowlist, and readEnvFiles
+    // merges the shell value — so a real key the developer/CI machine exports
+    // would flip this "neither present" branch to byo. Delete it (not blank it:
+    // this harness reads presence as `typeof key === "string"`, which an empty
+    // string satisfies) so the branch under test is deterministic.
+    vi.stubEnv("VENDO_API_KEY", undefined);
     const { dir, toolsPath } = await hostWithTools();
     const before = await readFile(toolsPath, "utf8");
     const messages = captureOutput();
@@ -820,11 +825,11 @@ describe("sync judgment-pass integration", () => {
         harnesses: [{
           id: "npx-engine",
           availability: async ({ env }: { env: Record<string, string | undefined> }) =>
-            (typeof env.VENDO_TEST_ONLY_MODEL_KEY === "string" ? "byo" : null),
+            (typeof env.VENDO_API_KEY === "string" ? "byo" : null),
           run: async () => { throw new Error("must not run without a key"); },
         }],
         resolveCredential: async ({ env }) =>
-          (typeof env.VENDO_TEST_ONLY_MODEL_KEY === "string"
+          (typeof env.VENDO_API_KEY === "string"
             ? { rung: "env-key", provider: "anthropic", envVar: "ANTHROPIC_API_KEY" }
             : { rung: "none" }),
       },

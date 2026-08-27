@@ -1,6 +1,5 @@
 import { VendoError, type Json, type Principal, type StoreOps, type ThreadId, type VendoRecord } from "@vendoai/core";
 import type { Db } from "../db-postgres.js";
-import { harnessStateKey } from "../harness-state.js";
 import type { VendoStore } from "../store.js";
 import { backendOf } from "./backend.js";
 import type { ThreadRow } from "./types.js";
@@ -169,8 +168,8 @@ function overSql(db: Db): ThreadStore {
       // message left behind here is unreachable forever: `erase.bySubject` finds
       // transcript rows only through `thread_id IN (SELECT id FROM vendo_threads
       // WHERE subject = $1)`, and that subquery is empty once the thread is
-      // gone. The harness state (a native-session ref) rides `vendo_state` under
-      // a synthetic app_id, which no table cascade covers either.
+      // gone. The harness state needs no statement at all since v12 — it is a
+      // COLUMN on the thread row, so the DELETE below is what takes it.
       //
       // Every drop is guarded on the RETURNING row, so a foreign principal's
       // no-op delete sweeps nothing.
@@ -181,7 +180,6 @@ function overSql(db: Db): ThreadStore {
         );
         if (deleted.rows.length === 0) return;
         await q("DELETE FROM vendo_thread_messages WHERE thread_id = $1", [id]);
-        await q("DELETE FROM vendo_state WHERE app_id = $1", [harnessStateKey(id)]);
       });
     },
 
@@ -275,3 +273,30 @@ function overSql(db: Db): ThreadStore {
 }
 
 export type { ThreadRow } from "./types.js";
+
+/** The ONE write path for a thread's harness continuity, shared by
+ *  `ops.harness.set` and the batched turn commit so the two cannot drift.
+ *
+ *  `subject` is in the WHERE, not just the payload: the slot belongs to the
+ *  thread's OWNER, so a call naming someone else's thread matches no row and is
+ *  refused rather than silently landing on it. A missing row and a foreign row
+ *  are deliberately the same answer — neither is a conversation this caller may
+ *  bookmark, and telling them apart would confirm the thread exists.
+ *
+ *  `updated_at` and `revision` are untouched on purpose: resuming a session is
+ *  not a message and not an edit, so it must not reshuffle a thread list or
+ *  lose a concurrent caller's compare-and-swap. */
+export async function setHarnessState(
+  db: Db,
+  threadId: string,
+  subject: string,
+  state: Json,
+): Promise<void> {
+  const result = await db.query(
+    "UPDATE vendo_threads SET harness_state = $3::jsonb WHERE id = $1 AND subject = $2 RETURNING id",
+    [threadId, subject, JSON.stringify(state)],
+  );
+  if (result.rows.length === 0) {
+    throw new VendoError("not-found", `thread ${threadId} not found`);
+  }
+}

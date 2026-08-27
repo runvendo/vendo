@@ -1,3 +1,4 @@
+import { BUNDLE_HEADERS } from "@vendoai/apps";
 import { isVendoError, VendoError, type AccessLevel, type Json, type RunContext, type StoreOps } from "@vendoai/core";
 import { json, object, requestJson, route, string, type RouteEntry, type WireContext } from "./shared.js";
 
@@ -216,7 +217,7 @@ function accessLevel(value: unknown): AccessLevel {
 }
 
 /** 06-apps / 09 §3 — the /apps wire area: CRUD, open/call/edit, history,
-    ship-diff, seed drift/re-seed, the ✦ gesture (seed), export/import,
+    seed drift/re-seed, the ✦ gesture (seed), export/import,
     fork (whole-app copy — a different feature from seeding). */
 export const appRoutes: RouteEntry[] = [
   // Grouped like the old if-chain arm: ANY method on /apps resolves context
@@ -247,30 +248,6 @@ export const appRoutes: RouteEntry[] = [
       instruction: string(body["instruction"], "instruction"),
       ...(body["slot"] === undefined ? {} : { slot: string(body["slot"], "slot") }),
     }, ctx));
-  }),
-  // Remix final shape (2026-08-02) — the review seam for the host's console:
-  // every review-kind version awaiting a reviewer, with requester, slot,
-  // version hash, submission time, resubmission count and the ship-diff
-  // payload. It crosses owner boundaries, so it carries the FULL scoping of
-  // the in-client approval seam (wire/misc.ts): a development composition AND
-  // a host-resolved principal — reviewing is a HOST trust decision, and no
-  // wire surface may expose one subject's pending fork source to another.
-  // Even in dev the cross-owner read requires the composition's reviewer
-  // assertion (apps.review.reviewer, enforced by the runtime); without it a
-  // caller sees only their own submissions, and any other caller gets an
-  // EMPTY queue — masked, never a probe. Production reviews ride Cloud's
-  // console, or the self-hoster's own admin-authenticated route over the
-  // runtime surface (apps.review).
-  // Like /apps/seed above, this entry must stay ahead of the "/apps/:appId/*"
-  // catch-all, whose rest pattern would otherwise capture
-  // appId="review-queue".
-  route("GET", "/apps/review-queue", async ({ deps, context }) => {
-    const ctx = await context("app");
-    if (!deps.development || ctx.principal.ephemeral === true) return json([]);
-    // Round-2 hardening: the runtime scopes the answer — the FULL queue only
-    // under the host's reviewer assertion (apps.review.reviewer); any other
-    // host-resolved caller sees just their own submissions.
-    return json(await deps.apps.review.queue(ctx));
   }),
   // Placement (2026-08-05) — the slots' own read: what is in each of the
   // caller's mounted slots, and where each of those builds stands. ONE request
@@ -334,13 +311,6 @@ export const appRoutes: RouteEntry[] = [
       const answer = await handleHistory(wire, appId, ctx);
       if (answer !== undefined) return answer;
     }
-    // 06-apps §8–§9 — additive: the reviewable diff of what this app ships
-    // relative to the captured host baselines, hash-pinned to the version
-    // an in-client approval would cover. Viewer-scoped: reading what a shared
-    // app ships is part of seeing it (the runtime owns the level, as ever).
-    if (op(wire, "GET", "ship-diff")) {
-      return json(await deps.apps.inClient.shipDiff(appId, ctx));
-    }
     // 06-apps §8 — the re-seed. It rewrites content and is editor-scoped; the
     // runtime owns the level. Only ever invoked explicitly, here or via the
     // vendo_apps_reseed agent tool — the drift warning open() carries never
@@ -377,27 +347,12 @@ export const appRoutes: RouteEntry[] = [
       await deps.apps.unplace({ app: appId, slot: string(body["slot"], "slot") }, ctx);
       return json({});
     }
-    // Remix final shape (2026-08-02) — the reviewer's rejection of the app's
-    // CURRENT review-kind version: the note is REQUIRED (it is what the
-    // user's panel surfaces) and the work is not deleted — a new version
-    // supersedes the rejection. Reviewer-side and cross-subject by design,
-    // so it carries the review queue's full scoping (development composition
-    // + host-resolved principal + the composition's reviewer assertion,
-    // enforced by the runtime: without apps.review.reviewer the reject
-    // refuses, naming the hook) instead of owner scoping; any other caller
-    // gets the same not-found an unowned app answers (masked).
-    if (op(wire, "POST", "reject-review")) {
-      if (!deps.development || ctx.principal.ephemeral === true) {
-        throw new VendoError("not-found", `app not found: ${appId}`);
-      }
-      const body = await requestJson(request);
-      return json(await deps.apps.review.reject({ appId, note: string(body["note"], "note") }, ctx));
-    }
-    // Wave 7 H2 — the embed surface's keepalive: user activity on an embedded
-    // served app rides one host-proxied HEAD through the machine (re-arming
-    // the idle timer); "woke" tells the embed its URL is stale — re-open.
-    if (op(wire, "POST", "machine", 4) && segments[3] === "ping") {
-      return json(await deps.apps.machine.ping(appId, ctx));
+    // FINAL SPEC v1 — the sealed bundle's bytes, as the document the frame
+    // renders. `BUNDLE_HEADERS` carries the CSP that IS the frame's enforcer
+    // (zero network), so this route never assembles a header set of its own.
+    if (op(wire, "GET", "bundle", 4)) {
+      const bytes = await deps.apps.bundleDocument(appId, string(segments[3], "hash"), ctx);
+      return new Response(bytes as BodyInit, { headers: BUNDLE_HEADERS });
     }
     if (op(wire, "GET", "export")) {
       const bytes = await deps.apps.exportApp(appId, ctx);

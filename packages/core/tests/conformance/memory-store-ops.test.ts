@@ -1,22 +1,41 @@
 import { describe, expect, it } from "vitest";
-import { STORE_WIRE_APPEND_MESSAGES_OPS, type StoreOps } from "../../src/index.js";
+import { STORE_WIRE_APPEND_MESSAGES_OPS, VendoError, type StoreOps } from "../../src/index.js";
 import { memoryStoreOps, runConformance, storeOpsConformance } from "../../src/conformance/index.js";
 
-/** A backend whose thread delete drops the thread row and puts the thread's
-    harness state back — exactly the partial cascade F4 exists to catch. */
+/** A backend that keeps harness state in a drawer of its OWN — a side table
+    beside the thread, which is how the local engine held it before v12 and how
+    any mount is still free to hold it — and forgets to sweep that drawer when
+    the thread is deleted. Exactly the partial cascade F4 exists to catch, and
+    the reason the case is worth carrying even now that the reference
+    implementation gets the cascade for free from a column: the CONTRACT is that
+    a deleted thread has no bookmark, not that a particular backend stores it in
+    a particular place. */
 const partialCascade = (): StoreOps => {
   const ops = memoryStoreOps();
+  const aside = new Map<string, unknown>();
+  const key = (threadId: string, subject: string): string => `${threadId}:${subject}`;
+  /** The thread's owner, or undefined where there is no such thread of theirs. */
+  const owner = async (threadId: string, subject: string): Promise<string | undefined> => {
+    const thread = await ops.transcripts.getThread(threadId);
+    const held = (thread?.data as { subject?: string } | undefined)?.subject;
+    return held === subject ? held : undefined;
+  };
   return {
     ...ops,
-    transcripts: {
-      ...ops.transcripts,
-      async deleteThread(id) {
-        const thread = await ops.transcripts.getThread(id);
-        const subject = (thread?.data as { subject?: string } | undefined)?.subject;
-        const slot = `harness_state:${id}`;
-        const orphan = subject === undefined ? null : await ops.harness.get(slot, subject);
-        await ops.transcripts.deleteThread(id);
-        if (subject !== undefined && orphan !== null) await ops.harness.set(slot, subject, orphan);
+    harness: {
+      // Deliberately reads the side drawer WITHOUT re-checking the thread, so a
+      // bookmark whose thread is gone is still answered — the bug.
+      async get(threadId, subject) {
+        return aside.get(key(threadId, subject)) ?? null;
+      },
+      async set(threadId, subject, state) {
+        if (await owner(threadId, subject) === undefined) {
+          throw new VendoError("not-found", `thread ${threadId} not found`);
+        }
+        aside.set(key(threadId, subject), state);
+      },
+      async clear(threadId, subject) {
+        aside.delete(key(threadId, subject));
       },
     },
   };

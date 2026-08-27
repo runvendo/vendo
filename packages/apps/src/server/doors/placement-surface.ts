@@ -13,6 +13,7 @@ import {
 import {
   buildInFlight,
   effectiveAppBuildUiDeadlineMs,
+  refuseBundleArtifact,
 } from "../../contract/index.js";
 import { APPS_COLLECTION, appRecordInput, updateAppRow } from "../persistence/persistence.js";
 import type { PlacementRow } from "../persistence/placements.js";
@@ -156,7 +157,7 @@ export const createPlacementSurface = (
       const slot = requireSlot(input.slot);
       // Viewer: seeing the app is enough to put it in your own slot. This also
       // masks an app the caller cannot see (§9.4) before any row is written.
-      await requireOwned(input.app, ctx, "viewer");
+      refuseBundleArtifact(await requireOwned(input.app, ctx, "viewer"), "placed in a slot");
       const subject = ctx.principal.subject;
       const previous = await placementRows.place(subject, {
         slot,

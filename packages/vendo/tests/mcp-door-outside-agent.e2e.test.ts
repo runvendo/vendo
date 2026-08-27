@@ -18,8 +18,10 @@
  * the same composed host and the same minimal MCP client from
  * `mcp-door.test-util.ts`.
  */
-import { vendoApprovalRefSchema } from "@vendoai/core";
-import { afterEach, describe, expect, it } from "vitest";
+import { sealBundleBlobs } from "@vendoai/apps";
+import { VENDO_APP_FORMAT, vendoApprovalRefSchema, type AppDocument, type AppId } from "@vendoai/core";
+import { storeFiles, type VendoStore } from "@vendoai/store";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   MOUNT,
   READ_TOOL,
@@ -33,7 +35,10 @@ import {
   shapeOf,
 } from "../src/mcp-door.test-util.js";
 
-afterEach(runCleanups);
+afterEach(async () => {
+  vi.unstubAllEnvs();
+  await runCleanups();
+});
 
 const rpcBody = (method: string, params?: unknown): string =>
   JSON.stringify({ jsonrpc: "2.0", id: 1, method, ...(params === undefined ? {} : { params }) });
@@ -43,6 +48,16 @@ const INITIALIZE = rpcBody("initialize", {
   capabilities: {},
   clientInfo: { name: "outside", version: "1.0.0" },
 });
+
+/** One app row for the granted subject, written where every real one is written
+ *  — so `apps.open` reads it back through its own schema and its own rules. */
+const seedApp = async (store: VendoStore, doc: Omit<AppDocument, "format">): Promise<void> => {
+  await store.records("vendo_apps").put({
+    id: doc.id,
+    data: { subject: SUBJECT, enabled: true, doc: { format: VENDO_APP_FORMAT, ...doc } },
+    refs: { subject: SUBJECT },
+  });
+};
 
 describe("the MCP door, as an OUTSIDE agent sees it — pinned before door-ctx", () => {
   it("lists the host's tools VERBATIM, plus the apps ride-alongs, with the risk annotations derived from ONE label", async () => {
@@ -233,5 +248,92 @@ describe("the MCP door, as an OUTSIDE agent sees it — pinned before door-ctx",
       body: rpcBody("tools/list"),
     }));
     expect(stolen.status).toBe(404);
+  });
+
+  /**
+   * THE BUILT-APP WORLD (#1623), as the outside agent is told about it: an app
+   * that is sealed, one waiting on its person, one still building, one dead.
+   *
+   * Every case below drives the REAL chain — a real seal, a real app row, the
+   * real `apps.open`, the composed door's real apps port — because the whole
+   * point is whether the producer and the projection agree about one app, and a
+   * harness that answered for either of them could only agree with itself.
+   */
+  it("a SEALED bundle opens as a link-out card carrying the product name and where to open it", async () => {
+    vi.stubEnv("VENDO_BASE_URL", "https://host.test");
+    const { vendo, store } = await composedHost(async () => undefined);
+    const app = "app_built" as AppId;
+    // The same writer the build door lands a box's output through.
+    const bundle = await sealBundleBlobs(
+      app,
+      [{ path: "dist/app.js", bytes: new TextEncoder().encode('document.title = "built";\n') }],
+      "dist/app.js",
+      storeFiles(store),
+    );
+    await seedApp(store, { id: app, name: "Built app", ui: "bundle", bundle });
+    const door = await openDoor(vendo, await bearer(vendo));
+
+    const opened = await door.callTool("vendo_apps_open", { appId: app });
+    // The DEPLOYMENT's own public url: a sealed bundle boots inside the host's
+    // own UI (a sandboxed frame on the host's postMessage bridge), so where the
+    // person opens it is the product itself.
+    expect(opened.isError, opened.text).toBeFalsy();
+    expect(opened.structuredContent).toEqual({
+      kind: "vendo/open-in-product@1",
+      url: "https://host.test",
+      appName: "Built app",
+      productName: expect.any(String),
+    });
+    expect(opened.text).toMatch(/^Open Built app in .+: https:\/\/host\.test$/);
+    // The entry hash — the one thing a bare passthrough gave an agent — is gone.
+    expect(opened.text).not.toContain(bundle.entry);
+  });
+
+  it("an app waiting on its build approval is a NAMED wait, not a not-found error", async () => {
+    const { vendo, store } = await composedHost(async () => undefined);
+    const app = "app_proposed" as AppId;
+    await seedApp(store, {
+      id: app,
+      name: "Proposed app",
+      proposal: { approvalId: "apr_proposed", prompt: "my spending", why: "a screen was not enough", at: new Date().toISOString() },
+    });
+    const door = await openDoor(vendo, await bearer(vendo));
+
+    const opened = await door.callTool("vendo_apps_open", { appId: app });
+    // NOT an error: the person has been asked and has not answered. An agent
+    // that reads this as a broken tool tells the user their app is gone.
+    expect(opened.isError).toBeFalsy();
+    expect(opened.text).toBe("This app is waiting on the user's build approval. Once they approve it, open it again.");
+    expect(opened.structuredContent).toEqual({ kind: "pending", say: opened.text });
+  });
+
+  it("an app still being built says so, and says it as a wait", async () => {
+    const { vendo, store } = await composedHost(async () => undefined);
+    const app = "app_building" as AppId;
+    await seedApp(store, { id: app, name: "Building app", building: new Date().toISOString() });
+    const door = await openDoor(vendo, await bearer(vendo));
+
+    const opened = await door.callTool("vendo_apps_open", { appId: app });
+    expect(opened.isError).toBeFalsy();
+    expect(opened.text).toBe("This app is still being built. Open it again in a moment.");
+    expect(opened.structuredContent).toEqual({ kind: "pending", say: opened.text });
+  });
+
+  it("a build that failed for good comes back as its reason, not as a JSON record", async () => {
+    const { vendo, store } = await composedHost(async () => undefined);
+    const app = "app_failed" as AppId;
+    await seedApp(store, {
+      id: app,
+      name: "Failed app",
+      buildFailed: { reason: "The build ran out of time.", retryable: true, at: new Date().toISOString() },
+    });
+    const door = await openDoor(vendo, await bearer(vendo));
+
+    const opened = await door.callTool("vendo_apps_open", { appId: app });
+    expect(opened.isError).toBeFalsy();
+    expect(opened.text).toBe("The build ran out of time. Asking for it again may work.");
+    // The record still rides underneath, so a loop reads the kind rather than
+    // the English.
+    expect(opened.structuredContent).toMatchObject({ kind: "failed", reason: "The build ran out of time.", retryable: true });
   });
 });

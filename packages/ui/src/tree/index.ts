@@ -2,15 +2,7 @@
 
 /** @vendoai/ui/tree — the format-dispatching tree renderer. */
 export { resolvePointer } from "./bindings.js";
-export { AppFrame, PinMount, type AppFrameKeepalive, type AppFrameProps } from "./frames.js";
-export {
-  InClientMount,
-  evaluateApprovedComponent,
-  type InClientFurnishing,
-  type InClientMountProps,
-  type InClientStyle,
-  type InClientSubSource,
-} from "./host-mount.js";
+export { AppFrame, PinMount, type AppFrameProps } from "./frames.js";
 export {
   PayloadView,
   TreeView,

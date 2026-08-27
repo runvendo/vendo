@@ -33,7 +33,7 @@ the seams your composition left unset.
 | --- | --- | --- |
 | Model | The console's Anthropic-compatible gateway | [Model credentials](/production/model-credentials) |
 | Store | Vendo Cloud Postgres, tenant from the key's org | [Persistence](/production/persistence) |
-| Sandbox | Pooled machines for server-backed apps | [Hosted sandbox](#hosted-sandbox) |
+| Sandbox | Pooled boxes that built apps are sealed in | [Hosted sandbox](#hosted-sandbox) |
 | Connections | The Composio connector broker | [Connected accounts](/capabilities/connected-accounts) |
 | Knowledge | The Cloud retrieval engine | [Knowledge](/customize/knowledge) |
 | Secrets | Cloud secrets, behind your process environment | [Persistence](/production/persistence) |
@@ -104,14 +104,14 @@ Owners are emailed at 50%, 90%, and 100% of the cap.
 
 ## Hosted sandbox
 
-Server-backed apps need a machine. The key composes `cloudSandbox` into the
-unset sandbox slot, and machines boot from Cloud's pooled base image — Node plus
-the in-box agent.
+Building an app needs a box. The key composes `cloudSandbox` into the unset
+sandbox slot, and boxes boot from Cloud's pooled base image — Node plus the
+in-box agent. A build box is disposable: it is released the moment the build
+finishes, and what survives is the sealed bundle, not the box.
 
 <Warning>
   Egress is HTTP(S) only. Raw TCP is severed even to allowlisted hosts, so a
-  direct database connection from inside a box never works, while the HTTPS
-  store callback does.
+  direct database connection from inside a box never works.
 </Warning>
 
 To construct it by hand, for instance to raise the per-request timeout:

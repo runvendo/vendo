@@ -83,6 +83,20 @@ pointed at.
    Then run the version check — and every `npx vendo …` step below — from
    that same app directory.
 
+   On pnpm only: the install downloads everything and then exits 1 with
+   `Ignored build scripts: @mongodb-js/zstd, esbuild, node-liblzma`. None of
+   the three needs compiling. pnpm writes the names into `pnpm-workspace.yaml`
+   with a placeholder — set all three to `false` and install again. Do NOT run
+   `pnpm approve-builds` (it is interactive) or allow all builds.
+
+   ```yaml
+   # pnpm-workspace.yaml
+   allowBuilds:
+     '@mongodb-js/zstd': false
+     esbuild: false
+     node-liblzma: false
+   ```
+
    ONE package, and it is the umbrella. `@vendoai/vendo` carries every
    `@vendoai/vendo/*` subpath the files init writes import, and it carries the
    `vendo` binary into `node_modules/.bin` — which is what the version check

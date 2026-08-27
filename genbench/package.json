@@ -37,7 +37,7 @@
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "ai": "6.0.28",
-    "esbuild": "^0.25.12",
+    "esbuild": "^0.28.2",
     "lucide-react": "^0.562.0",
     "react": "19.2.7",
     "react-dom": "19.2.7",

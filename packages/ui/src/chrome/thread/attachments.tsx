@@ -44,9 +44,11 @@ export function formatBytes(size: number): string {
 
 export type FilePart = Extract<UIMessage["parts"][number], { type: "file" }>;
 
-/** A part that names a file in the user's own files rather than carrying it.
-    The prefix is the workspace's frozen `/user/files` (build contract §3.1). */
-export const isSavedFile = (url: string): boolean => url.startsWith("/user/files/");
+/** A part that names a file the SERVER holds rather than carrying it: the
+    conversation's own files, a drop still in staging, or the keep-shelf. All
+    three live under §3.1's frozen `/user` mount, and nothing that carries its own
+    bytes ever does — a data:, blob: or https: url cannot start with a slash. */
+export const isSavedFile = (url: string): boolean => url.startsWith("/user/");
 
 /** A sent attachment in the transcript: images render as the designed
     `.fl-msg-img` thumbnail, anything else as a `.fl-msg-file` pill.

@@ -1,5 +1,131 @@
 # @vendoai/knowledge
 
+## 0.52.1
+
+### Patch Changes
+
+- @vendoai/core@0.52.1
+
+## 0.52.0
+
+### Patch Changes
+
+- Updated dependencies [52f5b64]
+  - @vendoai/core@0.52.0
+
+## 0.51.2
+
+### Patch Changes
+
+- @vendoai/core@0.51.2
+
+## 0.51.1
+
+### Patch Changes
+
+- @vendoai/core@0.51.1
+
+## 0.51.0
+
+### Patch Changes
+
+- Updated dependencies [54a3545]
+  - @vendoai/core@0.51.0
+
+## 0.50.0
+
+### Patch Changes
+
+- @vendoai/core@0.50.0
+
+## 0.49.1
+
+### Patch Changes
+
+- @vendoai/core@0.49.1
+
+## 0.49.0
+
+### Patch Changes
+
+- @vendoai/core@0.49.0
+
+## 0.48.1
+
+### Patch Changes
+
+- @vendoai/core@0.48.1
+
+## 0.48.0
+
+### Patch Changes
+
+- Updated dependencies [79f177f]
+  - @vendoai/core@0.48.0
+
+## 0.47.0
+
+### Patch Changes
+
+- Updated dependencies [412d593]
+  - @vendoai/core@0.47.0
+
+## 0.46.0
+
+### Patch Changes
+
+- Updated dependencies [5cee3a5]
+  - @vendoai/core@0.46.0
+
+## 0.45.0
+
+### Patch Changes
+
+- @vendoai/core@0.45.0
+
+## 0.44.0
+
+### Patch Changes
+
+- Updated dependencies [31c8e30]
+  - @vendoai/core@0.44.0
+
+## 0.43.0
+
+### Patch Changes
+
+- @vendoai/core@0.43.0
+
+## 0.42.0
+
+### Patch Changes
+
+- Updated dependencies [7bbfd3f]
+- Updated dependencies [7bbfd3f]
+- Updated dependencies [7bbfd3f]
+- Updated dependencies [7bbfd3f]
+- Updated dependencies [7bbfd3f]
+  - @vendoai/core@0.42.0
+
+## 0.41.1
+
+### Patch Changes
+
+- @vendoai/core@0.41.1
+
+## 0.41.0
+
+### Patch Changes
+
+- Updated dependencies [61cb46e]
+  - @vendoai/core@0.41.0
+
+## 0.40.0
+
+### Patch Changes
+
+- @vendoai/core@0.40.0
+
 ## 0.39.0
 
 ### Patch Changes

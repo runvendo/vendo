@@ -58,11 +58,17 @@ for (const backend of backends()) {
       await store.records("vendo_apps").put({ id: doc.id, data: { subject: erased, enabled: true, doc } });
       await store.records(`app:${doc.id}:notes`).put({ id: "note_target", data: { body: "mine" } });
       await store.blobs(`app:${doc.id}:files`).put("report.txt", new Uint8Array([1, 2, 3]));
-      await store.records("vendo_state").put({ id: `${doc.id}:${erased}`, data: { count: 1 } });
       await store.records("vendo_threads").put({
         id: "thr_erase_target",
         data: { subject: erased, messages: [] },
       });
+      // The conversation's harness continuity is a COLUMN on that thread row
+      // since v12, so erasing the subject takes it with no selector of its own.
+      // Written at the SQL, because the routed door projects the row without it.
+      await made.sql(
+        "UPDATE vendo_threads SET harness_state = '{\"harness\":\"h\",\"value\":\"native_1\"}'::jsonb WHERE id = $1",
+        ["thr_erase_target"],
+      );
       const grant = grantFixture("grt_erase_target", { subject: erased, appId: doc.id });
       await store.records("vendo_grants").put({ id: grant.id, data: grant });
       const request = approvalFixture("apr_erase_target", {
@@ -122,7 +128,6 @@ for (const backend of backends()) {
         vendo_apps: 1,
         vendo_records: 2, // the app's collection row + the subject-ref'd generic row
         vendo_blobs: 1,
-        vendo_state: 1,
         vendo_threads: 1,
         // The seeded thread carries an empty transcript, so it owns no message
         // rows; the cascade is proven on a populated thread in thread-messages.test.ts.
@@ -231,7 +236,6 @@ for (const backend of backends()) {
         await store.records("vendo_apps").put({ id, data: { subject, enabled: true, doc } });
         await store.records(`app:${id}:notes`).put({ id: `note_${id}`, data: { body: id } });
         await store.blobs(`app:${id}:files`).put("f.txt", new Uint8Array([7]));
-        await store.records("vendo_state").put({ id: `${id}:${subject}`, data: { n: 1 } });
         const grant = grantFixture(`grt_${id}`, { subject, appId: id });
         await store.records("vendo_grants").put({ id: grant.id, data: grant });
         const event = auditFixture(`aud_${id}`, { principal: { kind: "user", subject }, appId: id });
@@ -256,7 +260,6 @@ for (const backend of backends()) {
       expect(report.vendo_apps).toBe(1);
       expect(report.vendo_records).toBe(1);
       expect(report.vendo_blobs).toBe(1);
-      expect(report.vendo_state).toBe(1);
       expect(report.vendo_runs).toBe(0); // no app axis since v11 — runs are an automation's
       expect(report.vendo_grants).toBe(1);
       expect(report.vendo_audit).toBe(1);

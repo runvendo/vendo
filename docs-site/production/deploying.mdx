@@ -15,9 +15,9 @@ Eight things must be true before your users meet Vendo in production.
 | Your Cloud store is on, so threads outlive a restart | Threads, apps, and audit rows vanish when the process restarts | [Persistence](/production/persistence) |
 | The handler sits at one base path, streaming intact | Replies arrive in one lump at the end, or not at all | [Handler options](/reference/handler-options) |
 | Risky tools ask a human before they run | Every call runs on its own, including the ones that move money | [Approvals](/generated/in-client-venue) |
-| Something calls `/tick` on a clock | Apps with schedules in `vendo.json` never run their functions | [Automations](/capabilities/automations) |
+| Something calls `/tick` on a clock | Scheduled automations never run | [Automations](/capabilities/automations) |
 | Every webhook source is registered and verified | Anyone who finds the URL can start a run in your product | [Automations](/capabilities/automations) |
-| Apps that need a server have a sandbox to run in | Those apps stay stuck at the preview and never boot | [Vendo Cloud](/production/vendo-cloud) |
+| Apps bigger than a screen have a sandbox to be built in | Those asks are refused instead of offered, and nothing is sealed | [Vendo Cloud](/production/vendo-cloud) |
 
 Rows 1, 3, 6, and 8 come with your Cloud key. The other four are yours to wire.
 

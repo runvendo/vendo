@@ -116,6 +116,13 @@ lane's `errorDetail` is the only free-text property, and it is scrubbed first:
 file paths, email addresses, and secret-shaped strings become fixed tokens, then
 the result is capped at 200 characters.
 
+Events land in PostHog by kind, and never in both. `init_started`,
+`init_completed`, `init_failed`, `star_prompt`, and `error_class` are product
+analytics and are kept. `doctor_run`, `command_run`, and `agent_run` are
+operational records — this ran, here is how it went — so they go to PostHog's
+Logs product, where retention is enforced at 30 days. Same key, same allowlist,
+same scrubbing, same opt-outs either way.
+
 The full event allowlist is maintained in
 [`TELEMETRY.md`](https://github.com/runvendo/vendo/blob/main/TELEMETRY.md).
 

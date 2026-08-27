@@ -1666,7 +1666,6 @@ describe("createMcpDoor MCP protocol", () => {
       format: "vendo/app@1",
       id: "app_http",
       name: "Revenue dashboard",
-      ui: "http",
     };
     const apps: AppsRideAlong = {
       async list() { return [app]; },

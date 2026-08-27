@@ -1,4 +1,5 @@
 import { log } from "@vendoai/core";
+import type { VendoTheme } from "@vendoai/apps/contract";
 import type { ReactNode } from "react";
 import { ChromeRoot } from "./chrome-root.js";
 import { developmentMode } from "./dev-mode.js";
@@ -13,6 +14,18 @@ export interface VendoTriggerProps {
   context?: string;
   /** Button label. Default "Ask Vendo". */
   children?: ReactNode;
+  /**
+   * This surface's own brand tokens, merged group by group over the provider's
+   * resolved theme — the same merge `VendoProvider` does over
+   * `defaultVendoTheme`, so with no provider above this merges over the
+   * defaults.
+   *
+   * FRAME ONLY: it styles Vendo's own chrome. A mounted generated view keeps
+   * the PROVIDER theme — an iframe-served app is themed over the app
+   * transport, and a natively rendered one restates the provider tokens on its
+   * own surface root.
+   */
+  theme?: Partial<VendoTheme>;
 }
 
 /**
@@ -26,9 +39,9 @@ export interface VendoTriggerProps {
  * programmatic seam this button uses (the repo's idiom; there is deliberately
  * no render-prop API on chrome, ui-usage-dx §4).
  */
-export function VendoTrigger({ prompt, context, children }: VendoTriggerProps) {
+export function VendoTrigger({ prompt, context, children, theme }: VendoTriggerProps) {
   return (
-    <ChromeRoot>
+    <ChromeRoot theme={theme}>
       <button
         type="button"
         className="fl-btn"

@@ -1,8 +1,8 @@
 /**
- * The INNER half of an embedded Vendo surface (blueprint §12.3) — the box app
- * template (`packages/box-template`) and every other surface that renders
- * inside a host-owned iframe owe the host the same two behaviours, so they
- * share this module rather than each keeping a copy of the protocol.
+ * The INNER half of an embedded Vendo surface (blueprint §12.3) — every
+ * surface that renders inside a host-owned iframe owes the host the same two
+ * behaviours, so they share this module rather than each keeping a copy of the
+ * protocol.
  *
  * Both jobs are RECEIVING or REPORTING, never negotiating:
  *
@@ -19,6 +19,8 @@
  * pushes the host's layout. The clamp is the host's, and so is the min/max the
  * host configured.
  */
+import type { Json, ToolOutcome } from "@vendoai/core";
+import { ensureThemeFontStyles } from "./chrome/theme-fonts.js";
 import { normalizeViewportBlockCss } from "./tree/viewport-css.js";
 
 /** Post one message to the embedding host. Every message is stamped `vendo: true`
@@ -44,6 +46,48 @@ export function applyThemeVars(vars: unknown): void {
   document.body.style.fontSize = "var(--vendo-font-size, 15px)";
 }
 
+/** The calls this surface is waiting on an answer to, by their own id. */
+const awaiting = new Map<string, (outcome: ToolOutcome) => void>();
+let calls = 0;
+
+/**
+ * THE ONE DOOR to host data (FINAL SPEC v1). A sealed surface has an opaque
+ * origin and no network at all, so this is the only thing it can reach — and
+ * what it reaches is the host's guarded tool door, run with the VIEWER's own
+ * permissions. Nothing here decides what is allowed; the guard does, and a call
+ * the viewer may not make comes back as a refused outcome like any other.
+ */
+export function callHost(ref: string, args: Json = null): Promise<ToolOutcome> {
+  const id = `call_${(calls += 1)}`;
+  return new Promise((resolve) => {
+    awaiting.set(id, resolve);
+    postToHost({ kind: "call", id, ref, args });
+  });
+}
+
+/**
+ * The host's half of the protocol, received. `event.source` is the gate on this
+ * side too — only the window that embedded this surface may theme it or answer
+ * for it, and that is the one thing a sender cannot forge.
+ */
+function receiveFromHost(event: MessageEvent): void {
+  if (event.source !== parent) return;
+  const message = event.data as
+    { vendo?: unknown; kind?: unknown; vars?: unknown; fonts?: unknown; id?: unknown; outcome?: unknown } | null;
+  if (typeof message !== "object" || message === null || message.vendo !== true) return;
+  if (message.kind === "theme") {
+    applyThemeVars(message.vars);
+    // The brand's own faces, as `data:` URIs — the family token names a font
+    // this document would otherwise have no bytes for. Same installer the
+    // chrome uses, so a surface that is its own document gets its own sheet.
+    if (typeof message.fonts === "string") ensureThemeFontStyles(message.fonts);
+  }
+  if (message.kind === "result" && typeof message.id === "string") {
+    awaiting.get(message.id)?.(message.outcome as ToolOutcome);
+    awaiting.delete(message.id);
+  }
+}
+
 const VIEWPORT_BLOCK_UNIT = /(?:d|s|l)?v(?:h|b)(?![a-z])/iu;
 const VIEWPORT_BLOCK_PROPERTIES = ["height", "min-height", "block-size", "min-block-size"] as const;
 
@@ -52,10 +96,14 @@ const VIEWPORT_BLOCK_PROPERTIES = ["height", "min-height", "block-size", "min-bl
  * constraints, report the content height on every content change, and announce
  * `booted` once the observers are live.
  *
- * Messages out: `{ vendo: true, kind: "resize", height }` and
- * `{ vendo: true, kind: "booted" }`. Nothing else, ever.
+ * Messages out: `{ vendo: true, kind: "resize", height }`,
+ * `{ vendo: true, kind: "booted" }`, and one `{ kind: "call" }` per
+ * {@link callHost}. In: `theme` and `result`.
  */
 export function startFrameProtocol(mount: HTMLElement, post = postToHost): void {
+  // Before `booted`: the host answers that announcement with the brand tokens,
+  // so a listener installed after it would miss them.
+  addEventListener("message", receiveFromHost);
   let lastReportedHeight: number | undefined;
   let mutationObserver: MutationObserver | undefined;
 

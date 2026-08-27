@@ -1,4 +1,3 @@
-import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, relative, sep } from "node:path";
 import { applyJudgment, disabledReason, judgmentsFileSchema, overridesFileSchema, toolsFileSchema, type ExtractedTool, type ToolJudgment, type ToolsFile } from "@vendoai/actions";
@@ -11,11 +10,9 @@ import { ENV_KEY_VARS, describeDevCredential, resolveDevCredential } from "../de
 // build deliberately does not export the pin map.
 import { SLOT_PIN_ENV } from "../dev-creds/model.js";
 import type { DoctorRun } from "./doctor-report.js";
-import { EJECT_MANIFEST_FILE, type EjectedManifest } from "./eject.js";
 import { NEXT_SERVER_EXTERNALS, NEXT_SERVER_EXTERNALS_LINE, detectFramework, missingServerExternals, nextConfigPath, transpileConflictNote, transpiledServerExternals } from "./framework.js";
 import { compositionModulePath } from "./init-scaffolds.js";
 import { readModelKey } from "./install-record.js";
-import { walk } from "./theme/walk.js";
 import { exists, readOptional } from "./shared.js";
 
 export async function checkConfigFiles(run: DoctorRun): Promise<void> {
@@ -342,33 +339,5 @@ export async function checkToolCatalog(run: DoctorRun): Promise<void> {
   } catch {
     // Not a vendo/tools@3 shape (e.g. a placeholder {}) — the config
     // checks above already govern presence; nothing to grade here.
-  }
-}
-
-/** §4 customization ladder — ejected chrome drift. The ejected pixels are the
- *  host's code, so a version gap is awareness (warn), never breakage (fail):
- *  the hooks/wire dependency keeps working; only new presentation is missed. */
-export async function checkEjectDrift(run: DoctorRun): Promise<void> {
-  const { root } = run;
-  const installedUi = await readOptional(join(root, "node_modules", "@vendoai", "ui", "package.json"));
-  let uiVersion: string | null = null;
-  try {
-    if (installedUi !== null) uiVersion = (JSON.parse(installedUi) as { version?: string }).version ?? null;
-  } catch {
-    // Malformed install metadata — skip the drift check rather than fail doctor.
-  }
-  if (uiVersion === null) return;
-  for (const manifestPath of await walk(root, (rel) => rel.endsWith(EJECT_MANIFEST_FILE))) {
-    let ejected: EjectedManifest;
-    try {
-      ejected = JSON.parse(await readFile(manifestPath, "utf8")) as EjectedManifest;
-    } catch {
-      continue;
-    }
-    if (ejected.version === uiVersion) {
-      run.pass(`eject/${ejected.surface}`, `ejected ${ejected.surface} matches @vendoai/ui v${uiVersion}`);
-    } else {
-      run.warn(`eject/${ejected.surface}`, "E-UI-001", `ejected ${ejected.surface} came from @vendoai/ui v${ejected.version} but v${uiVersion} is installed — review the changelog (https://github.com/runvendo/vendo/releases) and \`vendo eject ${ejected.surface} --force\` if you want the new presentation`);
-    }
   }
 }

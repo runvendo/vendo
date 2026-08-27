@@ -1,5 +1,464 @@
 # @vendoai/ui
 
+## 0.52.1
+
+### Patch Changes
+
+- @vendoai/core@0.52.1
+- @vendoai/apps@0.52.1
+
+## 0.52.0
+
+### Minor Changes
+
+- 52f5b64: A conversation's harness state lives on the conversation, and `vendo_state` is gone
+
+  The bookmark a session-owning harness resumes on — `claudeCode()`'s native session
+  ref — rode `vendo_state` under a synthetic `app_id` of `harness_state:<threadId>`.
+  That bought "no new table" and paid for it everywhere else: thread deletion swept
+  the slot by hand in two places, a retention sweep needed a fence to stop the
+  app-state door from seeing a tenant it could not address, the erase cascade reached
+  it only through a second selector, and a routed door had to police an id grammar
+  whose whole job was keeping the two tenants off each other's rows.
+
+  It is one nullable `harness_state jsonb` column on `vendo_threads` now. ONE slot per
+  thread, on the row that already names the thread's owner — so every one of those
+  hand-wired cascades is just the row going away. The two `DELETE` statements, the
+  retention fence, the tenant carve-out and its `<appId>:<subject>` grammar, the
+  `validateId` hook nothing else used, and `harnessStateKey` are all deleted rather
+  than adapted.
+
+  `vendo_state`'s other tenant — an app's per-user state — is deleted with it. Nothing
+  had written it since the `appData` family took over: `getState`/`setState` on
+  `AppDataAccess` had no production caller at all, and the `$state` persistence bridge
+  in `@vendoai/ui` (`onStateChange`) was never wired to anything. The `$state` screen
+  dialect itself is untouched and still resolves in-session; only the never-connected
+  persistence half is gone. The reserved-name guards that refuse a storage collection
+  or a query named `state` stay exactly as they were.
+
+  **Breaking — `StoreOps.harness` and the `/harness/*` wire.** The slot is keyed by the
+  thread it belongs to, and now says so: `harness.get/set/clear(threadId, subject)`,
+  with wire bodies `{threadId, subject}` on `/harness/get`, `/harness/set`,
+  `/harness/clear` and on the `harness` part of `turn.load` and `turn.commit`.
+  `subject` is the thread's OWNER and is authority rather than decoration — a foreign
+  subject reads an empty slot and writes nothing, and `set` on a thread that does not
+  exist is refused instead of minting a bookmark no erase could reach. A skewed client
+  and mount fail CLOSED in both directions: `threadId` is required, so neither side can
+  read the other's body as a slot it may serve, and each answers an enveloped
+  `validation`. `/status`'s `ops` level is deliberately not touched — it is a monotone
+  count that only grows as ops are added, and this adds and removes none.
+
+  An app-scoped erase no longer clears harness state. That guarantee is dropped on
+  purpose: a bookmark belongs to a conversation, and uninstalling an app ends no
+  conversation. Thread deletion and subject erasure both still take it, and each is
+  proven end to end against the real store.
+
+  **Store schema v11 → v12.** `vendo_threads` gains `harness_state jsonb`. The
+  migration copies every `harness_state:<threadId>` row onto its thread, matching on
+  both legs of the old primary key — the id's thread suffix and the subject — then
+  `DROP TABLE vendo_state`. A row whose subject disagreed with its thread's owner was
+  unreachable by every read path and by the erase cascade already, so it dies with the
+  table rather than being promoted onto a row it never belonged to. Guarded on the
+  table's existence rather than on the version, in the v6 idiom, so it is idempotent
+  and a no-op on a database created fresh. The v2 backfill is deleted along with it:
+  it relocated legacy rows INTO this table, and there is nowhere left to put them.
+
+  The engine allowlist goes to v11, having lost `vendo_state`.
+
+### Patch Changes
+
+- Updated dependencies [52f5b64]
+  - @vendoai/core@0.52.0
+  - @vendoai/apps@0.52.0
+
+## 0.51.2
+
+### Patch Changes
+
+- @vendoai/core@0.51.2
+- @vendoai/apps@0.51.2
+
+## 0.51.1
+
+### Patch Changes
+
+- @vendoai/core@0.51.1
+- @vendoai/apps@0.51.1
+
+## 0.51.0
+
+### Patch Changes
+
+- Updated dependencies [54a3545]
+  - @vendoai/core@0.51.0
+  - @vendoai/apps@0.51.0
+
+## 0.50.0
+
+### Patch Changes
+
+- @vendoai/core@0.50.0
+- @vendoai/apps@0.50.0
+
+## 0.49.1
+
+### Patch Changes
+
+- c55245f: The last two portal surfaces inherit the spawning surface's theme.
+
+  The knowledge citation hovercard and the mobile approval sheet both portal to
+  `document.body` but still read the PROVIDER theme, so a surface carrying its own
+  `theme` — a dark `VendoOverlay` on a light page — popped a light hovercard out
+  of a dark thread. Both now read the enclosing chrome boundary's resolved theme
+  through `useChromeTheme()`, the same seam the approval modal, morph toast and
+  toast stack already use. Outside any boundary they answer the provider's theme
+  exactly as before.
+
+  - @vendoai/core@0.49.1
+  - @vendoai/apps@0.49.1
+
+## 0.49.0
+
+### Minor Changes
+
+- c6b1058: A build's consent ask stops arriving as a toast popup.
+
+  The toast stack polls every pending approval and raises a card for each, so a
+  build ask reached the person twice: once on the in-thread `ApprovalCard` the
+  `data-vendo-approval` part paints, and again as a popup over whatever they were
+  doing. The card is the consent surface — the popup asked the same question a
+  second time, in a second place, and a yes on either one settled the other.
+
+  The toast surface now skips an approval whose call is `vendo_app_build`, and
+  only that surface: the launcher badge counts it exactly as before, which is what
+  keeps a closed thread from stranding an ask that outlives its turn.
+
+  The build's live status line rode that same toast — it was raised only off the
+  toast's own Approve — so a build now shows no progress line anywhere. That was
+  already the case for anyone who answered on the card instead of the popup.
+
+### Patch Changes
+
+- @vendoai/core@0.49.0
+- @vendoai/apps@0.49.0
+
+## 0.48.1
+
+### Patch Changes
+
+- Updated dependencies [92e9094]
+  - @vendoai/apps@0.48.1
+  - @vendoai/core@0.48.1
+
+## 0.48.0
+
+### Minor Changes
+
+- 79f177f: An escalated build asks on the standard consent protocol instead of answering
+  as a success.
+
+  `vendo_make` used to return a `status: "ok"` receipt reading
+  `"awaiting-consent"` when the screen agent escalated to the builder, so the
+  parked approval was invisible to everything that routes on the outcome: no
+  in-thread approval card, and an outside agent over MCP was handed plain success
+  for work nobody had authorized. It now returns the ordinary
+  `pending-approval` outcome — which is what publishes the `data-vendo-approval`
+  part the thread renders the card from, and what the MCP door maps to its
+  approval-ref result.
+
+  `ToolOutcome`'s `pending-approval` gains three optional fields for the tool that
+  parks an ask of its OWN: `descriptor` (the ask's own — what a CARD derives its
+  words from), `approval` (`{ id, question, notes }` — the same ask already in
+  words, for a surface that renders no card) and `say` (the assistant's sentence
+  meanwhile). All three are optional and additive; every shipped producer and
+  reader is untouched.
+
+  The descriptor rides the `data-vendo-approval` part, so the in-thread card is
+  graded and worded off the BUILD. Graded off the calling tool it read
+  `vendo_make`'s "read", and told a person that spending a build machine reads
+  their data. And because a standing ask has no parked native call to render
+  from — nor may it have one, since the runtime abandons every still-parked ask
+  at the next turn — the thread now paints the shipped `ApprovalCard` from that
+  part directly, deciding over the wire like the queue and the toast, with no
+  `remember` disclosure. Before this the transcript showed only the calling
+  tool's beat, "wasn't allowed", for a question nobody had been asked yet.
+
+  Such a card also now SURVIVES the turn. A parked call is swept denied at turn
+  end so a live-but-dead card cannot accrete in the queue — which, for a build,
+  tombstoned the app the moment the turn that asked for it ended.
+
+  An answered card SETTLES, and the assistant stops talking over it. In-thread
+  consent cards resolve into the settled record on decide — including a decide the
+  wire says was already answered (or swept), which used to leave the buttons live
+  under an error on a closed question. And `say` is now the refusal the harness
+  hands the model for a tool that parked its own ask, so the model relays the one
+  sentence the door wrote ("I've asked for your go-ahead — the card above has the
+  details.") instead of narrating its own paragraphs under a card that is already
+  asking.
+
+  `MakeReceipt.status` drops `"awaiting-consent"`; nothing produces it any more.
+
+- 79f177f: `<VendoApproval>` — the outside-agent approval as one element.
+
+  An agent that lives outside your product parks a guarded call and ships the ask
+  to your page. This renders it on THE card the in-product agent asks on — the
+  shipped `<ApprovalCard>` itself, not a lookalike built from the same shell (spec
+  §16 — one consent surface everywhere) — decides it against your wire, and
+  settles into its own receipt. Two props: the `approval` block off the parked
+  outcome (`{ id, question, notes }` — the words are already chosen, because such
+  an agent never holds the `ApprovalRequest` they are derived from) and the
+  `VendoClient` the decision is spent on.
+
+  `ApprovalCardProps` gains an optional `ask` for exactly that case: the ask
+  already in words, which skips the `consentAsk` derivation instead of asking a
+  surface with no request to fake one. Absent, the card derives as it always has.
+
+  An ask that is no longer waiting — already answered on another surface, or
+  expired — settles into that same receipt rather than leaving buttons up that
+  cannot work.
+
+### Patch Changes
+
+- Updated dependencies [79f177f]
+  - @vendoai/core@0.48.0
+  - @vendoai/apps@0.48.0
+
+## 0.47.0
+
+### Minor Changes
+
+- 412d593: An escalated build asks on the standard consent protocol instead of answering
+  as a success.
+
+  `vendo_make` used to return a `status: "ok"` receipt reading
+  `"awaiting-consent"` when the screen agent escalated to the builder, so the
+  parked approval was invisible to everything that routes on the outcome: no
+  in-thread approval card, and an outside agent over MCP was handed plain success
+  for work nobody had authorized. It now returns the ordinary
+  `pending-approval` outcome — which is what publishes the `data-vendo-approval`
+  part the thread renders the card from, and what the MCP door maps to its
+  approval-ref result.
+
+  `ToolOutcome`'s `pending-approval` gains three optional fields for the tool that
+  parks an ask of its OWN: `descriptor` (the ask's own — what a CARD derives its
+  words from), `approval` (`{ id, question, notes }` — the same ask already in
+  words, for a surface that renders no card) and `say` (the assistant's sentence
+  meanwhile). All three are optional and additive; every shipped producer and
+  reader is untouched.
+
+  The descriptor rides the `data-vendo-approval` part, so the in-thread card is
+  graded and worded off the BUILD. Graded off the calling tool it read
+  `vendo_make`'s "read", and told a person that spending a build machine reads
+  their data. And because a standing ask has no parked native call to render
+  from — nor may it have one, since the runtime abandons every still-parked ask
+  at the next turn — the thread now paints the shipped `ApprovalCard` from that
+  part directly, deciding over the wire like the queue and the toast, with no
+  `remember` disclosure. Before this the transcript showed only the calling
+  tool's beat, "wasn't allowed", for a question nobody had been asked yet.
+
+  Such a card also now SURVIVES the turn. A parked call is swept denied at turn
+  end so a live-but-dead card cannot accrete in the queue — which, for a build,
+  tombstoned the app the moment the turn that asked for it ended.
+
+  An answered card SETTLES, and the assistant stops talking over it. In-thread
+  consent cards resolve into the settled record on decide — including a decide the
+  wire says was already answered (or swept), which used to leave the buttons live
+  under an error on a closed question. And `say` is now the refusal the harness
+  hands the model for a tool that parked its own ask, so the model relays the one
+  sentence the door wrote ("I've asked for your go-ahead — the card above has the
+  details.") instead of narrating its own paragraphs under a card that is already
+  asking.
+
+  `MakeReceipt.status` drops `"awaiting-consent"`; nothing produces it any more.
+
+### Patch Changes
+
+- Updated dependencies [412d593]
+  - @vendoai/core@0.47.0
+  - @vendoai/apps@0.47.0
+
+## 0.46.0
+
+### Minor Changes
+
+- 5cee3a5: An escalated build asks on the standard consent protocol instead of answering
+  as a success.
+
+  `vendo_make` used to return a `status: "ok"` receipt reading
+  `"awaiting-consent"` when the screen agent escalated to the builder, so the
+  parked approval was invisible to everything that routes on the outcome: no
+  in-thread approval card, and an outside agent over MCP was handed plain success
+  for work nobody had authorized. It now returns the ordinary
+  `pending-approval` outcome — which is what publishes the `data-vendo-approval`
+  part the thread renders the card from, and what the MCP door maps to its
+  approval-ref result.
+
+  `ToolOutcome`'s `pending-approval` gains three optional fields for the tool that
+  parks an ask of its OWN: `descriptor` (the ask's own — what a CARD derives its
+  words from), `approval` (`{ id, question, notes }` — the same ask already in
+  words, for a surface that renders no card) and `say` (the assistant's sentence
+  meanwhile). All three are optional and additive; every shipped producer and
+  reader is untouched.
+
+  The descriptor rides the `data-vendo-approval` part, so the in-thread card is
+  graded and worded off the BUILD. Graded off the calling tool it read
+  `vendo_make`'s "read", and told a person that spending a build machine reads
+  their data. And because a standing ask has no parked native call to render
+  from — nor may it have one, since the runtime abandons every still-parked ask
+  at the next turn — the thread now paints the shipped `ApprovalCard` from that
+  part directly, deciding over the wire like the queue and the toast, with no
+  `remember` disclosure. Before this the transcript showed only the calling
+  tool's beat, "wasn't allowed", for a question nobody had been asked yet.
+
+  Such a card also now SURVIVES the turn. A parked call is swept denied at turn
+  end so a live-but-dead card cannot accrete in the queue — which, for a build,
+  tombstoned the app the moment the turn that asked for it ended.
+
+  An answered card SETTLES, and the assistant stops talking over it. In-thread
+  consent cards resolve into the settled record on decide — including a decide the
+  wire says was already answered (or swept), which used to leave the buttons live
+  under an error on a closed question. And `say` is now the refusal the harness
+  hands the model for a tool that parked its own ask, so the model relays the one
+  sentence the door wrote ("I've asked for your go-ahead — the card above has the
+  details.") instead of narrating its own paragraphs under a card that is already
+  asking.
+
+  `MakeReceipt.status` drops `"awaiting-consent"`; nothing produces it any more.
+
+### Patch Changes
+
+- Updated dependencies [5cee3a5]
+  - @vendoai/core@0.46.0
+  - @vendoai/apps@0.46.0
+
+## 0.45.0
+
+### Patch Changes
+
+- @vendoai/core@0.45.0
+- @vendoai/apps@0.45.0
+
+## 0.44.0
+
+### Minor Changes
+
+- 31c8e30: Files live where the work lives, and are really deleted when it is.
+
+  A file dropped into chat used to go into one global drawer, live there forever,
+  and belong to nothing. Now it belongs to the CONVERSATION: the upload lands in a
+  staging area, and the turn that receives the message moves it to
+  `/user/threads/<thread>/files/<name>` and rewrites the message before storing it,
+  so the agent's shell finds it at a stable address and later turns on that thread
+  still can. `/user/files` is now what its name always suggested — a keep-shelf for
+  things the user asked you to save — and the three `vendo_user_files_*` tools say
+  so, so the model stops shelving everything by reflex. Staged files that were never
+  sent are swept by the next turn.
+
+  Two real leaks close with it, both of which existed before this change:
+
+  - Deleting a conversation deleted ONE row. Its messages stayed in
+    `vendo_thread_messages` forever, unreachable by any later erasure because the
+    join that identified them had gone with the row, and its harness state stayed
+    with them. The delete now runs the cascade that already existed — thread row,
+    messages and state in one transaction — and sweeps the conversation's files,
+    including the blobs behind them.
+  - Deleting an app never touched its workspace files or their objects. It now runs
+    the store's own app cascade, which does.
+
+  Nothing in the file model is harness-specific: a sandboxed harness materialises a
+  conversation's files exactly as it materialises everything else, with no new code.
+
+### Patch Changes
+
+- Updated dependencies [31c8e30]
+- Updated dependencies [31c8e30]
+  - @vendoai/apps@0.44.0
+  - @vendoai/core@0.44.0
+
+## 0.43.0
+
+### Minor Changes
+
+- 95af11a: Per-surface `theme` overrides on the chrome surfaces.
+
+  `VendoOverlay`, `VendoSlot`, `VendoTrigger`, `VendoAppEmbed`,
+  `VendoApprovalEmbed`, and `VendoToolResult` each take an optional
+  `theme?: Partial<VendoTheme>`, merged group by group over the provider's
+  resolved theme (over the default with no provider) — so one surface can be a
+  dark panel on a light page without a second provider. What a surface portals to
+  `document.body` goes with it: the overlay panel, the approval modal a press
+  parks on, and the toast stack all wear the spawning surface's theme instead of
+  falling back to the provider's.
+
+  Frame only — a generated view mounted inside a themed surface keeps the
+  PROVIDER theme, whether it is served in an iframe or rendered natively as a pin.
+
+  `VendoTheme` is now nameable from `@vendoai/ui` and `@vendoai/vendo/react`.
+
+### Patch Changes
+
+- @vendoai/core@0.43.0
+- @vendoai/apps@0.43.0
+
+## 0.42.0
+
+### Minor Changes
+
+- 7bbfd3f: Built apps: rendering a sealed bundle. An app whose artifact is a seal opens as `{kind:"bundle", entry}` and is served by the new `GET /apps/:id/bundle/:hash` — the sealed bytes inline in their own document, behind `Content-Security-Policy: default-src 'none'` as a real header, so the frame makes no network request at all. `@vendoai/ui` renders it in an iframe sandboxed `allow-scripts` with no `allow-same-origin`, which makes the app's origin opaque: brand tokens are posted in at render rather than baked into the seal, and host data reaches the app through one door only — a postMessage call that lands on the same guarded tool path a screen's press does, with the viewer's own permissions.
+- 7bbfd3f: Retire the persistent per-app machine surface. A built app is now a sealed bundle the host serves, so nothing needs a machine that outlives the build: the `AppsRuntime.machine` lifecycle doors (`available`, `ping`, `report`), the §9.8 served-app proxy (`AppsRuntime.serve`, `GET /apps/:id/serve/**`), the editor-level box door (`AppsRuntime.box.request` / `.redact`, `POST /apps/:id/fn/:name`), the whole `/box/*` callback surface with its per-app bearer, and the embed keepalive (`POST /apps/:id/machine/ping`, `client.apps.pingMachine`) are all gone. The `ui` package loses `HttpFrame` and its keepalive wiring; `BundleFrame` and `bundleUrl` are what render an app now. `@vendoai/box-template` is deleted — the box image no longer bakes a per-app web template, and its harness keeps only the session half. `vendo_app_tokens` leaves the engine allowlist (v9), and the store's promote no longer re-owns a bearer that no longer exists. `packages/apps`' `prewired-schema` moves to `server/checking/`, beside the validator that reads it.
+- 7bbfd3f: Built apps, last mile: a standing consent card a person can actually answer. An approval that was already waiting when the page loaded now raises its card on mount instead of only after — a build ask can outlive the tab that raised it, and the yes is meant to work whenever it lands, so an ask that only existed while you were watching was not a standing one. The card also says what it is asking: it reads the same plain-words ladder the approval card and its queue row read (the ask as a question, then every real input under it) rather than a bare tool label, it offers Deny beside Approve, and `vendo_app_build` joins the shared title table, so the consent moment reads "Build this app for real?" instead of "Vendo app build". Once the yes lands, the build's own status line reaches the person on that same surface — a detached build has no turn to stream into, and `useApp` now hands back the `status` the build window's poll was already receiving and discarding. A toast's hint moved under its text rather than beside its buttons, which is where it has to be to carry a sentence.
+- 7bbfd3f: Built apps: the build now says what it is doing, and a sealed bundle renders in the host's own font. `BuildRequest.onStatus` was emitted by the build lane and supplied by nobody, so a build narrated itself to no one; the door now writes the lane's latest line onto the app row (`AppDocument.buildStatus`) and the pending poll answers with it (`PendingSurface.status`), which the forming card reads in place of the generic "Building …". One label, replaced each time — no stream, no subscription, no new route — and a status write that fails never fails the build. Brand fonts now travel with the brand tokens at render: `sendFrameTheme` carries the host's `.vendo/fonts.css` faces into the frame, which installs them as its own sheet, and the bundle route's CSP gains `font-src data:` so an inlined face can load. The seal still holds nothing font-related, and the frame still makes no network request of any kind.
+- 7bbfd3f: Built apps: reviewer triage on the build lane. Escalating now ENDS the screen agent's turn, so a run cannot write a screen after asking for a build. A build is only offered where the deployment can also seal it, a refusal reads the app row at the moment it refuses (so a watchdog can no longer tombstone an app that has since been sealed, or stand one back up that was deleted mid-build), a seal clears any failure an earlier terminal write recorded, and a rejected seal writes no orphan blobs. The sealed bundle's document escapes a script end tag in any case, the frame answers a host call the host refused instead of leaving the app loading, re-sends the brand tokens when the host's palette or fonts change after boot, and requires the protocol's stamp on the boot handshake. The build's progress line is a live region, `useApp`'s `status` clears when the app lands, and a whitespace-only inference credential is treated as no credential.
+
+### Patch Changes
+
+- Updated dependencies [7bbfd3f]
+- Updated dependencies [7bbfd3f]
+- Updated dependencies [7bbfd3f]
+- Updated dependencies [7bbfd3f]
+- Updated dependencies [7bbfd3f]
+- Updated dependencies [7bbfd3f]
+- Updated dependencies [7bbfd3f]
+- Updated dependencies [7bbfd3f]
+- Updated dependencies [7bbfd3f]
+- Updated dependencies [7bbfd3f]
+- Updated dependencies [7bbfd3f]
+- Updated dependencies [7bbfd3f]
+- Updated dependencies [7bbfd3f]
+  - @vendoai/apps@0.42.0
+  - @vendoai/core@0.42.0
+
+## 0.41.1
+
+### Patch Changes
+
+- Updated dependencies [97be645]
+  - @vendoai/apps@0.41.1
+  - @vendoai/core@0.41.1
+
+## 0.41.0
+
+### Minor Changes
+
+- 61cb46e: Remove the native in-client remix execution and the remix review/approval flow (breaking: removes InClientMount, InClientVenue, ReviewStanding, apps.inClient.\*, apps.review.reviewer, and the `review` prop on Remixable). Instant sandboxed remix is unchanged.
+
+### Patch Changes
+
+- Updated dependencies [61cb46e]
+  - @vendoai/apps@0.41.0
+  - @vendoai/core@0.41.0
+
+## 0.40.0
+
+### Minor Changes
+
+- 3310b54: remove `vendo eject` and its template machinery
+
+### Patch Changes
+
+- @vendoai/core@0.40.0
+- @vendoai/apps@0.40.0
+
 ## 0.39.0
 
 ### Patch Changes

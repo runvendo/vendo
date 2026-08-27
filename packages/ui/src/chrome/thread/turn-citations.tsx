@@ -2,8 +2,8 @@ import type { VendoKnowledgeCitation } from "@vendoai/core";
 import type { UIMessage } from "ai";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { createPortal } from "react-dom";
-import { useVendoThemeOrDefault } from "../../context.js";
 import { themeCssVariables } from "../../theme.js";
+import { useChromeTheme } from "../chrome-root.js";
 import { sourcesFor } from "./message-data.js";
 
 /** The popover opens 8px below its chip, and that gap belongs to neither: a pure
@@ -58,7 +58,12 @@ function CitationChip({ citation }: { citation: VendoKnowledgeCitation }) {
   // The card portals out of the ChromeRoot that themes it, so it carries the
   // theme variables itself. The stylesheet is already injected — a citation
   // only ever renders inside a thread, which is inside that same root.
-  const theme = useVendoThemeOrDefault();
+  //
+  // It reads THAT root's resolved theme, not the provider's: a thread inside a
+  // surface carrying its own `theme` (a dark VendoOverlay on a light page) must
+  // not pop a provider-themed hovercard out of it. Outside any boundary this
+  // still answers the provider's theme, and the defaults with no provider.
+  const theme = useChromeTheme();
 
   // Stale copies of this closer are harmless — closing a closed chip is a no-op,
   // which is why nothing has to track whose closer is parked in the module slot.

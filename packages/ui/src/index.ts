@@ -25,6 +25,9 @@ export { isVendoToolPart } from "./embeds.js";
 // The components behind the frozen prop contracts, exported from the root so
 // a BYO chat page needs only `@vendoai/ui`.
 export { VendoAppEmbed, VendoApprovalEmbed, VendoToolResult } from "./chrome/embeds.js";
+// The outside-agent ask, as one element: the door ships the rendered approval
+// with the parked call's outcome, and this asks, decides and settles it.
+export { VendoApproval, type PendingApproval, type VendoApprovalProps } from "./chrome/vendo-approval.js";
 // The slot itself, from the ROOT: a host mounting one only has @vendoai/vendo
 // as a direct dependency, and the "@vendoai/ui/chrome" subpath does not resolve
 // under pnpm strict linking (the same TS2307 story as VendoOverlay's).
@@ -70,7 +73,10 @@ export {
   type WorkbenchTurn,
 } from "./chrome/workbench-store.js";
 export { announcePin, onPinAnnounced } from "./pin-events.js";
-export { defaultVendoTheme, resolveTheme, themeCssVariables } from "./theme.js";
+// `VendoTheme` is nameable from here because hosts now type more than the
+// provider's `theme` prop with it — every chrome surface takes its own
+// `theme?: Partial<VendoTheme>`.
+export { defaultVendoTheme, resolveTheme, themeCssVariables, type VendoTheme } from "./theme.js";
 export type {
   AppListRow,
   ApprovalResolution,
@@ -80,17 +86,14 @@ export type {
   EditResult,
   EnableResult,
   GuardPosture,
-  InClientVenue,
   InitiatedConnection,
   OpenSurface,
   PendingSurface,
   PlacementEntry,
-  ReviewStanding,
   RunPlan,
   RunRecord,
   RunStatus,
   SeedDrift,
-  ShipDiff,
   SlotEntry,
   Thread,
   ThreadSummary,

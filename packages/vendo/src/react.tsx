@@ -43,6 +43,10 @@ export {
   VendoApprovalEmbed,
   VendoToolResult,
   isVendoToolPart,
+  // chrome/vendo-approval.tsx — the outside-agent ask, as one element.
+  VendoApproval,
+  type PendingApproval,
+  type VendoApprovalProps,
   // chrome/vendo-slot.tsx — the mount point a host puts in its own markup, and
   // the shape of its `onParked` prop.
   VendoSlot,
@@ -97,11 +101,10 @@ export {
   defaultVendoTheme,
   resolveTheme,
   themeCssVariables,
+  type VendoTheme,
   // wire-types.ts
   type OpenSurface,
-  type InClientVenue,
   type SeedDrift,
-  type ShipDiff,
   type EditResult,
   type VersionEntry,
   type ConnectionAccount,

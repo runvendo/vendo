@@ -2,7 +2,7 @@ import { defineOwn, isPlainObject, mintTurnId, THREAD_WINDOW_INITIAL, VendoError
 import { UI_MESSAGE_STREAM_HEADERS } from "ai";
 import { registerActiveTurn, steerActiveTurn, touchActiveTurn, trackTurnResponse } from "../turn-liveness.js";
 import { recordResumableTurn, resumableTurnStream } from "../turn-resume.js";
-import { json, requestJson, route, string, type RouteEntry } from "./shared.js";
+import { json, learnsOriginAtEntry, requestJson, route, string, type RouteEntry } from "./shared.js";
 
 /** The effective thread id the agent stamps on every turn response (03 §1). */
 const THREAD_ID_HEADER = "x-vendo-thread-id";
@@ -95,7 +95,10 @@ function cappedSituation(value: unknown): Record<string, unknown> | undefined {
 
 /** 09 §3 — the /threads wire area: chat streaming plus thread list/get/delete. */
 export const threadRoutes: RouteEntry[] = [
-  route("POST", "/threads", async ({ request, deps, context }) => {
+  // A turn built here dials the internal MCP door off the learned loopback
+  // origin DURING its own dispatch (compose-wire.ts), and it always responds —
+  // so it learns the base at ENTRY, before the turn runs, like the doctor probes.
+  learnsOriginAtEntry(route("POST", "/threads", async ({ request, deps, context }) => {
     const body = await requestJson(request);
     const ctx = await context("chat");
     // Spec 2026-08-05 §2 — the client's situation rides the message POST and
@@ -160,18 +163,20 @@ export const threadRoutes: RouteEntry[] = [
       unregister,
       idleAbort.signal,
     );
-  }),
+  })),
   // Prompt-cache warming (sub-1s shipment): the client fires this once when
   // the chat surface opens, so the user's FIRST message reads a warm provider
   // prefix instead of writing a cold one. Best-effort on both sides: the 204
   // carries nothing, a failure costs nothing but the warmth, and an engine
   // without a warm door (the createAgent path) simply answers 204 unwarmed.
-  route("POST", "/threads/warm", async ({ deps, context }) => {
+  // Learns at ENTRY like POST /threads: the warm turn dials the same internal
+  // MCP door off the learned loopback origin, and it always answers 204.
+  learnsOriginAtEntry(route("POST", "/threads/warm", async ({ deps, context }) => {
     const ctx = await context("chat");
     const door = deps.harness as { warm?: (input: { ctx: unknown }) => Promise<void> };
     if (typeof door.warm === "function") await door.warm({ ctx });
     return new Response(null, { status: 204 });
-  }),
+  })),
   // The SERVER half of `ChatTransport.reconnectToStream` (ai@6): the URL, the
   // method and the 204 are the SDK's, not ours. 204 = nothing in flight, so the
   // client goes back to ready on its persisted transcript.

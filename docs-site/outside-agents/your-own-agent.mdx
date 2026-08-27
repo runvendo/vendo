@@ -81,9 +81,33 @@ result block carries the sentence the model should read —
 { kind: "vendo/approval-ref@1", approvalId: "apr_…", summary: "Send a payment — host_pay {\"amount\":1400}" }
 ```
 
-Render it with [`<VendoToolResult>`](/existing-agent/embeds) and the person
-approves in place. When they do, the model's retry of the same call on the same
-door executes it.
+The parked outcome carries the ask itself — the question a person answers, and
+the quiet facts under it:
+
+```ts
+{
+  approval: {
+    id: "apr_…",
+    question: "Send $1,400 to Acme Utilities?",
+    notes: ["Reference: March invoice", "This changes something in your account, as you."],
+  },
+}
+```
+
+Hand that block to `<VendoApproval>`, with the wire the decision is spent on:
+
+```tsx app/chat.tsx
+import { createVendoClient, VendoApproval } from "@vendoai/vendo/react";
+
+const client = createVendoClient({ baseUrl: "/api/vendo" });
+
+// wherever you render the parked call:
+<VendoApproval approval={outcome.approval} client={client} />
+```
+
+That is the whole surface: it asks on the same card the in-product agent asks
+on, decides against your wire, and settles into its own receipt. When the person
+approves, the model's retry of the same call on the same door executes it.
 
 ## Long calls
 

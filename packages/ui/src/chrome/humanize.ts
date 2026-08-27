@@ -198,7 +198,12 @@ export function previewArgs(args: unknown): string {
   if (fields.length > 0) return fields.map(field => `${field.label}: ${field.value}`).join("\n");
   if (typeof args === "string") return args;
   try {
-    return JSON.stringify(args, null, 2);
+    // `JSON.stringify(undefined)` ANSWERS undefined, and a call with no
+    // arguments is a real wire shape (`ApprovalWirePart.args` is optional, and a
+    // parked native part need not carry `input`) — the caller reads `.length`
+    // off this, so the card crashed the whole thread instead of showing an ask
+    // with nothing to display. Empty, never the word "undefined".
+    return JSON.stringify(args, null, 2) ?? "";
   } catch {
     return String(args);
   }

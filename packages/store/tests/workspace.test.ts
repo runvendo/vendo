@@ -1,4 +1,4 @@
-import { VendoError, type Principal } from "@vendoai/core";
+import { VendoError, type FilesAdapter, type Principal } from "@vendoai/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { backends, type MadeBackend } from "../src/backends.test-util.js";
 import { FILES_STORE_MAX_BYTES } from "../src/files-store.js";
@@ -508,6 +508,149 @@ for (const backend of backends()) {
 
       // Every workspace blob is still pointed at by some row.
       expect(await reachable()).toBe(orphansBefore);
+    });
+
+    // `mv` is the façade's rename, and it had no coverage at all — while the
+    // re-homing of a dropped chat file rides it (vendo/harness-turn.ts's
+    // rehomeStagedFiles) and so does bash's own `mv`.
+    describe("mv", () => {
+      /** A host's own bucket, so blob-backed content is really placed. */
+      const bucket = (): FilesAdapter => {
+        const held = new Map<string, Uint8Array>();
+        return {
+          async put(key, bytes) { held.set(key, bytes); },
+          async get(key) {
+            const bytes = held.get(key);
+            return bytes === undefined ? undefined : { bytes };
+          },
+          async delete(key) { held.delete(key); },
+        };
+      };
+
+      it("puts the bytes at the destination and leaves nothing at the source", async () => {
+        const workspace = workspaceStore(made.store, { files: bucket() });
+        const from = "/user/files/before.bin";
+        const to = "/user/files/after.bin";
+        // Past the inline cap, so the content is an object, not a text column.
+        const bytes = new Uint8Array(WORKSPACE_INLINE_MAX_BYTES + 1).fill(9);
+
+        const first = await workspace.open(user);
+        await first.writeFile(from, bytes);
+        await first.commit();
+
+        const moving = await workspace.open(user);
+        await moving.mv(from, to);
+        // Visible to the moving turn before it commits, both ways round.
+        expect(await moving.exists(to)).toBe(true);
+        expect(await moving.exists(from)).toBe(false);
+        await moving.commit();
+
+        // ...and to the NEXT turn, through the store.
+        const next = await workspace.open(user);
+        expect(await next.exists(from)).toBe(false);
+        expect(Buffer.compare(Buffer.from(await next.readFileBuffer(to)), Buffer.from(bytes))).toBe(0);
+        expect(await rowsFor(from)).toEqual([]);
+      });
+
+      it("moves bytes the turn only staged, with no row to relocate", async () => {
+        const workspace = workspaceStore(made.store, { files: bucket() });
+        const fs = await workspace.open(user);
+        await fs.writeFile("/user/scratch/draft.md", "written and moved in one turn");
+        await fs.mv("/user/scratch/draft.md", "/user/memory/kept.md");
+        await fs.commit();
+
+        const next = await workspace.open(user);
+        expect(await next.readFile("/user/memory/kept.md")).toBe("written and moved in one turn");
+        expect(await next.exists("/user/scratch/draft.md")).toBe(false);
+      });
+
+      it("overwrites an existing destination, as every mv does", async () => {
+        const workspace = workspaceStore(made.store, { files: bucket() });
+        const from = "/user/files/winner.txt";
+        const to = "/user/files/loser.txt";
+
+        const first = await workspace.open(user);
+        await first.writeFile(from, "the one that moves");
+        await first.writeFile(to, "the one that is replaced");
+        await first.commit();
+
+        const moving = await workspace.open(user);
+        await moving.mv(from, to);
+        await moving.commit();
+
+        const next = await workspace.open(user);
+        expect(await next.readFile(to)).toBe("the one that moves");
+        expect(await next.exists(from)).toBe(false);
+      });
+
+      it("keeps the file when the source and the destination are the same path", async () => {
+        const workspace = workspaceStore(made.store, { files: bucket() });
+        const path = "/user/files/self.txt";
+        const first = await workspace.open(user);
+        await first.writeFile(path, "still here");
+        await first.commit();
+
+        const moving = await workspace.open(user);
+        await moving.mv(path, path);
+        await moving.commit();
+
+        // A copy-then-delete drops the file: the copy stages it, the delete
+        // removes the very path it was staged at.
+        expect(await (await workspace.open(user)).readFile(path)).toBe("still here");
+      });
+
+      it("moves a directory with everything under it", async () => {
+        const workspace = workspaceStore(made.store, { files: bucket() });
+        const first = await workspace.open(user);
+        await first.writeFile("/user/files/box/a.txt", "a");
+        await first.writeFile("/user/files/box/deep/b.txt", "b");
+        await first.commit();
+
+        const moving = await workspace.open(user);
+        await moving.mv("/user/files/box", "/user/files/crate");
+        await moving.commit();
+
+        const next = await workspace.open(user);
+        expect(await next.readFile("/user/files/crate/a.txt")).toBe("a");
+        expect(await next.readFile("/user/files/crate/deep/b.txt")).toBe("b");
+        expect(await next.exists("/user/files/box")).toBe(false);
+      });
+
+      it("refuses to move a directory into its own subtree, and keeps it", async () => {
+        // The same copy-then-delete that ate a self-move eats this one, only
+        // worse: the copy stages the children UNDER the destination, and the
+        // recursive delete then drops everything with the source's prefix —
+        // which now includes the copies. The tree is gone with no error.
+        const workspace = workspaceStore(made.store, { files: bucket() });
+        const first = await workspace.open(user);
+        await first.writeFile("/user/files/box/a.txt", "a");
+        await first.commit();
+
+        const moving = await workspace.open(user);
+        // POSIX `rename(2)` answers EINVAL here, and bash prints it verbatim;
+        // a silent no-op would tell the caller the move happened.
+        await expect(moving.mv("/user/files/box", "/user/files/box/inner"))
+          .rejects.toThrow(/EINVAL: invalid argument/);
+        await moving.commit();
+
+        expect(await (await workspace.open(user)).readFile("/user/files/box/a.txt")).toBe("a");
+      });
+
+      it("refuses a source that is not there, a read-only source and an unmounted destination", async () => {
+        const fs = await workspaceStore(made.store, { files: bucket() })
+          .open(user, { host: { "/host/skills/charting/SKILL.md": "read me" } });
+
+        await expect(fs.mv("/user/files/absent.txt", "/user/files/anywhere.txt"))
+          .rejects.toThrow(/ENOENT: no such file or directory/);
+        await expect(fs.mv("/host/skills/charting/SKILL.md", "/user/files/stolen.md"))
+          .rejects.toThrow(/EROFS: read-only file system/);
+
+        await fs.writeFile("/user/files/here.txt", "mine");
+        await expect(fs.mv("/user/files/here.txt", "/etc/passwd"))
+          .rejects.toThrow(/EACCES: permission denied/);
+        // The refused move left the source exactly where it was.
+        expect(await fs.readFile("/user/files/here.txt")).toBe("mine");
+      });
     });
 
     it("names the fix when a file passes the store-backed cap with no files adapter wired", async () => {

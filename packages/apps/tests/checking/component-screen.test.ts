@@ -1060,6 +1060,85 @@ export default function S() {
     expect(result.issues).toEqual([]);
     expect(result.ok).toBe(true);
   });
+
+  /**
+   * A fault INSIDE a callback a prop CARRIES is not a fault in the value the
+   * prop IS. The walk that finds the enclosing attribute crosses function
+   * boundaries, so a bad tool argument deep in an `onClick` arrow was
+   * re-described as a mismatch of `onClick` itself — printing the declared
+   * handler type against an arrow that already matches it. A sentence that
+   * contradicts itself has no repair that satisfies it, which is a retry loop
+   * that never converges rather than one bad message.
+   */
+  it("names the fault inside a handler, not the handler prop's own type", async () => {
+    const argument = await refusal(`import { Button, tools } from "@vendo/screen";
+
+export default function S() {
+  return <Button label="Cancel" onClick={() => tools.cancel_transfer({ id: 7 })} />;
+}
+`);
+
+    expect(argument.codes).toEqual(["types"]);
+    expect(argument.text).toContain("not assignable to type 'string'");
+    expect(argument.text).not.toContain('prop "onClick" on <Button> takes');
+
+    // …and the same for a fault that never leaves the handler's own body.
+    const body = await refusal(`import { Button } from "@vendo/screen";
+
+export default function S() {
+  return <Button label="Count" onClick={() => { const n: number = "x"; }} />;
+}
+`);
+
+    expect(body.codes).toEqual(["types"]);
+    expect(body.text).toContain("not assignable to type 'number'");
+    expect(body.text).not.toContain('prop "onClick" on <Button> takes');
+  });
+
+  it("names the fault inside a slot arrow, not the slot prop's own type", async () => {
+    const result = await checkComponentScreen({
+      source: `import { DataTable, Text, useQuery } from "@vendo/screen";
+
+export default function Ledger() {
+  const pending = useQuery("list_pending_transfers");
+  return (
+    <DataTable
+      rows={pending.data}
+      columns={[{ key: "recipient", label: "To", cell: (row) => { const cents: number = "x"; return <Text text={row.recipient + cents} />; } }]}
+    />
+  );
+}
+`,
+      hostTools: tools,
+      catalog: [...catalog, "DataTable"],
+      runQuery: async () => ROWS,
+    });
+
+    const text = result.issues.map(({ message }) => message).join("\n");
+    expect(text).toContain("not assignable to type 'number'");
+    expect(text).not.toContain('prop "columns" on <DataTable> takes');
+  });
+
+  /** The boundary of that rule. A member of an inline object or array literal
+   *  the prop IS also anchors below the attribute, and there the prop-shaped
+   *  sentence is the TRUE one: the value really is the wrong shape. Only a
+   *  function boundary tells the two apart. */
+  it("keeps the prop's own sentence where the fault is a member of the value itself", async () => {
+    const result = await checkComponentScreen({
+      source: `import { DataTable, useQuery } from "@vendo/screen";
+
+export default function Ledger() {
+  const pending = useQuery("list_pending_transfers");
+  return <DataTable rows={pending.data} columns={[{ key: "amount_cents", label: 5 }]} />;
+}
+`,
+      hostTools: tools,
+      catalog: [...catalog, "DataTable"],
+      runQuery: async () => ROWS,
+    });
+
+    expect(result.issues.map(({ message }) => message).join("\n")).toContain('prop "columns" on <DataTable> takes');
+  });
 });
 
 describe("stage 4 — it runs the screen for real", () => {
@@ -1622,6 +1701,70 @@ export default function Window() {
     }
     expect(clicked.issues).toHaveLength(1);
     expect(ranged.issues).toHaveLength(1);
+  });
+
+  /**
+   * THE PINCER. A control reports what a person picked through the change event
+   * and nowhere else, so a screen that feeds a Select into a tool whose input
+   * declares an ENUM had two states to choose between and both were refused:
+   * typed to the tool's own union it failed at the handler, because
+   * `event.target.value` was declared `string`; widened to `string` it failed at
+   * the payload. Neither sentence named the enum as the thing to satisfy — the
+   * payload one named the Button its call sat under — so the model rewrote the
+   * handler for as long as it was allowed to.
+   */
+  it("lets a Select's value reach a tool's enum, and names the tool when the value stays wide", async () => {
+    const paying: readonly HostToolInfo[] = [...tools, {
+      name: "record_payment",
+      description: "Record a payment against one transfer",
+      risk: "write",
+      inputSchema: {
+        type: "object",
+        properties: {
+          body: {
+            type: "object",
+            properties: { id: { type: "string" }, method: { type: "string", enum: ["ach", "card", "check"] } },
+            required: ["id", "method"],
+            additionalProperties: false,
+          },
+        },
+        required: ["body"],
+        additionalProperties: false,
+      },
+    }];
+    const paid = async (state: string): Promise<ComponentScreenCheck> => checkComponentScreen({
+      source: `import { useState } from "react";
+import { Button, Select, Stack, tools } from "@vendo/screen";
+
+export default function Pay() {
+  const [method, setMethod] = useState<${state}>("ach");
+  return (
+    <Stack gap={8}>
+      <Select label="Method" options={["ach", "card", "check"]} value={method} onChange={(e) => setMethod(e.target.value)} />
+      <Button label="Record" onClick={() => { void tools.record_payment({ body: { id: "tr_1", method } }); }} />
+    </Stack>
+  );
+}
+`,
+      hostTools: paying,
+      catalog: controls,
+      runQuery: async () => ROWS,
+    });
+
+    // The state typed to the tool's own enum is the CORRECT screen, and the
+    // whole gauntlet takes it.
+    const typed = await paid(`"ach" | "card" | "check"`);
+    expect(typed.issues).toEqual([]);
+    expect(typed.ok).toBe(true);
+
+    // Left wide, the payload is a real fault — and the sentence is about the
+    // TOOL whose schema refused it, not about the button the call sits under.
+    const wide = await paid("string");
+    const [{ code, message }] = wide.issues as [{ code: string; message: string }];
+    expect(code).toBe("types");
+    expect(message).toContain("calls tools.record_payment(…) with an input its schema does not accept");
+    expect(message).toContain(`"ach" | "card" | "check"`);
+    expect(message).not.toContain('prop "onClick"');
   });
 
   /** A field description written as the bare KEY — the shorthand `Select.options`

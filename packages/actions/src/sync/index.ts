@@ -411,7 +411,11 @@ export async function vendoSync(options: {
     }
     return undefined;
   };
-  const pins = await capturePins(root, out, new Set(overrides?.remix?.ignoreSlots ?? []), undefined, samplePropsFor);
+  const pins = await capturePins(root, out, {
+    ignoreSlots: new Set(overrides?.remix?.ignoreSlots ?? []),
+    ...(overrides?.remix?.sources === undefined ? {} : { sources: overrides.remix.sources }),
+    samplePropsFor,
+  });
   warnings.push(...pins.warnings);
   // The host's OWN registered components, captured for real so the console's
   // gallery renders them instead of a grey labeled block. Shares the pin walk's
@@ -437,6 +441,7 @@ export async function vendoSync(options: {
       drifted: pins.drifted,
       ...(pins.pruned.length === 0 ? {} : { pruned: pins.pruned }),
       ...(pins.ported.length === 0 ? {} : { ported: pins.ported }),
+      ...(pins.unattributed.length === 0 ? {} : { unattributed: pins.unattributed }),
     },
     remixableErrors: pins.errors,
     catalog: { discovered: catalogScan.discovered, registered: catalogScan.registered },

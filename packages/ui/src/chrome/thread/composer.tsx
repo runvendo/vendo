@@ -177,10 +177,7 @@ export function useComposer({ busy, sendMessage, steer }: {
         // silently — and the person is told what happened in their own terms
         // (what happened · nothing changed · what happens next).
         // The browser's own sentence ("NotReadableError: …") is a developer
-        // string and is dropped here rather than rendered. It gets
-        // no dev-mode rail because this file is an EJECT TEMPLATE: it may only
-        // import from the public chrome surface, and `developmentMode` is not
-        // on it (scripts/eject-templates-lib.mjs enforces that).
+        // string and is dropped here rather than rendered.
         setAttachError(
           "Couldn’t read that attachment — nothing was sent."
           + " Your message is still here: remove the file, or attach it again.",

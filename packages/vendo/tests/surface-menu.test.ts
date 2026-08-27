@@ -1,5 +1,31 @@
+import { CONNECTOR_DISCOVERY_TOOLS, VENDO_BASH_TOOL, type ToolDescriptor, type ToolRegistry } from "@vendoai/core";
 import { describe, expect, it, vi } from "vitest";
-import { memoizedSurfaceMenu } from "../src/surface-menu.js";
+import { memoizedSurfaceMenu, withAgentMenu } from "../src/surface-menu.js";
+
+const listing = (...names: string[]): ToolRegistry => ({
+  async descriptors(): Promise<ToolDescriptor[]> {
+    return names.map((name) => ({ name, description: name, inputSchema: { type: "object" }, risk: "read" }));
+  },
+  async execute() {
+    return { status: "ok", output: {} as never };
+  },
+});
+
+describe("withAgentMenu", () => {
+  it("curates the host's surface and leaves Vendo's own plumbing alone", async () => {
+    const [discovery] = CONNECTOR_DISCOVERY_TOOLS;
+    const tools = listing("host_invoices", "host_payroll", "vendo_make", VENDO_BASH_TOOL, discovery!);
+
+    const curated = withAgentMenu(tools, async () => new Set(["host_invoices"]));
+
+    // `bash` carries no `vendo_` prefix — that is the whole point of its name —
+    // so the prefix exemption cannot cover it and it has to be named. Without
+    // that, a curated deployment loses the one tool that opens the user's files
+    // while the system prompt keeps teaching it.
+    expect((await curated.descriptors()).map(({ name }) => name))
+      .toEqual(["host_invoices", "vendo_make", VENDO_BASH_TOOL, discovery]);
+  });
+});
 
 describe("memoizedSurfaceMenu", () => {
   it("resolves once and reuses the answer", async () => {

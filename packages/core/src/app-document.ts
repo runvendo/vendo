@@ -1,7 +1,15 @@
 import { z } from "zod";
 import { VENDO_APP_FORMAT } from "./formats.js";
 import type { AutomationId } from "./automation.js";
-import { appIdSchema, isoDateTimeSchema, type AppId, type IsoDateTime, type Json } from "./ids.js";
+import {
+  appIdSchema,
+  approvalIdSchema,
+  isoDateTimeSchema,
+  type AppId,
+  type ApprovalId,
+  type IsoDateTime,
+  type Json,
+} from "./ids.js";
 import { sha256Hex } from "./sha256.js";
 
 /**
@@ -187,8 +195,7 @@ export const appMemorySchema = z.object({
  * already existed, so the provenance is a property of the app, not a row set:
  * the thing it was seeded from, and the version of that thing it started at.
  * `slot` is the placement the ✦ gesture came from (a convenience for the chrome,
- * never the location of record — that is a placement ROW), and `review` carries
- * the captured baseline's review kind.
+ * never the location of record — that is a placement ROW).
  *
  * `wishes` is every change that LANDED on this remix, VERBATIM and in order, the
  * ✦ gesture's own first. There are no bare forks — the gesture collects the
@@ -231,7 +238,6 @@ export interface AppSeed {
    */
   props?: Record<string, Json>;
   slot?: string;
-  review?: boolean;
 }
 
 /** 01-core §9 */
@@ -249,7 +255,6 @@ export const appSeedSchema = z.object({
   unapplied: z.array(z.string()).optional(),
   props: z.record(z.unknown()).optional(),
   slot: z.string().optional(),
-  review: z.boolean().optional(),
 }).passthrough().transform(({ instruction, wishes, ...seed }) => ({
   ...seed,
   wishes: wishes ?? (instruction === undefined || instruction === "" ? [] : [instruction]),
@@ -278,21 +283,62 @@ export const seedComponentName = (slot: string): string => {
 };
 
 /**
- * execution-v2 — the app's persistent machine. Presence means layer 2+; an app
- * with no machine is a layer-1 tree app. The layer itself is always derived
- * from presence (and, for layer 3, from what the box serves), never stored.
+ * A SEALED bundle — the app's built client code, frozen as content-addressed
+ * blobs. Every hash BELOW is a blob key, and a blob is only ever stored under
+ * its own hash, never under a path (`assets` is keyed by path because that is
+ * how the entry names its imports — the path is a lookup, never a location):
+ * the entry hash IS the version and the blob key, so a reseal can never
+ * overwrite the bytes an open tab is still rendering, and the loser of a
+ * concurrent seal stays readable as a history version.
+ *
+ * Brand tokens and fonts are injected AT RENDER and are deliberately not baked
+ * in, so one seal follows a host's palette instead of pinning the palette it
+ * was built under.
  */
-interface AppMachine {
-  /** Provider-prefixed snapshot reference (e.g. "e2b:snap_x91"), opaque past the colon. */
-  snapshotRef: string;
-  provisionedAt: IsoDateTime;
+export interface AppBundle {
+  /** sha256 hex of the entry module's bytes. */
+  entry: string;
+  /** The modules the entry reaches: path it names them by -> sha256 hex. */
+  assets?: Record<string, string>;
+  bytes: number;
+  sealedAt: IsoDateTime;
 }
 
-/** execution-v2 */
-const appMachineSchema = z.object({
-  snapshotRef: z.string(),
-  provisionedAt: isoDateTimeSchema,
-}).passthrough() satisfies z.ZodType<AppMachine>;
+const BUNDLE_HASH = /^[0-9a-f]{64}$/;
+
+/** 01-core §9 */
+export const appBundleSchema = z.object({
+  entry: z.string().regex(BUNDLE_HASH),
+  assets: z.record(z.string().regex(BUNDLE_HASH)).optional(),
+  bytes: z.number().int().nonnegative(),
+  sealedAt: isoDateTimeSchema,
+}).passthrough() satisfies z.ZodType<AppBundle>;
+
+/**
+ * A build the person has been ASKED about and has not answered yet. Written
+ * when the make tool raises the standing approval card, cleared the moment the
+ * decision lands either way — so its presence IS the awaiting-consent state,
+ * and while it is there no box has been claimed and nothing has been spent.
+ *
+ * `prompt` is verbatim because the build brief is replayed from it whenever the
+ * yes arrives, which may be long after the turn that asked is gone; the app's
+ * name is a capped collapse of it and too lossy to build from.
+ */
+export interface AppBuildProposal {
+  approvalId: ApprovalId;
+  prompt: string;
+  /** The screen agent's own line for why a screen was not enough. */
+  why: string;
+  at: IsoDateTime;
+}
+
+/** 01-core §9 */
+export const appBuildProposalSchema = z.object({
+  approvalId: approvalIdSchema,
+  prompt: z.string(),
+  why: z.string(),
+  at: isoDateTimeSchema,
+}).passthrough() satisfies z.ZodType<AppBuildProposal>;
 
 /** 01-core §9 */
 const appBuildFailureSchema = z.object({
@@ -308,7 +354,7 @@ export interface AppDocument {
   id: AppId;
   name: string;
   description?: string;
-  ui?: "tree" | "http";
+  ui?: "tree" | "bundle";
   components?: Record<string, ComponentEntry>;
   /**
    * W4b — the compiler-stamped per-island tool manifest: for each generated
@@ -324,12 +370,13 @@ export interface AppDocument {
    * inside the app directory ("src/App.tsx", "vendo.json"), the app's own
    * screen (`app.tsx`) included.
    *
-   * With this present, `machine.snapshotRef` is a CACHE: an app can always be
-   * rebuilt from here onto a fresh box, and nothing may read a snapshot to
-   * recover source.
+   * This is what a RESEAL starts from: a bundle is rebuilt from here in a fresh
+   * box, so no sealed artifact is ever the only copy of an app's own code.
    */
   source?: Record<string, AppSourceFile>;
-  machine?: AppMachine;
+  /** The seal a `ui: "bundle"` app renders — the one field that says which
+   *  bytes this app IS right now. */
+  bundle?: AppBundle;
   /**
    * The app's automations, by id — maintained by the APPS layer ONLY
    * (`vendo_make`'s compound flow, the manifest fold-in), and resolved on read
@@ -375,6 +422,19 @@ export interface AppDocument {
    */
   building?: IsoDateTime;
   /**
+   * The one line the build lane last said about itself, in the person's terms.
+   * A LABEL, never a log: the latest replaces the previous, because progress is
+   * chat status lines and the only reader is the pending poll's answer. Written
+   * only while `building` is set, and cleared with it.
+   */
+  buildStatus?: string;
+  /**
+   * `building`'s half-step back: a build that has been OFFERED and not yet
+   * answered. Server-written by the propose path and cleared by the decision,
+   * so a document can never carry both this and `building`.
+   */
+  proposal?: AppBuildProposal;
+  /**
    * What this app remembers about itself. Server-written — stripped from a
    * generated document before persist and pinned from the stored row on every
    * edit, so only the memory door ever changes it.
@@ -395,12 +455,12 @@ export const appDocumentSchema = z.object({
   id: appIdSchema,
   name: z.string(),
   description: z.string().optional(),
-  ui: z.enum(["tree", "http"]).optional(),
+  ui: z.enum(["tree", "bundle"]).optional(),
   components: z.record(componentEntrySchema).optional(),
   componentTools: z.record(z.array(z.string())).optional(),
   storage: z.record(storageDeclSchema).optional(),
   source: z.record(appSourceFileSchema).optional(),
-  machine: appMachineSchema.optional(),
+  bundle: appBundleSchema.optional(),
   automations: z.array(z.string()).optional(),
   egress: z.array(z.string()).optional(),
   egressApproved: z.array(z.string()).optional(),
@@ -409,6 +469,8 @@ export const appDocumentSchema = z.object({
   forkedFrom: appIdSchema.optional(),
   buildFailed: appBuildFailureSchema.optional(),
   building: isoDateTimeSchema.optional(),
+  buildStatus: z.string().optional(),
+  proposal: appBuildProposalSchema.optional(),
   memory: appMemorySchema.optional(),
   // Input widened for the same reason as {@link appSeedSchema}'s: a defaulted
   // field inside `seed` makes this schema's input looser than an AppDocument.

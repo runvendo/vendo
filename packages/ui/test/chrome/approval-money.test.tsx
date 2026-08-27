@@ -77,7 +77,7 @@ function cardOf(approval: ApprovalRequest): { question: string; notes: string[] 
 
 /** The card's own venue note, last on every ask in this file. */
 const ASKED_HERE = "asked here in chat";
-const IRREVERSIBLE = "This makes a change you can’t undo, as you.";
+const IRREVERSIBLE = "This makes a change you can’t undo, and it runs as you.";
 
 const CENTS_SCHEMA: JsonSchema = {
   type: "object",

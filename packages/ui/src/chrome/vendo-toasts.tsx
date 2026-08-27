@@ -8,13 +8,16 @@
       any code path; automations delivery wires through this).
     - `approvals` — opt-in polling of pending approvals: a NEWLY parked approval
       raises an approval-required toast, decidable in place. */
+import { VENDO_APP_BUILD_TOOL } from "@vendoai/core";
 import { useEffect, useRef, useSyncExternalStore, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useVendoProvider } from "../context.js";
 import { useApprovals } from "../hooks/use-approvals.js";
 import { themeCssVariables } from "../theme.js";
-import { ensureChromeStyles } from "./chrome-root.js";
-import { toolTitle } from "./humanize.js";
+import { consentAsk, toolPresentation } from "./build-beat.js";
+import { NOTE_SEPARATOR } from "./card-shell.js";
+import { ensureChromeStyles, useChromeTheme } from "./chrome-root.js";
+import { fieldRows } from "./field-rows.js";
 
 export interface VendoToastAction {
   label: string;
@@ -130,51 +133,73 @@ function useToastQueue(): ToastRecord[] {
   return useSyncExternalStore(subscribe, () => queue, () => EMPTY);
 }
 
-/** Opt-in approval feed: raises a toast for every approval that parks AFTER
-    mount (the pre-existing backlog is the activity surface's to show, not a
-    toast storm on page load), and withdraws it once decided elsewhere. */
+/** Opt-in approval feed: a toast per approval waiting on the user, decidable in
+    place, withdrawn once decided anywhere.
+
+    IT SHOWS THE BACKLOG TOO. This took the asks present at mount as a baseline
+    and toasted only what arrived after — so a standing ask (a build's "spend a
+    machine?") stopped being answerable the moment the page reloaded, measured as
+    0 cards and 0 Approve buttons against an ask still pending on the wire. The
+    spec's whole shape is "the yes, WHENEVER", and an ask that only exists while
+    you are watching is not a standing one. Nothing here re-raises what a person
+    ANSWERED (`seen`, below, is what a dismissal respects, and a decided ask
+    leaves the pending list); what comes back is only what is still unanswered. */
 function ApprovalToasts({ pollMs }: { pollMs: number }) {
   const { tools } = useVendoProvider();
-  const { pending, isLoading, decide } = useApprovals({ pollMs });
-  // null until the first fetch settles — that first batch is baseline, not news.
-  const seenRef = useRef<Set<string> | null>(null);
+  const { pending, decide } = useApprovals({ pollMs });
+  const seenRef = useRef(new Set<string>());
   const dismissersRef = useRef(new Map<string, () => void>());
   useEffect(() => {
     const dismissers = dismissersRef.current;
-    if (seenRef.current === null) {
-      // The hook's initial [] (fetch still in flight) is not the baseline —
-      // waiting for it would toast the whole pre-existing backlog on load.
-      if (isLoading) return;
-      seenRef.current = new Set(pending.map(approval => approval.id));
-      return;
-    }
     const seen = seenRef.current;
     for (const approval of pending) {
+      // A build's ask is answered on its own in-thread card (ApprovalCard,
+      // painted from the `data-vendo-approval` part), so a toast would ask the
+      // same question a second time. It still counts in the launcher badge —
+      // that is what keeps a closed thread from stranding it.
+      if (approval.call.tool === VENDO_APP_BUILD_TOOL) continue;
       if (seen.has(approval.id) || dismissers.has(approval.id)) continue;
       seen.add(approval.id);
+      // Ruling 14's ONE plain-words ladder, the same one the approval card and
+      // its queue row read — so the toast cannot ask a different question from
+      // the card. It used to say the tool's LABEL and nothing else ("Waiting on
+      // you: Vendo app build"), which names no ask a person could weigh.
+      const meta = tools[approval.call.tool];
+      const ask = consentAsk(
+        approval.descriptor.risk,
+        toolPresentation(
+          approval.call.tool,
+          approval.call.args,
+          meta,
+          approval.descriptor.title,
+          approval.descriptor.inputSchema,
+        ),
+        fieldRows(approval.call.args, approval.descriptor.inputSchema, meta),
+        meta,
+      );
+      const settle = (approve: boolean) => () => {
+        void decide(approval.id, { approve }).then(() => {
+          dismissers.get(approval.id)?.();
+          dismissers.delete(approval.id);
+        }).catch(() => {
+          // The decide failed — the approval is still parked server-side.
+          // Keep the toast so the buttons stay retryable, and un-see the id
+          // so a later poll can re-raise it once this card is gone.
+          seen.delete(approval.id);
+        });
+      };
       const dismiss = vendoToast({
         kind: "approval-required",
-        text: `Waiting on you: ${toolTitle(approval.call.tool, tools[approval.call.tool])}`,
-        // Not a destination: the library cannot know whether this host mounts
-        // a surface that shows the record. What IS true on every host is what
-        // approving MEANS — the same "Runs as you" the approval card and the
-        // morph toast say.
-        hint: "Runs as you once approved",
-        actions: [{
-          label: "Approve",
-          primary: true,
-          onAction: () => {
-            void decide(approval.id, { approve: true }).then(() => {
-              dismissers.get(approval.id)?.();
-              dismissers.delete(approval.id);
-            }).catch(() => {
-              // The decide failed — the approval is still parked server-side.
-              // Keep the toast so Approve stays retryable, and un-see the id
-              // so a later poll can re-raise it once this card is gone.
-              seen.delete(approval.id);
-            });
-          },
-        }],
+        text: `Waiting on you: ${ask.question}`,
+        // THE HONESTY LAW (card-shell.tsx) on the toast too: every real input
+        // the question does not already name, then what approving does.
+        hint: ask.notes.join(NOTE_SEPARATOR),
+        actions: [
+          { label: "Approve", primary: true, onAction: settle(true) },
+          // The × is a dismissal, not an answer, and a person being asked to
+          // spend a machine must be able to say no to it.
+          { label: "Deny", onAction: settle(false) },
+        ],
       });
       dismissers.set(approval.id, dismiss);
     }
@@ -186,7 +211,7 @@ function ApprovalToasts({ pollMs }: { pollMs: number }) {
         dismissers.delete(id);
       }
     }
-  }, [pending, isLoading, decide, tools]);
+  }, [pending, decide, tools]);
   useEffect(() => () => {
     for (const dismiss of dismissersRef.current.values()) dismiss();
     dismissersRef.current.clear();
@@ -203,7 +228,11 @@ export interface VendoToastsProps {
 
 /** 08-ui §4 chrome — mount once per page. */
 export function VendoToasts({ placement = "bottom-right", approvals = false, pollMs = 5_000 }: VendoToastsProps = {}): ReactNode {
-  const { theme } = useVendoProvider();
+  // Mounted bare (the usual shape) this is the provider theme. Mounted inside a
+  // chrome surface that carries its own `theme`, the stack wears that one — it
+  // portals out of the DOM subtree, so context is the only way the boundary
+  // reaches it.
+  const theme = useChromeTheme();
   const toasts = useToastQueue();
   // The stack portals out of any ChromeRoot subtree, so it owns its own style
   // injection — a page that mounts ONLY VendoToasts still renders styled.
@@ -259,6 +288,13 @@ export function VendoToasts({ placement = "bottom-right", approvals = false, pol
                 </span>
                 <div className="fl-toasts-body">
                   <div className="fl-toasts-text">{toast.text}</div>
+                  {/* Under the question, not beside the buttons. The hint used
+                      to ride the actions ROW, which is a centred flex line, so
+                      it read fine at five words ("Runs as you once approved")
+                      and folded into a tall column beside Approve the moment it
+                      carried a real ask. Its home is the body's own column —
+                      the same place the approval card puts the same line. */}
+                  {toast.hint !== undefined ? <div className="fl-toasts-hint">{toast.hint}</div> : null}
                   <div className="fl-toasts-actions">
                     {(toast.actions ?? []).map(action => (
                       <button
@@ -270,7 +306,6 @@ export function VendoToasts({ placement = "bottom-right", approvals = false, pol
                         {action.label}
                       </button>
                     ))}
-                    {toast.hint !== undefined ? <span className="fl-toasts-hint">{toast.hint}</span> : null}
                     <button type="button" className="fl-toasts-dismiss" aria-label="Dismiss notification" onClick={() => removeToast(toast.id)}>×</button>
                   </div>
                 </div>

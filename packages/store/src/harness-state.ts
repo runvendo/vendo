@@ -11,14 +11,13 @@ import type { VendoStore } from "./store.js";
  * `claudeCode()` reads its native session on the turn AFTER the one that wrote
  * it, so a restart (or a second replica) meant a re-seed on every turn.
  *
- * **No new table, no SCHEMA_VERSION bump** (the wave-3 coordination promise):
- * the state rides `vendo_state`, whose primary key is already `(app_id,
- * subject)`. `app_id` carries the thread — namespaced so it can never collide
- * with a real `app_` id, and so app deletion (which sweeps `vendo_state` by
- * `app_id`) leaves it alone. `subject` is the thread's OWNER, read from
- * `vendo_threads`, which is what puts the row inside the erase cascade
- * (`erase.ts` deletes `vendo_state WHERE subject = $1`) and the anon→signed-in
- * adoption path (`helpers/subjects.ts`) for free.
+ * The state lives on the THREAD ROW — `vendo_threads.harness_state` (v12) — and
+ * that is the whole design. It rode `vendo_state` under a synthetic `app_id`
+ * before, which bought "no new table" at the price of a slot no table cascade
+ * covered: thread deletion swept it by hand in two places, a retention sweep
+ * needed a fence to keep the app-state door from seeing it, and the erase
+ * cascade reached it only through a second selector. On the thread row, every
+ * one of those is simply the row going away.
  *
  * ONE slot per thread carrying its owner's name, exactly as the interface says:
  * a foreign harness DESTROYS the row rather than shadowing it, so swapping back
@@ -28,12 +27,6 @@ import type { VendoStore } from "./store.js";
  * sits BELOW `@vendoai/harnesses` in the layering (contract §2) — the shape is
  * the contract, as it is for `threadMessageStore`.
  */
-/** The synthetic `app_id` a thread's harness state rides under. Shared with the
- *  thread delete path (`helpers/threads.ts`), which sweeps the row so no
- *  native-session ref outlives its thread — and with the wire's own harness
- *  family, whose slot is keyed identically so `deleteThread` cascades there too. */
-export const harnessStateKey = (threadId: string): string => `harness_state:${threadId}`;
-
 /** The slot's stored payload. Spelled ONCE because three writers land it: both
  *  backends' `set`, and a batched turn commit, which carries the row itself
  *  rather than calling `set` — a second spelling would be a slot one writer
@@ -66,6 +59,7 @@ interface StoredState {
 
 /** Rows come back as jsonb (an object) or as text, depending on the driver. */
 function decode(row: unknown): StoredState | undefined {
+  if (row === null || row === undefined) return undefined;
   const stored = typeof row === "string" ? (JSON.parse(row) as unknown) : row;
   if (typeof stored !== "object" || stored === null) return undefined;
   return stored as StoredState;
@@ -77,14 +71,14 @@ export function harnessStateStore(store: VendoStore): HarnessStateStore {
 }
 
 /**
- * The hosted half: the SAME slot — `harness_state:<threadId>` as the appId, the
- * thread's owner as the subject — served by the wire's `harness` family, so a
- * deployment can move between backends without its sessions changing shape.
+ * The hosted half: the SAME slot — the thread's id, the thread's owner as the
+ * subject — served by the wire's `harness` family, so a deployment can move
+ * between backends without its sessions changing shape.
  *
  * The owner comes from `transcripts.getThread` where SQL reads `vendo_threads`
  * directly. That read is not decoration: the wire's harness verbs are keyed by
- * (appId, subject), and a row stored under the wrong subject is a row no erase
- * and no adoption can reach — the same reason the SQL half refuses to store one.
+ * (threadId, subject), and a mount answers a subject that is not the thread's
+ * own as an empty slot — the same rule the SQL half enforces in its WHERE.
  */
 function overOps(ops: StoreOps): HarnessStateStore {
   const ownerOf = async (threadId: string): Promise<string | undefined> => {
@@ -105,7 +99,7 @@ function overOps(ops: StoreOps): HarnessStateStore {
     if (stored === undefined) return undefined;
     if (stored.harness === harnessName) return typeof stored.value === "string" ? stored.value : undefined;
     // §1.3's clearing rule: a different thinker holds this conversation now.
-    await ops.harness.clear(harnessStateKey(threadId), subject);
+    await ops.harness.clear(threadId, subject);
     return undefined;
   };
 
@@ -114,7 +108,7 @@ function overOps(ops: StoreOps): HarnessStateStore {
       const subject = owner ?? await ownerOf(threadId);
       // No thread, no slot — the SQL half's missing row, reached differently.
       if (subject === undefined) return undefined;
-      return await resolve(threadId, harnessName, subject, await ops.harness.get(harnessStateKey(threadId), subject));
+      return await resolve(threadId, harnessName, subject, await ops.harness.get(threadId, subject));
     },
 
     async resume(threadId, harnessName, stored, owner) {
@@ -126,43 +120,40 @@ function overOps(ops: StoreOps): HarnessStateStore {
     async set(threadId, harnessName, value, owner) {
       const subject = owner ?? await ownerOf(threadId);
       if (value === undefined) {
-        if (subject !== undefined) await ops.harness.clear(harnessStateKey(threadId), subject);
+        if (subject !== undefined) await ops.harness.clear(threadId, subject);
         return;
       }
       if (subject === undefined) {
         throw new VendoError("not-found", `No thread ${threadId} to hold harness state for.`);
       }
-      // One row per (appId, subject), so a harness swap overwrites in place —
-      // the SQL half's delete-then-insert, expressed as the wire's own upsert.
-      await ops.harness.set(harnessStateKey(threadId), subject, harnessStateRow(harnessName, value));
+      // One slot per thread, so a harness swap overwrites in place.
+      await ops.harness.set(threadId, subject, harnessStateRow(harnessName, value));
     },
 
     async clear(threadId, owner) {
       const subject = owner ?? await ownerOf(threadId);
-      // A thread that is already gone took its slot with it (deleteThread
-      // cascades the `harness_state:<id>` appId), so there is nothing to drop.
+      // A thread that is already gone took its slot with it — the slot is a
+      // column on that row — so there is nothing to drop.
       if (subject === undefined) return;
-      await ops.harness.clear(harnessStateKey(threadId), subject);
+      await ops.harness.clear(threadId, subject);
     },
   };
 }
 
+/**
+ * The SQL half reads and writes ONE column on the thread row, so it needs no
+ * `owner` at all: the row carries its own subject, and there is no second key
+ * for a caller to get wrong. (`owner` stays in the signature because the ops
+ * half genuinely saves a round trip with it.)
+ *
+ * None of these writes touch `updated_at` or `revision`. Resuming a session is
+ * not a message and not an edit: bumping `updated_at` would reshuffle a user's
+ * thread list every turn, and bumping `revision` would break the compare-and-swap
+ * of any caller holding one.
+ */
 function overSql(db: Db): HarnessStateStore {
-  const key = harnessStateKey;
-
-  const ownerOf = async (threadId: string): Promise<string> => {
-    const result = await db.query("SELECT subject FROM vendo_threads WHERE id = $1", [threadId]);
-    const subject = result.rows[0]?.["subject"];
-    if (typeof subject !== "string") {
-      // Storing it anyway would leave a row no erase and no adoption can reach,
-      // because both cascade on `subject`.
-      throw new VendoError("not-found", `No thread ${threadId} to hold harness state for.`);
-    }
-    return subject;
-  };
-
   const drop = async (threadId: string): Promise<void> => {
-    await db.query("DELETE FROM vendo_state WHERE app_id = $1", [key(threadId)]);
+    await db.query("UPDATE vendo_threads SET harness_state = NULL WHERE id = $1", [threadId]);
   };
 
   const resolve = async (threadId: string, harnessName: string, row: unknown): Promise<string | undefined> => {
@@ -176,8 +167,8 @@ function overSql(db: Db): HarnessStateStore {
 
   return {
     async get(threadId, harnessName) {
-      const result = await db.query("SELECT data FROM vendo_state WHERE app_id = $1", [key(threadId)]);
-      return await resolve(threadId, harnessName, result.rows[0]?.["data"]);
+      const result = await db.query("SELECT harness_state FROM vendo_threads WHERE id = $1", [threadId]);
+      return await resolve(threadId, harnessName, result.rows[0]?.["harness_state"]);
     },
 
     /** A SQL store is one hop from its own rows, so nothing here batches — but
@@ -185,21 +176,20 @@ function overSql(db: Db): HarnessStateStore {
      *  contract (a caller must not have to know which backend it holds). */
     resume: (threadId, harnessName, stored) => resolve(threadId, harnessName, stored),
 
-    async set(threadId, harnessName, value, owner) {
+    async set(threadId, harnessName, value) {
       if (value === undefined) {
         await drop(threadId);
         return;
       }
-      const subject = owner ?? await ownerOf(threadId);
-      const now = new Date().toISOString();
-      // The slot is one row per THREAD, so a harness swap overwrites rather than
-      // adding a second owner's copy beside the first.
-      await drop(threadId);
-      await db.query(
-        `INSERT INTO vendo_state (app_id, subject, data, updated_at, created_at)
-         VALUES ($1, $2, $3, $4, $4)`,
-        [key(threadId), subject, JSON.stringify(harnessStateRow(harnessName, value)), now],
+      // The missing-thread refusal is the UPDATE's own answer: no row matched,
+      // so there was no conversation to bookmark.
+      const result = await db.query(
+        "UPDATE vendo_threads SET harness_state = $2::jsonb WHERE id = $1 RETURNING id",
+        [threadId, JSON.stringify(harnessStateRow(harnessName, value))],
       );
+      if (result.rows.length === 0) {
+        throw new VendoError("not-found", `No thread ${threadId} to hold harness state for.`);
+      }
     },
 
     clear: drop,

@@ -47,7 +47,6 @@ export {
   APP_DATA_OWNER_REF,
 } from "./app-data-rows.js";
 export { backfillAppDataStamps, type AppDataBackfillReport } from "./backfill-app-data.js";
-export { backfillAppRefKey, type AppRefKeyBackfillReport } from "./backfill-app-data.js";
 export {
   DEDICATED_RECORD_COLLECTIONS,
   RESERVED_COLLECTIONS,
@@ -85,7 +84,7 @@ export { workspaceIndexPage } from "./workspace-ops-rows.js";
 export { turnLoadOverOps } from "./helpers/turn.js";
 export { storeFiles, FILES_STORE_MAX_BYTES } from "./files-store.js";
 export { s3Files, type S3FilesOptions } from "./s3-files.js";
-export { harnessStateKey, harnessStateRow, harnessStateStore } from "./harness-state.js";
+export { harnessStateRow, harnessStateStore } from "./harness-state.js";
 // The Cloud store belongs here too: it talks to the console over HTTP, so it
 // carries no engine at all.
 export { hostedStore, hostedStoreOps, type HostedStore, type HostedStoreOptions } from "./hosted-store.js";

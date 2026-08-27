@@ -63,7 +63,7 @@ describe("ApprovalCard and NoPolicyNotice exports", () => {
     expect(Array.from(notes.querySelectorAll("li")).map(item => item.textContent)).toEqual([
       "Invoice id: inv_42",
       " · Permanent: Yes",
-      " · This makes a change you can’t undo, as you.",
+      " · This makes a change you can’t undo, and it runs as you.",
       " · asked in an app",
     ]);
     // No amber and no pill: the grade is a machine affordance on the shell, and

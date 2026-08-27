@@ -89,8 +89,7 @@ function upToDate(remote: unknown, local: SeedBaseline): boolean {
   const parsed = seedBaselineSchema.safeParse(remote);
   return parsed.success
     && parsed.data.hash === local.hash
-    && parsed.data.capturedAt === local.capturedAt
-    && (parsed.data.review === true) === (local.review === true);
+    && parsed.data.capturedAt === local.capturedAt;
 }
 
 /**

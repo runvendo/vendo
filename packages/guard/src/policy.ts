@@ -1,4 +1,4 @@
-import { VendoError } from "@vendoai/core";
+import { VENDO_BASH_TOOL, VendoError } from "@vendoai/core";
 import type { PolicyConfig, PolicyConfigObject, PolicyFile, PolicyPresetName, PolicyRule } from "./types.js";
 import { policyFileSchema } from "./types.js";
 
@@ -17,6 +17,14 @@ const POLICY_PRESET_RULES: Record<PolicyPresetName, PolicyRule[]> = {
   cautious: [
     { match: { risk: "destructive" }, action: "ask" },
     { match: { risk: "ungraded" }, action: "ask" },
+    // The shell is graded `write` DELIBERATELY and stays that way — the grade is
+    // what buys the audit row per call, the host's own rules and the kill
+    // switch. What its spec removes is the PROMPT: an automation has nobody to
+    // answer an approval card, so a `write → ask` that caught this tool would
+    // mean it cannot run unattended at all. First-match-wins, so the exemption
+    // has to sit above the write rule; a host who wants the friction back says
+    // so with their own rule for this tool.
+    { match: { tool: VENDO_BASH_TOOL }, action: "run" },
     { match: { risk: "write" }, action: "ask" },
     { match: { risk: "read" }, action: "run" },
   ],

@@ -56,6 +56,8 @@ const enotempty = (op: string, path: string): Error =>
   new Error(`ENOTEMPTY: directory not empty, ${op} '${path}'`);
 const eexist = (op: string, path: string): Error =>
   new Error(`EEXIST: file already exists, ${op} '${path}'`);
+const einval = (op: string, path: string): Error =>
+  new Error(`EINVAL: invalid argument, ${op} '${path}'`);
 /** The workspace is exactly the mounts §3.1 names. A write anywhere else is a
     mistake — `/User/apps/...`, `/user/../x`, `/etc/passwd`, or an org the host
     did not assert this request — and silently accepting it would lose the data
@@ -448,6 +450,17 @@ export class WorkspaceStoreFs implements WorkspaceFs {
   async mv(src: string, dest: string): Promise<void> {
     const from = normalizePath(src);
     this.assertWritable("rename", from);
+    // Moving a path onto itself is a no-op, and it has to be checked here: the
+    // copy below stages the bytes at `from`, and the delete then drops the very
+    // path the copy just staged, so the file would disappear.
+    const to = normalizePath(dest);
+    if (from === to) return;
+    // A destination INSIDE the source is the same trap, wearing a whole tree:
+    // the copy stages the children under `to`, and the recursive delete then
+    // drops everything with the source's prefix — the copies included. An error
+    // rather than a silent skip, because unlike the identity case nothing the
+    // caller asked for happened; `rename(2)` answers EINVAL here too.
+    if (under(to, from)) throw einval("rename", src);
     await this.cp(src, dest, { recursive: true });
     await this.rm(from, { recursive: true });
   }

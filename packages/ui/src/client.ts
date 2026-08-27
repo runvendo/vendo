@@ -38,7 +38,6 @@ import type {
   RunPlan,
   RunRecord,
   RunStatus,
-  ShipDiff,
   SlotEntry,
   Thread,
   ThreadSummary,
@@ -138,8 +137,6 @@ export interface VendoClient {
     }>;
     share(id: AppId, principal: string, level: AccessLevel): Promise<{ grants: AppGrantRecord[] }>;
     unshare(id: AppId, principal: string): Promise<{ grants: AppGrantRecord[] }>;
-    /** GET /apps/:id/ship-diff — the reviewable diff vs the captured host baselines (06 §8–§9). */
-    shipDiff(id: AppId): Promise<ShipDiff>;
     /** POST /apps/:id/reseed — rebuild the remix against the host's current
      *  version of the component (06 §8) by replaying EVERY wish the seed
      *  recorded, oldest first. A wish the new version cannot take is kept and
@@ -167,12 +164,15 @@ export interface VendoClient {
      */
     courierProps(id: AppId, props: Record<string, Json>): Promise<AppDocument>;
     /**
-     * POST /apps/:id/machine/ping — the embed surface's keepalive:
-     * user activity on an embedded served app rides one host-proxied HEAD
-     * through the machine, keeping it from idling out under the user. "woke"
-     * means the machine had slept — the embed's URL is stale; re-open.
+     * `GET /apps/:id/bundle/:entry` — where a SEALED bundle's document lives.
+     *
+     * A url rather than a fetch, because the browser is what asks: it is an
+     * iframe's `src`, so the response's own CSP header (`default-src 'none'`,
+     * `frame-ancestors 'self'`) is what governs the document — which is exactly
+     * why the bundle is not inlined as `srcdoc`. `entry` is the content hash, so
+     * the url never goes stale.
      */
-    pingMachine(id: AppId): Promise<{ state: "awake" | "woke" }>;
+    bundleUrl(id: AppId, entry: string): string;
     /**
      * Placement (2026-08-05) — "show this app in that slot". `POST
      * /apps/:id/place`; one app per slot, so the answer names whatever the

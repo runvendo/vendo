@@ -397,13 +397,6 @@ describe("memoryStoreAdapter reserved routing", () => {
         refs: { subject: principal.subject },
         createdAt: "2026-07-11T16:01:00.000Z",
       },
-      {
-        collection: "vendo_state",
-        id: `${app.id}:${principal.subject}`,
-        data: { selected: "one" },
-        refs: { app_id: app.id, subject: principal.subject },
-        createdAt: "2026-07-11T16:01:00.000Z",
-      },
     ];
 
     for (const testCase of cases) {
@@ -418,7 +411,7 @@ describe("memoryStoreAdapter reserved routing", () => {
     }
   });
 
-  it("rejects invalid shapes at all seven reserved doors", async () => {
+  it("rejects invalid shapes at all six reserved doors", async () => {
     const adapter = memoryStoreAdapter();
     const invalid = [
       ["vendo_grants", "grt_invalid", {}],
@@ -427,7 +420,6 @@ describe("memoryStoreAdapter reserved routing", () => {
       ["vendo_threads", "thr_invalid", {}],
       ["vendo_runs", "run_invalid", {}],
       ["vendo_apps", "app_invalid", {}],
-      ["vendo_state", "invalid-state-id", undefined],
     ] as const;
     for (const [collection, id, data] of invalid) {
       await expect(adapter.records(collection).put({ id, data }), collection).rejects.toMatchObject({
@@ -595,14 +587,6 @@ describe("memoryStoreAdapter reserved routing", () => {
       id: "thr_invalid_atomic",
       data: { subject: 5, messages: [] },
     })).rejects.toMatchObject({ code: "validation" });
-  });
-
-  it("requires well-formed vendo_state ids on put and delete", async () => {
-    const state = memoryStoreAdapter().records("vendo_state");
-    await expect(state.put({ id: "no-colon", data: {} })).rejects.toMatchObject({ code: "validation" });
-    await expect(state.put({ id: "invoice_1:user_one", data: {} })).rejects.toMatchObject({ code: "validation" });
-    await expect(state.put({ id: "app_x:", data: {} })).rejects.toMatchObject({ code: "validation" });
-    await expect(state.delete("invoice_1:user_one")).rejects.toMatchObject({ code: "validation" });
   });
 
   it("rejects unknown reserved ref filters and cross-subject thread updates", async () => {

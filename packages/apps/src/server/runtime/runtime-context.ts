@@ -13,7 +13,6 @@
 import {
   type AccessLevel,
   type AppId,
-  type ApprovalId,
   type Json,
   type RunContext,
   VendoError,
@@ -28,36 +27,25 @@ import type { AppDataAccess } from "../persistence/app-data.js";
 import { engineOf, type EngineOps } from "../persistence/engine.js";
 import { createAuditReporters } from "../persistence/audit-reports.js";
 import { createApprovalFlow } from "../persistence/approval-flow.js";
-import type { createAutomationLane } from "../automation/lane.js";
-import { createBoxLane, createMachineLane } from "../escalation/box-lane.js";
-import type { BoxEditResult } from "../escalation/box-agent.js";
+import { createAutomationLane } from "../automation/lane.js";
 import { createAppCaller, type AppCaller } from "../persistence/call.js";
-import type { Finding } from "../checking/types.js";
 import { createEditJournal } from "../persistence/edit-journal.js";
-import type { EgressApprovals } from "../escalation/egress-approval.js";
 import type { GenerationDependencies } from "../generation/engine.js";
-import { createFnCaller, type FnCaller } from "../escalation/fn.js";
 import { createGenerationContext } from "./generation-context.js";
-import { resolveProvider } from "./generation-context.js";
 import { createAppHistory, type AppHistoryAccess } from "../persistence/history.js";
-import { createInClientApprovals, type InClientApprovalAccess } from "../remix/inclient.js";
 import { createAppInterchange, type AppInterchange } from "../persistence/interchange.js";
-import type { MachineLifecycle } from "../escalation/machine-lifecycle.js";
-import { createManifestTriggers } from "../escalation/manifest-triggers.js";
 import { createAppData } from "../persistence/app-data.js";
 import { createAppOpener } from "../persistence/open.js";
 import { createParkedActions, type ParkedActions } from "../persistence/parked-action.js";
+import { createParkedBuilds, type ParkedBuilds } from "../persistence/parked-build.js";
+import { createBuildDoor, type BuildDoor } from "../doors/build-door.js";
 import { updateAppRow } from "../persistence/persistence.js";
 import { placementStore, type PlacementRow, type PlacementStore } from "../persistence/placements.js";
 import { createPlacementRows } from "../doors/placement-surface.js";
-import { createEgressApprovals } from "../escalation/egress-approval.js";
-import { createReviewLifecycle, type ReviewLifecycle } from "../remix/review.js";
 import { createSlotRegistry, type SlotRegistry } from "../persistence/slots.js";
 import type {
   AppsConfig,
   AppsRuntime,
-  BoxRequest,
-  BoxResponse,
   EditResult,
   PlacementEntry,
   VersionEntry,
@@ -77,30 +65,19 @@ export interface AppsRuntimeContext {
   data: AppDataAccess;
   /** The capped version log and its pin-intent trail (history.ts). */
   history: AppHistoryAccess;
-  /** Lane E — the undecided egress approval cards (egress-approval.ts). */
-  egressApprovals: EgressApprovals;
   /** W0 — the undecided in-app actions the guard parked (parked-action.ts). */
   parkedActions: ParkedActions;
-  /** The stored in-client approvals (inclient.ts). */
-  inClientApprovals: InClientApprovalAccess;
-  /** The review-kind remix lifecycle (review.ts). */
-  review: ReviewLifecycle;
-  /** execution-v2 — provision/wake/sleep/destroy (machine-lifecycle.ts). */
-  lifecycle: MachineLifecycle;
-  /** The box manifest's schedules, folded into automation records. */
-  manifestTriggers: ReturnType<typeof createManifestTriggers>;
+  /** S3 — the builds that have been OFFERED and not answered (parked-build.ts). */
+  parkedBuilds: ParkedBuilds;
+  /** S3 — propose/resume/seal. Built before the approval flow, which subscribes
+   *  to the decision that fires `resume` (build-door.ts). */
+  build: BuildDoor;
   /** Export/import of an app and its documents (interchange.ts). */
   interchange: AppInterchange;
-  /** The v2 box door `fn:` refs resolve over (fn.ts). */
-  fnCaller: FnCaller;
   /** The guard-bound caller every query and action rides. */
   caller: AppCaller;
   /** The one read path a client opens an app through (open.ts). */
   opener: ReturnType<typeof createAppOpener>;
-  /** Host-tunable box-edit poll interval, when the composition set one. */
-  boxEditPollMs: number | undefined;
-  /** Host-tunable box-edit timeout, when the composition set one. */
-  boxEditTimeoutMs: number | undefined;
   /** Bounded read-mutate-CAS on the app row. */
   updateAppDocument(appId: AppId, mutate: (doc: AppDocument) => AppDocument): Promise<AppDocument>;
 
@@ -118,8 +95,6 @@ export interface AppsRuntimeContext {
   requireOwned(appId: AppId, ctx: RunContext, level?: AccessLevel): Promise<AppDocument>;
   /** The app rows this caller reaches WITHOUT owning them (§9.3). */
   grantedRecords(ctx: RunContext, already: Set<string>): Promise<VendoRecord[]>;
-  /** Whether the host's `apps.review.reviewer` assertion covers this caller. */
-  reviewerAsserted(ctx: RunContext): Promise<boolean>;
 
   // ── audit-reports.ts ───────────────────────────────────────────────────────
   /** An app-lifecycle audit event under an explicit subject. */
@@ -131,24 +106,11 @@ export interface AppsRuntimeContext {
   ): Promise<void>;
   /** The `app-lifecycle` audit kind, under the calling principal. */
   reportLifecycle(
-    operation: "create" | "delete" | "fork" | "in-client-approve" | "seed" | "reseed" | "machine-provision" | "place" | "unplace",
+    operation: "create" | "delete" | "fork" | "seed" | "reseed" | "machine-provision" | "place" | "unplace",
     appId: AppId,
     ctx: RunContext,
     extra?: Record<string, Json>,
   ): Promise<void>;
-
-  // ── approval-flow.ts ───────────────────────────────────────────────────────
-  /** Lane E — ask for the app's declared-but-unapproved egress, without throwing. */
-  requestEgressApproval(
-    app: AppDocument,
-    ctx: RunContext,
-  ): Promise<
-    | { status: "none" }
-    | { status: "approved"; domains: string[] }
-    | { status: "pending"; approvalId: ApprovalId; domains: string[] }
-  >;
-  /** Lane E — the ctx-carrying pre-flight every provision/wake/box surface runs. */
-  ensureEgressApproved(app: AppDocument, ctx: RunContext): Promise<void>;
 
   // ── edit-journal.ts ────────────────────────────────────────────────────────
   /** The layer ladder, derived from the document (never a stored rung). */
@@ -202,34 +164,8 @@ export interface AppsRuntimeContext {
   /** The host tool list and the live shape cards a generation runs against. */
   generationToolContext(ctx: RunContext): Promise<Pick<GenerationDependencies, "tools" | "toolShapes">>;
 
-  // ── box-lane.ts ────────────────────────────────────────────────────────────
-  /** The box server-edit primitive: wake, instruct, sync, snapshot. */
-  editServerViaBox(
-    app: AppDocument,
-    instruction: string,
-    ctx: RunContext,
-    options?: { served?: boolean },
-  ): Promise<
-    | { ok: true; result: BoxEditResult; doc: AppDocument; servedOk: boolean }
-    | { ok: false; result: BoxEditResult }
-  >;
-  /** Run the server work an escalation asked for, on an app that is already STORED. */
-  runServerWork(
-    input: { document: AppDocument; request: string; why: string; served?: boolean },
-    ctx: RunContext,
-    deps: GenerationDependencies,
-  ): Promise<{
-    document: AppDocument;
-    findings: Finding[];
-    automation?: EditResult["automation"];
-    graduated?: boolean;
-    issues?: string[];
-    failed?: string[];
-  }>;
   /** Author one automation onto a STORED app: plan, land, arm, audit. */
   authorAutomation: ReturnType<typeof createAutomationLane>;
-  /** Forward ONE already-authorized request into the app's machine. */
-  forwardToBox(app: AppDocument, request: BoxRequest, ctx: RunContext): Promise<BoxResponse>;
 
   // ── placement-surface.ts ───────────────────────────────────────────────────
   /** A host-authored slot name, checked at the one place every caller passes. */
@@ -260,8 +196,8 @@ export interface AppsRuntimeContext {
 const createStores = (
   config: AppsConfig,
 ): Pick<AppsRuntimeContext,
-  "engine" | "placementRows" | "slots" | "data" | "history" | "egressApprovals"
-  | "parkedActions" | "inClientApprovals"> => {
+  "engine" | "placementRows" | "slots" | "data" | "history"
+  | "parkedActions" | "parkedBuilds"> => {
   const engine = engineOf(config.ops, config.store);
   const placementRows = placementStore(engine);
   const slots = createSlotRegistry(engine);
@@ -269,26 +205,27 @@ const createStores = (
   const history = createAppHistory(engine);
   // Lane E — parked egress approvals (approved state lives on the document's
   // egressApproved field; this collection holds only undecided cards).
-  const egressApprovals = createEgressApprovals(engine);
   // W0 — parked in-app actions: a mutating action the guard sent to approval
   // is recorded here (keyed by its approval) so onApprovalDecision can
   // re-dispatch the exact call the instant the owner approves. Holds only
   // undecided actions; both decisions clear it.
   const parkedActions = createParkedActions(engine);
-  const inClientApprovals = createInClientApprovals(engine);
-  return { engine, placementRows, slots, data, history, egressApprovals, parkedActions, inClientApprovals };
+  // S3 — the builds the person has been ASKED about. Unlike the two above,
+  // nothing has been called: the record IS the awaiting-consent state, and it
+  // exists so the yes can arrive long after the turn that raised the card.
+  const parkedBuilds = createParkedBuilds(engine);
+  return { engine, placementRows, slots, data, history, parkedActions, parkedBuilds };
 };
 
-/** The composed seams the doors call through: interchange, the review-kind
- *  lifecycle, the box-aware caller, and the one opener. */
+/** The composed seams the doors call through: interchange, the caller, and the
+ *  one opener. */
 const createDoors = (
   deps: Pick<AppsRuntimeContext,
-    "config" | "engine" | "history" | "inClientApprovals" | "parkedActions" | "lifecycle"
-    | "requireOwned" | "updateAppDocument" | "runtime">,
-): Pick<AppsRuntimeContext,
-  "review" | "reviewerAsserted" | "interchange" | "fnCaller" | "manifestTriggers" | "caller" | "opener"> => {
-  const { config, history, inClientApprovals, parkedActions, lifecycle } = deps;
-  const { requireOwned, updateAppDocument } = deps;
+    "config" | "engine" | "parkedActions"
+    | "requireOwned" | "runtime">,
+): Pick<AppsRuntimeContext, "interchange" | "caller" | "opener"> => {
+  const { config, parkedActions } = deps;
+  const { requireOwned } = deps;
   const interchange = createAppInterchange({
     engine: deps.engine,
     guard: config.guard,
@@ -296,92 +233,19 @@ const createDoors = (
     requireOwned,
   });
 
-  // Remix final shape (2026-08-02) — review-kind gating over the §9 hash-pin
-  // machinery: which document open() serves and the venue vocabulary the
-  // client resolves ("pending-review" = show the ORIGINAL, never a jailed
-  // fork; a served older approved version carries the current standing).
-  const review = createReviewLifecycle({
-    engine: deps.engine,
-    baselines: config.seedBaselines,
-    approvals: inClientApprovals,
-    history,
-  });
-  // Round-2 hardening (2026-08-02) — reviewing is a HOST trust decision, so
-  // it only ever comes from the composition's explicit assertion; no hook
-  // means no caller is a reviewer, ever.
-  const reviewerAsserted = async (ctx: RunContext): Promise<boolean> =>
-    config.review?.reviewer !== undefined && await config.review.reviewer(ctx) === true;
-  // execution-v2 Lane D — fn: refs on a machine-bearing app resolve over the
-  // v2 box door (the same wake Lane C's wire proxy rides); the wrap leaves
-  // every other ref on the existing caller. Queries hit this at open(),
-  // actions at call().
-  const fnCaller = createFnCaller({ wake: (app) => lifecycle.wake(app) });
-  const manifestTriggers = createManifestTriggers({
-    engine: deps.engine,
-    lifecycle,
-    updateDocument: updateAppDocument,
-    ...(config.automations === undefined ? {} : { automations: config.automations }),
-  });
-  const caller = fnCaller.wrap(createAppCaller(config.tools, {
+  const caller = createAppCaller(config.tools, {
     // W0 — remember every mutating in-app action the guard parks, so the
     // approve→resume seam above can re-dispatch its exact call on approval.
     onParkedAction: (app, call, appCtx, approvalId) =>
       parkedActions.put({ approvalId, appId: app.id, owner: appCtx.principal.subject, call, ctx: appCtx }),
-  }));
+  });
   const opener = createAppOpener(
     config.seedBaselines,
-    // Review-aware venue: instant-kind answers exactly the plain hash-pin
-    // venue; review-kind never answers a jail state (review.ts).
-    (doc) => review.venueStateFor(doc),
-    // Wave 4 (layer 3) — the served surface: wake-on-open over the machine
-    // lifecycle, the provider's public ingress URL for $PORT, and the theming
-    // handoff (host theme tokens as a query param the served app MAY consume).
-    {
-      urlFor: async (app) => {
-        // Build contract §9.8 — a served app is a WIRE DOOR, never a snapshot
-        // handed out: the registered URL is this deployment's proxy, which
-        // re-checks `can(viewer)` against live rows on every request.
-        //
-        // The OWNER is no exception, and used to be. Their own app was answered
-        // with the sandbox provider's raw public ingress URL, on the reasoning
-        // that a capability URL is harmless for the person who owns the thing.
-        // It is not: that URL carries no per-request check, so it keeps working
-        // for anyone it reaches — a shared screen, a copied link, a log line, a
-        // pasted bug report — and it outlives the grant, the revoke, and the
-        // app. One door, checked, for every caller.
-        const proxy = config.servedProxyPath;
-        if (proxy === undefined) {
-          // Two ways to get here, so the sentence names both: no wire mounted at
-          // all, or a wire with no public origin to build an absolute URL from
-          // (the umbrella supplies this seam only once VENDO_BASE_URL is set).
-          throw new VendoError(
-            "not-implemented",
-            "this app is served by a machine, and serving it needs the wire's authenticated proxy — mount the Vendo wire (createVendo().handler) so /apps/:appId/serve/** is reachable, and set VENDO_BASE_URL to this deployment's public origin so the app's URL can be absolute",
-          );
-        }
-        // No wake here: the proxy wakes the machine on the first forwarded
-        // request, AFTER it has re-checked access. Waking first would spend a
-        // machine on a caller the very next check might refuse.
-        //
-        // The served app MAY consume the host's tokens, and the proxy forwards
-        // the query string into the box, so it renders in the host's brand —
-        // the same handoff the provider-URL branch used to do inline.
-        const theme = resolveProvider(config.theme);
-        return theme === undefined
-          ? proxy(app.id)
-          : `${proxy(app.id)}?vendoTheme=${encodeURIComponent(JSON.stringify(theme))}`;
-      },
-    },
-    // A stored `app.tsx` opens by RUNNING, through the same floor door the render
-    // seam paints a save with — one gauntlet, so a reopened screen and a
-    // just-saved one are the same picture with this instant's numbers.
     async (input, ctx) => {
       // `saves: false` — the same gauntlet, with the row half off. An open is a
       // READ: it must not create a row, must not record a refusal, and above all
-      // must not store what it painted. A review-kind app serving an older
-      // APPROVED snapshot (`serveDocFor`) paints that snapshot, and a writing
-      // floor wrote it back over the row — silently reverting the app and
-      // destroying the version awaiting review.
+      // must not store what it painted — a writing floor would quietly rewrite
+      // the stored document with whatever this reopen produced.
       const paint = deps.runtime().floor(ctx, { saves: false }).component;
       // Optional only for a floor that predates the screen engine; this runtime
       // composes its own (checking/floor.ts), so absence is a build mismatch.
@@ -397,7 +261,7 @@ const createDoors = (
     // rides. Forwarded straight through; the runtime never interprets it.
     config.venueState,
   );
-  return { review, reviewerAsserted, interchange, fnCaller, manifestTriggers, caller, opener };
+  return { interchange, caller, opener };
 };
 
 /**
@@ -441,7 +305,6 @@ export const createRuntimeContext = (
   const stores = createStores(config);
   const audit = createAuditReporters(config);
   const access = createAccessChecks({ config, engine: stores.engine });
-  const machine = createMachineLane(config);
   const updateAppDocument = (
     appId: AppId,
     mutate: (doc: AppDocument) => AppDocument,
@@ -450,12 +313,15 @@ export const createRuntimeContext = (
   const placement = createPlacementRows({ ...stores, ...audit, ...access });
   const base = {
     config: withBuildTracking(config, placement),
-    ...stores, ...audit, ...access, ...machine, updateAppDocument, runtime,
+    ...stores, ...audit, ...access, updateAppDocument, runtime,
   };
-  const approvals = createApprovalFlow(base);
   const journal = createEditJournal(base);
+  // Before the approval flow, which subscribes to the decision that fires its
+  // `resume` — the seam that turns the person's yes into the build.
+  const build = createBuildDoor({ ...base, ...placement, ...journal });
+  createApprovalFlow({ ...base, build });
   const doors = createDoors(base);
   const generation = createGenerationContext(base.config);
-  const box = createBoxLane({ ...base, ...approvals, ...journal, ...doors });
-  return { ...base, ...approvals, ...journal, ...doors, ...placement, ...generation, ...box };
+  const authorAutomation = createAutomationLane({ ...base, ...journal });
+  return { ...base, build, ...journal, ...doors, ...placement, ...generation, authorAutomation };
 };

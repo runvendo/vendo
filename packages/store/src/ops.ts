@@ -23,10 +23,10 @@ import type { Db, Query } from "./db.js";
 import { eraseStore } from "./erase.js";
 import { storeFiles, storeFilesForDb } from "./files-store.js";
 import { collectionFootprints } from "./footprint.js";
-import { harnessStateKey } from "./harness-state.js";
-import { appendThreadMessages, putStateRow, putThreadRow, THREAD_MESSAGES_AGGREGATE, threadFromRow } from "./helpers/rows.js";
+import { appendThreadMessages, putThreadRow, THREAD_MESSAGES_AGGREGATE, threadFromRow } from "./helpers/rows.js";
+import { setHarnessState } from "./helpers/threads.js";
 import { turnLoadOverOps } from "./helpers/turn.js";
-import { cursorMs, decodeCursor, encodeCursor, iso, jsonParam, pageLimit, text } from "./helpers/utils.js";
+import { cursorMs, decodeCursor, encodeCursor, iso, pageLimit, text } from "./helpers/utils.js";
 import { createRecordStore } from "./records.js";
 import { storeRetention } from "./retention.js";
 import { createReservedRecordStore, threadRecord, watermarkPage } from "./routing.js";
@@ -40,14 +40,6 @@ import { workspaceRows, type PreparedWrite } from "./workspace-rows.js";
  *  idempotency-key replay — no new table. Rows carry the workspace owner as a
  *  subject ref, so the erase cascade reaches them. */
 const WORKSPACE_COMMITS = "vendo_workspace_commits";
-
-/** The per-app bearer's collection in the generic records table: one row per
- *  live app token, `refs = { app_id, subject }`, minted and read by
- *  `packages/apps/src/server/persistence/app-token.ts` — the source of truth
- *  for this name. Spelled here rather than imported: `@vendoai/apps`'s entry is
- *  the whole apps server, and dragging it into this module's graph for one
- *  string costs the store its edge portability. */
-const APP_TOKENS = "vendo_app_tokens";
 
 interface WorkspaceEntry {
   path: string;
@@ -540,14 +532,15 @@ export function createStoreOps(
           ...(query?.cursor === undefined ? {} : { cursor: query.cursor }),
         });
       },
-      /** F4 — the delete is a cascade: thread + its message rows + its harness
-       *  state die together, in ONE transaction. (threadStore.delete left the
-       *  v6 message rows behind; this verb ends that.) */
+      /** F4 — the delete is a cascade: thread + its message rows die together,
+       *  in ONE transaction. (threadStore.delete left the v6 message rows
+       *  behind; this verb ends that.) The harness state needs no statement of
+       *  its own since v12: it is a COLUMN on the thread row, so dropping the
+       *  row is what takes the bookmark with it. */
       async deleteThread(id) {
         await db.transaction(async (q) => {
           await q("DELETE FROM vendo_thread_messages WHERE thread_id = $1", [id]);
           await q("DELETE FROM vendo_threads WHERE id = $1", [id]);
-          await q("DELETE FROM vendo_state WHERE app_id = $1", [harnessStateKey(id)]);
         });
       },
       async putMessage(threadId, message) {
@@ -622,28 +615,30 @@ export function createStoreOps(
     },
 
     // -----------------------------------------------------------------------
-    // harness — the vendo_state slot, keyed by (appId, subject) exactly as the
-    // routed `vendo_state` door keys it, through the same single write path
-    // (helpers/rows putStateRow) so the two doors cannot drift.
+    // harness — one conversation's continuity, held in `vendo_threads`'
+    // `harness_state` column (v12). `subject` is the thread's OWNER and every
+    // verb carries it into the WHERE, so a foreign subject reads an empty slot
+    // and writes nothing: one person can neither resume nor poison another's
+    // session by naming their thread.
     // Every verb here is one statement, so none of them opens a transaction.
     // -----------------------------------------------------------------------
     harness: {
-      async get(appId, subject) {
+      async get(threadId, subject) {
         const result = await db.query(
-          "SELECT data FROM vendo_state WHERE app_id = $1 AND subject = $2",
-          [appId, subject],
+          "SELECT harness_state FROM vendo_threads WHERE id = $1 AND subject = $2",
+          [threadId, subject],
         );
-        const row = result.rows[0]?.["data"];
-        if (row === undefined) return null;
+        const row = result.rows[0]?.["harness_state"];
+        if (row === undefined || row === null) return null;
         return typeof row === "string" ? (JSON.parse(row) as unknown) : row;
       },
-      async set(appId, subject, state) {
-        await putStateRow(db, { appId, subject, data: requireJson(state, "harness state") });
+      async set(threadId, subject, state) {
+        await setHarnessState(db, threadId, subject, requireJson(state, "harness state"));
       },
-      async clear(appId, subject) {
+      async clear(threadId, subject) {
         await db.query(
-          "DELETE FROM vendo_state WHERE app_id = $1 AND subject = $2",
-          [appId, subject],
+          "UPDATE vendo_threads SET harness_state = NULL WHERE id = $1 AND subject = $2",
+          [threadId, subject],
         );
       },
     },
@@ -971,15 +966,6 @@ export function createStoreOps(
           // primary-key collision here throws and rolls the whole promote back
           // — §9.5 is all-or-nothing, and there is no resolution to invent.
           await reownAppData(tdb, appId, from, orgId);
-          // And so does the app's bearer. The box keeps calling back with the
-          // token it already holds; left on the departed personal subject it
-          // would keep writing rows stamped with a subject that no longer owns
-          // the app (`refs.subject` is exactly what apps' `verify` returns).
-          await q(
-            `UPDATE vendo_records SET refs = refs || $2::jsonb
-             WHERE collection = $1 AND refs @> $3::jsonb`,
-            [APP_TOKENS, jsonParam({ subject: orgId }), jsonParam({ app_id: appId })],
-          );
         });
       },
     },
@@ -1000,12 +986,15 @@ export function createStoreOps(
           // The thread row FIRST, the order every transcript writer takes its
           // locks in (see touchThread).
           const messages = await appendBatch(tdb, request.messages);
+          // AFTER the messages: `appendBatch` is what upserts the thread row a
+          // first turn has not created yet, and the slot is a column on it.
           if (harness !== undefined) {
-            await putStateRow(tdb, {
-              appId: harness.appId,
-              subject: harness.subject,
-              data: requireJson(harness.state, "harness state"),
-            });
+            await setHarnessState(
+              tdb,
+              harness.threadId,
+              harness.subject,
+              requireJson(harness.state, "harness state"),
+            );
           }
           return {
             messages,

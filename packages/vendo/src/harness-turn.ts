@@ -31,6 +31,7 @@ import {
   type RecordInput,
   type ResolvedModels,
   type RunContext,
+  type StoreOps,
   type ThreadId,
   type ToolRegistry,
   type WorkspaceFs,
@@ -50,7 +51,7 @@ import {
 } from "@vendoai/apps";
 import type { VendoGuard } from "@vendoai/guard";
 import {
-  harnessStateKey,
+  eraseStore,
   harnessStateRow,
   harnessStateStore,
   maybeDbFor,
@@ -77,7 +78,7 @@ import type { VendoToolSearchConfig } from "@vendoai/harnesses/vendo";
 import { createUIMessageStream, createUIMessageStreamResponse, type LanguageModel, type UIMessage } from "ai";
 import { discoveryRail } from "./prompt.js";
 import { finishActiveTurn } from "./turn-liveness.js";
-import { isUserFilePath, userFilePath } from "./user-files.js";
+import { isUserFilePath, MAX_LEAF_NAME, threadFilePath, threadFilesDir, uploadStagingPath, userFilePath, USER_UPLOADS } from "./user-files.js";
 import type { Limiter } from "./limits.js";
 
 export interface HarnessTurnsConfig {
@@ -89,6 +90,11 @@ export interface HarnessTurnsConfig {
   /** THE deployment's files adapter (`selectStore`), so workspace blobs are
    *  written where the erase cascade will look for them. */
   files: FilesAdapter;
+  /** THE deployment's named-operation surface (`selectStoreOps`), when it has
+   *  one. The delete cascade is its one caller here: `transcripts.deleteThread`
+   *  is a single transaction over three tables, and the row-at-a-time route it
+   *  replaces could only ever delete the first of them. */
+  ops?: StoreOps;
   guard: VendoGuard;
   /** The composed sandbox adapter (`selectSandbox`). A harness declaring
    *  `requires: { sandbox: true }` — `claudeCode()` — is constructed by the HOST
@@ -269,6 +275,18 @@ export interface HarnessTurns {
     content: Uint8Array | string;
     contentType?: string;
   }): Promise<UploadedFile>;
+  /** The CHAT drop's landing pad. A dropped file is not a saved one — it belongs
+   *  to the conversation that is about to receive it, and the turn re-homes it
+   *  there. Until then it lives in staging under an address only the re-homer
+   *  and its sweep read. */
+  stageUpload(input: {
+    principal: Principal;
+    name: string;
+    content: Uint8Array | string;
+    contentType?: string;
+  }): Promise<UploadedFile>;
+  /** @internal The one write both file doors share. */
+  writeUserBytes(principal: Principal, path: string, content: Uint8Array | string): Promise<UploadedFile>;
   /** D6 — drop every thread a subject owns. */
   evictSubject(subject: string): Promise<void>;
 }
@@ -424,6 +442,131 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
     repairInstruction,
   });
 
+  /** A file that LEAVES staging must leave the bucket with it.
+   *
+   *  Both exits — the re-home's `mv` and the janitor's `rm` — only tombstone:
+   *  the `/user/uploads/…` row moves to history with its `blob_ref` intact and
+   *  the object is deliberately kept (store/workspace-rows.ts: "the history row
+   *  is its pointer now"). Staging is neither a thread nor an app, so no other
+   *  erase axis reaches that address, and the object outlived deleting the
+   *  conversation — and would have outlived an erasure request.
+   *
+   *  Deliberately not wrapped: a bucket that refuses the delete is the leak
+   *  coming back, so it fails the turn rather than passing quietly. A store with
+   *  no SQL backend has no erase path at all — the same gap `sweepThreadFiles`
+   *  documents below. */
+  const eraseStagedFile = async (ctx: RunContext, path: string): Promise<void> => {
+    if (maybeDbFor(config.store) === undefined) return;
+    await eraseStore(config.store, { files: config.files })
+      .byWorkspacePath(ctx.principal.subject, path);
+  };
+
+  /**
+   * A dropped file belongs to the CONVERSATION, so the turn that receives it
+   * moves it there and rewrites the part it arrived on.
+   *
+   * It happens HERE, server-side at turn start, because this is the first moment
+   * both halves exist at once: the composer uploads before it sends (so a first
+   * turn's file is staged before any thread does), and the thread id is minted
+   * in this function. And it happens BEFORE the message is persisted, because a
+   * transcript that recorded the staging path would hold a pill pointing at
+   * something the next turn's sweep deletes.
+   *
+   * Identity is preserved when there is nothing to do: the overwhelming majority
+   * of turns carry no staged part, and they must cost exactly nothing.
+   */
+  const rehomeStagedFiles = async (
+    message: UIMessage,
+    threadId: ThreadId,
+    ctx: RunContext,
+  ): Promise<UIMessage> => {
+    const staged = message.parts.filter((part) =>
+      part.type === "file" && part.url.startsWith(`${USER_UPLOADS}/`));
+    if (staged.length === 0) return message;
+    const workspace = await sqlDoors().workspaces.open(ctx.principal);
+    const homes = new Map<string, string>();
+    for (const part of staged) {
+      const from = (part as { url: string }).url;
+      // The NAME is the part's, and it goes through the same leaf rule every
+      // other door uses (`threadFilePath` throws on anything that is not one).
+      let to = threadFilePath(threadId, (part as { filename?: string }).filename ?? from.slice(from.indexOf("-") + 1));
+      // One name can arrive twice — twice in ONE message (the composer appends),
+      // or again on a LATER turn of a thread a person keeps coming back to. The
+      // staging door keeps the drops apart, but homing on the name alone put the
+      // second move on top of the first, SILENTLY (a workspace move overwrites),
+      // and the staging erase then freed the loser's blob. So the second keeps
+      // the unique leaf staging already gave it. `exists` covers both arrivals
+      // with one question: it reads the store's index AND this turn's own staged
+      // moves (store/src/workspace-fs.ts:260). The common single-drop turn is
+      // untouched.
+      // That leaf is the name with staging's nine-character prefix in front of
+      // it, so a name near the door's own limit overshoots it — and the whole
+      // turn was refused rather than the second drop homed. The prefix is what
+      // makes it unique, so the overshoot comes off the END.
+      const staged = from.slice(USER_UPLOADS.length + 1);
+      if (await workspace.exists(to)) to = threadFilePath(threadId, staged.slice(0, MAX_LEAF_NAME));
+      await workspace.mv(from, to);
+      homes.set(from, to);
+    }
+    await workspace.commit();
+    for (const from of homes.keys()) await eraseStagedFile(ctx, from);
+    return {
+      ...message,
+      parts: message.parts.map((part) =>
+        part.type === "file" && homes.has(part.url)
+          ? { ...part, url: homes.get(part.url)! }
+          : part),
+    } as UIMessage;
+  };
+
+  /** How long a staged file may sit unclaimed. A person can upload, get
+   *  distracted, and send an hour later; six hours is far past that and far
+   *  short of storage anyone would notice. This is not retention — it is the
+   *  janitor for an address that is only ever a waypoint. */
+  const STRAY_MAX_AGE_MS = 6 * 60 * 60 * 1000;
+
+  /** Staging is a waypoint, so nothing may live there. Every turn sweeps what
+   *  this person left behind — a drop whose message was never sent, or one whose
+   *  turn died between the write and the move. Reads the path index the turn's
+   *  workspace already built, so FINDING a stray costs no round trip, and the
+   *  removals ride the turn's own commit; only a turn that actually sweeps
+   *  something pays for the erase that frees its object. */
+  const sweepStagedStrays = async (workspace: WorkspaceFs, ctx: RunContext): Promise<void> => {
+    if (!await workspace.exists(USER_UPLOADS)) return;
+    const cutoff = Date.now() - STRAY_MAX_AGE_MS;
+    for (const name of await workspace.readdir(USER_UPLOADS)) {
+      const path = `${USER_UPLOADS}/${name}`;
+      if ((await workspace.stat(path)).mtime.getTime() >= cutoff) continue;
+      // Recursive, because staging is not flat in practice: the agent's own
+      // shell mounts this workspace, so a `cp -r` can plant a subtree here, and
+      // a directory's `stat` answers the epoch — never spared by the cutoff. A
+      // bare `rm` then threw ENOTEMPTY on every later turn, before the model
+      // ran. `force`, because `readdir` and `rm` are two moments.
+      await workspace.rm(path, { recursive: true, force: true });
+      await eraseStagedFile(ctx, path);
+    }
+  };
+
+  /** A conversation's files go with the conversation.
+   *
+   *  A SQL-backed store erases the rows, their history AND the blobs those rows
+   *  were the only pointer to, in one pass (`eraseStore().byThread`). Every other
+   *  backend gets the façade's recursive delete, which removes the live rows and
+   *  leaves the history rows that hold the blob refs — the same residue a bare
+   *  `rm` leaves today, and the same follow-up. Both paths leave the person's
+   *  view identical; they differ only in what the bucket still holds. */
+  const sweepThreadFiles = async (id: ThreadId, ctx: RunContext): Promise<void> => {
+    if (maybeDbFor(config.store) !== undefined) {
+      await eraseStore(config.store, { files: config.files }).byThread(id);
+      return;
+    }
+    const workspace = await sqlDoors().workspaces.open(ctx.principal);
+    const dir = threadFilesDir(id);
+    if (!await workspace.exists(dir)) return;
+    await workspace.rm(dir, { recursive: true, force: true });
+    await workspace.commit();
+  };
+
   /** The thread's harness-state slot, when this store can hold one. The slot
    *  carries a native session ref and vendo()'s searched-in loadout, so it has
    *  to die with the thread — a reused id must never inherit either (the
@@ -443,8 +586,21 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
       get: (id, ctx) => threads.get(id, ctx),
       list: (ctx) => threads.list(ctx),
       delete: async (id, ctx) => {
-        await threads.delete(id, ctx);
-        await stateDoor()?.clear(id);
+        // Ownership stays the repository's law: `get` answers null for another
+        // subject's id, and an absent thread is a no-op — exactly as before.
+        if (await threads.get(id, ctx) === null) return;
+        // The REAL cascade. `transcripts.deleteThread` is thread row + message
+        // rows + harness state in ONE transaction (store/ops.ts:543-552, mirrored
+        // by the hosted store); the single-row delete it replaces left every
+        // message behind forever, unreachable by any later erase because the join
+        // that identified them went with the row.
+        if (config.ops === undefined) {
+          await threads.delete(id, ctx);
+          await stateDoor()?.clear(id);
+        } else {
+          await config.ops.transcripts.deleteThread(id);
+        }
+        await sweepThreadFiles(id, ctx);
       },
     },
 
@@ -469,13 +625,20 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
     },
 
     async putUserFile(input) {
-      const path = userFilePath(input.name);
-      const bytes = typeof input.content === "string"
-        ? new TextEncoder().encode(input.content)
-        : input.content;
-      // The user's OWN mount and nothing else: no host projection to build and
-      // no org mounts to assert, because a drawer write addresses one subject.
-      const workspace = await sqlDoors().workspaces.open(input.principal);
+      return await this.writeUserBytes(input.principal, userFilePath(input.name), input.content);
+    },
+
+    async stageUpload(input) {
+      return await this.writeUserBytes(input.principal, uploadStagingPath(input.name), input.content);
+    },
+
+    /** The ONE server-side write both doors go through, so a shelved file and a
+     *  dropped one land the same way and differ only in their address. The
+     *  user's OWN mount and nothing else: no host projection to build and no org
+     *  mounts to assert, because this addresses one subject. */
+    async writeUserBytes(principal, path, content) {
+      const bytes = typeof content === "string" ? new TextEncoder().encode(content) : content;
+      const workspace = await sqlDoors().workspaces.open(principal);
       await workspace.writeFile(path, bytes);
       await workspace.commit();
       return { path, bytes: bytes.byteLength };
@@ -540,6 +703,8 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
       // here exactly as it always was. Below the turn level there is no round
       // trip worth saving, so the old order stands.
       const opening = input[SERVER_AUTHORED] === true && given !== undefined && batched
+        // No re-home applies here: the only SERVER_AUTHORED caller (channel-turn)
+        // builds a message of text parts alone, so it can carry no staged drop.
         ? sqlDoors().transcript.upsertMany?.(input.ctx.principal, given, [input.message], {})
         : undefined;
       // A rejection is delivered where it is awaited below; this only keeps a
@@ -552,7 +717,7 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
           // The slot is keyed by the thread's OWNER. A thread that is not this
           // caller's reads as a missing slot and is refused by `resolve`
           // moments later, so the guess is either right or discarded.
-          harness: { appId: harnessStateKey(threadId), subject },
+          harness: { threadId, subject },
         })
         : undefined;
       // The thread is resolved through the SHIPPED repository: same id pattern,
@@ -560,6 +725,11 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
       // derivation — and `thread.messages` is the canonical transcript read back
       // from `vendo_thread_messages`.
       const thread = await threads.resolve(batched ? threadId : given, input.ctx, loaded?.thread);
+      // §6 — the drop comes home before anything records where it was. Keyed on
+      // the RESOLVED id, not the speculatively minted one: unbatched, `resolve`
+      // mints the thread's real id itself, and a file homed under the other id
+      // would belong to no conversation at all.
+      const message = await rehomeStagedFiles(input.message, thread.id, input.ctx);
 
       // THE CONSTRAINT (lane A's verifier): `TurnRunInput.messages` is
       // STORE-SOURCED. The client contributes at most this one message, and
@@ -581,8 +751,8 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
       // carries a message this process authored, so there is no client copy to
       // check it against — and a gate run after the write could only report a
       // rewrite it had already let through.
-      if (opening === undefined) validateUpsert(thread.messages, input.message);
-      upsertMessage(thread.messages, input.message);
+      if (opening === undefined) validateUpsert(thread.messages, message);
+      upsertMessage(thread.messages, message);
 
       // Before the FIRST write, not after it. `threads.persist` goes through the
       // adapter seam and so succeeds even on a store that can keep neither the
@@ -637,7 +807,7 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
         // Already in flight since before the read, where it was allowed to be.
         opening
         ?? (fresh || batchAppend === undefined
-          ? threads.persist(thread, [input.message], { fresh })
+          ? threads.persist(thread, [message], { fresh })
           // No position is passed: the store assigns one while it holds the
           // thread row, so two turns racing on this conversation cannot claim
           // the same slot. An answer to a pending approval matches an existing
@@ -645,7 +815,7 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
           : transcript.upsertMany(
             input.ctx.principal,
             thread.id,
-            [input.message],
+            [message],
             { title: deriveTitle(thread.messages) },
           )),
         // §9.7 — the turn's façade mounts every org the wire asserted for this
@@ -662,6 +832,10 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
         }),
       ]);
       timings.add("store", Date.now() - storeAt);
+      // §6 — the janitor for the waypoint. On the turn's own workspace and its
+      // own commit, so a turn with nothing to sweep costs no extra open and no
+      // extra write.
+      await sweepStagedStrays(workspace, input.ctx);
       // §1.6 — the render seam, built for THIS turn's ctx and handed to the
       // runtime's generic `wrapWorkspace` slot: the runtime owns WHERE the wrap
       // happens and what `emit` writes to; composition owns WHAT wraps.
@@ -804,7 +978,7 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
               messages: { threadId: thread.id, subject: thread.subject, messages },
               ...(state === undefined ? {} : {
                 harness: {
-                  appId: harnessStateKey(thread.id),
+                  threadId: thread.id,
                   subject: thread.subject,
                   state: harnessStateRow(config.harness.name, state),
                 },
