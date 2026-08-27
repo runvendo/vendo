@@ -23,7 +23,6 @@ export interface AppFrameProps {
   /** A press parked on an approval (tree surfaces only) — renderer.tsx's
    *  TreeViewProps documents what a surface does with it. */
   onParked?: (parked: ParkedPress) => void;
-  onStateChange?(state: Record<string, Json>): void;
 }
 
 const unavailableAction = async (): Promise<ToolOutcome> => ({
@@ -143,7 +142,7 @@ function BundleFrame({ appId, entry, onAction }: {
 }
 
 /** 08-ui §5; 06-apps §1 — render every app execution plane fail-soft. */
-export function AppFrame({ surface, appId, components = {}, data, onAction = unavailableAction, onParked, onStateChange }: AppFrameProps) {
+export function AppFrame({ surface, appId, components = {}, data, onAction = unavailableAction, onParked }: AppFrameProps) {
   // A bundle is addressed by app: without one there is no url to open, and a
   // frame pointed at a guess is worse than an honest "unsupported" below.
   if (surface.kind === "bundle" && appId !== undefined) {
@@ -166,7 +165,6 @@ export function AppFrame({ surface, appId, components = {}, data, onAction = una
         data={data}
         onAction={onAction}
         onParked={onParked}
-        onStateChange={onStateChange}
       />
     );
   }

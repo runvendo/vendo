@@ -26,8 +26,33 @@ import { createStack, readSse, resetFixture, textTurn, ADA, type Stack } from ".
 interface Capture {
   event: string;
   properties: Record<string, unknown>;
-  api_key: string;
-  distinct_id?: string;
+}
+
+/** One sent body, whichever lane it took. Product analytics arrive as a
+ * capture envelope; the operational events in LOG_EVENTS arrive as OTLP log
+ * records, where every attribute value is a string (that is also how PostHog
+ * stores them, so these assertions read the wire as the Logs explorer will).
+ * Decoding both here keeps the contract below stated once: the allowlist,
+ * the lane markers and the scrubbing are destination-independent. */
+function decode(body: string): Capture {
+  const parsed = JSON.parse(body) as Record<string, unknown>;
+  if (parsed.resourceLogs === undefined) {
+    return { event: parsed.event as string, properties: parsed.properties as Record<string, unknown> };
+  }
+  const record = (parsed as never as {
+    resourceLogs: { scopeLogs: { logRecords: {
+      eventName: string;
+      attributes: { key: string; value: { stringValue: string } }[];
+    }[] }[] }[];
+  }).resourceLogs[0]!.scopeLogs[0]!.logRecords[0]!;
+  const properties: Record<string, unknown> = {};
+  for (const attribute of record.attributes) {
+    // `event` and `distinct_id` are the log record's own identity fields, not
+    // event properties — they are the OTLP spelling of the capture envelope.
+    if (attribute.key === "event" || attribute.key === "distinct_id") continue;
+    properties[attribute.key] = attribute.value.stringValue;
+  }
+  return { event: record.eventName, properties };
 }
 
 /** Stand a real capture endpoint up on loopback and point the client at it
@@ -35,14 +60,20 @@ interface Capture {
  * client posts over a raw socket it can unref (so a stranded telemetry POST
  * can never hold a process open), which a `globalThis.fetch` shim would never
  * see. Every other request — the wire, the host app, host tools — is untouched. */
-async function captureTelemetry(): Promise<{ captures: Capture[]; restore: () => Promise<void> }> {
+async function captureTelemetry(): Promise<{
+  captures: Capture[];
+  paths: string[];
+  restore: () => Promise<void>;
+}> {
   const captures: Capture[] = [];
+  const paths: string[] = [];
   const server = createServer((request, response) => {
     const chunks: Buffer[] = [];
     request.on("data", (chunk: Buffer) => chunks.push(chunk));
     request.on("end", () => {
       try {
-        captures.push(JSON.parse(Buffer.concat(chunks).toString("utf8")) as Capture);
+        captures.push(decode(Buffer.concat(chunks).toString("utf8")));
+        paths.push(request.url ?? "");
       } catch {
         // A malformed body would itself be a telemetry regression; record nothing.
       }
@@ -56,6 +87,7 @@ async function captureTelemetry(): Promise<{ captures: Capture[]; restore: () =>
   process.env.VENDO_POSTHOG_HOST = `http://127.0.0.1:${address.port}`;
   return {
     captures,
+    paths,
     restore: () => new Promise<void>((resolve) => server.close(() => resolve())),
   };
 }
@@ -133,8 +165,12 @@ describe("J11: telemetry emits only allowlisted events, and nothing when opted o
         expect(allowed.has(key), `prop ${key} on ${capture.event}`).toBe(true);
       }
     }
-    // The wire turn's event is agent_run (the only runtime emitter).
+    // The wire turn's event is agent_run (the only runtime emitter)...
     expect(telemetry.captures.some((capture) => capture.event === "agent_run")).toBe(true);
+    // ...and it is operational, so it went to Logs (30-day retention) rather
+    // than the analytics stream. Asserting the PATH is the point: this is the
+    // only place the real composed client's destination is observable.
+    expect(telemetry.paths.every((path) => path.startsWith("/i/v1/logs"))).toBe(true);
   });
 
   it("(opt-out) the identical turn under VENDO_TELEMETRY_DISABLED emits nothing", async () => {
@@ -196,7 +232,7 @@ describe("J11b: anonymous and cloud lanes through the real client", () => {
     await telemetry.track("agent_run", { projectName: "smuggled-host-app" });
 
     expect(bodies.length).toBe(1);
-    const capture = JSON.parse(bodies[0]!) as Capture;
+    const capture = decode(bodies[0]!);
     expect(capture.event).toBe("agent_run");
     // This repo has a project identity, so the salted hash is present: 64 hex.
     expect(capture.properties.projectIdHash).toMatch(/^[0-9a-f]{64}$/);
@@ -222,10 +258,11 @@ describe("J11b: anonymous and cloud lanes through the real client", () => {
     expect(bodies.length).toBe(1);
     // The raw key appears NOWHERE in the serialized body — only its hash does.
     expect(bodies[0]).not.toContain(FAKE_CLOUD_KEY);
-    const capture = JSON.parse(bodies[0]!) as Capture;
+    const capture = decode(bodies[0]!);
     expect(capture.event).toBe("command_run");
     expect(capture.properties.command).toBe("extract");
-    expect(capture.properties.cloud).toBe(true);
+    // command_run rides the logs lane, where OTLP renders every value a string.
+    expect(capture.properties.cloud).toBe("true");
     expect(capture.properties.cloudKeyHash).toBe(
       createHash("sha256").update(FAKE_CLOUD_KEY).digest("hex"),
     );

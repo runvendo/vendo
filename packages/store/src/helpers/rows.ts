@@ -6,7 +6,7 @@ import {
   type PermissionGrant,
 } from "@vendoai/core";
 import type { Db } from "../db.js";
-import type { AppRow, ApprovalRow, RunRow, StateRow, ThreadRow } from "./types.js";
+import type { AppRow, ApprovalRow, RunRow, ThreadRow } from "./types.js";
 import { iso, optionalIso, text } from "./utils.js";
 
 export function appFromRow(row: Record<string, unknown>): AppRow {
@@ -301,36 +301,6 @@ export async function putThreadRow(
   // flip never leaves messages behind.
   await replaceThreadMessages(db, input.id, input.messages, now);
   return threadFromRow({ ...row, messages: input.messages });
-}
-
-export function stateRowFromRow(row: Record<string, unknown>): StateRow {
-  return {
-    appId: text(row["app_id"]),
-    subject: text(row["subject"]),
-    data: row["data"] as Json,
-    createdAt: iso(row["created_at"]),
-    updatedAt: iso(row["updated_at"]),
-  };
-}
-
-/** The single persistent write path for vendo_state, shared by the routed
- *  records("vendo_state").put and the harness slot so the doors never drift. Writes
- *  created_at once on insert and PRESERVES it on conflict (only data + updated_at
- *  change), so the seam's createdAt is stable across puts. Never writes the
- *  generated `id` column. */
-export async function putStateRow(
-  db: Db,
-  input: { appId: string; subject: string; data: Json },
-  now = new Date().toISOString(),
-): Promise<StateRow> {
-  const result = await db.query(
-    `INSERT INTO vendo_state (app_id, subject, data, updated_at, created_at)
-     VALUES ($1, $2, $3::jsonb, $4, $4)
-     ON CONFLICT (app_id, subject) DO UPDATE SET data = EXCLUDED.data, updated_at = EXCLUDED.updated_at
-     RETURNING app_id, subject, data, created_at, updated_at`,
-    [input.appId, input.subject, JSON.stringify(input.data), now],
-  );
-  return stateRowFromRow(result.rows[0] as Record<string, unknown>);
 }
 
 export function grantFromRow(row: Record<string, unknown>): PermissionGrant {

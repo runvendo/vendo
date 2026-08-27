@@ -36,10 +36,11 @@ for (const backend of backends()) {
           messages: [{ id: "m1", role: "user" }, { id: "m2", role: "assistant" }],
         });
         await ops.transcripts.putMessage("thr_f4", { id: "m3", role: "user" });
-        await ops.harness.set("harness_state:thr_f4", "user_f4", { session: "native_1" });
+        await ops.harness.set("thr_f4", "user_f4", { session: "native_1" });
         // Write-through: the rows the verb must sweep really exist first.
         expect((await made.sql("SELECT 1 FROM vendo_thread_messages WHERE thread_id = $1", ["thr_f4"])).length).toBe(3);
-        expect((await made.sql("SELECT 1 FROM vendo_state WHERE app_id = $1", ["harness_state:thr_f4"])).length).toBe(1);
+        expect((await made.sql("SELECT harness_state FROM vendo_threads WHERE id = $1", ["thr_f4"])))
+          .toEqual([{ harness_state: { session: "native_1" } }]);
 
         await ops.transcripts.deleteThread("thr_f4");
 
@@ -47,7 +48,9 @@ for (const backend of backends()) {
         // gap threadStore.delete left open (F4) is closed by the verb.
         expect((await made.sql("SELECT 1 FROM vendo_threads WHERE id = $1", ["thr_f4"])).length).toBe(0);
         expect((await made.sql("SELECT 1 FROM vendo_thread_messages WHERE thread_id = $1", ["thr_f4"])).length).toBe(0);
-        expect((await made.sql("SELECT 1 FROM vendo_state WHERE app_id = $1", ["harness_state:thr_f4"])).length).toBe(0);
+        // The bookmark went with the row it lives on — there is no second place
+        // it could have survived, which is the whole point of the v12 move.
+        expect(await ops.harness.get("thr_f4", "user_f4")).toBeNull();
       } finally {
         await made.cleanup();
       }
@@ -155,20 +158,66 @@ for (const backend of backends()) {
       }
     });
 
-    it("harness state is keyed by (appId, subject), so one subject's write leaves the others alone", async () => {
+    /** The SEAM, end to end through the real store: written by the real write
+     *  path, read back by the real read path, and destroyed by the real thread
+     *  delete — with the raw SQL underneath checked at each step, so a producer
+     *  and a consumer that mock each other cannot both be wrong together. */
+    it("harness continuity round-trips on the thread row and dies with the thread", async () => {
       const { made, ops } = await makeOps();
       try {
-        await ops.harness.set("app_shared", "alice", { seen: 1 });
-        await ops.harness.set("app_shared", "bob", { seen: 2 });
-        await ops.harness.set("app_shared", "alice", { seen: 3 });
-        // vendo_state's key is (app_id, subject) — the same key the routed
-        // `vendo_state` door splits out of "<appId>:<subject>". A write for one
-        // subject must never take another subject's row down with it.
-        expect(await ops.harness.get("app_shared", "alice")).toEqual({ seen: 3 });
-        expect(await ops.harness.get("app_shared", "bob")).toEqual({ seen: 2 });
-        expect((await made.sql("SELECT 1 FROM vendo_state WHERE app_id = $1", ["app_shared"])).length).toBe(2);
-        await ops.harness.clear("app_shared", "alice");
-        expect(await ops.harness.get("app_shared", "bob")).toEqual({ seen: 2 });
+        await ops.transcripts.putThread({ id: "thr_slot", subject: "alice", messages: [] });
+        await ops.transcripts.putThread({ id: "thr_other", subject: "bob", messages: [] });
+
+        await ops.harness.set("thr_slot", "alice", { seen: 1 });
+        await ops.harness.set("thr_other", "bob", { seen: 2 });
+        // ONE slot per thread: the second write REPLACES rather than accretes.
+        await ops.harness.set("thr_slot", "alice", { seen: 3 });
+
+        expect(await ops.harness.get("thr_slot", "alice")).toEqual({ seen: 3 });
+        expect(await ops.harness.get("thr_other", "bob")).toEqual({ seen: 2 });
+        // At the SQL: the slot is a column on the row, and one row holds one.
+        expect(await made.sql("SELECT harness_state FROM vendo_threads WHERE id = $1", ["thr_slot"]))
+          .toEqual([{ harness_state: { seen: 3 } }]);
+
+        // `subject` is the thread's OWNER and it is authority: a foreign subject
+        // reads an empty slot and its clear destroys nothing.
+        expect(await ops.harness.get("thr_slot", "bob")).toBeNull();
+        await ops.harness.clear("thr_slot", "bob");
+        expect(await ops.harness.get("thr_slot", "alice")).toEqual({ seen: 3 });
+
+        // No thread, no slot — refused rather than orphaned.
+        await expect(ops.harness.set("thr_ghost", "alice", { seen: 9 }))
+          .rejects.toMatchObject({ code: "not-found" });
+
+        // Clearing one leaves its neighbour alone...
+        await ops.harness.clear("thr_slot", "alice");
+        expect(await ops.harness.get("thr_slot", "alice")).toBeNull();
+        expect(await ops.harness.get("thr_other", "bob")).toEqual({ seen: 2 });
+        // ...and the thread itself survives its bookmark being cleared.
+        expect((await made.sql("SELECT 1 FROM vendo_threads WHERE id = $1", ["thr_slot"])).length).toBe(1);
+
+        // Deleting the thread takes the bookmark with it, with no second statement.
+        await ops.harness.set("thr_other", "bob", { seen: 4 });
+        await ops.transcripts.deleteThread("thr_other");
+        expect(await ops.harness.get("thr_other", "bob")).toBeNull();
+      } finally {
+        await made.cleanup();
+      }
+    });
+
+    /** Resuming a session is not a message and not an edit: a bookmark write
+     *  must not reshuffle the caller's thread list or lose a concurrent
+     *  compare-and-swap. */
+    it("writing harness state leaves the thread's revision and updated_at alone", async () => {
+      const { made, ops } = await makeOps();
+      try {
+        await ops.transcripts.putThread({ id: "thr_quiet", subject: "user_q", messages: [] });
+        const [row] = await made.sql("SELECT revision, updated_at FROM vendo_threads WHERE id = $1", ["thr_quiet"]);
+
+        await ops.harness.set("thr_quiet", "user_q", { session: "native_1" });
+
+        expect(await made.sql("SELECT revision, updated_at FROM vendo_threads WHERE id = $1", ["thr_quiet"]))
+          .toEqual([row]);
       } finally {
         await made.cleanup();
       }

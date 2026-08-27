@@ -11,9 +11,9 @@ import {
  *  whole of what they own and lifting the row alone would leave the rest
  *  stranded in the live database with nothing left pointing at it:
  *
- *   · `vendo_threads` — the transcript lives in `vendo_thread_messages` and the
- *     conversation's harness state in `vendo_state` (`deleteThread` is a
- *     three-table cascade, ops.ts).
+ *   · `vendo_threads` — the transcript lives in `vendo_thread_messages`, and the
+ *     row itself carries the conversation's harness state in its `harness_state`
+ *     column (`deleteThread` is a two-table cascade, ops.ts).
  *   · `vendo_apps` — an app row owns an entire drawer (its records, blobs,
  *     state and grants), and `createRecordStore`'s app gate refuses writes the
  *     moment the row is gone, so a lifted app leaves rows nothing can read,
@@ -27,27 +27,20 @@ import {
  *  lifted is still whole. Ageing any of these out is `lifecycle.erase`'s job
  *  (or `transcripts.deleteThread`'s), and both say so. */
 const NOT_SWEEPABLE: Record<string, string> = {
-  vendo_threads: "its transcript and harness state live in other tables — delete a thread through transcripts.deleteThread, or erase the subject",
-  vendo_apps: "an app row owns its whole drawer (records, blobs, state, grants) — remove an app through lifecycle.erase({ appId })",
+  vendo_threads: "its transcript lives in another table and its row carries a live conversation's harness state — delete a thread through transcripts.deleteThread, or erase the subject",
+  vendo_apps: "an app row owns its whole drawer (records, blobs, grants) — remove an app through lifecycle.erase({ appId })",
   vendo_automations: "its runs are reachable only through it, so lifting it would leave them beyond the erase cascade — erase the subject instead",
 };
 
-/** A sweep must see EXACTLY what the collection's own door sees, and one table
- *  holds rows its door hides: `vendo_state` has two tenants (routing.ts). The
- *  door addresses only an app's own state, keyed `app_<id>:<subject>`; harness
- *  CONTINUITY lives in the same table under `harness_state:<threadId>`, reaches
- *  it only through `ops.harness`, and belongs to a thread that is still alive.
- *  Sweeping it would take a live conversation's session away with nothing in
- *  the caller's request that named it — the invisible half of the same mistake
- *  `vendo_threads` is refused for. The predicate is the door's own id grammar
- *  (`APP_ID_SEGMENT`, routing.ts): a colon-free `app_` first segment. */
-const DOOR_FENCE: Record<string, string> = {
-  vendo_state: "app_id ~ '^app_[^:]+$'",
-};
-
 /** Where one collection's live rows sit, and the whole of the sweep's WHERE:
- *  the collection's scope, its door's fence, and the row's own age against the
- *  cutoff ($2).
+ *  the collection's scope and the row's own age against the cutoff ($2).
+ *
+ *  Every routed table is swept whole now: a sweep sees exactly what the
+ *  collection's door sees, because no table hides a second tenant behind a
+ *  predicate any more. `vendo_state` was the one that did — an app's state at
+ *  the door, a live conversation's harness continuity underneath it — and both
+ *  are gone (harness state is a column on `vendo_threads`, which is refused for
+ *  sweeping outright, above).
  *
  *  Table names are interpolated into SQL, so they come only from the frozen
  *  routing constants (footprint.ts' rule), never from the caller's string. A
@@ -60,12 +53,10 @@ function liftFrom(db: Db, collection: string): { table: string; where: string } 
   const reserved = (RESERVED_COLLECTIONS as readonly string[]).includes(collection);
   const ownTable = reserved || (DEDICATED_RECORD_COLLECTIONS as readonly string[]).includes(collection);
   const age = reserved ? ageColumnOf(db, collection as ReservedCollection) : "created_at";
-  const fence = DOOR_FENCE[collection];
   return {
     table: ownTable ? collection : "vendo_records",
     where: [
       ...(ownTable ? [] : ["collection = $1"]),
-      ...(fence === undefined ? [] : [fence]),
       `${age} < $2::timestamptz`,
     ].join(" AND "),
   };

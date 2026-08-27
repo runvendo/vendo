@@ -48,7 +48,6 @@ const RESERVED_REF_KEYS: Readonly<Record<string, readonly string[]>> = {
   vendo_runs: ["automation_id", "status"],
   vendo_apps: ["subject"],
   vendo_automations: ["subject", "when_kind"],
-  vendo_state: ["app_id", "subject"],
 };
 
 const invalidReserved = (message: string): never => {
@@ -119,18 +118,6 @@ const requireMatchingRecordId = (recordId: string, embeddedId: string, label: st
 
 const derivedRefs = (values: Record<string, string | undefined>): Record<string, string> =>
   Object.fromEntries(Object.entries(values).filter((entry): entry is [string, string] => entry[1] !== undefined));
-
-const splitMemoryStateId = (id: string): { appId: string; subject: string } => {
-  const colon = id.indexOf(":");
-  if (colon === -1) invalidReserved(`vendo_state record id must be "<appId>:<subject>": ${id}`);
-  const appId = id.slice(0, colon);
-  if (!/^app_[^:]+$/.test(appId)) {
-    invalidReserved(`vendo_state record id must start with a colon-free app id ("app_..."): ${id}`);
-  }
-  const subject = id.slice(colon + 1);
-  if (subject === "") invalidReserved(`vendo_state record id must have a non-empty subject after the colon: ${id}`);
-  return { appId, subject };
-};
 
 interface MemoryProjection {
   data: Json;
@@ -324,15 +311,6 @@ const projectMemoryRecord = (
     }
     case "vendo_automations":
       return projectAutomation(input, previous);
-    case "vendo_state": {
-      const { appId, subject } = splitMemoryStateId(input.id);
-      return {
-        data: requireReservedJson(input.data, "state data"),
-        refs: { app_id: appId, subject },
-        createdAt: previous?.createdAt ?? now,
-        updatedAt: now,
-      };
-    }
     default:
       return {
         data: input.data,
@@ -428,7 +406,6 @@ export function memoryStoreAdapter(
             "vendo_audit is append-only; rows are erased only via the store erase API (02-store §5)",
           );
         }
-        if (collection === "vendo_state") splitMemoryStateId(id);
         records.delete(id);
       };
       return {

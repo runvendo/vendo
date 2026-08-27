@@ -151,7 +151,7 @@ describe("app data persistence", () => {
     await expect(store.blobs(`app:${app.id}:attachments`).get("oversized.bin")).resolves.toBeNull();
   });
 
-  it("deletes declared records, state, file collections, and the app blob namespace", async () => {
+  it("deletes declared records, file collections, and the app blob namespace", async () => {
     const store = memoryStore();
     const runtime = appsWith(store);
     const created = await runtime.create({ prompt: "Data owner" }, ctx);
@@ -164,11 +164,6 @@ describe("app data persistence", () => {
     };
     await seedAppRow(engineOverAdapter(store), withStorage, ctx.principal.subject);
     await store.records(`app:${created.id}:notes`).put({ id: "note_1", data: { body: "hello" } });
-    await store.records("vendo_state").put({
-      id: `${created.id}:${ctx.principal.subject}`,
-      data: { tab: "notes" },
-      refs: { subject: ctx.principal.subject, app_id: created.id },
-    });
     await store.blobs(`app:${created.id}:files`).put("attachment.txt", new TextEncoder().encode("hello"));
     await store.blobs(`app:${created.id}`).put("machine.bin", new Uint8Array([1, 2, 3]));
 
@@ -176,7 +171,6 @@ describe("app data persistence", () => {
 
     expect(await store.records("vendo_apps").get(created.id)).toBeNull();
     expect(await store.records(`app:${created.id}:notes`).list()).toEqual({ records: [] });
-    expect(await store.records("vendo_state").get(`${created.id}:${ctx.principal.subject}`)).toBeNull();
     expect(await store.blobs(`app:${created.id}:files`).list()).toEqual([]);
     expect(await store.blobs(`app:${created.id}`).list()).toEqual([]);
   });

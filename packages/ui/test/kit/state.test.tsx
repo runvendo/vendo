@@ -1,15 +1,15 @@
 import { act, render, screen } from "@testing-library/react";
 import type { Json } from "@vendoai/core";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { useKeyedState } from "../../src/kit/state.js";
 
 /**
  * The keyed `$state` store the renderer and the code-land provider share. The renderer
  * suite only ever writes ONE key, so these are the semantics that suite cannot
- * see: composition across keys, and the persistence hook's payload.
+ * see: composition across keys.
  */
-function Probe({ onChange }: { onChange?: (state: Record<string, Json>) => void }) {
-  const [state, setKey] = useKeyedState(onChange);
+function Probe() {
+  const [state, setKey] = useKeyedState();
   return (
     <div>
       <span data-testid="state">{JSON.stringify(state)}</span>
@@ -54,16 +54,5 @@ describe("useKeyedState", () => {
       screen.getByRole("button", { name: "page" }).click();
     });
     expect(held()).toEqual({ tab: "income", page: 2 });
-  });
-
-  it("hands the persistence hook the whole next state", async () => {
-    const onChange = vi.fn();
-    render(<Probe onChange={onChange} />);
-    await press("tab");
-    await press("page");
-    expect(onChange.mock.calls.map(([state]) => state)).toEqual([
-      { tab: "income" },
-      { tab: "income", page: 2 },
-    ]);
   });
 });

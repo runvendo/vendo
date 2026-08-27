@@ -73,11 +73,6 @@ const numberField = (entry: unknown, field: string, message: string): number => 
   return value;
 };
 
-/** A thread's harness state rides the harness slot under this synthetic appId
-    (the store's `harnessStateKey`), which is what makes deleteThread's cascade
-    onto harness state observable through the 35 ops. */
-const harnessSlot = (threadId: string): string => `harness_state:${threadId}`;
-
 /** A shape-valid AuditEvent. `vendo_audit` is a TYPED door — the real backend
     parses every row with `auditEventSchema` and refuses what does not fit — so
     the audit cases seed real events rather than convenient stubs. `minute` is
@@ -1036,11 +1031,11 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
         await ops.transcripts.putThread({ id: "thr_dt1", subject: "u", messages: [] });
         await ops.transcripts.putMessage("thr_dt1", { id: "msg_1", role: "user", text: "hi" });
         await ops.transcripts.recordAnswer("thr_dt1", { id: "ans_1", value: 42 });
-        await ops.harness.set(harnessSlot("thr_dt1"), "u", { session: "native_1" });
+        await ops.harness.set("thr_dt1", "u", { session: "native_1" });
 
         await ops.transcripts.deleteThread("thr_dt1");
         assert(await ops.transcripts.getThread("thr_dt1") === null, "deleted thread remained readable");
-        assert(await ops.harness.get(harnessSlot("thr_dt1"), "u") === null, "deleted thread left its harness state behind");
+        assert(await ops.harness.get("thr_dt1", "u") === null, "deleted thread left its harness state behind");
 
         await ops.transcripts.putThread({ id: "thr_dt1", subject: "u", messages: [] });
         await ops.transcripts.recordAnswer("thr_dt1", { id: "ans_1", value: 42 });
@@ -1094,19 +1089,61 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
 
       opsCase(opts, "harness.set and get round-trip state", async (ops) => {
         const state = { counter: 5, items: ["a", "b"] };
-        await ops.harness.set("app_1", "user_1", state);
-        const got = await ops.harness.get("app_1", "user_1");
+        await ops.transcripts.putThread({ id: "thr_h1", subject: "user_1", messages: [] });
+        await ops.harness.set("thr_h1", "user_1", state);
+        const got = await ops.harness.get("thr_h1", "user_1");
         assertDeepEqual(got, state, "harness state did not round-trip");
       }),
 
       opsCase(opts, "harness.get missing returns null", async (ops) => {
-        assert(await ops.harness.get("app_x", "user_x") === null, "missing harness state did not return null");
+        await ops.transcripts.putThread({ id: "thr_h2", subject: "user_1", messages: [] });
+        assert(await ops.harness.get("thr_h2", "user_1") === null, "a thread with no slot did not return null");
+        assert(await ops.harness.get("thr_absent", "user_1") === null, "a missing thread did not return null");
       }),
 
       opsCase(opts, "harness.clear removes state", async (ops) => {
-        await ops.harness.set("app_2", "user_2", { v: 1 });
-        await ops.harness.clear("app_2", "user_2");
-        assert(await ops.harness.get("app_2", "user_2") === null, "cleared harness state remained readable");
+        await ops.transcripts.putThread({ id: "thr_h3", subject: "user_2", messages: [] });
+        await ops.harness.set("thr_h3", "user_2", { v: 1 });
+        await ops.harness.clear("thr_h3", "user_2");
+        assert(await ops.harness.get("thr_h3", "user_2") === null, "cleared harness state remained readable");
+      }),
+
+      /** ONE slot per thread: a second `set` replaces the bookmark rather than
+          adding a second one beside it. The old table keyed (appId, subject) and
+          could hold many rows under one key; the thread row can hold exactly
+          one, and that is the property the whole move exists to get. */
+      opsCase(opts, "harness.set replaces the slot rather than accumulating", async (ops) => {
+        await ops.transcripts.putThread({ id: "thr_h4", subject: "user_1", messages: [] });
+        await ops.harness.set("thr_h4", "user_1", { session: "native_1" });
+        await ops.harness.set("thr_h4", "user_1", { session: "native_2" });
+        assertDeepEqual(await ops.harness.get("thr_h4", "user_1"), { session: "native_2" }, "the slot did not replace in place");
+      }),
+
+      /** `subject` is the thread's OWNER, and it is authority. A foreign subject
+          naming someone else's thread reads as an empty slot and writes nothing
+          — otherwise one person could resume, or poison, another's session. */
+      opsCase(opts, "harness state is the thread OWNER's, and a foreign subject reaches none of it", async (ops) => {
+        await ops.transcripts.putThread({ id: "thr_h5", subject: "owner_1", messages: [] });
+        await ops.harness.set("thr_h5", "owner_1", { session: "native_1" });
+
+        assert(await ops.harness.get("thr_h5", "intruder") === null, "a foreign subject read the owner's harness state");
+        await ops.harness.clear("thr_h5", "intruder");
+        assertDeepEqual(
+          await ops.harness.get("thr_h5", "owner_1"),
+          { session: "native_1" },
+          "a foreign subject's clear destroyed the owner's harness state",
+        );
+      }),
+
+      /** No thread, no slot. `set` refuses rather than minting a bookmark that
+          belongs to no conversation — a row like that is one no erase and no
+          thread deletion could ever reach. */
+      opsCase(opts, "harness.set on a thread that does not exist is refused", async (ops) => {
+        await assertThrowsCode(
+          () => ops.harness.set("thr_never", "user_1", { v: 1 }),
+          "not-found",
+          "harness.set minted a slot for a thread that does not exist",
+        );
       }),
 
       // =====================================================================
@@ -1694,7 +1731,8 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
         await ops.engine.put("vendo_parked_call", { id: "keep", data: {}, refs: { subject: "other" } });
         await ops.transcripts.putThread({ id: "thr_erase", subject: "erase_me", messages: [] });
         await ops.transcripts.putThread({ id: "thr_keep", subject: "other", messages: [] });
-        await ops.harness.set("app_erase", "erase_me", { v: 1 });
+        await ops.harness.set("thr_erase", "erase_me", { v: 1 });
+        await ops.harness.set("thr_keep", "other", { v: 1 });
 
         const report = await ops.lifecycle.erase({ subject: "erase_me" });
         assert(report !== null && report !== undefined, "erase must return a report");
@@ -1702,7 +1740,8 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
         assert(await ops.engine.get("vendo_parked_call", "keep") !== null, "erase removed another subject's record");
         assert(await ops.transcripts.getThread("thr_erase") === null, "erase left the subject's thread behind");
         assert(await ops.transcripts.getThread("thr_keep") !== null, "erase removed another subject's thread");
-        assert(await ops.harness.get("app_erase", "erase_me") === null, "erase left the subject's harness state behind");
+        assert(await ops.harness.get("thr_erase", "erase_me") === null, "erase left the subject's harness state behind");
+        assertDeepEqual(await ops.harness.get("thr_keep", "other"), { v: 1 }, "erase took another subject's harness state");
       }),
 
       /** The erase target's OTHER half. `EraseTarget` is a union of exactly two
@@ -1722,25 +1761,26 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
         await ops.appData.putFile(gone, "f.bin", new Uint8Array([1]));
         await ops.appData.putFile(stays, "f.bin", new Uint8Array([1]));
         await ops.engine.put(engineAppHistory("app_gone"), { id: "ver_1", data: { version: 1 } });
-        await ops.harness.set("app_gone", "user_1", { v: 1 });
-        await ops.harness.set("app_stays", "user_1", { v: 1 });
         await ops.transcripts.putThread({ id: "thr_app_erase", subject: "user_1", messages: [] });
+        await ops.harness.set("thr_app_erase", "user_1", { v: 1 });
 
         const report = await ops.lifecycle.erase({ appId: "app_gone" });
         assert(report !== null && report !== undefined, "erase must return a report");
 
         assert(await ops.appData.get(gone, "row") === null, "erase left the app's rows behind");
         assert(await ops.appData.getFile(gone, "f.bin") === null, "erase left the app's files behind");
-        assert(await ops.harness.get("app_gone", "user_1") === null, "erase left the app's harness state behind");
         assert(await ops.engine.get(engineAppHistory("app_gone"), "ver_1") === null, "erase left the app's history behind");
         assert(await ops.engine.get("vendo_apps", "app_gone") === null, "erase left the app record itself behind");
 
         assert(await ops.appData.get(stays, "row") !== null, "erase took the neighbouring app's rows");
         assert(await ops.appData.getFile(stays, "f.bin") !== null, "erase took the neighbouring app's files");
-        assert(await ops.harness.get("app_stays", "user_1") !== null, "erase took the neighbouring app's harness state");
         assert(await ops.engine.get("vendo_apps", "app_stays") !== null, "erase took the neighbouring app record");
-        // The person is not the app: uninstalling one keeps their conversations.
+        // The person is not the app: uninstalling one keeps their conversations
+        // — and with them the harness continuity that lives on the thread row.
+        // An app-scoped erase reaches no bookmark at all now; a bookmark belongs
+        // to a conversation, and uninstalling an app ends no conversation.
         assert(await ops.transcripts.getThread("thr_app_erase") !== null, "an app-scoped erase took the user's threads");
+        assertDeepEqual(await ops.harness.get("thr_app_erase", "user_1"), { v: 1 }, "an app-scoped erase took a thread's harness state");
       }),
 
       /** Promote hands the app to an org: the app record's owning subject
@@ -2432,19 +2472,19 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
         if (turn === undefined) return omitted(TURN_ABSENT);
         await seedApp(ops, "app_turn");
         await ops.transcripts.putThread({ id: "thr_turn", subject: "user_1", messages: [{ id: "m_1", text: "one" }] });
-        await ops.harness.set("app_turn", "user_1", { step: 3 });
+        await ops.harness.set("thr_turn", "user_1", { step: 3 });
         await ops.workspace.commit([{ path: "page.tsx", data: { code: "x" } }], { owner: "user_1" });
 
         const loaded = await turn.load({
           thread: { id: "thr_turn" },
           index: { owner: "user_1" },
           read: { paths: ["page.tsx"], owner: "user_1" },
-          harness: { appId: "app_turn", subject: "user_1" },
+          harness: { threadId: "thr_turn", subject: "user_1" },
         });
         assertDeepEqual(loaded.thread, await ops.transcripts.getThread("thr_turn"), "turn.load's thread is not getThread's answer");
         assertDeepEqual(loaded.index, await ops.workspace.index({ owner: "user_1" }), "turn.load's index is not workspace.index's answer");
         assertDeepEqual(loaded.read, await ops.workspace.read(["page.tsx"], { owner: "user_1" }), "turn.load's read is not workspace.read's answer");
-        assertDeepEqual(loaded.harness, await ops.harness.get("app_turn", "user_1"), "turn.load's harness is not harness.get's answer");
+        assertDeepEqual(loaded.harness, await ops.harness.get("thr_turn", "user_1"), "turn.load's harness is not harness.get's answer");
         // Asking for less costs less: a part the request left out is absent from
         // the answer, never a zero standing in for one.
         assert(!("usage" in loaded), "turn.load answered a usage count nobody asked for");
@@ -2468,7 +2508,7 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
         const event = auditEvent("aud_turn", 0, {});
         const landed = await turn.commit({
           messages: { threadId: "thr_commit", subject: "user_1", messages: [{ id: "m_1", text: "one" }], title: "a turn" },
-          harness: { appId: "app_commit", subject: "user_1", state: { step: 4 } },
+          harness: { threadId: "thr_commit", subject: "user_1", state: { step: 4 } },
           audit: { collection: "vendo_audit", record: { id: event.id, data: event } },
         });
         assert(landed.messages.count === 1, `turn.commit should report 1 message landed, got ${landed.messages.count}`);
@@ -2477,7 +2517,7 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
           thread?.revision === landed.messages.revision,
           `turn.commit reported revision ${String(landed.messages.revision)}, the thread holds ${String(thread?.revision)}`,
         );
-        assertDeepEqual(await ops.harness.get("app_commit", "user_1"), { step: 4 }, "turn.commit did not land the harness state");
+        assertDeepEqual(await ops.harness.get("thr_commit", "user_1"), { step: 4 }, "turn.commit did not land the harness state");
         assertDeepEqual((await ops.engine.get("vendo_audit", "aud_turn"))?.data, event, "turn.commit did not land the audit row");
       }),
 

@@ -111,11 +111,6 @@ describe("apps lifecycle", () => {
     const ctx = context("user_ada");
     const source = await runtime.create({ prompt: "Source" }, ctx);
     await store.records(`app:${source.id}:notes`).put({ id: "note_1", data: { body: "private" } });
-    await store.records("vendo_state").put({
-      id: `${source.id}:${ctx.principal.subject}`,
-      data: { selected: "note_1" },
-      refs: { subject: ctx.principal.subject, app_id: source.id },
-    });
     await store.blobs(`app:${source.id}:files`).put("secret.txt", new TextEncoder().encode("private"));
 
     const fork = await runtime.fork(source.id, ctx);
@@ -123,7 +118,6 @@ describe("apps lifecycle", () => {
     expect(fork.id).not.toBe(source.id);
     expect(fork).toEqual({ ...source, id: fork.id, forkedFrom: source.id });
     expect(await store.records(`app:${fork.id}:notes`).list()).toEqual({ records: [] });
-    expect(await store.records("vendo_state").get(`${fork.id}:${ctx.principal.subject}`)).toBeNull();
     expect(await store.blobs(`app:${fork.id}:files`).list()).toEqual([]);
     expect(await runtime.history(fork.id, ctx).list()).toEqual([]);
   });

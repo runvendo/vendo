@@ -10,7 +10,7 @@ import {
   type RunContext,
   type ToolRegistry,
 } from "@vendoai/core";
-import { appAccess, createStore, workspaceStore, type VendoStore } from "@vendoai/store";
+import { appAccess, createStore, createStoreOps, workspaceStore, type VendoStore } from "@vendoai/store";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createVendo, type Vendo } from "../src/server.js";
 
@@ -238,16 +238,19 @@ describe("two principals, one org, over the real composition", () => {
     await seedApp(store, seeded("app_data", "Shared with private state"), ORG);
     await share(store, dana, "app_data", "user:kim", "editor");
 
-    // App storage is keyed (appId, subject) — sharing the app changes nothing
+    // The owner rides in the appData target — sharing the app changes nothing
     // about that, which is exactly why per-user data needs no new machinery.
-    const state = store.records("vendo_state");
-    await state.put({ id: "app_data:dana", data: { draft: "dana's numbers" } });
-    await state.put({ id: "app_data:kim", data: { draft: "kim's numbers" } });
+    const rows = createStoreOps(store).appData;
+    const drawer = (owner: string) => ({ appId: "app_data", collection: "drafts", owner });
+    await rows.put(drawer("dana"), { id: "draft_dana", data: { draft: "dana's numbers" } });
+    await rows.put(drawer("kim"), { id: "draft_kim", data: { draft: "kim's numbers" } });
 
-    expect((await state.get("app_data:dana"))?.data).toEqual({ draft: "dana's numbers" });
-    expect((await state.get("app_data:kim"))?.data).toEqual({ draft: "kim's numbers" });
-    const rows = await state.list({ refs: { app_id: "app_data" } });
-    expect(rows.records.map((row) => row.id).sort()).toEqual(["app_data:dana", "app_data:kim"]);
+    expect((await rows.get(drawer("dana"), "draft_dana"))?.data).toEqual({ draft: "dana's numbers" });
+    expect((await rows.get(drawer("kim"), "draft_kim"))?.data).toEqual({ draft: "kim's numbers" });
+    // Kim is an editor on the shared app and still cannot reach Dana's row.
+    expect(await rows.get(drawer("kim"), "draft_dana")).toBeNull();
+    expect((await rows.list(drawer("dana"))).records.map((row) => row.id)).toEqual(["draft_dana"]);
+    expect((await rows.list(drawer("kim"))).records.map((row) => row.id)).toEqual(["draft_kim"]);
   });
 
   it("two concurrent /orgs commits to one file: one ok, one conflict (E3's org slice)", async () => {

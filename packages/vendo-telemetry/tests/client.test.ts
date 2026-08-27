@@ -85,7 +85,7 @@ describe("createTelemetry.track", () => {
         env: { npm_config_user_agent: "pnpm/9.1.0 npm/? node/v20.11.0 darwin arm64" },
       });
       const t = createTelemetry(deps);
-      await t.track("agent_run", {});
+      await t.track("error_class", {});
       const body = JSON.parse((deps.fetchImpl.mock.calls[0]![1] as { body: string }).body);
       expect(body.properties.packageManager).toBe("pnpm");
       expect(body.properties.projectIdHash).toMatch(/^[0-9a-f]{64}$/);
@@ -99,7 +99,7 @@ describe("createTelemetry.track", () => {
     try {
       const deps = makeDeps({ cwd });
       const t = createTelemetry(deps);
-      await t.track("agent_run", {});
+      await t.track("error_class", {});
       const body = JSON.parse((deps.fetchImpl.mock.calls[0]![1] as { body: string }).body);
       expect("projectIdHash" in body.properties).toBe(false);
       expect("packageManager" in body.properties).toBe(false);
@@ -111,7 +111,7 @@ describe("createTelemetry.track", () => {
   it("never throws when fetch rejects", async () => {
     const deps = makeDeps({ fetchImpl: vi.fn().mockRejectedValue(new Error("network")) });
     const t = createTelemetry(deps);
-    await expect(t.track("agent_run", {})).resolves.toBeUndefined();
+    await expect(t.track("error_class", {})).resolves.toBeUndefined();
   });
 
   it("sends to a VENDO_POSTHOG_HOST override instead of the shipped cloud", async () => {
@@ -284,7 +284,7 @@ describe("cloud lane (VENDO_API_KEY)", () => {
   it("marks every event with cloud + cloudKeyHash when a valid key is set", async () => {
     const deps = makeDeps({ env: { VENDO_API_KEY: CLOUD_KEY } });
     const t = createTelemetry(deps);
-    await t.track("agent_run", {});
+    await t.track("error_class", {});
     const props = sentProps(deps);
     expect(props.cloud).toBe(true);
     // Unsalted sha256 of the key itself — the console joins on this hash.
@@ -302,7 +302,7 @@ describe("cloud lane (VENDO_API_KEY)", () => {
   ])("stays anonymous when the key is %s", async (_label, key) => {
     const deps = makeDeps({ env: { VENDO_API_KEY: key } });
     const t = createTelemetry(deps);
-    await t.track("agent_run", {});
+    await t.track("error_class", {});
     const props = sentProps(deps);
     expect("cloud" in props).toBe(false);
     expect("cloudKeyHash" in props).toBe(false);
@@ -339,20 +339,20 @@ describe("cloud lane (VENDO_API_KEY)", () => {
   it("still drops non-allowlisted keys when the lane is active", async () => {
     const deps = makeDeps({ env: { VENDO_API_KEY: CLOUD_KEY } });
     const t = createTelemetry(deps);
-    await t.track("agent_run", { sourceCode: "secret" } as never);
+    await t.track("error_class", { sourceCode: "secret" } as never);
     expect("sourceCode" in sentProps(deps)).toBe(false);
   });
 
   it("callers cannot spoof cloud or cloudKeyHash", async () => {
     // Inactive lane: the caller-passed markers are stripped outright.
     const anon = makeDeps();
-    await createTelemetry(anon).track("agent_run", { cloud: true, cloudKeyHash: "ff" } as never);
+    await createTelemetry(anon).track("error_class", { cloud: true, cloudKeyHash: "ff" } as never);
     expect("cloud" in sentProps(anon)).toBe(false);
     expect("cloudKeyHash" in sentProps(anon)).toBe(false);
 
     // Active lane: producer-set values win over caller-passed ones.
     const cloud = makeDeps({ env: { VENDO_API_KEY: CLOUD_KEY } });
-    await createTelemetry(cloud).track("agent_run", { cloud: false, cloudKeyHash: "ff" } as never);
+    await createTelemetry(cloud).track("error_class", { cloud: false, cloudKeyHash: "ff" } as never);
     const props = sentProps(cloud);
     expect(props.cloud).toBe(true);
     expect(props.cloudKeyHash).toBe(createHash("sha256").update(CLOUD_KEY).digest("hex"));
@@ -388,7 +388,7 @@ describe("cloud lane (VENDO_API_KEY)", () => {
   it("bounds cloud prop values like any other prop", async () => {
     const deps = makeDeps({ env: { VENDO_API_KEY: CLOUD_KEY } });
     const t = createTelemetry(deps);
-    await t.track("agent_run", {
+    await t.track("error_class", {
       projectName: "a".repeat(5000),
       errorDetail: { nested: "secret" },
     } as never);
@@ -402,7 +402,7 @@ describe("internal lane (VENDO_INTERNAL)", () => {
   it.each([["1"], ["true"]])("marks every event with internal: true when VENDO_INTERNAL=%s", async (value) => {
     const deps = makeDeps({ env: { VENDO_INTERNAL: value } });
     const t = createTelemetry(deps);
-    await t.track("agent_run", {});
+    await t.track("error_class", {});
     expect(sentProps(deps).internal).toBe(true);
   });
 
@@ -415,35 +415,113 @@ describe("internal lane (VENDO_INTERNAL)", () => {
   ])("omits the internal key when VENDO_INTERNAL is %s", async (_label, value) => {
     const deps = makeDeps({ env: { VENDO_INTERNAL: value } });
     const t = createTelemetry(deps);
-    await t.track("agent_run", {});
+    await t.track("error_class", {});
     expect("internal" in sentProps(deps)).toBe(false);
   });
 
   it("callers cannot spoof internal", async () => {
     // Flag unset: the caller-passed marker is stripped outright.
     const external = makeDeps();
-    await createTelemetry(external).track("agent_run", { internal: true } as never);
+    await createTelemetry(external).track("error_class", { internal: true } as never);
     expect("internal" in sentProps(external)).toBe(false);
 
     // Flag set: the producer-set value wins over a caller-passed one.
     const internal = makeDeps({ env: { VENDO_INTERNAL: "1" } });
-    await createTelemetry(internal).track("agent_run", { internal: false } as never);
+    await createTelemetry(internal).track("error_class", { internal: false } as never);
     expect(sentProps(internal).internal).toBe(true);
   });
 
   it("does not weaken consent: opt-outs still send nothing with the flag set", async () => {
     const deps = makeDeps({ env: { VENDO_INTERNAL: "1", DO_NOT_TRACK: "1" } });
     const t = createTelemetry(deps);
-    await t.track("agent_run", {});
+    await t.track("error_class", {});
     expect(deps.fetchImpl).not.toHaveBeenCalled();
   });
 
   it("composes with the cloud lane markers", async () => {
     const deps = makeDeps({ env: { VENDO_INTERNAL: "1", VENDO_API_KEY: CLOUD_KEY } });
     const t = createTelemetry(deps);
-    await t.track("agent_run", {});
+    await t.track("error_class", {});
     const props = sentProps(deps);
     expect(props.internal).toBe(true);
     expect(props.cloud).toBe(true);
+  });
+});
+
+/** The log record's attributes, flattened. OTLP carries every value as a
+ *  string, which is also how PostHog stores them — so these assertions read
+ *  the wire exactly as the Logs explorer will. */
+function sentAttributes(deps: ReturnType<typeof makeDeps>): Record<string, string> {
+  const body = JSON.parse((deps.fetchImpl.mock.calls[0]![1] as { body: string }).body);
+  const record = body.resourceLogs[0].scopeLogs[0].logRecords[0];
+  return Object.fromEntries(
+    (record.attributes as { key: string; value: { stringValue: string } }[])
+      .map((a) => [a.key, a.value.stringValue]),
+  );
+}
+
+describe("logs lane (LOG_EVENTS)", () => {
+  it("sends an operational event to the logs endpoint as OTLP, not to capture", async () => {
+    const deps = makeDeps();
+    await createTelemetry(deps).track("doctor_run", { failures: 2, warnings: 1, wired: true });
+
+    const [url, init] = deps.fetchImpl.mock.calls[0]!;
+    expect(String(url)).toBe("https://us.i.posthog.com/i/v1/logs?token=phc_test");
+    const body = JSON.parse((init as { body: string }).body);
+    // No capture-shaped keys: the analytics stream must not receive this at all.
+    expect("event" in body).toBe(false);
+    expect("api_key" in body).toBe(false);
+
+    const record = body.resourceLogs[0].scopeLogs[0].logRecords[0];
+    expect(body.resourceLogs[0].resource.attributes)
+      .toContainEqual({ key: "service.name", value: { stringValue: "vendo-sdk" } });
+    // Greppable from either direction: the facet column and the body.
+    expect(record.eventName).toBe("doctor_run");
+    expect(record.body.stringValue).toBe("doctor_run");
+
+    const attributes = sentAttributes(deps);
+    expect(attributes.event).toBe("doctor_run");
+    expect(attributes.distinct_id).toBe("id-1");
+    expect(attributes.failures).toBe("2");
+    expect(attributes.wired).toBe("true");
+    expect(attributes.vendoVersion).toBe("9.9.9");
+  });
+
+  it.each([["doctor_run"], ["command_run"], ["agent_run"]])(
+    "routes %s to logs while analytics events stay on capture",
+    async (event) => {
+      const logged = makeDeps();
+      await createTelemetry(logged).track(event as "doctor_run", {});
+      expect(String(logged.fetchImpl.mock.calls[0]![0])).toContain("/i/v1/logs");
+
+      const captured = makeDeps();
+      await createTelemetry(captured).track("init_started", { framework: "next" });
+      expect(String(captured.fetchImpl.mock.calls[0]![0])).toContain("/capture/");
+    },
+  );
+
+  it("applies the allowlist, the lane markers and consent exactly as capture does", async () => {
+    const deps = makeDeps({ env: { VENDO_API_KEY: CLOUD_KEY, VENDO_INTERNAL: "1" } });
+    await createTelemetry(deps).track("command_run", {
+      command: "sync",
+      ok: true,
+      sourceCode: "secret",
+    } as never);
+    const attributes = sentAttributes(deps);
+    expect(attributes.command).toBe("sync");
+    expect("sourceCode" in attributes).toBe(false);
+    expect(attributes.cloud).toBe("true");
+    expect(attributes.internal).toBe("true");
+
+    const optedOut = makeDeps({ env: { DO_NOT_TRACK: "1" } });
+    await createTelemetry(optedOut).track("command_run", { command: "sync" });
+    expect(optedOut.fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("follows VENDO_POSTHOG_HOST to a self-hosted instance", async () => {
+    const deps = makeDeps({ env: { VENDO_POSTHOG_HOST: "https://posthog.internal:8000" } });
+    await createTelemetry(deps).track("agent_run", {});
+    expect(String(deps.fetchImpl.mock.calls[0]![0]))
+      .toBe("https://posthog.internal:8000/i/v1/logs?token=phc_test");
   });
 });

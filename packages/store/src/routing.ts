@@ -23,16 +23,14 @@ import {
   putAuditRow,
   putGrantRow,
   putRunRow,
-  putStateRow,
   duplicateThreadMessageId,
   putThreadRow,
   replaceThreadMessages,
   runFromRow,
-  stateRowFromRow,
   THREAD_MESSAGES_AGGREGATE,
   threadFromRow,
 } from "./helpers/rows.js";
-import type { AppRow, ApprovalRow, RunRow, StateRow, ThreadRow } from "./helpers/types.js";
+import type { AppRow, ApprovalRow, RunRow, ThreadRow } from "./helpers/types.js";
 import { cursorMs, decodeCursor, encodeCursor, iso, pageLimit, text } from "./helpers/utils.js";
 import {
   invalid,
@@ -45,7 +43,6 @@ import {
   parsePermissionGrant,
   parseRunData,
   parseThreadData,
-  requireJson,
   requireMatchingId,
   requireRecordId,
   type ApprovalData,
@@ -61,7 +58,6 @@ export const RESERVED_COLLECTIONS = [
   "vendo_automations",
   "vendo_runs",
   "vendo_apps",
-  "vendo_state",
   "vendo_effects",
   "vendo_app_grants",
 ] as const;
@@ -99,9 +95,6 @@ interface RoutedConfig {
   cursorColumn: string;
   refs: Readonly<Record<string, string>>;
   fromDb(row: Record<string, unknown>): VendoRecord;
-  /** Optional id-shape validation applied before delete (vendo_state enforces
-   *  its `<appId>:<subject>` grammar so a doctored id can't target anything). */
-  validateId?(id: string): void;
   put(record: { id: string; data: unknown; refs?: Record<string, string> }): Promise<VendoRecord>;
   /** Optional additive capability (01 §12): guarded writes for collections whose
    *  table carries a revision counter. vendo_threads provides it (ENG-310). */
@@ -266,54 +259,6 @@ function appGrantRecord(row: Record<string, unknown>): VendoRecord {
   };
 }
 
-function stateRecord(row: StateRow): VendoRecord {
-  return {
-    id: `${row.appId}:${row.subject}`,
-    data: row.data,
-    refs: { app_id: row.appId, subject: row.subject },
-    createdAt: row.createdAt,
-    updatedAt: row.updatedAt,
-  };
-}
-
-/**
- * `vendo_state` has TWO tenants, and this is the line between them.
- *
- *  - An APP's own data — `app_<id>:<subject>` — which is what this routed
- *    records door serves, and the only thing it will accept.
- *  - HARNESS continuity — `harness_state:<threadId>` — which reaches the table
- *    only through `ops.harness` (`store/src/harness-state.ts`) and raw SQL,
- *    never through this door. The `app_` prefix check below is what keeps the
- *    two from ever addressing each other's rows.
- *
- * apps writes state through `records("vendo_state")` with id `${appId}:${subject}`.
- * App ids are `app_...` and never contain a colon, so the first colon splits id into
- * its app_id and subject (subjects may themselves contain colons).
- *
- * The colon-free app-id shape is REQUIRED, not assumed: without it `<appId>:<subject>`
- * is not uniquely decodable — (app_a:b, c) and (app_a, b:c) would both encode to
- * "app_a:b:c" and collide on read/write/delete. The apps runtime mints colon-free
- * ids; this enforces it at the door so a doctored id can never target another row.
- */
-const APP_ID_SEGMENT = /^app_[^:]+$/;
-
-function splitStateId(id: string): { appId: string; subject: string } {
-  const colon = id.indexOf(":");
-  if (colon === -1) invalid(`vendo_state record id must be "<appId>:<subject>": ${id}`);
-  const appId = id.slice(0, colon);
-  if (!APP_ID_SEGMENT.test(appId)) {
-    // Names the OTHER tenant on purpose: a `harness_state:` id arriving here is
-    // a caller reaching for the wrong door, not a malformed app id.
-    invalid(`vendo_state record id must start with a colon-free app id ("app_..."); harness continuity rows ("harness_state:...") belong to ops.harness, not this door: ${id}`);
-  }
-  const subject = id.slice(colon + 1);
-  // An empty subject ("app_x:") would route a state row to no principal — reject it
-  // (the apps runtime always writes a non-empty subject).
-  if (subject === "") {
-    invalid(`vendo_state record id must have a non-empty subject after the colon: ${id}`);
-  }
-  return { appId, subject };
-}
 
 function createTableRecordStore(db: Db, config: RoutedConfig): RecordStore {
   return {
@@ -335,7 +280,6 @@ function createTableRecordStore(db: Db, config: RoutedConfig): RecordStore {
           `${config.table} is append-only; rows are erased only via the store erase API (02-store §5)`,
         );
       }
-      config.validateId?.(id);
       await db.query(`DELETE FROM ${config.table} WHERE id = $1`, [id]);
     },
     async list(query: RecordQuery = {}) {
@@ -708,25 +652,6 @@ function configFor(db: Db, collection: ReservedCollection): RoutedConfig {
             [record.id, data.appId, data.orgId, data.principal, data.level, data.createdBy],
           );
           return appGrantRecord(result.rows[0] as Record<string, unknown>);
-        },
-      };
-    case "vendo_state":
-      return {
-        table: collection,
-        // `id` is the generated (app_id || ':' || subject) column — a real,
-        // indexed column, so point lookups and id filters no longer seq-scan.
-        select: "SELECT id, app_id, subject, data, created_at, updated_at FROM vendo_state",
-        // Page on the STABLE created_at (like every other collection), not the
-        // mutable updated_at — a mid-sweep update must never skip an unvisited row.
-        cursorColumn: "created_at",
-        refs: { app_id: "app_id", subject: "subject" },
-        fromDb: (row) => stateRecord(stateRowFromRow(row)),
-        validateId: (id) => void splitStateId(id),
-        async put(record) {
-          const { appId, subject } = splitStateId(record.id);
-          const data = requireJson(record.data, "state data");
-          // Shared persistent write path with the harness slot (helpers/rows).
-          return stateRecord(await putStateRow(db, { appId, subject, data }));
         },
       };
   }

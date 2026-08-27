@@ -77,11 +77,6 @@ export interface TreeViewProps {
    */
   onParked?: (parked: ParkedPress) => void;
   /**
-   * 08-ui §5; 06-apps §6 — additive persistence hook for TreeView-local `$state`.
-   * It fires with the complete state map after every `vendo.setState` write.
-   */
-  onStateChange?(state: Record<string, Json>): void;
-  /**
    * A component screen's live half: the compiled source and the query results it
    * was painted against. `tree` is that screen's FIRST paint and renders on its
    * own; supplying this additionally boots the screen behind it, so its
@@ -109,7 +104,6 @@ export interface PayloadRendererProps {
   onAction(req: { nodeId: string; action: string; payload?: Json }): Promise<ToolOutcome>;
   /** As {@link TreeViewProps.onParked}. */
   onParked?: (parked: ParkedPress) => void;
-  onStateChange?(state: Record<string, Json>): void;
   /** As {@link TreeViewProps.locale} and {@link TreeViewProps.timeZone}. */
   locale?: string;
   timeZone?: string;
@@ -835,8 +829,7 @@ function NodeShell({ nodeId, outcome, mark, shell, wet, children }: {
  * 08-ui §5 — render a validated walk tree.
  *
  * `$state` is local to this TreeView. Generated code can write through its
- * `vendo.setState(key, value)` bridge; `onStateChange`, when supplied,
- * receives the complete state map after every change for app-state persistence.
+ * `vendo.setState(key, value)` bridge.
  */
 function StatefulTreeView({
   tree: painted,
@@ -844,7 +837,6 @@ function StatefulTreeView({
   data,
   onAction,
   onParked,
-  onStateChange,
   interactive,
   locale,
   timeZone,
@@ -863,7 +855,7 @@ function StatefulTreeView({
   useEffect(ensureKitStyles, []);
   // The keyed `$state` store lives in the Kit bundle, shared with code-land's
   // `useVendoState` (kit/state.ts) — one implementation, two venues.
-  const [viewState, updateState] = useKeyedState(onStateChange);
+  const [viewState, updateState] = useKeyedState();
   const [outcomes, setOutcomes] = useState<Record<string, ToolOutcome | undefined>>({});
 
   const runAction = useCallback(async (nodeId: string, action: string, payload?: Json) => {

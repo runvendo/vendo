@@ -55,10 +55,6 @@ const decodeWatermark = (after: string): { value: string; id: string } | undefin
   }
 };
 
-/** The synthetic harness appId a thread's state rides under (the store's
-    `harnessStateKey`), so deleting the thread can sweep it. */
-const harnessSlot = (threadId: string): string => `harness_state:${threadId}`;
-
 /** The UTC hour an event falls in, as the instant that hour starts — the tally's
     bucket key. */
 const hourBucket = (at: IsoDateTime): IsoDateTime => {
@@ -111,11 +107,15 @@ export function memoryStoreOps(): StoreOpsWithAppData {
   };
 
   // transcripts: Map<threadId, thread>
-  type Thread = { id: string; subject: string; messages: unknown[]; title?: string; answers: Set<string> };
+  // `harnessState` is a FIELD on the thread, not a side table, because that is
+  // where the backend keeps it (a column on vendo_threads). Every cascade a
+  // separate map had to hand-wire — thread deletion, subject erasure — is then
+  // simply the thread going away.
+  type Thread = {
+    id: string; subject: string; messages: unknown[]; title?: string;
+    answers: Set<string>; harnessState?: unknown;
+  };
   const threads = new Map<string, { record: VendoRecord & { seq: number }; thread: Thread }>();
-
-  // harness: Map<"appId:subject", state>
-  const harnessState = new Map<string, unknown>();
 
   // workspace — one drawer per owner (the end user or org the files belong to);
   // a call with no owner rides the bound single-player default, exactly as the
@@ -474,12 +474,9 @@ export function memoryStoreOps(): StoreOpsWithAppData {
       };
     },
     async deleteThread(id) {
+      // The harness slot is a field on the row, so this one statement is the
+      // whole cascade — there is no second place a bookmark could survive.
       threads.delete(id);
-      // The cascade: a thread's harness state rides the `harness_state:<id>`
-      // slot, so it dies with the thread rather than outliving it.
-      for (const k of harnessState.keys()) {
-        if (k.startsWith(`${harnessSlot(id)}:`)) harnessState.delete(k);
-      }
     },
     /** Insert, or EDIT BY ID: a message whose id is already in the thread
         replaces it in place — that is how an approval flips from pending to
@@ -577,16 +574,29 @@ export function memoryStoreOps(): StoreOpsWithAppData {
   // harness family
   // ---------------------------------------------------------------------------
 
+  /** `subject` is the thread's OWNER and it is authority, not decoration: a
+      mismatch reads as a missing slot and writes nothing, so one person can
+      never read or overwrite another's continuity by naming their thread. */
+  const ownedThread = (threadId: string, subject: string): Thread | undefined => {
+    const entry = threads.get(threadId);
+    return entry?.thread.subject === subject ? entry.thread : undefined;
+  };
+
   const harness: StoreOps["harness"] = {
-    async get(appId, subject) {
-      const v = harnessState.get(`${appId}:${subject}`);
-      return v === undefined ? null : jsonCopy(v);
+    async get(threadId, subject) {
+      const held = ownedThread(threadId, subject)?.harnessState;
+      return held === undefined ? null : jsonCopy(held);
     },
-    async set(appId, subject, state) {
-      harnessState.set(`${appId}:${subject}`, jsonCopy(state));
+    async set(threadId, subject, state) {
+      const thread = ownedThread(threadId, subject);
+      // No row, nowhere to put it — refused rather than minting a slot that
+      // belongs to no conversation and that no erase could ever reach.
+      if (thread === undefined) throw new VendoError("not-found", `thread ${threadId} not found`);
+      thread.harnessState = jsonCopy(state);
     },
-    async clear(appId, subject) {
-      harnessState.delete(`${appId}:${subject}`);
+    async clear(threadId, subject) {
+      const thread = ownedThread(threadId, subject);
+      if (thread !== undefined) delete thread.harnessState;
     },
   };
 
@@ -738,10 +748,6 @@ export function memoryStoreOps(): StoreOpsWithAppData {
         for (const [id, entry] of threads) {
           if (entry.thread.subject === target.subject) threads.delete(id);
         }
-        // Clear harness
-        for (const k of harnessState.keys()) {
-          if (k.endsWith(`:${target.subject}`)) harnessState.delete(k);
-        }
         // A quarantined row is STILL this person's data. Sweeping it here is
         // what stops a retention lift from becoming a way to outlive an
         // erasure — the same hole the local backend closes by matching the
@@ -753,17 +759,15 @@ export function memoryStoreOps(): StoreOpsWithAppData {
       if (target.appId) {
         // Everything the app owns, and nothing beside it: its own drawers
         // (`app:<id>:<collection>`, rows and files alike), its version history,
-        // its harness state, and the app record itself. NOT the user's threads
-        // — uninstalling an app is not erasing the person who installed it.
+        // and the app record itself. NOT the user's threads — uninstalling an
+        // app is not erasing the person who installed it — and NOT any harness
+        // continuity, which belongs to a thread and never to an app.
         const prefix = `app:${target.appId}:`;
         for (const name of [...collections.keys()]) {
           if (name.startsWith(prefix) || name === engineAppHistory(target.appId)) collections.delete(name);
         }
         for (const name of [...blobStore.keys()]) {
           if (name.startsWith(prefix)) blobStore.delete(name);
-        }
-        for (const k of harnessState.keys()) {
-          if (k.startsWith(`${target.appId}:`)) harnessState.delete(k);
         }
         // The app's lifted rows too, by the same rule as the subject leg — and
         // on both selectors the live rows needed: the app's own drawers, and
@@ -957,15 +961,18 @@ export function memoryStoreOps(): StoreOpsWithAppData {
         index: await workspace.index(request.index),
         // Asked for or absent, the same rule the two below follow.
         ...(request.read ? { read: await workspace.read(request.read.paths, request.read) } : {}),
-        ...(request.harness ? { harness: await harness.get(request.harness.appId, request.harness.subject) } : {}),
+        ...(request.harness ? { harness: await harness.get(request.harness.threadId, request.harness.subject) } : {}),
         ...(request.usage ? { usage: await usage.count(request.usage) } : {}),
       };
     },
     async commit(request) {
       const { threadId, subject, messages, title } = request.messages;
-      if (request.harness) await harness.set(request.harness.appId, request.harness.subject, request.harness.state);
+      // The messages FIRST: their append is what upserts a thread row a first
+      // turn has not created yet, and the harness slot lives ON that row.
+      const landed = await transcripts.appendMessages!(threadId, subject, messages, { title });
+      if (request.harness) await harness.set(request.harness.threadId, request.harness.subject, request.harness.state);
       return {
-        messages: await transcripts.appendMessages!(threadId, subject, messages, { title }),
+        messages: landed,
         ...(request.audit ? { audit: await engine.put(request.audit.collection, request.audit.record) } : {}),
       };
     },

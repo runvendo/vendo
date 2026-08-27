@@ -102,30 +102,24 @@ for (const backend of backends()) {
       await expect(ops.retention!.quarantine("host_invoices", soon())).rejects.toMatchObject({ code: "blocked" });
     });
 
-    it("leaves harness continuity alone — the tenant of vendo_state its door cannot see", async () => {
-      // `vendo_state` holds two things: an app's own state, keyed
-      // `app_<id>:<subject>`, which the routed door addresses — and harness
-      // CONTINUITY under `harness_state:<threadId>`, which reaches the table
-      // only through ops.harness and belongs to a thread that is still alive.
-      // A caller sweeping the collection names the first and cannot even see
-      // the second, so lifting it would take a live conversation's session
-      // away with nothing in the request that asked for it.
+    /** A live conversation's harness continuity is not sweepable, and since v12
+     *  that is structural rather than a predicate: it is a COLUMN on
+     *  `vendo_threads`, and that collection is refused outright. Before, it was a
+     *  second tenant hiding inside `vendo_state` behind a fence — a caller
+     *  sweeping the app-state collection could not even see it, and lifting it
+     *  would have taken a live session away with nothing in the request naming it. */
+    it("refuses to sweep the collection a live conversation's harness state lives on", async () => {
       await ops.transcripts.putThread({
         id: "thr_ret_live",
         subject: "user_ret_live",
         messages: [{ id: "m1", role: "user" }],
       });
-      await ops.harness.set("harness_state:thr_ret_live", "user_ret_live", { session: "native_42" });
-      await ops.harness.set("app_ret_live", "user_ret_live", { count: 1 });
+      await ops.harness.set("thr_ret_live", "user_ret_live", { session: "native_42" });
 
-      const swept = await ops.retention!.quarantine("vendo_state", soon());
+      await expect(ops.retention!.quarantine("vendo_threads", soon()))
+        .rejects.toMatchObject({ code: "blocked" });
 
-      expect(swept.moved).toBe(1);
-      expect(await ops.harness.get("app_ret_live", "user_ret_live")).toBeNull();
-      expect(await ops.harness.get("harness_state:thr_ret_live", "user_ret_live"))
-        .toEqual({ session: "native_42" });
-      expect(await made.sql("SELECT id FROM vendo_quarantine WHERE collection = 'vendo_state'"))
-        .toEqual([{ id: "app_ret_live:user_ret_live" }]);
+      expect(await ops.harness.get("thr_ret_live", "user_ret_live")).toEqual({ session: "native_42" });
     });
 
     it("keeps a purge inside one collection, and inside its own grace", async () => {

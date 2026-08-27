@@ -4,10 +4,10 @@ import { appFixture, auditFixture, persistentPrincipal } from "../src/fixtures.t
 import { appStore, auditStore, runStore } from "../src/index.js";
 
 // Keyset cursors round-trip through JS Dates (millisecond precision), but the
-// timestamptz cursor columns store microseconds: the §2 table map is public
-// (direct host SQL), vendo_state.created_at has a DEFAULT now() for exactly
-// that path, and caller-supplied ISO timestamps (audit `at`, run `startedAt`)
-// are z.string().datetime()-validated, which accepts sub-millisecond digits.
+// timestamptz cursor columns store microseconds: the §2 table map is public, so
+// a host INSERTs its own timestamps straight into vendo_records, and
+// caller-supplied ISO timestamps (audit `at`, run `startedAt`) are
+// z.string().datetime()-validated, which accepts sub-millisecond digits.
 // Every keyset predicate must therefore compare at the cursor's millisecond
 // granularity — a full-precision comparison against a truncated cursor makes
 // rows sharing a truncated timestamp silently fall out of pagination.
@@ -54,30 +54,6 @@ for (const backend of backends()) {
         };
       });
       expect(seen.sort()).toEqual(["note_1", "note_2", "note_3", "note_4", "note_5"]);
-    });
-
-    it("lists every vendo_state row when created_at carries microseconds (the DEFAULT now() path)", async () => {
-      for (let i = 1; i <= 5; i += 1) {
-        await made.sql(
-          "INSERT INTO vendo_state (app_id, subject, data, created_at, updated_at) VALUES ($1, $2, $3, $4, $4)",
-          ["app_micro_state", `user_micro_${i}`, "{}", MICRO_AT],
-        );
-      }
-      const state = made.store.records("vendo_state");
-      const seen = await collect(async (cursor) => {
-        const page = await state.list({
-          limit: 2,
-          refs: { app_id: "app_micro_state" },
-          ...(cursor === undefined ? {} : { cursor }),
-        });
-        return {
-          ids: page.records.map((record) => record.id),
-          ...(page.cursor === undefined ? {} : { cursor: page.cursor }),
-        };
-      });
-      expect(seen.sort()).toEqual(
-        [1, 2, 3, 4, 5].map((i) => `app_micro_state:user_micro_${i}`),
-      );
     });
 
     it("lists every run when startedAt is a caller-supplied sub-millisecond timestamp", async () => {

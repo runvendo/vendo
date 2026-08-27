@@ -459,7 +459,7 @@ export interface TurnLoadRequest {
       when a tool asks for it — omits this rather than naming a path it does not
       want, which is what a required `paths` would force it to do. */
   read?: { paths: string[]; owner?: string };
-  harness?: { appId: string; subject: string };
+  harness?: { threadId: string; subject: string };
   usage?: UsageCountQuery;
 }
 
@@ -480,7 +480,7 @@ export interface TurnLoad {
     turn and the run's audit row. */
 export interface TurnCommitRequest {
   messages: { threadId: string; subject: string; messages: unknown[]; title?: string };
-  harness?: { appId: string; subject: string; state: unknown };
+  harness?: { threadId: string; subject: string; state: unknown };
   audit?: { collection: string; record: RecordInput };
 }
 
@@ -572,10 +572,23 @@ export interface StoreOps {
     ): Promise<{ revision: string; count: number }>;
     recordAnswer(threadId: string, answer: unknown): Promise<VendoRecord>;
   };
+  /** One conversation's harness continuity — the native-session reference a
+      session-OWNING harness resumes on, stored on the thread row itself.
+
+      `subject` is the thread's OWNER, and it is the authority, not decoration: a
+      slot is only ever read or written where it matches the thread's own
+      subject, so a wrong owner reads as a missing slot and can never write one.
+      That is what puts the slot inside the erase cascade and the anon→signed-in
+      adoption for free, and what makes thread deletion clear the bookmark with
+      no second statement.
+
+      ONE slot per thread. A thread that does not exist has no slot: `get` and
+      `clear` answer as if it were empty, and `set` refuses (`not-found`) rather
+      than minting a row nothing owns. */
   harness: {
-    get(appId: string, subject: string): Promise<unknown | null>;
-    set(appId: string, subject: string, state: unknown): Promise<void>;
-    clear(appId: string, subject: string): Promise<void>;
+    get(threadId: string, subject: string): Promise<unknown | null>;
+    set(threadId: string, subject: string, state: unknown): Promise<void>;
+    clear(threadId: string, subject: string): Promise<void>;
   };
   /** Every workspace verb names its OWNER — the end user (or org) whose drawer
       the files live in, exactly as conversations, records and blobs already do.

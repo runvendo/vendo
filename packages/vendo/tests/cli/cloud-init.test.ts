@@ -379,8 +379,8 @@ describe("cloud-init telemetry", () => {
       cloudProbe: async () => ({ present: true, ok: true, unlocks: [] }),
       telemetry: ok.telemetry,
     });
-    expect(ok.event("command_run").properties).toMatchObject({ command: "cloud-init", ok: true });
-    expect(typeof ok.event("command_run").properties.durationMs).toBe("number");
+    expect(ok.event("command_run").properties).toMatchObject({ command: "cloud-init", ok: "true" });
+    expect(Number(ok.event("command_run").properties.durationMs)).not.toBeNaN();
 
     const invalid = await telemetryCapture();
     cleanup.push(() => rm(invalid.home, { recursive: true, force: true }));
@@ -394,7 +394,7 @@ describe("cloud-init telemetry", () => {
     });
     expect(invalid.event("command_run").properties).toMatchObject({
       command: "cloud-init",
-      ok: false,
+      ok: "false",
       failedStep: "key-invalid",
     });
   });
@@ -413,7 +413,7 @@ describe("cloud-init telemetry", () => {
       confirm: async () => false,
       telemetry: declined.telemetry,
     });
-    expect(declined.event("command_run").properties).toMatchObject({ command: "cloud-init", ok: true });
+    expect(declined.event("command_run").properties).toMatchObject({ command: "cloud-init", ok: "true" });
 
     const thrown = await telemetryCapture();
     cleanup.push(() => rm(thrown.home, { recursive: true, force: true }));
@@ -427,7 +427,7 @@ describe("cloud-init telemetry", () => {
     })).rejects.toThrow("probe exploded");
     expect(thrown.event("command_run").properties).toMatchObject({
       command: "cloud-init",
-      ok: false,
+      ok: "false",
       errorClass: "TypeError",
     });
   });

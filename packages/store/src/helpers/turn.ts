@@ -12,7 +12,7 @@ export async function turnLoadOverOps(ops: StoreOps, request: TurnLoadRequest): 
     index: await ops.workspace.index(request.index),
     // Asked for or absent — never a null standing in for an answer nobody wanted.
     ...(request.read ? { read: await ops.workspace.read(request.read.paths, request.read) } : {}),
-    ...(request.harness ? { harness: await ops.harness.get(request.harness.appId, request.harness.subject) } : {}),
+    ...(request.harness ? { harness: await ops.harness.get(request.harness.threadId, request.harness.subject) } : {}),
     ...(request.usage ? { usage: await ops.usage!.count(request.usage) } : {}),
   };
 }

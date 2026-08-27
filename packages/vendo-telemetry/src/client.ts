@@ -3,11 +3,12 @@ import { request as httpRequest, type ClientRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { resolveConsent, truthy } from "./consent.js";
 import { baseProps, projectProps, type ProjectProps } from "./base-props.js";
-import { CLOUD_PROP_KEYS, EVENT_ALLOWLIST, type EventName } from "./events.js";
+import { CLOUD_PROP_KEYS, EVENT_ALLOWLIST, LOG_EVENTS, type EventName } from "./events.js";
 import { scrubErrorDetail } from "./scrub.js";
 import type { TelemetryConfig } from "./config.js";
 
 const POSTHOG_ENDPOINT = "https://us.i.posthog.com/capture/";
+const POSTHOG_LOGS_PATH = "/i/v1/logs";
 const TIMEOUT_MS = 1500;
 
 /**
@@ -174,6 +175,59 @@ function captureEndpoint(env: Record<string, string | undefined>): string {
   }
 }
 
+/** Where LOG_EVENTS go: PostHog's Logs product, which speaks OTLP over HTTP
+ *  and keeps records for a bounded 30 days rather than forever. Same project
+ *  key, same VENDO_POSTHOG_HOST override. The key rides as `?token=` — the
+ *  endpoint's documented alternative to a bearer header — so both transports
+ *  above stay header-free. */
+function logsEndpoint(env: Record<string, string | undefined>, key: string): string {
+  const host = env.VENDO_POSTHOG_HOST?.trim();
+  let url: URL;
+  try {
+    url = new URL(POSTHOG_LOGS_PATH, host || POSTHOG_ENDPOINT);
+  } catch {
+    url = new URL(POSTHOG_LOGS_PATH, POSTHOG_ENDPOINT);
+  }
+  url.searchParams.set("token", key);
+  return url.toString();
+}
+
+/**
+ * OTLP/JSON, the only shape the Logs endpoint accepts. Every attribute is a
+ * string — PostHog stores them that way whatever the OTLP type says — and the
+ * event name rides as `eventName` AND an `event` attribute, so a query written
+ * against the explorer's facets and one written against the body both find it.
+ * The anonymous id becomes `distinct_id` so per-install grouping survives the
+ * move exactly as it worked on the capture lane.
+ */
+function logBody(event: EventName, distinctId: string, properties: Record<string, unknown>): string {
+  const nanos = `${Date.now()}000000`;
+  const attribute = (key: string, value: string): unknown => ({ key, value: { stringValue: value } });
+  return JSON.stringify({
+    resourceLogs: [{
+      resource: { attributes: [attribute("service.name", "vendo-sdk")] },
+      scopeLogs: [{
+        scope: { name: "vendo-telemetry" },
+        logRecords: [{
+          timeUnixNano: nanos,
+          observedTimeUnixNano: nanos,
+          severityNumber: 9,
+          severityText: "INFO",
+          eventName: event,
+          body: { stringValue: event },
+          attributes: [
+            attribute("event", event),
+            attribute("distinct_id", distinctId),
+            ...Object.entries(properties)
+              .filter(([, value]) => value !== null && value !== undefined)
+              .map(([key, value]) => attribute(key, String(value))),
+          ],
+        }],
+      }],
+    }],
+  });
+}
+
 /** Shape of a Vendo Cloud API key. Anything else leaves the lane anonymous. */
 const CLOUD_KEY_RE = /^vnd_[0-9a-f]{40}$/;
 
@@ -229,14 +283,19 @@ export function createTelemetry(deps: TelemetryDeps): Telemetry {
           ...cloudMarkers,
           ...internalMarker,
         };
-        const body = JSON.stringify({
-          api_key: deps.posthogKey,
-          event,
-          distinct_id: deps.config.anonymousId,
-          properties,
-        });
+        // Operational events go to the Logs product, product analytics to
+        // capture. Destination only — an event is never sent to both.
+        const toLogs = LOG_EVENTS.has(event);
+        const body = toLogs
+          ? logBody(event, deps.config.anonymousId, properties)
+          : JSON.stringify({
+              api_key: deps.posthogKey,
+              event,
+              distinct_id: deps.config.anonymousId,
+              properties,
+            });
 
-        await post(endpoint, body);
+        await post(toLogs ? logsEndpoint(deps.env, deps.posthogKey) : endpoint, body);
       } catch {
         // Telemetry must never break a build or dev server. Intentional silent failure.
       }

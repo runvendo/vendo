@@ -1,5 +1,24 @@
 # vendoai
 
+## 0.52.1
+
+### Patch Changes
+
+- @vendoai/vendo@0.52.1
+
+## 0.52.0
+
+### Patch Changes
+
+- Updated dependencies [52f5b64]
+  - @vendoai/vendo@0.52.0
+
+## 0.51.2
+
+### Patch Changes
+
+- @vendoai/vendo@0.51.2
+
 ## 0.51.1
 
 ### Patch Changes

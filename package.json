@@ -28,7 +28,7 @@
     "@changesets/cli": "^2.31.0",
     "@next/eslint-plugin-next": "^16.2.9",
     "@vitest/coverage-v8": "^3.2.6",
-    "esbuild": "^0.25.12",
+    "esbuild": "^0.28.2",
     "eslint": "^9.39.5",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-sonarjs": "^4.2.0",

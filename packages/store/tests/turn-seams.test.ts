@@ -88,7 +88,7 @@ for (const backend of backends()) {
       const loaded = await store.ops!.turn!.load({
         thread: { id: thread },
         index: { owner: dana.subject },
-        harness: { appId: `harness_state:${thread}`, subject: dana.subject },
+        harness: { threadId: thread, subject: dana.subject },
       });
 
       expect(await states.resume(thread, "claude-code", loaded.harness, dana.subject))
@@ -105,7 +105,7 @@ for (const backend of backends()) {
       const loaded = await store.ops!.turn!.load({
         thread: { id: thread },
         index: { owner: dana.subject },
-        harness: { appId: `harness_state:${thread}`, subject: dana.subject },
+        harness: { threadId: thread, subject: dana.subject },
       });
 
       expect(await states.resume(thread, "vendo", loaded.harness, dana.subject)).toBeUndefined();

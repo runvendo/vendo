@@ -391,19 +391,32 @@ export const storeWireTranscriptsRecordAnswerRequestSchema = z.object({
 // harness
 // ---------------------------------------------------------------------------
 
+/** The slot is a THREAD's, and says so. It rode a synthetic `appId`
+    (`harness_state:<threadId>`) while the state lived in `vendo_state`, whose key
+    was (app_id, subject); it now lives on the thread row itself, so the key names
+    the thread.
+
+    The rename is a BREAKING wire change, and it is a loud one in both
+    directions: `threadId` is required, so an old client's `{appId, subject}` body
+    fails this schema, and a new client's `{threadId, subject}` fails an old
+    mount's — each side answers an enveloped `validation` (400) rather than
+    reading the other's body as a slot it can serve. There is nothing to
+    feature-detect here: `/status`'s `ops` level is a monotone count that only
+    ever grows (STORE_WIRE_PATHS' header), and no op is added or removed, so the
+    level cannot express this and must not try. */
 export const storeWireHarnessGetRequestSchema = z.object({
-  appId: z.string().min(1),
+  threadId: z.string().min(1),
   subject: z.string().min(1),
 }).passthrough();
 
 export const storeWireHarnessSetRequestSchema = z.object({
-  appId: z.string().min(1),
+  threadId: z.string().min(1),
   subject: z.string().min(1),
   state: z.unknown(),
 }).passthrough();
 
 export const storeWireHarnessClearRequestSchema = z.object({
-  appId: z.string().min(1),
+  threadId: z.string().min(1),
   subject: z.string().min(1),
 }).passthrough();
 
