@@ -137,18 +137,34 @@ Each step still crosses the guard on its own descriptor, so approvals, grants,
 and audit apply per step. A compound-level grant never rides into a step's
 `actAs`.
 
-## Remix opt-outs and briefs
+## Remix scanning and briefs
+
+`remix` configures how `vendo sync` scans for `<Remixable>` wrappers. Both
+keys are optional, so either can stand alone.
 
 `remix.ignoreSlots` names the `<Remixable>` slots sync should leave alone. A
 slot listed here is never captured, so it gets no baseline and no ✦.
+
+`remix.sources` names extra directories sync scans for wrappers, on top of the
+project root. Each path resolves from the project root and may sit outside it,
+for the repo whose app is `host/` and whose screens live in `../demos/`.
 
 ```json .vendo/overrides.json
 {
   "format": "vendo/overrides@3",
   "tools": {},
-  "remix": { "ignoreSlots": ["PricingTable"] }
+  "remix": {
+    "ignoreSlots": ["PricingTable"],
+    "sources": ["../demos"]
+  }
 }
 ```
+
+Captured module ids stay relative to the project root, so a file under an
+extra source reads as `../demos/maple/NetWorth.tsx`. Ids stay unique and
+existing baselines do not move. A `sources` path that is not a readable
+directory earns a sync warning naming the entry to fix, rather than quietly
+contributing no wrappers.
 
 `briefs` is the last top-level key: `{ name, text, tools? }` entries of reviewed
 prose attached to primitive tools. It parses and validates today, but nothing

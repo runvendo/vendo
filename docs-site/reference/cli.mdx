@@ -144,6 +144,16 @@ The `--json` object is `{ ok, exitCode, report, impact, notes, theme, baselines,
 | `2` | `<Remixable>` wrappers that cannot be captured (any mode); breaking tool changes under `--strict` that impact nothing saved; or a soft extraction failure under `--strict` |
 | `3` | breaking tool changes that impact saved apps, automations, or grants, under `--strict` |
 
+### `<Remixable>` attribution
+
+A wrapper is captured only when its `Remixable` provably comes from `@vendoai/ui`. A direct import is proof on its face. An import from one of your own modules counts too: sync reads that module's exports and follows them back to `@vendoai/ui` — `export { Remixable } from`, `export * from`, an `import` followed by an `export`, aliased or not, relative or through a `tsconfig` path, however many of your own modules the chain passes through. A chain that never reaches `@vendoai/ui` is never captured, so a same-named component of your own stays out.
+
+A wrapper sync finds and cannot trace is reported on the line under the pin count, naming the file, the line, the specifier it did not recognize, and the two edits that fix it: import `Remixable` directly from `@vendoai/ui/chrome`, or re-export it from the module the file imports it from. `--json` carries the same lines as `pins.unattributed`.
+
+An unattributed wrapper is a warning, not an exit code — sync cannot prove someone else's `Remixable` is Vendo's, so it reports instead of failing the build on the guess. It does block baseline pruning for that run: a wrapper sync stopped recognizing is still a wrapper, and its baseline is what existing forks render from.
+
+Sync scans the project root, plus any extra directories named in `remix.sources` in `.vendo/overrides.json`. See [Remix scanning](/reference/tool-overrides#remix-scanning-and-briefs).
+
 ### The theme re-scan
 
 Sync re-runs the deterministic theme scan and reconciles it with `.vendo/theme.json` against the merge base in `.vendo/theme.extracted.json`. Hand edits are never clobbered.
