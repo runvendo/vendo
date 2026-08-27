@@ -13,6 +13,17 @@ COPY . .
 RUN pnpm install --frozen-lockfile
 RUN pnpm exec turbo run build --filter=demo-bank
 
+# devDependencies stay installed through the build (tailwindcss, typescript,
+# turbo, vitest...) but ship no further: `next start` never touches them, and
+# vite — a devDependency of packages/ui's test suite — pins its own esbuild
+# ^0.25.0 (see the pnpm-workspace.yaml overrides comment), so a CVE-2025-68121
+# copy of esbuild survives in node_modules alongside the fixed 0.28.2 one
+# every real consumer declares. `pnpm prune --prod` doesn't clear it: pnpm's
+# virtual store keeps an unlinked package's extracted files even after no
+# project references it. Only a from-scratch install recomputes the store to
+# just the production graph.
+RUN rm -rf node_modules && pnpm install --prod --frozen-lockfile --config.confirmModulesPurge=false
+
 ENV NODE_ENV=production
 ENV HOSTNAME=0.0.0.0
 ENV PORT=3000
