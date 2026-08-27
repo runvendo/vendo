@@ -318,8 +318,8 @@ function workspacePackageDirs() {
   const list = /^packages:[^\S\n]*\n((?:[^\S\n]+-[^\n]*\n)+)/m.exec(yaml)?.[1];
   if (!list) throw new Error("dependency-guard: no `packages:` list in pnpm-workspace.yaml");
   const dirs = [];
-  for (const line of list.trimEnd().split("\n")) {
-    const pattern = /^\s*-\s*["']?([^"'\s]+)["']?$/.exec(line)?.[1];
+  for (const line of list.trimEnd().split(/\r?\n/)) {
+    const pattern = /^\s*-\s*["']?([^"'\r\n\s]+)["']?$/.exec(line)?.[1];
     if (!pattern) throw new Error(`dependency-guard: unreadable workspace entry: ${line.trim()}`);
     if (!pattern.includes("*")) {
       dirs.push(pattern);

@@ -42,5 +42,18 @@ for (const backend of backends()) {
       await ledger.record(scope, "hash_1", { status: 500, result: { error: "late" } });
       expect(await ledger.check(scope, "hash_1")).toEqual({ status: 201, result: { id: "wsc_1" } });
     });
+
+    it("claims fresh keys, throws conflict on differing hash, and returns null while unrecorded", async () => {
+      const claimScope = { tenant: "tenant_a", op: "workspace.commit", key: "key_claim_test" };
+      expect(await ledger.claim!(claimScope, "hash_c1")).toBe("claimed");
+      // Claiming again with same hash before record returns null
+      expect(await ledger.claim!(claimScope, "hash_c1")).toBeNull();
+      // Claiming with different hash throws conflict before mutation
+      await expect(ledger.claim!(claimScope, "hash_c2")).rejects.toMatchObject({ code: "conflict" });
+      // Record answer
+      await ledger.record(claimScope, "hash_c1", { status: 200, result: { claimed: true } });
+      // Claiming after record returns the recorded answer
+      expect(await ledger.claim!(claimScope, "hash_c1")).toEqual({ status: 200, result: { claimed: true } });
+    });
   });
 }

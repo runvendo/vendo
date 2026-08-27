@@ -10,6 +10,37 @@ import { jsonParam, text } from "./helpers/utils.js";
  *  on, so the two commit or roll back together. */
 export function createIdempotencyLedger(db: Db): IdempotencyLedger {
   return {
+    async claim(scope, requestHash) {
+      const inserted = await db.query(
+        `INSERT INTO vendo_idempotency_ledger (tenant, op, key, request_hash, status, result)
+         VALUES ($1, $2, $3, $4, 0, '{}'::jsonb)
+         ON CONFLICT (tenant, op, key) DO NOTHING
+         RETURNING request_hash, status, result`,
+        [scope.tenant, scope.op, scope.key, requestHash],
+      );
+      if (inserted.rows.length > 0) {
+        return "claimed";
+      }
+      const existing = await db.query(
+        `SELECT request_hash, status, result FROM vendo_idempotency_ledger
+         WHERE tenant = $1 AND op = $2 AND key = $3`,
+        [scope.tenant, scope.op, scope.key],
+      );
+      const row = existing.rows[0];
+      if (row === undefined) return "claimed";
+      if (text(row["request_hash"]) !== requestHash) {
+        throw new VendoError(
+          "conflict",
+          `idempotency key ${JSON.stringify(scope.key)} on ${scope.op} was already used for a `
+          + "different request body, so there is no recorded answer that belongs to this one — "
+          + "a key stands for ONE request. Mint a fresh key for a new request, and reuse a key "
+          + "only to retry the identical body.",
+        );
+      }
+      const status = Number(row["status"]);
+      if (status === 0) return null;
+      return { status, result: row["result"] as Json };
+    },
     async check(scope, requestHash) {
       const result = await db.query(
         `SELECT request_hash, status, result FROM vendo_idempotency_ledger
@@ -27,7 +58,9 @@ export function createIdempotencyLedger(db: Db): IdempotencyLedger {
           + "only to retry the identical body.",
         );
       }
-      return { status: Number(row["status"]), result: row["result"] as Json };
+      const status = Number(row["status"]);
+      if (status === 0) return null;
+      return { status, result: row["result"] as Json };
     },
     async record(scope, requestHash, answer) {
       // First writer wins: the answer a replay has already been handed must not
@@ -35,7 +68,9 @@ export function createIdempotencyLedger(db: Db): IdempotencyLedger {
       await db.query(
         `INSERT INTO vendo_idempotency_ledger (tenant, op, key, request_hash, status, result)
          VALUES ($1, $2, $3, $4, $5, $6::jsonb)
-         ON CONFLICT (tenant, op, key) DO NOTHING`,
+         ON CONFLICT (tenant, op, key) DO UPDATE
+         SET status = EXCLUDED.status, result = EXCLUDED.result
+         WHERE vendo_idempotency_ledger.status = 0 AND vendo_idempotency_ledger.request_hash = EXCLUDED.request_hash`,
         [scope.tenant, scope.op, scope.key, requestHash, answer.status, jsonParam(answer.result)],
       );
     },

@@ -141,6 +141,20 @@ export interface IdempotencyLedger {
       key already held is ignored, never an overwrite — the answer a replay
       already received must not change under it. */
   record(scope: IdempotencyScope, requestHash: string, answer: IdempotencyRecord): Promise<void>;
+  /**
+   * Atomically reserve (tenant, op, key) for this request hash BEFORE the mutation runs.
+   * Answers the reservation's owner: `"claimed"` when this caller won the key,
+   * or the {@link IdempotencyRecord} a prior owner already published. A differing
+   * request hash throws `conflict` HERE, so a refused request never reaches
+   * the mutation.
+   *
+   * Returns `null` when a prior caller claimed the key with the SAME hash but
+   * has not published an answer yet.
+   *
+   * OPTIONAL: an adapter that cannot reserve up front omits `claim` and callers
+   * fall back to `check` then `record`.
+   */
+  claim?(scope: IdempotencyScope, requestHash: string): Promise<IdempotencyRecord | null | "claimed">;
 }
 
 /** 01-core §12 */
