@@ -18,8 +18,8 @@
  */
 import { randomBytes } from "node:crypto";
 import { join, relative, sep } from "node:path";
-import type { AuthMatch } from "./init-auth.js";
-import { compositionModuleSource, type ScaffoldModel } from "./init-scaffolds.js";
+import type { AuthWire } from "./init-auth.js";
+import { authOwnSeamLines, compositionModuleSource, type ScaffoldModel } from "./init-scaffolds.js";
 
 /** Which authorization server fronts the door. Init no longer ASKS this — a
     Cloud key answers both environments at once, and the runtime resolves which
@@ -41,13 +41,15 @@ export interface McpPlanInput {
   compositionSpecifier: string;
   framework: "next" | "express" | "custom";
   /**
-   * The preset the fresh composition wired, or null. `mcp: true` is written
-   * ONLY when this is non-null: the door mints its own principals through a
+   * What the fresh composition wired, or null. `mcp: true` is written ONLY
+   * when this is non-null: the door mints its own principals through a
    * `HostOAuthAdapter` and composition THROWS without one (compose-mcp.ts:77-82).
-   * Every zero-arg preset carries the oauth half (auth-presets/identity.ts:215-231);
-   * `jwt` and "none" do not, and both surface here as null.
+   * Every preset carries the oauth half — `jwt()` composes through the same
+   * `composeHostAuthPreset` the vendor ones do (auth-presets/identity.ts:228-246)
+   * — and so does the hand-written seam, whose whole point is that `oauth`.
+   * Only "none yet" surfaces here as null, and only it is refused.
    */
-  authWired: AuthMatch | null;
+  authWired: AuthWire | null;
   /**
    * Does the composition ALREADY on disk wire one of those presets? A re-run
    * over an existing composition asks no auth question — init never rewrites a
@@ -119,7 +121,20 @@ export interface McpPlan {
   modelWritten: { provider: ScaffoldModel["provider"]; path: string } | null;
   /** Why nothing was written. Set means the other fields are empty. */
   blocked?: string;
+  /** …and whether the RUN may continue. An auth-less door is the use case
+      itself failing — the user asked for MCP, there is no door, and exiting 0
+      is how init used to say "Wired" over an install that answered nothing
+      they came for. A non-Next host is a different shape: its whole install
+      still lands and only the door is hand-work, so that one stays advisory. */
+  blockedFatal?: true;
 }
+
+/** The recipe the auth refusal prints: the seam `--auth custom` would have
+    written, so a reader who does not want a vendor preset can paste it into the
+    composition they already have instead of re-running anything. Rendered from
+    the SAME function init scaffolds with — one copy, or the printed recipe
+    drifts from the written one. */
+export const OWN_SEAM_RECIPE = authOwnSeamLines(true).replace(/^/gm, "  ").trimEnd();
 
 /** Why a service key cannot ride the broker posture, in the ONE voice both
     refusals speak: `cli.ts` catches the flag pair it can read off argv, and
@@ -178,7 +193,13 @@ export function wellKnownRouteSource(specifier: string): string {
 export function planMcp(input: McpPlanInput): McpPlan {
   const { root, appDir, composition, framework, authWired, serverActions, posture, serviceKey } = input;
   const models = input.models ?? null;
-  const refuse = (why: string): McpPlan => ({ changes: [], compositionSource: null, modelWritten: null, blocked: why });
+  const refuse = (why: string, fatal?: true): McpPlan => ({
+    changes: [],
+    compositionSource: null,
+    modelWritten: null,
+    blocked: why,
+    ...(fatal === undefined ? {} : { blockedFatal: fatal }),
+  });
 
   if (framework !== "next") {
     return refuse(
@@ -188,17 +209,21 @@ export function planMcp(input: McpPlanInput): McpPlan {
     );
   }
   if (authWired === null && input.authAlreadyWired !== true) {
-    // Init decides auth ONLY for a composition it is creating, so by the time
-    // this run ends the anonymous composition is on disk and a bare re-run can
-    // never reach this branch differently — telling the user to "re-run" alone
-    // was a loop with no exit. Name the file and say to replace it.
-    const composed = relative(root, composition).split(sep).join("/");
+    // FATAL, and refused before a single file is written. This is the MCP use
+    // case failing whole: outside agents sign in as somebody, and "none yet" is
+    // nobody. Init used to print this as a warning, write the anonymous
+    // composition anyway and exit 0 — which then made a re-run useless, because
+    // init never rewrites a composition it already wrote. Nothing is written
+    // now, so answering the question again is the entire fix.
     return refuse(
-      "The MCP door mints its own principals through an OAuth adapter and cannot open without one, so "
-      + "nothing MCP was written. Wire an auth preset that carries it — auth: clerk(), authJs(), supabase() "
-      + `or auth0() — then delete ${composed} and re-run \`npx vendo init\`: init never rewrites a `
-      + "composition it already wrote, so a re-run on its own adds no door. (jwt() and an anonymous "
-      + "composition do not carry the oauth half: https://docs.vendo.run/outside-agents/quickstart.)",
+      "You chose MCP and this run wired no door, so nothing was written at all. "
+      + "The door mints its own principals through an OAuth adapter, and \"none yet\" leaves an "
+      + "anonymous composition that has none. Re-run `npx vendo init --use-case mcp` and answer "
+      + "\"How do your users sign in?\" with your provider — Auth.js, Clerk, Supabase, Auth0 and JWT "
+      + "all carry the adapter — or with \"write my own\", which scaffolds this working seam for you:\n"
+      + `${OWN_SEAM_RECIPE}\n`
+      + "Details: https://docs.vendo.run/outside-agents/quickstart.",
+      true,
     );
   }
 

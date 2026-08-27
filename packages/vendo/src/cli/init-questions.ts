@@ -111,49 +111,41 @@ const MCP_SIGN_IN: InitQuestion = {
 
 const PRESETS = Object.keys(AUTH_FAMILY_INFO) as AuthPresetName[];
 
+/** The same seven answers the interactive question offers, in the same order —
+    one list, so a relayed question and a typed one cannot disagree. */
 const FULL_LIST: InitQuestionOption[] = [
   ...PRESETS.map((preset) => ({ label: AUTH_FAMILY_INFO[preset].name, flag: `--auth ${preset}` })),
-  { label: "Your own JWT scheme", flag: "--auth jwt" },
-  { label: "No signed-in user", flag: "--auth none" },
+  { label: "JWT", flag: "--auth jwt", note: "your API's own signed tokens" },
+  { label: "Write my own", flag: "--auth custom", note: "init scaffolds a working seam you replace" },
+  { label: "None yet", flag: "--auth none", note: "the agent acts with no signed-in user" },
 ];
 
-/** Interactive mode DETECTS the provider and only confirms it; the agent form
- *  handed back the full list with no recommendation whenever `wired` was empty,
- *  so a coding agent relaying it had to guess for the person. Same detection,
- *  same answer, all three ways it can come out:
+/** The auth question, relayed. Same question and same answers as an
+ *  interactive run — the scan only moves the RECOMMENDATION, and only where it
+ *  is unambiguous:
  *
- *   · one family wired → that family is recommended (today's question);
- *   · NOTHING detected → `none` is recommended, and the option says why. That is
- *     exactly what an interactive run settles for: it never asks at all, because
- *     there is nothing to choose from the advisory does not already name;
- *   · SEVERAL families → the full list with no recommendation, deliberately. Two
- *     matches is AMBIGUOUS, and naming one would name a provider the host may not
- *     use and hide the other — the same reason interactive shows its picker.
+ *   · one family detected → that family, with the dependency as its evidence;
+ *   · SEVERAL families → no recommendation, deliberately. Two matches is
+ *     AMBIGUOUS, and naming one would name a provider the host may not use and
+ *     hide the other;
+ *   · NOTHING detected → no recommendation either. Init used to recommend "none"
+ *     here and then write an anonymous composition nobody chose.
  */
-function authQuestion(detection: { wired?: AuthPresetName; matches: number }): InitQuestion {
+function authQuestion(detection: { wired?: AuthPresetName; dependency?: string; matches: number }): InitQuestion {
   const detected = detection.wired;
   if (detected === undefined) {
-    return detection.matches > 0
-      ? { id: "auth", prompt: "Which auth should Vendo wire?", options: FULL_LIST }
-      : {
-          id: "auth",
-          prompt: "Which auth should Vendo wire? Nothing was detected in package.json, so unless you name one the assistant acts with no signed-in user.",
-          options: [
-            { label: "No signed-in user", flag: "--auth none", recommended: true, note: "no auth dependency in package.json" },
-            ...FULL_LIST.filter((option) => option.flag !== "--auth none"),
-          ],
-        };
+    const evidence = detection.matches > 0
+      ? "Several auth dependencies are in package.json, so nothing is recommended — naming one would hide the other."
+      : "Nothing was detected in package.json, so this one is entirely yours.";
+    return { id: "auth", prompt: `How do your users sign in? ${evidence}`, options: FULL_LIST };
   }
   const name = AUTH_FAMILY_INFO[detected].name;
-  const others = [...PRESETS.filter((preset) => preset !== detected), "jwt"].join("|");
   return {
     id: "auth",
-    prompt: `It detected ${name}. Should the assistant act as your signed-in ${name} user?`,
-    options: [
-      { label: "Yes", flag: `--auth ${detected}`, recommended: true },
-      { label: "A different auth", flag: `--auth <${others}>`, note: "replace the placeholder with one of those four names" },
-      { label: "No signed-in user", flag: "--auth none" },
-    ],
+    prompt: `How do your users sign in? package.json says ${name}${detection.dependency === undefined ? "" : ` (${detection.dependency})`}.`,
+    options: FULL_LIST.map((option) => (option.flag === `--auth ${detected}`
+      ? { ...option, recommended: true, note: `detected ${detection.dependency ?? name}` }
+      : option)),
   };
 }
 
@@ -186,7 +178,10 @@ export async function initQuestions(input: {
   const questions: InitQuestion[] = [];
   if (options.useCase === undefined) questions.push(useCaseQuestion(input.agentLoopRoute ?? null));
   if (options.auth === undefined) {
-    questions.push(authQuestion({ ...(detected === undefined ? {} : { wired: detected }), matches: detection.matches.length }));
+    questions.push(authQuestion({
+      ...(detection.wired === null ? {} : { wired: detection.wired.preset, dependency: detection.wired.dependency }),
+      matches: detection.matches.length,
+    }));
   }
   // A Cloud key answers the model AND how outside agents sign in, so the MCP
   // arm asks its own spelling of the same question IN THE SAME SLOT — two

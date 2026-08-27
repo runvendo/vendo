@@ -112,7 +112,7 @@ describe("the Next externals list the docs print is the one init writes", () => 
  *  their readers down. */
 const scaffoldExports = (): Set<string> => {
   const names = new Set<string>();
-  for (const auth of [null, { preset: "authJs" as const, dependency: "next-auth" }]) {
+  for (const auth of [null, { kind: "preset" as const, preset: "authJs" as const, dependency: "next-auth" }]) {
     for (const [, name] of compositionModuleSource({ serverActions: false, auth, agentLoop: true }).matchAll(
       /export (?:const|function) (\w+)/g,
     )) {
