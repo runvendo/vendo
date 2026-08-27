@@ -6,9 +6,13 @@ description: "Spread Vendo's guarded tool pack into an AI SDK or Mastra loop you
 
 Keep your loop. Vendo adds the guarded tools and renders what they return.
 
-Every path starts with [`npx vendo init`](/reference/vendo-init), which reads your repo, asks how
-people will use your agent, and writes the wiring. Pick how your loop runs and
-follow that page end to end — each one is complete on its own.
+Every path starts with [`npx vendo init`](/reference/vendo-init), which reads your repo before it
+asks anything. It asks how people will use your agent, how your users sign in,
+where the app runs in dev, and whether it may send your source to a model
+provider to grade your tool catalog — every one Enter-to-accept, and all of them
+[listed with their flags](/reference/vendo-init#what-an-interactive-run-asks) —
+then writes the wiring. Pick how your loop runs and follow that page end to end —
+each one is complete on its own.
 
 <CardGroup cols={3}>
 
