@@ -193,10 +193,11 @@ rejects a malformed key before writing it, and doctor warns on one already in
 the environment — [`E-CLOUD-001`](/production/troubleshooting/e-cloud-001).
 Neither makes a network call to do so.
 
-To point at a different console, for instance a staging environment:
+`VENDO_CONSOLE_URL` is the console's own origin. Point it at a different
+console, for instance a staging environment:
 
 ```bash highlight={1}
-export VENDO_CLOUD_URL=https://console.staging.vendo.run
+export VENDO_CONSOLE_URL=https://console.staging.vendo.run
 ```
 
 Individual CLI commands also take `--api-url <url>` for a one-off override.

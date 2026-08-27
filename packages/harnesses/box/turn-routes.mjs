@@ -303,7 +303,7 @@ export const createSessionRoutes = (options = {}) => {
     //
     // A CHANGED BRIEF: the SDK fixes `systemPrompt` when the session opens, so
     // a warm session keeps thinking with whatever it opened with. The host's
-    // [Situation] is composed per turn and is "current turn only", which is
+    // [Context] is composed per turn and is "current turn only", which is
     // simply false unless the session reopens with it. This one KEEPS the
     // memory — `sessionId` still resumes.
     //

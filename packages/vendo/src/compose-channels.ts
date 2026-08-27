@@ -34,7 +34,7 @@ const LINK_DELIVERY_REF = "link";
 /** ADAPTER RULE, channels seam (cloned from selectConnections). Precedence:
  *    1. `channels` unset or `{ text: false }` — no channel, and SILENTLY so:
  *       a deployment that never asked for texts must not be nagged about a key;
- *    2. `{ text: true }` + VENDO_API_KEY — the Cloud adapter (VENDO_CLOUD_URL
+ *    2. `{ text: true }` + VENDO_API_KEY — the Cloud adapter (VENDO_CONSOLE_URL
  *       overrides the console base URL);
  *    3. `{ text: true }` with no key — the unconfigured surface, naming the fix.
  *       Silently mounting nothing is the trap this ladder exists to avoid.

@@ -331,6 +331,21 @@ export function bootSummaryFor(composition: VendoComposition): BootSummary {
       detail: config.guard === undefined ? "createVendo({ profile })" : "createVendo({ guard })",
     });
   }
+  // …and the file that posture is waiting on, when it is not there. The guard
+  // falls back silently by design (guard/src/policy.ts:115) and keeps serving,
+  // so this line is the only place a deployment running on defaults says so.
+  // Judged by its OWNER at compose (compose-guard.ts) and read here as a
+  // property, exactly like the ephemeral-disk warning: this block may not stat.
+  if (composition.policyFileMissing !== undefined) {
+    warnings.push({
+      label: "guard",
+      lines: [
+        `${composition.policyFileMissing} is missing — this deployment's rules are NOT in force.`,
+        "Defaults are in effect: destructive and ungraded actions ask, everything else runs.",
+        "Restore the file, or pass the rules inline: guard({ policy: { rules: [ … ] } }).",
+      ],
+    });
+  }
 
   return { rows, warnings };
 }

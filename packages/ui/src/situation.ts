@@ -1,5 +1,5 @@
 /**
- * Spec 2026-08-05 §2/§3 — the [Situation] channel's CLIENT half: what the
+ * Spec 2026-08-05 §2/§3 — the [Context] channel's CLIENT half: what the
  * user's screen shows (an aria-snapshot of the visible host page, URL + title
  * prepended) plus any data the host published through useVendoContext,
  * merged per send and attached to the POST /threads body. Current-turn only by

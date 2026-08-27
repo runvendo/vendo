@@ -426,9 +426,8 @@ when you put the choice to your human, rather than after they pick.
 
 **Both walkthroughs build on one file.** Init writes the `createVendo` call in
 `lib/vendo.ts` (`src/lib/vendo.ts` when the app lives under `src/`), with the
-wire route a thin handler over it. The caller resolver beside it is YOURS to
-add — init does not write it, and a chat route that imports a name nobody
-exported is a compile error on your human's first build:
+wire route a thin handler over it. Init exports the caller resolver beside it —
+verify both exports exist before you wire a chat route to them:
 
 ```ts lib/vendo.ts
 export const resolvePrincipal = (req: Request) => auth.principal(req);
@@ -491,12 +490,12 @@ the answer once they have an https origin to point it at.
 
 1. **`mcp: true` plus the OAuth adapter.** The door mints its own principals
    through a `HostOAuthAdapter`, and `createVendo` THROWS at composition
-   without one. Every named preset carries it, so `--auth
+   without one. `auth` is the one door that holds it: hand it a preset, or
+   hand it the object a preset returns and write the members yourself —
+   `oauth` is a member either way. Every named preset fills it, so `--auth
    authJs|clerk|supabase|auth0` (or `jwt({ secret })`) is the whole answer;
-   `--auth none` is NOT — it writes a demo `principal` and no oauth seam, so
-   the door stays shut until that seam is filled. An `auth` preset owns the
-   seam outright: pass `oauth` (or `principal`, or `actAs`) beside `auth` and
-   `createVendo` THROWS naming the mixed keys. Which preset:
+   `--auth none` is NOT — it writes `auth: { principal }` and no `oauth`
+   member, so the door stays shut until that member is filled. Which preset:
    [host auth](/howto/auth).
 
    ```ts
@@ -507,18 +506,20 @@ the answer once they have an https origin to point it at.
    ```
 
    **No login yet?** No preset applies — there is no session to read, and
-   installing a provider's SDK is not a login. Fill two seams yourself instead,
-   never beside `auth` (one preset or the per-seam trio; mixing throws at
-   composition): keep the demo `principal` `--auth none` wrote, and add an
-   `oauth` whose `session` hands the door that same subject instead of bouncing
-   a browser — the door still renders its own consent page.
+   installing a provider's SDK is not a login. Write the two members yourself,
+   in the same `auth` object `--auth none` already wrote: keep its demo
+   `principal`, and add an `oauth` whose `session` hands the door that same
+   subject instead of bouncing a browser — the door still renders its own
+   consent page.
 
    ```ts
    export const vendo = createVendo({
-     principal: async () => ({ kind: "user", subject: "demo-user" }),
-     oauth: {
-       session: async () => ({ subject: "demo-user" }),
-       principal: async (subject) => ({ kind: "user", subject }),
+     auth: {
+       principal: async () => ({ kind: "user", subject: "demo-user" }),
+       oauth: {
+         session: async () => ({ subject: "demo-user" }),
+         principal: async (subject) => ({ kind: "user", subject }),
+       },
      },
      mcp: true,
    });
@@ -532,6 +533,11 @@ the answer once they have an https origin to point it at.
    not a multi-user product. Server-action-bound tools answer
    `not-implemented` over MCP whatever `actAs` says — they execute in-process
    with the present user's session, and a door call has none.
+
+   Top-level `principal`, `actAs`, and `oauth` are the deprecated spelling of
+   those same members, and `memberships` has a top-level spelling too: each
+   still works alone, but pass any of the four beside `auth` and `createVendo`
+   throws naming the mixed keys.
 
 2. **The discovery route.** The door's discovery documents live at ORIGIN-ROOT
    paths, outside `/api/vendo`, so the catch-all route never sees them and that

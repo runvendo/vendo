@@ -337,7 +337,7 @@ export async function localMachine(options: LocalMachineOptions): Promise<Sessio
       //
       // A CHANGED BRIEF is the other reason, and it is not optional: the SDK
       // fixes `systemPrompt` when the session opens, so on a warm session turn
-      // 1's [Situation] would BECOME the standing prompt and every later turn's
+      // 1's [Context] would BECOME the standing prompt and every later turn's
       // would be dropped — the spec's "current turn only" false on this machine.
       // Unlike a truncation this keeps the memory: `resume` rides the reopen.
       if (held.session !== undefined

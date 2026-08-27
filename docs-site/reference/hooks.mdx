@@ -54,7 +54,7 @@ A failed read keeps the last good collection, so you can render a retry affordan
 | `useVendoThread(threadId?)` | the streaming conversation. See [Threads](#threads) | |
 | `useVendoChat(options)` | the same conversation against an `@vendoai/agents` mount, without a provider. See [Standalone agent chat](#standalone-agent-chat) | |
 | `useVendoStatus()` | `{ posture, connected, memberships }` | |
-| `useVendoContext(data)` | nothing. Publishes `data` into the situation channel while mounted | |
+| `useVendoContext(data)` | nothing. Publishes `data` into the prompt's `[Context]` block while mounted | |
 | `useVendoOverlay(options?)` | `VendoOverlayController`. See [Overlay control](#overlay-control) | |
 | `useMobileTakeover()` | `{ active, keyboardInset, style }`, the full-bleed mobile breakpoint | |
 | `useApprovalSheetPresentation()` | `boolean`, whether an in-thread consent presents as the bottom sheet | |
@@ -79,7 +79,7 @@ A hook's `isLoading` still tracks only the first read, so drive mutation-pending
 | `useVendoRoutes()` | the `VendoRouteMap` |
 | `useVendoNavigate()` | the host's `onNavigate`, or `undefined` |
 
-There is no `useVendo`. `useVendoProvider` is the context accessor, because `useVendoContext(data)` owns the situation-channel name.
+There is no `useVendo`. `useVendoProvider` is the React-context accessor, because `useVendoContext(data)` owns the [agent-context](/customize/context) name.
 
 ## Polling
 
@@ -188,7 +188,7 @@ The "type while it is answering, and it sends when the reply lands" behavior bel
 
 ## Standalone agent chat
 
-`useVendoChat` is `useVendoThread`'s thinner sibling, for a page talking to an [`@vendoai/agents` mount](/reference/server-api#handler). No provider, no client, no embed chrome, no situation channel — just the transport, the thread-id round trip, and the two things you have to render for an agent that asks permission.
+`useVendoChat` is `useVendoThread`'s thinner sibling, for a page talking to an [`@vendoai/agents` mount](/reference/server-api#handler). No provider, no client, no embed chrome, no `[Context]` block — just the transport, the thread-id round trip, and the two things you have to render for an agent that asks permission.
 
 ```ts
 const {

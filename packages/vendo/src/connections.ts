@@ -131,7 +131,7 @@ export function byoConnections(connectors: Connector[]): ConnectionsService {
 
 export interface CloudConnectionsOptions {
   apiKey: string;
-  /** Defaults to the Vendo console; the composition seam passes VENDO_CLOUD_URL. */
+  /** Defaults to the Vendo console; the composition seam passes VENDO_CONSOLE_URL. */
   baseUrl?: string;
   /** Catalog scoping, mirroring cloudTools' `apps`: a host that scopes its
    * cloud tools explicitly passes the same list here so the connect dock
@@ -193,7 +193,7 @@ export function cloudConnections(options: CloudConnectionsOptions): ConnectionsS
       // connections list (or a not-found account) forever.
       throw new VendoError(
         "validation",
-        `Vendo Cloud connections returned a non-JSON ${response.status} response — check VENDO_CLOUD_URL`,
+        `Vendo Cloud connections returned a non-JSON ${response.status} response — check VENDO_CONSOLE_URL`,
       );
     }
   }

@@ -59,7 +59,7 @@ export default function TransactionDetailPage() {
 
   const [categoryOverride, setCategoryOverride] = React.useState<{ id: string; category: Category } | null>(null)
 
-  // The structured half of the agent's [Situation]: its automatic screen
+  // The structured half of the agent's [Context]: its automatic screen
   // snapshot reads rendered text only, so it never sees these IDs or the exact
   // cents — the things it needs to act on this record rather than describe it.
   // Memoized because useVendoContext republishes on object identity.

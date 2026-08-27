@@ -163,9 +163,10 @@ export interface SyncFlowResult {
  * dotenv ships with the repo, so membership is exactly what extraction reads
  * from a dotenv: a credential `vendo login`/BYO writes there, the extraction
  * model pin, and the dev-server URL init writes to `.env.local`. Every
- * redirect/injection var (NODE_OPTIONS, npm_config_*, VENDO_CLOUD_URL,
- * ANTHROPIC_BASE_URL) earns its keep by being ABSENT, so it reaches a child only
- * from the developer's own shell, never from the checkout.
+ * redirect/injection var (NODE_OPTIONS, npm_config_*, VENDO_CONSOLE_URL and its
+ * retired VENDO_CLOUD_URL spelling, ANTHROPIC_BASE_URL) earns its keep by being
+ * ABSENT, so it reaches a child only from the developer's own shell, never from
+ * the checkout.
  */
 export const EXTRACTION_DOTENV_ALLOWLIST: ReadonlySet<string> = new Set([
   "VENDO_API_KEY",
@@ -192,9 +193,10 @@ export const EXTRACTION_DOTENV_ALLOWLIST: ReadonlySet<string> = new Set([
  * sees a flat map). `fileAllowlist` names the ONLY keys a project dotenv may
  * contribute; the EXTRACTION path passes one (EXTRACTION_DOTENV_ALLOWLIST)
  * because its env is forwarded into coding-agent child processes, so a repo file
- * that set NODE_OPTIONS / npm_config_registry / VENDO_CLOUD_URL could otherwise
- * inject code into or redirect them. A general reader (doctor's config checks)
- * passes none and gets every file key — it never spawns a child with them — and
+ * that set NODE_OPTIONS / npm_config_registry / VENDO_CONSOLE_URL (or its
+ * retired VENDO_CLOUD_URL spelling) could otherwise inject code into or redirect
+ * them. A general reader (doctor's config checks) passes none and gets every
+ * file key — it never spawns a child with them — and
  * either way AGENT_ENDPOINT_ENV_VAR is dropped, because no caller may take the
  * coding-agent endpoint from a project file. Dropping here (rather than at each
  * consumer) carries the guarantee to every rung for free: the only remaining
@@ -760,7 +762,15 @@ async function probeImpact(input: {
 }): Promise<ToolImpact[] | null> {
   const { report, options, env, output, note } = input;
   const base = (env.VENDO_BASE_URL ?? `http://localhost:3000${await declaredMount(options.root)}`).replace(/\/+$/, "");
-  const wireUrl = (options.url ?? env.VENDO_URL ?? `${base}/api/vendo`).replace(/\/+$/, "");
+  // VENDO_URL is retired: a fourth "a URL" env var whose whole job was
+  // overriding a wire path that `--url` already overrides per run, and
+  // VENDO_BASE_URL already derives. Still read, so a shell that exports it keeps
+  // working, and it says which of the two survived.
+  const fromRetiredVar = env.VENDO_URL?.trim() === "" ? undefined : env.VENDO_URL;
+  if (options.url === undefined && fromRetiredVar !== undefined) {
+    note("VENDO_URL is retired — it still works, but use `vendo sync --url` for one run, or VENDO_BASE_URL for the deployment");
+  }
+  const wireUrl = (options.url ?? fromRetiredVar ?? `${base}/api/vendo`).replace(/\/+$/, "");
   const tools = [...new Set([
     ...report.breaking.map((breaking) => breaking.tool),
     ...report.tools.changed,

@@ -132,15 +132,19 @@ export const composeConfig = (input: CreateVendoConfig): Pick<VendoComposition,
   // before anything is constructed, rather than as a dead link months later.
   validateRouteConfig(config.routes);
   validateUploadMaxBytes(config.uploadMaxBytes);
-  // 09-vendo §2.1 — one preset or the per-seam trio, never mixed. Checked
+  // 09-vendo §2.1 — one preset or the per-seam keys, never mixed. Checked
   // before anything is constructed so a miswired config leaks no resources.
+  // `memberships` is in the list for the reason the others are, and harder: it
+  // decides whether Vendo asks Cloud who the caller's orgs are, so a top-level
+  // one lost to `auth.memberships` handed a host the directory they thought
+  // they had just declined.
   if (config.auth !== undefined) {
-    const mixed = (["principal", "actAs", "oauth"] as const)
+    const mixed = (["principal", "actAs", "oauth", "memberships"] as const)
       .filter((key) => config[key] !== undefined);
     if (mixed.length > 0) {
       throw new VendoError(
         "validation",
-        `createVendo({ auth }) already fills the principal, actAs, and oauth seams from one preset (09-vendo §2.1); remove ${mixed.map((key) => `\`${key}\``).join(", ")} or drop \`auth\` — one preset or the per-seam trio, never mixed.`,
+        `createVendo({ auth }) already fills the principal, actAs, oauth and memberships seams from one preset (09-vendo §2.1); remove ${mixed.map((key) => `\`${key}\``).join(", ")} or drop \`auth\` — one preset or the per-seam keys, never mixed.`,
       );
     }
   }

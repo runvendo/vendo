@@ -82,7 +82,7 @@ The pending claim persists to `~/.vendo/pending-claims/<hash>.json` (mode `0600`
 | Flag | Effect |
 | --- | --- |
 | `--wait <seconds>` | bound this invocation's polling, then exit resumably with code `0`. `--wait 0` opens the claim, polls once, and exits |
-| `--api-url <url>` | overrides `VENDO_CLOUD_URL` |
+| `--api-url <url>` | overrides `VENDO_CONSOLE_URL` |
 
 `--wait` takes a whole number of seconds; anything else exits `1`. The command takes no email, and `--email` is not a flag.
 
@@ -129,9 +129,9 @@ Sync fails soft. An extraction failure still exits `0`, because a sync problem m
 | `--push-components` / `--no-push-components` | answer the registered-component upload question without a prompt |
 | `--ai` / `--no-ai` | force the judgment pass on or off. `--no-watermark` is an accepted alias of `--no-ai` |
 | `--engine <name>` | `claude`, `codex`, or `npx`. An unavailable pin skips loudly and never falls back |
-| `--url <url>` | override `VENDO_URL` for the blast-radius query against a running dev server |
+| `--url <url>` | the wire URL for the blast-radius query against a running dev server. Defaults to `${VENDO_BASE_URL}/api/vendo` |
 | `--key <key>` | override `VENDO_API_KEY` |
-| `--api-url <url>` | override `VENDO_CLOUD_URL` |
+| `--api-url <url>` | override `VENDO_CONSOLE_URL` |
 
 The `--json` object is `{ ok, exitCode, report, impact, notes, theme, baselines, components }`. An `error` field appears when extraction itself failed soft.
 
@@ -288,7 +288,7 @@ Client for the public Vendo Cloud API. Read results print as JSON.
 
 | Global flag | Effect |
 | --- | --- |
-| `--api-url <url>` | overrides `VENDO_CLOUD_URL` |
+| `--api-url <url>` | overrides `VENDO_CONSOLE_URL` |
 | `--json` | advertised but inert; read subcommands already print JSON |
 
 There is no validate subcommand and no deploy subcommand. Key problems surface on the first real call, and automations need no deploy step of their own — they run in your process, woken by Cloud's heartbeat on `POST /api/vendo/tick`.

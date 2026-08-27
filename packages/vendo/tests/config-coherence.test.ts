@@ -375,7 +375,7 @@ describe("connectedAccounts and connectors are two keys, two products", () => {
     // surface loses gmail_GMAIL_SEND_THING; drop it from selectConnections and
     // the catalog advertises slack and notion the agent cannot invoke.
     vi.stubEnv("VENDO_API_KEY", "vnd_test_key");
-    vi.stubEnv("VENDO_CLOUD_URL", await stubConsole());
+    vi.stubEnv("VENDO_CONSOLE_URL", await stubConsole());
     const vendo = createVendo({
       models: { default: {} as LanguageModel },
       principal: async () => principal,
@@ -395,7 +395,7 @@ describe("connectedAccounts and connectors are two keys, two products", () => {
     const warn = vi.fn();
     vi.spyOn(console, "warn").mockImplementation(warn);
     vi.stubEnv("VENDO_API_KEY", "vnd_test_key");
-    vi.stubEnv("VENDO_CLOUD_URL", await stubConsole());
+    vi.stubEnv("VENDO_CONSOLE_URL", await stubConsole());
     const vendo = createVendo({
       models: { default: {} as LanguageModel },
       principal: async () => principal,
@@ -424,7 +424,7 @@ describe("connectedAccounts and connectors are two keys, two products", () => {
     // The trap `connectorApps` had: an explicit connector silently voided the
     // scope. Two keys, and each still fills its own half.
     vi.stubEnv("VENDO_API_KEY", "vnd_test_key");
-    vi.stubEnv("VENDO_CLOUD_URL", await stubConsole());
+    vi.stubEnv("VENDO_CONSOLE_URL", await stubConsole());
     const vendo = createVendo({
       models: { default: {} as LanguageModel },
       principal: async () => principal,
@@ -441,7 +441,7 @@ describe("connectedAccounts and connectors are two keys, two products", () => {
     // RED: treat `[]` as unset in selectConnectors and a key alone mounts the
     // console's whole catalog behind a host that said "none".
     vi.stubEnv("VENDO_API_KEY", "vnd_test_key");
-    vi.stubEnv("VENDO_CLOUD_URL", await stubConsole());
+    vi.stubEnv("VENDO_CONSOLE_URL", await stubConsole());
     const vendo = createVendo({
       models: { default: {} as LanguageModel },
       principal: async () => principal,

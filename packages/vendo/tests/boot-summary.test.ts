@@ -301,6 +301,63 @@ describe("the composed facts", () => {
     });
   });
 
+  /**
+   * The guard reads `.vendo/policy.json` and finds nothing — the one config
+   * failure the runtime is DESIGNED to swallow (guard/src/policy.ts:115). The
+   * fallback stays; the silence does not.
+   *
+   * Composed for real against a real working directory, because the whole claim
+   * is that the judgment looks at a disk: `guard({ policy: {} })` is the
+   * file-based spelling `vendo init` writes, and the only difference between
+   * these two cases is whether the file is there.
+   */
+  describe("the policy file behind that posture", () => {
+    const filePolicy: CreateVendoConfig = { ...base, guard: { policy: {} } };
+    const inside = <T>(directory: string, run: () => T): T => {
+      const before = process.cwd();
+      process.chdir(directory);
+      try {
+        return run();
+      } finally {
+        process.chdir(before);
+      }
+    };
+    // Only the guard's own warnings are this suite's claim — the store adds an
+    // ephemeral-disk warning of its own on CI runners, which is not under test.
+    const guardWarnings = (warnings: readonly { label: string }[]) =>
+      warnings.filter((warning) => warning.label === "guard");
+
+    it("warns, naming the path and the posture now deciding instead", () => {
+      const empty = fs.mkdtempSync(join(tmpdir(), "vendo-policy-absent-"));
+      expect(guardWarnings(inside(empty, () => summaryFor(filePolicy)).warnings)).toEqual([{
+        label: "guard",
+        lines: [
+          ".vendo/policy.json is missing — this deployment's rules are NOT in force.",
+          "Defaults are in effect: destructive and ungraded actions ask, everything else runs.",
+          "Restore the file, or pass the rules inline: guard({ policy: { rules: [ … ] } }).",
+        ],
+      }]);
+    });
+
+    it("says nothing when the file is there", () => {
+      const project = fs.mkdtempSync(join(tmpdir(), "vendo-policy-present-"));
+      fs.mkdirSync(join(project, ".vendo"), { recursive: true });
+      fs.writeFileSync(join(project, ".vendo", "policy.json"), '{"format":"vendo/policy@1","rules":[]}');
+      expect(guardWarnings(inside(project, () => summaryFor(filePolicy)).warnings)).toEqual([]);
+    });
+
+    // The opt-out the config honestly supports: rules passed in code replace the
+    // file with no merge (guard/src/policy.ts:141), so there is no file to miss.
+    // Same for a deployment that configured no policy at all — the guard reports
+    // `unconfigured`, earns no row, and this warning would be about nothing.
+    it("says nothing for rules passed inline, or for no policy at all", () => {
+      const empty = fs.mkdtempSync(join(tmpdir(), "vendo-policy-inline-"));
+      expect(guardWarnings(inside(empty, () => summaryFor({ ...base, guard: { policy: { rules: [] } } })).warnings))
+        .toEqual([]);
+      expect(guardWarnings(inside(empty, () => summaryFor(base)).warnings)).toEqual([]);
+    });
+  });
+
   // The row's whole value is knowing WHICH auth is live, so it is read off the
   // real preset factories — not off a `name` a test wrote itself, which would
   // only prove the test agrees with the test.

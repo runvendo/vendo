@@ -179,6 +179,9 @@ export interface VendoComposition {
   /** The app-then-broker risk chain the guard AND the automations engine take. */
   resolveRisk: RiskResolver;
   warnPresentCredentialsNotForwarded: VendoActionsConfig["onPresentCredentialsNotForwarded"];
+  /** The policy file this deployment expects and does not have, judged at
+      compose so the boot block can read it as a fact (boot-summary.ts). */
+  policyFileMissing: string | undefined;
 
   // ── compose-actions.ts ─────────────────────────────────────────────────────
   configuredBaseUrl: string | undefined;

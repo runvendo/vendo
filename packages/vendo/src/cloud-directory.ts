@@ -18,7 +18,7 @@ import {
 
 export interface CloudDirectoryOptions {
   apiKey: string;
-  /** Defaults to the Vendo console; the composition seam passes VENDO_CLOUD_URL. */
+  /** Defaults to the Vendo console; the composition seam passes VENDO_CONSOLE_URL. */
   baseUrl?: string;
   fetch?: typeof fetch;
   /** Per-request abort budget. Short, because this is on the REQUEST HOT PATH —

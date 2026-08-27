@@ -14,6 +14,7 @@ import {
   selectSandbox,
 } from "@vendoai/apps";
 import {
+  consoleUrlFromEnv,
   VendoError,
   type FilesAdapter,
   type Harness,
@@ -103,7 +104,7 @@ export interface AgentConfig {
    * firing cannot drift into two agents wearing one name. `undefined` meaning
    * "the default" is what keeps a conditional that falls through from silently
    * stripping the rules; replacing wholesale hands the base rules and the
-   * forgery-safe `[User]`/`[Situation]` blocks to the host, to keep or to drop.
+   * forgery-safe `[User]`/`[Context]` blocks to the host, to keep or to drop.
    */
   system?: SystemPromptHook;
 }
@@ -248,7 +249,7 @@ export function provideCloudAdapters(adapters: CloudAdapters): void {
 const cloudKey = (): { apiKey: string; baseUrl?: string } | undefined => {
   const apiKey = process.env["VENDO_API_KEY"];
   if (apiKey === undefined || apiKey === "") return undefined;
-  const baseUrl = process.env["VENDO_CLOUD_URL"];
+  const baseUrl = consoleUrlFromEnv();
   return { apiKey, ...(baseUrl === undefined ? {} : { baseUrl }) };
 };
 

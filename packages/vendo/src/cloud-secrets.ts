@@ -29,7 +29,7 @@ import { consoleSender, defaultFetch, raiseCloudError, type SecretsProvider } fr
 
 export interface CloudSecretsOptions {
   apiKey: string;
-  /** Defaults to the Vendo console; the composition seam passes VENDO_CLOUD_URL. */
+  /** Defaults to the Vendo console; the composition seam passes VENDO_CONSOLE_URL. */
   baseUrl?: string;
   fetch?: typeof fetch;
   /** Per-request abort budget (default 30s, hosted-store's). */
@@ -81,7 +81,7 @@ export function cloudSecrets(options: CloudSecretsOptions): SecretsProvider {
         // misdeployed Cloud base — the SERVICE misbehaving, never the caller's
         // fault, so this is a plain Error (not a wire-legal "validation" code).
         throw new Error(
-          `Vendo Cloud secrets returned a non-JSON ${response.status} response — check VENDO_CLOUD_URL`,
+          `Vendo Cloud secrets returned a non-JSON ${response.status} response — check VENDO_CONSOLE_URL`,
         );
       }
       const value = (payload as { value?: unknown } | null)?.value;

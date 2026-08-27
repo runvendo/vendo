@@ -11,6 +11,7 @@
  * tool, and sandbox traffic server-side; real agent turns fill those charts.
  */
 import { join } from "node:path";
+import { consoleUrlFromEnv } from "@vendoai/core";
 import { createStore, type VendoStore } from "@vendoai/store";
 import { seedConsoleData } from "../src/demo-script/console-seed";
 
@@ -28,7 +29,7 @@ async function main(): Promise<void> {
     const apiKey = process.env.VENDO_API_KEY;
     if (!apiKey) throw new Error("--cloud needs VENDO_API_KEY (Yousef's Vendo Cloud key)");
     const { hostedStore } = await import("@vendoai/vendo/server");
-    const baseUrl = process.env.VENDO_CLOUD_URL;
+    const baseUrl = consoleUrlFromEnv();
     store = hostedStore({ apiKey, ...(baseUrl === undefined ? {} : { baseUrl }) });
     console.log(`Seeding the Vendo Cloud HOSTED store${baseUrl === undefined ? "" : ` at ${baseUrl}`} — this writes into the live tenant.`);
   } else {

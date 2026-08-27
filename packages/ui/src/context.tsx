@@ -65,7 +65,7 @@ export interface VendoContextValue {
       also reaches the model through its briefing. */
   intl: KitIntl;
   /** Spec 2026-08-05 §2 — whether sends snapshot the visible host page into
-      the [Situation] channel. Default true; false disables capture entirely
+      the [Context] channel. Default true; false disables capture entirely
       (useVendoContext data still rides). */
   captureScreen: boolean;
   /** The host's own pages, by the name a generated `<Link to>` may reach for.
@@ -247,7 +247,7 @@ function bareContextValue(): VendoContextValue {
 
 /** Everything VendoProvider supplies — the seam every hook and surface reads.
  *  Named `useVendoProvider` (not `useVendoContext`) since 2026-08-05: the
- *  host-facing `useVendoContext(data)` publishes into the agent's [Situation]
+ *  host-facing `useVendoContext(data)` publishes into the agent's [Context]
  *  channel and owns that name.
  *
  *  The provider is OPTIONAL: with none above, this answers the shared defaults

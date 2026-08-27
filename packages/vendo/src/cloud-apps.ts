@@ -21,7 +21,7 @@ import {
 
 export interface CloudAppsOptions {
   apiKey: string;
-  /** Defaults to the Vendo console; the composition seam passes VENDO_CLOUD_URL. */
+  /** Defaults to the Vendo console; the composition seam passes VENDO_CONSOLE_URL. */
   baseUrl?: string;
   fetch?: typeof fetch;
   /** Per-request abort budget (default 30s, hosted-store's). */
@@ -73,7 +73,7 @@ export function cloudApps(options: CloudAppsOptions): CloudAppsClient {
       // fault, so this is a plain Error (not a wire-legal "validation" code
       // that would blame the share/publish input).
       throw new Error(
-        `Vendo Cloud apps returned a non-JSON ${response.status} response — check VENDO_CLOUD_URL`,
+        `Vendo Cloud apps returned a non-JSON ${response.status} response — check VENDO_CONSOLE_URL`,
       );
     }
     return schema.parse(payload);

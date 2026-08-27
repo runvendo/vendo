@@ -109,7 +109,8 @@ export function packOnce(): Promise<PackedVendo> {
  * booted app's posture is the example's documented BYO posture. */
 const POSTURE_ENV_KEYS = [
   "VENDO_API_KEY",
-  "VENDO_CLOUD_URL",
+  "VENDO_CONSOLE_URL",
+  "VENDO_CLOUD_URL", // the retired spelling: scrub BOTH, or a set one leaks in
   "E2B_API_KEY",
   "COMPOSIO_API_KEY",
   "ANTHROPIC_API_KEY",

@@ -9,7 +9,7 @@
  * every deployment of the product, and rearranging who is in which company from
  * it is the same class of power the admin scope already fences.
  */
-const base = (process.env.VENDO_CLOUD_URL ?? "https://console.vendo.run").replace(/\/+$/, "");
+const base = (process.env.VENDO_CONSOLE_URL ?? process.env.VENDO_CLOUD_URL ?? "https://console.vendo.run").replace(/\/+$/, "");
 const adminKey = process.env.VENDO_API_KEY_ADMIN;
 const runtimeKey = process.env.VENDO_API_KEY;
 if (!adminKey) throw new Error("seed:tenant needs VENDO_API_KEY_ADMIN (an admin-scoped Vendo Cloud key)");
