@@ -19,22 +19,16 @@ on time.
   armed
 ```
 
-<Warning>
-  **Upgrading is a clean break.** Automations stored by an earlier version are
-  dropped — there is no migration. Users re-create theirs by asking in chat, and
-  anything you declared in code comes back on your next deploy.
-</Warning>
-
 ## Two authors, one model
 
-Someone has to say an automation should exist. There are exactly two who can,
-and they differ only in what consent means.
+Someone has to say an automation should exist. Exactly two can, and they differ
+only in what consent means.
 
 <CardGroup cols={2}>
   <Card title="A user, in chat" icon="comments">
     They ask for it in words. Consent is the **grants** they allow while they
-    are present — and they can revoke any of them later, which stops the run
-    loudly rather than silently widening it.
+    are present, and revoking one stops the run loudly rather than silently
+    widening it.
   </Card>
   <Card title="A developer, in code" icon="code">
     `agent.on(...)` in your source. Consent is **the code**: it exists because
@@ -50,8 +44,7 @@ and they differ only in what consent means.
 
 The agent creates the record and tells them what it armed, in the thread. There
 is no form, no separate automations screen, and no create call for you to make —
-Vendo deliberately ships no public create. Everything that can author one already
-does.
+everything that can author one already does.
 
 <Frame caption="The receipt is a card in the thread, not a config screen.">
   <img
@@ -74,12 +67,11 @@ support.on({ every: "1d" }, "refresh credit scores");
 support.on({ event: "payment.failed" }, "triage and notify the user");
 ```
 
-`.on()` is a declaration. It returns nothing, touches no database, and is
-collected at module load; the reconcile happens once at boot. A bad schedule
-throws right there, before your process serves anything — `"every monday"` is
-not a cron, and you find that out at the declaration site rather than at 2am.
+`.on()` is a declaration: it returns nothing, touches no database, and reconciles
+once at boot. A bad schedule throws right there — `"every monday"` is not a cron,
+and you find that out at the declaration site rather than at 2am.
 
-See [`.on()`](/backend/automate) for the full surface.
+See [`.on()`](/backend/automate) for every shape it takes.
 
 ## What wakes it
 
@@ -113,20 +105,16 @@ That runs every armed automation listening for `invoice.paid` — the emitting
 user's, and those of every org they belong to — and answers with the run ids it
 started.
 
-Schedules need someone to knock. One door does it, and it is idempotent:
+Schedules need someone to knock, and the door is idempotent: a duplicate knock
+claims nothing and fires nothing.
 
 ```http
 POST /api/vendo/tick
 ```
 
-A duplicate knock claims nothing and fires nothing. Three things can knock: a
-cron in your own infrastructure, your dev server's own ticker, or Vendo Cloud.
-
-With a Cloud key there is nothing to set: the deployment derives the secret from
-`VENDO_API_KEY` and publishes it, with its own URL, when it boots. Without one,
-set `VENDO_TICK_SECRET` yourself. The door takes a bearer token **or** a
-standard-webhooks signature, and both are checked against that one secret — with
-neither a key nor a secret, every knock is refused.
+With a Cloud key there is nothing to set. The deployment derives the tick secret
+from `VENDO_API_KEY` and publishes it, with its own URL, when it boots. Without a
+key, set `VENDO_TICK_SECRET` yourself and knock from your own cron.
 
 <Note>
   Cloud's heartbeat is an **alarm clock, not a brain**. It calls `/api/vendo/tick`
@@ -147,13 +135,10 @@ import { billing, support } from "./agents";
 export const vendo = createVendo({ agents: [support, billing] });
 ```
 
-Two agents claiming one name throw at startup, where you are watching. A record
-naming an agent nobody registered writes a **failed run**, naming the name it
-could not find — never a silent skip, and never someone else's agent running
-under this record's grants.
-
 A goal runs with the **owner's** grants, inside your backend. A steps task needs
-no brain at all and runs in-process.
+no brain at all and runs in-process. A record naming an agent nobody registered
+writes a failed run with the missing name on it — never a silent skip, and never
+someone else's agent under this record's grants.
 
 ## Permissions before the first fire
 
@@ -164,23 +149,98 @@ automation is turned on.
 const { enabled, missing, grantSetId } = await vendo.automations.enable(id, ctx);
 ```
 
-`missing` is what the owner still has to allow; they belong to one grant set, so
-one decision settles them all. After that the automation runs as the person who
-armed it, every time — until they revoke something, and then the next run fails
-loudly with the permission it needed named on it, and one tap runs it again.
+`missing` is what the owner still has to allow. They belong to one grant set, so
+one decision settles them all, and after that the automation runs as the person
+who armed it, every time.
+
+## Reaching your API with nobody there
+
+An away run carries no browser session. There is no cookie to forward, so auth
+material is minted for the owner before each outbound call — that is the `actAs`
+seam. Present calls need none of it: a user is in the room, and the inbound
+cookie or bearer already forwards.
+
+`createVendo({ auth: authJs() })` fills `actAs` for you — see
+[Wire auth](/howto/auth) — and most deployments stop reading here. The presets
+below are the same wiring by hand, for when no shipped `auth` preset fits.
+
+| Preset | Provider | Shape |
+| --- | --- | --- |
+| `authJsPreset` | Auth.js | Offline session JWE |
+| `supabasePreset` | Supabase Auth | Offline HS256 with the project JWT secret |
+| `clerkPreset` | Clerk | Host-owned away token plus middleware |
+| `auth0Preset` | Auth0 | Host-owned away token plus middleware |
+| `genericJwtPreset` | Anything HS256 | Configurable secret, claims, header |
+
+Auth.js and Supabase let a host holding the session secret mint a token their own
+verifier accepts, so nothing else changes in your app. Clerk and Auth0 sign
+sessions with private keys you do not hold, so their presets ship two halves: a
+producer that signs a short-lived `VendoAway` token, and a verify middleware you
+mount on your host app.
+
+They ship in `@vendoai/actions`, a separate install:
+
+```bash
+npm install @vendoai/actions
+```
+
+```ts lib/vendo.ts focus={7,8,9,10}
+import { authJsPreset } from "@vendoai/actions/presets/auth-js";
+import { createVendo } from "@vendoai/vendo/server";
+import { resolvePrincipal } from "@/lib/session";
+
+export const vendo = createVendo({
+  principal: resolvePrincipal,
+  actAs: authJsPreset({
+    secret: process.env.AUTH_SECRET!,
+    cookieName: "authjs.session-token",
+  }),
+});
+```
+
+The cookie name doubles as the JWE salt, so it has to match your Auth.js config.
+Clerk and Auth0 return a preset object instead of a function; pass its `actAs`
+half.
+
+### Mount the verify middleware
+
+Clerk and Auth0 sign a host-owned token rather than a real provider session, so
+your host API has to accept it and turn it back into a user.
+
+```ts middleware.ts focus={3,5}
+import { clerkPreset } from "@vendoai/actions/presets";
+
+const clerk = clerkPreset({ secret: process.env.VENDO_AWAY_TOKEN_SECRET! });
+
+export const middleware = clerk.nextMiddleware;
+export const config = { matcher: "/api/:path*" };
+```
+
+Each preset also exports `expressMiddleware`. The middleware strips any
+caller-supplied `x-vendo-away-*` headers, verifies a real `VendoAway` token, and
+injects the subject on headers your API can trust. Generate the shared secret
+with `openssl rand -base64 32` and set it for both halves.
+
+### The impersonation guard
+
+Before invoking `actAs`, Vendo compares the grant's subject to the running
+principal's. On a mismatch the call fails closed with `act-as-subject-mismatch`
+and no outbound request is made. You do not wire this; it applies on every
+preset, and every attempt is audited with its disposition: `minted`, `declined`,
+`mismatch`, or `error`.
 
 ## Observe and control
 
-In the browser there is nothing to build: the wire resolves the context from the
-request, and one hook carries every verb into a panel you write yourself.
+In the browser there is nothing to build. One hook carries every verb into a
+panel you write yourself.
 
 ```tsx
 const { automations, enable, disable, runs, dryRun, stopRun, rerun } = useAutomations();
 ```
 
 Server-side there is no request to read from, so every verb takes the caller's
-`RunContext` last — that is what scopes the read to what this principal may see,
-so there is no ambient "current user":
+`RunContext` last. That is what scopes the read to what this principal may see —
+there is no ambient "current user".
 
 ```ts
 import type { RunContext } from "@vendoai/core";
@@ -204,28 +264,5 @@ await vendo.automations.runs.stop(runId, ctx);
 await vendo.automations.runs.rerun(runId, ctx);
 ```
 
-There is no `app` filter, because a record holds no app reference. An app page
-filters by resolving its own `automations` list and dropping the dead ids.
-
 `disable` is a person's decision, and it outranks your code: a redeploy's
 reconcile will never re-arm something a human switched off.
-
-## Where to go next
-
-<CardGroup cols={3}>
-  <Card title="Declare one in code" href="/backend/automate">
-    `agent.on(...)` — every shape, and what a redeploy does.
-
-    .on() →
-  </Card>
-  <Card title="API tools" href="/capabilities/api-tools">
-    Your own routes, extracted into a guarded tool set.
-
-    API tools →
-  </Card>
-  <Card title="Guard" href="/how-vendo-works">
-    Risk grade, approval, and an audit line on every call.
-
-    How Vendo works →
-  </Card>
-</CardGroup>

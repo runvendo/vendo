@@ -1,0 +1,114 @@
+---
+title: "Generate screens"
+sidebarTitle: "Generate screens"
+icon: "wand-magic-sparkles"
+description: "Ask for a view, put a slot in one of your own pages, and pin the finished screen into your grid."
+---
+
+Ask your agent for something to look at and a real screen comes back, live on
+your data. These three steps give one of those screens a permanent place in
+your product.
+
+<Steps>
+
+<Step title="Ask the panel for a view">
+
+Ask in plain language. The screen builds in the thread, on your own API's data,
+in your brand.
+
+<Frame caption="One ask, one screen. The bar carries the placement action.">
+  <img
+    src="/images/maple/panel-generated-screen.png"
+    alt="The Maple panel answering Show me my spending by category as a screen I can keep, with a generated screen holding the month's total of $9,117.72 above a ranked bar for each category, and an Add to… button in its header"
+    width="620"
+    height="680"
+  />
+</Frame>
+
+One line in your brief tips the agent toward a screen when the answer is a
+shape rather than a sentence.
+
+```md .vendo/brief.md
+Prefer a useful generated view when a chart or table communicates the answer
+better than prose.
+```
+
+That is the whole nudge. [Instructions](/howto/instructions) is the rest of the
+brief.
+
+</Step>
+
+<Step title="Put a slot in your page">
+
+A slot is a place in one of your own pages that a generated view can occupy. It
+comes from `@vendoai/vendo` itself, so there is nothing extra to install.
+
+```tsx
+"use client";
+
+import { VendoSlot } from "@vendoai/vendo/react";
+
+<VendoSlot
+  id="spend-breakdown"
+  emptyState={{
+    suggestions: [
+      "Show my spending by category",
+      "Track my savings goals",
+    ],
+  }}
+/>
+```
+
+Empty, it invites: a skeleton, up to three prompt chips that prefill the
+composer, and a button that opens the panel.
+
+<Frame>
+  <img
+    src="/images/maple/slot-empty.png"
+    alt="An empty slot in the Maple overview grid, showing a skeleton, three prompt chips, and a button that opens the panel"
+    width="500"
+    height="390"
+  />
+</Frame>
+
+[Slots](/product/mount-the-surface#slots) has the rest of the contract.
+
+</Step>
+
+<Step title="Pin it">
+
+The slot is the whole wiring. A slot that exists is already a destination, so
+every finished screen grows a placement action on its bar: a one-click **Pin to
+dashboard** with one slot in your product, an **Add to…** picker of your slots
+with several.
+
+Press it and reload the page. The screen holds that spot and re-runs on every
+open, so it opens on today's numbers.
+
+<Frame caption="Your page, your grid. The card in the middle is generated.">
+  <img
+    src="/images/maple/slot-in-page.png"
+    alt="Maple's overview page with its own quick actions, balance chart, and account tiles, and a generated spend by category card holding the slot beside them"
+    width="1280"
+    height="900"
+  />
+</Frame>
+
+</Step>
+
+</Steps>
+
+## Good to know
+
+- Every screen is compiled, scanned, type checked, and run once before anything
+  paints. A refusal names the line, and the last good screen keeps serving.
+  [What a screen may write](/generated/apps#what-a-screen-may-write).
+- Pinning only gives a screen a place. Each one is already an app with its own
+  id, kept in the person's own list, so an unpinned one can land in a slot
+  later. [Generated apps](/generated/apps).
+- Register your own React components and a generated screen renders your real
+  UI instead of the built-in kit.
+  [Host components](/generated/host-components).
+- Nobody uses someone else's app. Sharing one mints a fresh copy that reads the
+  new owner's rows under their approvals.
+  [Import & fork](/generated/import-and-fork).

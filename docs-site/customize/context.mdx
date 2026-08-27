@@ -47,74 +47,58 @@ screen: https://maple.example.com/payments
 
 ## Assert facts about the user
 
-Facts ride the [auth preset](/production/auth) you already pass. The preset
-decodes the session once per request, and facts come off that same decode.
+Facts ride the [auth preset](/howto/auth) you already pass. Add a `facts` object
+beside the `display` and `email` your user resolver already returns.
 
-<Steps>
-  <Step title="Resolve identity through a preset">
-    Facts are a preset-only channel. Pass `auth`, not the per-seam
-    `principal` / `actAs` / `oauth` trio, or `createVendo` throws a validation
-    error for filling the same seams twice.
+```ts app/api/vendo/[...vendo]/route.ts focus={12-16}
+import { authJs } from "@vendoai/vendo/auth/auth-js";
+import { createVendo } from "@vendoai/vendo/server";
 
-    ```ts app/api/vendo/[...vendo]/route.ts
-    import { authJs } from "@vendoai/vendo/auth/auth-js";
-    import { createVendo } from "@vendoai/vendo/server";
-
-    export const vendo = createVendo({ auth: authJs() });
-    ```
-  </Step>
-  <Step title="Return facts from the user resolver">
-    Add a `facts` object beside the `display` and `email` the resolver already
-    returns. Values are any JSON, and returning `null` still means the host
-    does not know this subject.
-
-    ```ts app/api/vendo/[...vendo]/route.ts focus={10-14}
-    export const vendo = createVendo({
-      auth: authJs({
-        user: async (subject) => {
-          const user = await db.user.findUnique({ where: { id: subject } });
-          if (!user) return null;
-          return {
-            display: user.name,
-            email: user.email,
-            // Model-visible, every turn. Data only, never secrets.
-            facts: {
-              name: user.name,
-              plan: user.plan,
-              accounts: user.accountCount,
-            },
-          };
+export const vendo = createVendo({
+  auth: authJs({
+    user: async (subject) => {
+      const user = await db.user.findUnique({ where: { id: subject } });
+      if (!user) return null;
+      return {
+        display: user.name,
+        email: user.email,
+        facts: {
+          name: user.name,
+          plan: user.plan,
+          accounts: user.accountCount,
         },
-      }),
-    });
-    ```
-  </Step>
-</Steps>
+      };
+    },
+  }),
+});
+```
 
-Each fact renders as one `key: value` line in the `[User]` block. A live host
-wiring this is `examples/demo-bank/src/vendo/server.ts`.
+Values are any JSON, and each fact renders as one `key: value` line in the
+`[User]` block, on every turn.
+
+<Note>
+  Facts are a preset-only channel. A hand-wired `principal(request)` has no facts
+  channel — pass an `auth` preset if you want one.
+</Note>
 
 <Warning>
-  Facts go to the model verbatim. Put nothing in them you would not paste into
-  a chat window: no tokens, no keys, no identifiers you rely on staying
-  private.
+  Facts go to the model verbatim. Put nothing in them you would not paste into a
+  chat window: no tokens, no keys, no identifiers you rely on staying private.
 </Warning>
 
 ## The screen rides along already
 
-You wire nothing for this. On every send, the widget snapshots the visible
-page and attaches it as `context`.
-
-The snapshot is the page's accessibility tree: URL and title, then headings,
-landmarks, links, buttons, table contents, form values, and control states.
-The block is labeled as observation, so page text reads as evidence rather
-than as instructions to the model.
+You wire nothing for this. On every send, the widget snapshots the visible page —
+its URL and title, then headings, landmarks, links, buttons, table contents, form
+values, and control states — and attaches it as `[Situation]`. The block is
+labeled as observation, so page text reads as evidence rather than as
+instructions to the model.
 
 ### Publish what the page does not show
 
-A cart total, a selected row id, a wizard step. `useVendoContext` merges your
-own data into the same `[Situation]` block and retires it on unmount, so the
-agent never sees a screen the user has left.
+A cart total, a selected row id, a wizard step. `useVendoContext` merges your own
+data into the same `[Situation]` block and retires it on unmount, so the agent
+never sees a screen the user has left.
 
 ```tsx app/checkout/payment-step.tsx focus={6}
 "use client";
@@ -128,18 +112,12 @@ export function PaymentStep({ cart }: { cart: Cart }) {
 ```
 
 Several mounted callers coexist and merge, and on a repeated key the later one
-wins. The hook returns nothing and does not need to sit inside the provider.
-
-<Note>
-  It republishes whenever the object's identity changes, so an inline literal
-  republishes on every render. Harmless, but wrap it in `useMemo` if the object
-  is expensive to build.
-</Note>
+wins.
 
 ### Keep something out
 
-`data-vendo-ignore` drops an element and everything under it. Vendo's own
-chrome carries it, so the widget never snapshots itself.
+`data-vendo-ignore` drops an element and everything under it. Vendo's own chrome
+carries it, so the widget never snapshots itself.
 
 ```tsx
 <section data-vendo-ignore="">
@@ -147,8 +125,8 @@ chrome carries it, so the widget never snapshots itself.
 </section>
 ```
 
-To stop page capture entirely, set `captureScreen={false}` on the provider.
-Data you publish through `useVendoContext` still rides.
+To stop page capture entirely, set `captureScreen={false}` on the provider. Data
+you publish through `useVendoContext` still rides.
 
 ```tsx app/layout.tsx focus={1}
 <VendoProvider baseUrl="/api/vendo" captureScreen={false}>
@@ -158,35 +136,13 @@ Data you publish through `useVendoContext` still rides.
 
 ## What actually reaches the model
 
-**`[User]` is server-trust.** It comes from your resolver, on your server, on
-every request. The client cannot set it.
-
-**No principal, no turn.** A `principal` resolver that returns `null` gets a
-`forbidden` (403) before either block is built.
-
-**`[Situation]` is one turn only.** It rides the request onto that turn's
-prompt and is never written to the transcript. The next turn on the same
-thread carries no situation.
-
-**8 KB, enforced twice.** The client truncates before sending, retrying from
-`<main>` alone and then hard-truncating with a `…[truncated]` marker. The
-server re-caps whatever arrives and drops entries past the budget rather than
-refusing the turn.
-
-**Nothing can forge a section.** Values render as `key: value`, non-strings are
-JSON-encoded, and every continuation line of a multi-line value is indented. A
-fact cannot close its own block and impersonate one of Vendo's.
-
-## Where to go next
-
-<Columns cols={3}>
-  <Card title="Knowledge" icon="book-open" href="/customize/knowledge">
-    Answers from your docs, with citations.
-  </Card>
-  <Card title="Instructions" icon="file-pen" href="/customize/instructions">
-    The prose your agent reads before every turn.
-  </Card>
-  <Card title="Theming" icon="palette" href="/customize/theming">
-    The token file every surface renders through.
-  </Card>
-</Columns>
+- **`[User]` is server-trust.** It comes from your resolver, on your server, on
+  every request. The client cannot set it.
+- **`[Situation]` is one turn only.** It is never written to the transcript, so
+  the next turn on the same thread carries no situation.
+- **8 KB, enforced twice.** The client truncates before sending, and the server
+  re-caps whatever arrives by dropping entries past the budget rather than
+  refusing the turn.
+- **Nothing can forge a section.** Values render as `key: value` with every
+  continuation line indented, so a fact cannot close its own block and
+  impersonate one of Vendo's.

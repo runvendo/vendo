@@ -1,6 +1,7 @@
 ---
 title: "Set up Vendo with your agent"
 sidebarTitle: "Quickstart"
+tag: "Start here"
 description: "One paste. Your coding agent installs Vendo, runs init, and wires it into whatever your repo already is."
 ---
 
@@ -9,27 +10,6 @@ import AgentPromptCard from "/snippets/agent-prompt-card.mdx"
 <AgentPromptCard />
 
 Your agent picks the right setup for your repo. You confirm it.
-
-## Just want an agent?
-
-The smallest thing Vendo does needs no CLI, no init, and nothing moved around.
-Install one package and write one call:
-
-```ts
-import { agent } from "@vendoai/agents";
-
-const support = agent({
-  name: "support",
-  instructions: "Answer in the product's voice; never invent account numbers.",
-});
-
-console.log((await support.chat("Where is order A-1001?")).text);
-```
-
-Give it tools, put it on a route, or hand it a schedule from there:
-[backend quickstart](/backend/quickstart). Everything below is the rest of
-Vendo — the embedded surface and the generated screens — and `init` is how you
-get there.
 
 ## Quickstart
 
@@ -50,32 +30,15 @@ No agent handy? Do it by hand. Three steps.
     ```
 
     </CodeGroup>
-
-    On pnpm the install ends with `Ignored build scripts: esbuild`. Nothing to approve — Vendo reaches esbuild through its Node API, which that script has nothing to do with.
   </Step>
 
   <Step title="Run npx vendo init">
-    init reads your repo before it asks anything. Then it writes the wiring.
+    init reads your repo before it asks anything, asks how people will use your
+    agent, and writes the wiring. One snippet to paste at the end.
 
-    ```bash terminal focus={1}
-    $ npx vendo init
-
-      Your stack
-      Next.js · App Router · TypeScript · pnpm
-      Clerk auth (@clerk/nextjs)
-
-    ? How will people use your agent?
-        Embedded in my app — chat + generated UI            recommended
-        Through my own agent loop (AI SDK / Mastra)
-        From outside agents over MCP (experimental)
-
-      … init takes it from there: it asks how you want to run models,
-        writes the wiring, and prints one snippet for you to paste.
+    ```bash
+    npx vendo init
     ```
-
-    Paste the snippet init prints. It comes with your real paths already filled in, and it is the only edit you make by hand.
-
-    On Next.js it also adds one line to your `next.config` — `serverExternalPackages: ["@vendoai/apps", "esbuild", "@electric-sql/pglite", "@vendoai/store"]`. Vendo checks every generated screen with esbuild at runtime, so its checker has to stay out of the server bundle. If init could not read your config, it prints the line instead and `vendo doctor` holds you to it ([E-CFG-004](/production/troubleshooting/e-cfg-004)).
   </Step>
 
   <Step title="Continue in your direction">

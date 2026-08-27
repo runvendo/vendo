@@ -28,11 +28,11 @@ A connection is keyed to the Vendo principal's subject. One user can never read,
 
 ## Naming the services
 
-With a Cloud key and nothing else, the agent gets one tool that lists what this product can connect to, and one that asks the user to connect it. No service tools sit on the listing.
+With a Cloud key and nothing else, the agent gets one tool that lists what this product can connect to and one that asks the user to connect it. Name toolkits when you want a service's tools in the agent's hands from the start.
 
-Name toolkits when you want their tools in the agent's hands from the start.
+```ts app/api/vendo/[...vendo]/route.ts focus={6}
+import { createVendo } from "@vendoai/vendo/server";
 
-```ts app/api/vendo/[...vendo]/route.ts focus={4}
 const vendo = createVendo({
   principal: resolvePrincipal,
   instructions: "...",
@@ -40,11 +40,7 @@ const vendo = createVendo({
 });
 ```
 
-Those strings scope three things at once: the tools the agent sees, the accounts the connect surface offers, and the catalog it advertises. They can never drift apart.
-
-<Note>
-  The same list also accepts a connector object, which is used verbatim. Strings are the Cloud path.
-</Note>
+Those strings scope three things at once — the tools the agent sees, the accounts the connect surface offers, and the catalog it advertises — so they can never drift apart. The same list also takes a [connector object](/capabilities/connectors), which is used verbatim.
 
 ## The connect card
 
@@ -71,7 +67,7 @@ A tool call for a service the user has not connected never reaches the guard. Th
   />
 </Frame>
 
-The agent can also raise the ask on its own before calling anything, when the request plainly needs a service the user has not connected.
+The agent can also raise the ask on its own, before calling anything, when the request plainly needs a service the user has not connected.
 
 ## Managing accounts
 
@@ -92,44 +88,10 @@ The shipped thread also carries a connect dock: a badge counting active accounts
   />
 </Frame>
 
-Every route below uses exactly the resolved principal's subject. There is no caller-supplied subject and no cross-user read.
-
-| Route | Method | Purpose |
-| --- | --- | --- |
-| `/api/vendo/connections` | GET | list the caller's connected accounts |
-| `/api/vendo/connections/initiate` | POST | `{ toolkit }` back to `{ id, connector, redirectUrl }` |
-| `/api/vendo/connections/catalog` | GET | what this deployment can connect to |
-| `/api/vendo/connections/:id` | GET | status; poll while connecting |
-| `/api/vendo/connections/:id` | DELETE | disconnect |
-
-Connecting needs a signed-in person. A principal marked `ephemeral`, or one under a reserved synthetic subject, is refused: an external account would outlive it.
+Building your own surface instead? The [connection routes](/reference/http-routes) all resolve the subject from the session — there is no caller-supplied subject and no cross-user read. Connecting needs a signed-in person: an ephemeral principal is refused, because an external account would outlive it.
 
 ## What the guard sees
 
-A connector tool's risk comes from the provider's own tags and nothing else. `destructiveHint` grades it destructive, `readOnlyHint` grades it read, and an untagged tool is `ungraded`, which the guard asks about on every call.
-
-`.vendo/overrides.json` still wins, so you can pin the grade of any tool by name.
+A connector tool's risk comes from the provider's own tags and nothing else, so an untagged tool is `ungraded` and the guard asks about it on every call. Pin the grade of any tool by name in [`.vendo/overrides.json`](/reference/tool-overrides) and your grade wins — including for a tool the agent reached by searching the provider's catalog, which the file names by the provider's own tool id.
 
 Every connector call is audited with the account identity behind it: the connector, the toolkit, and the subject it ran as. That identity is stripped from the outcome the model and the UI see.
-
-## Where to go next
-
-Outside services are one source of tools. Two more sit beside them.
-
-<CardGroup cols={3}>
-  <Card title="API tools" href="/capabilities/api-tools">
-    Your own routes, extracted into a guarded tool set.
-
-    API tools →
-  </Card>
-  <Card title="Automations" href="/capabilities/automations">
-    The same tools, fired on a schedule or by an event.
-
-    Automations →
-  </Card>
-  <Card title="Guard" href="/how-vendo-works">
-    Risk grade, approval, and an audit line on every call.
-
-    How Vendo works →
-  </Card>
-</CardGroup>

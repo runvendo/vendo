@@ -91,7 +91,7 @@ Init reads `package.json` and detects one auth family.
 
 A single detected family gets one `[Y/n]` confirm before anything is written. Decline it, or have several or none detected, and init leaves `principal` unwired and prints the exact one-line `auth:` addition.
 
-`--auth <preset>` answers without the prompt. The presets and when to pick each are on [Auth](/production/auth).
+`--auth <preset>` answers without the prompt. The presets and when to pick each are on [Auth](/howto/auth).
 
 ## The model key
 
@@ -140,7 +140,7 @@ The `status` field tells the two runs apart, so an agent never has to guess whet
 | `questions` | `detected` (framework and any auth preset), and `questions`: each one a chat-ready `prompt` with its `options` |
 | `written` | `wrote` (every file of the install), `pasteEdits` (the mount and any other paste), `tools`, `riskRecommendations`, and `judgment`, whose `checklist` names the four calls only a reader of the code can make |
 
-The answer flags are the ones init already has: `--use-case`, `--auth`, `--cloud-key` or `--byo`, and `--base-url`. Nothing else is asked — the MCP path asks no extra question of its own, it asks the Cloud one in its own words, and `--cloud-key`/`--byo` answer it. The `zod` bump, uncertain theme slots, and the closing live check never surface in agent mode. They take exactly the defaults `--yes` takes.
+The answer flags are the ones init already has: `--use-case`, `--auth`, `--cloud-key` or `--byo`, and `--base-url`. Nothing else is asked. The `zod` bump, uncertain theme slots, and the closing live check never surface in agent mode — they take exactly the defaults `--yes` takes.
 
 ## Every flag
 
@@ -168,7 +168,7 @@ The answer flags are the ones init already has: `--use-case`, `--auth`, `--cloud
 
 `--posture` or `--service-key` without `--use-case mcp` exits `1` rather than being silently ignored, and so does `--service-key` with `--posture broker`: a Cloud-fronted door provisions its own key, so accepting one there would discard it. `--ai-polish` is the older spelling of `--ai`.
 
-`--posture broker` with a dev URL that is not `https://` exits `1` too: Vendo Cloud registers that origin as the tenant's forwarding address and refuses one that is not https, so the door would be written and then fail on its first request. Take `--posture local`, which is zero config and works on http, or pass an https origin. This one is checked against the URL the run resolved rather than the flags alone, so it also catches a broker posture picked at the prompt.
+`--posture broker` exits `1` too when the dev URL is not `https://`: Vendo Cloud registers that origin as the tenant's forwarding address and refuses a non-https one, so the door would be written and then fail on its first request. Take `--posture local` — zero config, works on http — or pass an https origin. The check reads the URL the run resolved, not the flags, so it catches a broker posture picked at the prompt too.
 
 <Warning>
   `--base-url` is a DEV URL: it lands in `.env.local` as `VENDO_BASE_URL`, which is what your own agent loop, any backend process, and the MCP door need before their first tool call. Production is never set here — set `VENDO_BASE_URL` in your hosting platform's environment settings when you deploy. A deployed URL in `.env.local` would repoint local dev's discovery, callbacks, and credential forwarding at the deployed origin.
@@ -192,7 +192,7 @@ Re-run init when the detected surface changes in a way sync cannot scaffold for,
 npx vendo doctor
 ```
 
-Doctor reads the repo: wiring, the `.vendo/` files, the tool catalog, and the model credential in your environment. It needs no running app. `vendo doctor --json` is the machine-readable gate agents loop on.
+It reads the repo — wiring, the `.vendo/` files, the tool catalog, the model credential in your environment — and needs no running app. `--json` is the machine-readable gate agents loop on. [Every check and flag](/reference/cli#vendo-doctor).
 
 <Note>
   Right after a release, package managers with a cooldown hold the new version back. pnpm 11 fails loud with "no versions available"; npm's opt-in `min-release-age` instead resolves silently to an older version, which init then pins.

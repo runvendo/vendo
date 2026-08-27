@@ -1,0 +1,195 @@
+---
+title: "Add tools"
+sidebarTitle: "Add tools"
+icon: "wrench"
+description: "Point Vendo at the API you already wrote, run one command, and the agent has hands."
+---
+
+Every tool the agent can call lives in one file. `vendo sync` writes that file
+by reading the API you already have — no server starts, and no code of yours
+runs. Only what the file lists reaches your API.
+
+<Steps>
+
+<Step title="Declare the source">
+
+Four extractors run in a fixed order — OpenAPI, tRPC, Next.js server actions,
+then the route scan — and each skips itself when your app has nothing for it.
+Most stacks need nothing added at all.
+
+<CodeGroup>
+
+```json OpenAPI
+{
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/invoices/{id}": {
+      "delete": {
+        "operationId": "deleteInvoice",
+        "summary": "Permanently delete an invoice",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ]
+      }
+    }
+  }
+}
+```
+
+```ts tRPC
+export const invoiceRouter = router({
+  list: publicProcedure
+    .input(z.object({ status: z.string().optional() }))
+    .query(({ input }) => db.invoices.list(input)),
+
+  create: publicProcedure
+    .input(z.object({ amount: z.number(), customerId: z.string() }))
+    .mutation(({ input }) => db.invoices.create(input)),
+});
+```
+
+```ts Server Actions
+"use server";
+
+const CreateInvoice = z.object({
+  amount: z.number(),
+  customerId: z.string(),
+});
+
+export async function createInvoice(input: z.infer<typeof CreateInvoice>) {
+  return db.invoices.create(CreateInvoice.parse(input));
+}
+```
+
+```ts Routes
+// app/api/invoices/[id]/route.ts — already a tool. Nothing to add.
+export async function GET(request: Request, { params }: Params) {
+  return Response.json(await db.invoices.get(params.id));
+}
+
+export async function DELETE(request: Request, { params }: Params) {
+  return Response.json(await db.invoices.remove(params.id));
+}
+```
+
+```ts By hand
+import { defineTool } from "@vendoai/vendo";
+import { createVendo } from "@vendoai/vendo/server";
+import { z } from "zod/v4";
+
+const refundOrder = defineTool({
+  name: "host_refundOrder",
+  description: "Refund a paid order back to the original card",
+  input: z.object({ orderId: z.string(), reason: z.string() }),
+  risk: "destructive",
+  execute: async ({ orderId, reason }, context) =>
+    payments.refund(orderId, { reason, actor: context.principal.subject }),
+});
+
+export const vendo = createVendo({ tools: [refundOrder] });
+```
+
+</CodeGroup>
+
+- **OpenAPI** — the highest-leverage file you can add, because it is what gives
+  every tool its parameter names, types, and output shape. Put an
+  `openapi.json` at your app root; `openapi.yaml`, `public/openapi.json`, and
+  `docs/openapi.json` are read too, and the spec never has to be served.
+- **tRPC** — nothing to install. Sync sees `@trpc/server` in your dependencies
+  and reads each router with the TypeScript compiler. The `.input()` schema is
+  the declaration, and a mutation grades `write`.
+- **Server Actions** — sync sees `next` in your dependencies and reads every
+  exported `"use server"` function. Annotate the parameter, with
+  `z.infer<typeof Schema>` or a plain type, and its shape comes across.
+- **Routes** — nothing to declare. The route scan always runs and finds your
+  handlers under `app/**/route.ts` and `pages/api/**`. Add the OpenAPI spec
+  when you want their shapes too.
+- **By hand** — for the capability that has no route to read: a calculation, a
+  vendor SDK, three of your services stitched together. The zod schema becomes
+  both the JSON Schema the model is shown and the parse that runs before
+  `execute`, so the two can never drift apart.
+
+<Note>
+  **zod 4 shapes only.** On zod 3.25 or later, import from `zod/v4`. On zod 4,
+  the plain `zod` import is already the right shape.
+</Note>
+
+</Step>
+
+<Step title="Run npx vendo sync">
+
+```bash
+npx vendo sync
+```
+
+The extractors re-read your source. `vendo init` also hooks sync into `predev`
+and `prebuild` in your `package.json`, so from here it runs on its own.
+
+</Step>
+
+<Step title="Read the diff">
+
+Each tool arrives in `.vendo/tools.json`, a tracked file — so a new capability
+shows up as a reviewable change in git. Every entry carries the same fields.
+
+```json .vendo/tools.json highlight={3,9,10-14}
+{
+  "name": "host_deleteInvoice",
+  "description": "Permanently delete an invoice",
+  "inputSchema": {
+    "type": "object",
+    "properties": { "id": { "type": "string" } },
+    "required": ["id"]
+  },
+  "risk": "destructive",
+  "binding": {
+    "kind": "openapi",
+    "operationId": "deleteInvoice",
+    "method": "DELETE",
+    "path": "/api/invoices/{id}"
+  }
+}
+```
+
+`description` is written for the model: what the tool does for the user, not a
+restatement of the path. `risk` is what the guard reads before the call.
+`binding` is where the call lands — the runtime executes from it without
+re-reading your spec.
+
+</Step>
+
+<Step title="Ask the agent to use one">
+
+Open your surface and ask for the thing in plain language.
+
+> Delete invoice INV-2032.
+
+The agent picks `host_deleteInvoice`, the guard reads its `destructive` grade
+and puts an approval card in front of the user, and the call lands on your own
+API as the signed-in user. One audit line, either way.
+
+</Step>
+
+</Steps>
+
+## Good to know
+
+- Extraction grades from protocol facts only: `DELETE` is `destructive`, a tRPC
+  mutation is at least `write`, and a tool's name decides nothing. Everything
+  else lands `ungraded`, which the guard asks about on every call.
+- The AI pass then reads the handler behind each tool and writes what it finds
+  to `.vendo/judgments.json`. It runs on whatever credential you already have —
+  Claude Code, the codex CLI, or your Vendo Cloud key.
+- `.vendo/tools.json` is machine-authored and regenerated wholesale on every
+  sync, so never hand-edit it. Corrections live in `.vendo/overrides.json`,
+  which sync never touches.
+- Tools from your API are named `host_*`. Vendo's own — `vendo_make`,
+  `vendo_automate`, and the rest — are `vendo_*`, and they always ride along.
+- `.vendo/overrides.json` is the last word: re-grade a tool, make it confirm
+  every run, hide it, or bundle a short sequence into one compound tool. See
+  [tool overrides](/reference/tool-overrides).

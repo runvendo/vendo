@@ -29,11 +29,9 @@ Collection hooks all return the same read fields, so one pattern renders loading
 }
 ```
 
-The collection is seeded, not `undefined`. So `threads.length === 0` means empty or not loaded yet, and `isLoading` is what tells those apart.
+The collection is seeded, not `undefined`, so `threads.length === 0` means empty *or* not loaded yet. `isLoading` is what tells those apart, and it only ever flips for the first fetch — a first-mount spinner never flashes again on a poll.
 
-`error` is `undefined`, not `null`, when the read succeeded. A failed read keeps the last good collection, so you can render a retry affordance without blanking the surface.
-
-`isLoading` is `true` only for the first fetch. Later `refresh()` calls and background polls do not flip it back, so a first-mount spinner does not flash on every update.
+A failed read keeps the last good collection, so you can render a retry affordance without blanking the surface.
 
 `useApp` is the exception. It returns a single document, so its `app` is `AppDocument | undefined`.
 
@@ -54,6 +52,7 @@ The collection is seeded, not `undefined`. So `threads.length === 0` means empty
 | `useSlots(options?)` | `slots: SlotEntry[]`, the caller's registered slots | `pollMs` |
 | `useSlotApp(slotId, options?)` | `{ appId, status, error, isLoading, refresh }` | on by default |
 | `useVendoThread(threadId?)` | the streaming conversation. See [Threads](#threads) | |
+| `useVendoChat(options)` | the same conversation against an `@vendoai/agents` mount, without a provider. See [Standalone agent chat](#standalone-agent-chat) | |
 | `useVendoStatus()` | `{ posture, connected, memberships }` | |
 | `useVendoContext(data)` | nothing. Publishes `data` into the situation channel while mounted | |
 | `useVendoOverlay(options?)` | `VendoOverlayController`. See [Overlay control](#overlay-control) | |
@@ -187,6 +186,29 @@ The hook does not queue sends. Calling `sendMessage` mid-stream hands the messag
 
 The "type while it is answering, and it sends when the reply lands" behavior belongs to the shipped chrome's composer, which holds the draft and re-sends it on the busy edge. Reproduce it by watching `status`.
 
+## Standalone agent chat
+
+`useVendoChat` is `useVendoThread`'s thinner sibling, for a page talking to an [`@vendoai/agents` mount](/reference/server-api#handler). No provider, no client, no embed chrome, no situation channel — just the transport, the thread-id round trip, and the two things you have to render for an agent that asks permission.
+
+```ts
+const {
+  threadId,       // the id the server minted, also handed to onThreadId
+  messages,
+  sendMessage,
+  status,
+  error,
+  interruptions,  // Interruption[] — what this turn is waiting on a person for
+  resume,         // answer them, keyed by Interruption.id
+  stop,
+} = useVendoChat({ api: "/api/agent" });
+```
+
+`options` is `{ api, threadId?, onThreadId? }`, where `api` is where you mounted `handler()`.
+
+It keeps nothing in the browser. Reopening a thread reads the transcript back through the mount's own route, so an approval parked before a reload comes back in `interruptions` with no client state to have lost.
+
+`resume(decisions)` posts to the mount's approvals wire rather than the AI SDK's local approval channel: the guard's decision is what unblocks the parked call, and flipping the part in the browser would change what the page draws and nothing about what the agent is doing. A decision that does not land — a `409` for an ask already answered or expired — throws instead of being swallowed.
+
 ## Apps export and import
 
 `useApps` exposes `exportApp(appId)` and `importApp(bytes)` beside the read fields, so a custom drawer can round-trip an `AppDocument` without hand-rolling calls to `/apps/:id/export` and `/apps/import`.
@@ -251,7 +273,7 @@ export function Assistant() {
     return () => document.removeEventListener("keydown", onKey);
   }, [overlay.toggle]);
 
-  return <VendoOverlay {...overlay.overlayProps} launcher="none" />;
+  return <VendoOverlay {...overlay.overlayProps} />;
 }
 ```
 

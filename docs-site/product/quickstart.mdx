@@ -23,17 +23,6 @@ pnpm exec vendo init
 
 </CodeGroup>
 
-Those leave you `app/api/vendo/[...vendo]/route.ts` written, and a model
-credential settled.
-
-Which credential depends on how you answered init's models question. **Vendo
-Cloud** ran the browser login and put a `VENDO_API_KEY` in `.env.local`.
-**Bring my own key** took your paste and put it in the same file, under
-`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or `GOOGLE_GENERATIVE_AI_API_KEY`.
-**Decide later** wrote no key at all — `vendo login`, or your own key in
-`.env.local`, is what makes the first turn answer.
-[Model credentials](/production/model-credentials) covers all three.
-
 <Steps>
 
 <Step title="Mount the provider">
@@ -41,21 +30,22 @@ Cloud** ran the browser login and put a `VENDO_API_KEY` in `.env.local`.
 Paste what init printed into your client layout. Your paths and theme are
 already filled in.
 
-```tsx app/layout.tsx focus={7}
+```tsx app/layout.tsx focus={6}
 import { VendoProvider } from "@vendoai/vendo/react";
-import type { VendoTheme } from "@vendoai/vendo";
 import theme from "../.vendo/theme.json";
 
 // in your own RootLayout, props type untouched:
 <body>
-  <VendoProvider baseUrl="/api/vendo" theme={theme as VendoTheme}>
+  <VendoProvider baseUrl="/api/vendo" theme={theme}>
     {children}
   </VendoProvider>
 </body>
 ```
 
-`baseUrl` is where the route is mounted, path prefix included. An app served
-under `/maple` passes `baseUrl="/maple/api/vendo"`.
+This is the URL the panel talks to. If your app runs at the root of its
+domain, the default `/api/vendo` just works. If your app lives under a
+prefix — say everything is served from `/maple` — include it:
+`baseUrl="/maple/api/vendo"`.
 
 
 </Step>
@@ -68,16 +58,11 @@ app, or docks beside it with `placement="dock"`.
 ```tsx app/layout.tsx focus={1,5}
 import { VendoOverlay, VendoProvider } from "@vendoai/vendo/react";
 
-<VendoProvider baseUrl="/api/vendo" theme={theme as VendoTheme}>
+<VendoProvider baseUrl="/api/vendo" theme={theme}>
   {children}
   <VendoOverlay />
 </VendoProvider>
 ```
-
-<Note>
-  Prefer a command bar? Mount `<VendoPalette />` beside the overlay and `⌘K`
-  opens the same panel in its compact form.
-</Note>
 
 </Step>
 
@@ -85,13 +70,6 @@ import { VendoOverlay, VendoProvider } from "@vendoai/vendo/react";
 
 Put a slot where a card would go. A screen the agent builds can live there
 instead of in the panel.
-
-`VendoSlot` comes from the package you already installed — no second one.
-
-The id and the file are both yours. `spend-breakdown` on a bank's overview page
-is this example's choice: pick any string, and put the slot on whichever page you
-want the surface to appear on. Nothing else has to know it — a mounted slot
-reports itself, which is what makes it somewhere a view can be pinned.
 
 ```tsx app/overview/page.tsx focus={3,9}
 "use client";
@@ -122,57 +100,31 @@ in your grid and stays there.
   />
 </Frame>
 
-Start the app and click the launcher pill in the corner.
-
-<CodeGroup>
-
-```bash npm
-npm run dev
-```
-
-```bash pnpm
-pnpm dev
-```
-
-</CodeGroup>
-
-Ask for something you would otherwise click through to, like "Where did my
-money go?" The agent calls your own API as the person signed in, and answers
-with a screen instead of a paragraph when the answer is one to look at.
-
-<Frame caption="The panel is Vendo. The fonts, colors, and data are yours.">
-  <img
-    src="/images/maple/panel-generated-screen.png"
-    alt="The Vendo panel open over Maple, answering a spending question with a generated screen that lists each category and its total"
-    width="620"
-    height="680"
-  />
-</Frame>
-
 </Step>
 
 </Steps>
 
-## Where to go next
+## Make it yours
 
-The surface is up. These three are what people change first.
+The setup was the same for everyone. These, in order, make it yours.
 
-<div className="direction-cards">
 <CardGroup cols={3}>
-  <Card title="How it works" href="/product/how-it-works" img="/images/cards/product-how-it-works.svg">
-    What the panel does, and what runs on your side.
-
-    `app/api/vendo/[...vendo]/route.ts`
+  <Card title="Wire auth" icon="key" href="/howto/auth">
+    Swap the demo principal for your real sign-in.
   </Card>
-  <Card title="Theming" href="/customize/theming" img="/images/cards/product-theming.svg">
-    Fonts, colors, and radii, taken from your own tokens.
-
-    `.vendo/theme.json`
+  <Card title="Add tools" icon="wrench" href="/howto/tools">
+    Point Vendo at your API — the agent gets hands.
   </Card>
-  <Card title="Apps in your product" href="/generated/quickstart" img="/images/cards/generated-apps.svg">
-    Real screens built from your data, pinned where you want.
-
-    `<VendoSlot id="home-hero" />`
+  <Card title="Approve actions" icon="shield-check" href="/howto/approvals">
+    Decide what runs and what asks first.
+  </Card>
+  <Card title="Generate screens" icon="wand-magic-sparkles" href="/howto/screens">
+    Ask for a view, pin it into your grid.
+  </Card>
+  <Card title="Theme it" icon="palette" href="/howto/theming">
+    Your fonts, colors, and radii on every surface.
+  </Card>
+  <Card title="Set instructions" icon="file-pen" href="/howto/instructions">
+    The brief your agent reads before every turn.
   </Card>
 </CardGroup>
-</div>

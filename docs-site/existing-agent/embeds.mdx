@@ -4,9 +4,9 @@ sidebarTitle: "Embeds in your chat"
 description: "The versioned envelope a vendo_* tool returns, and the three React embeds that turn it into a rendered surface inside your own chat."
 ---
 
-A `vendo_*` tool answers your loop with either plain data or a small versioned ref. One component turns that ref into the right surface, so your loop never learns what an app or an approval is.
+A `vendo_*` tool returns either plain data or a small versioned ref. One component turns a ref into the right surface, so your loop never has to know what an app or an approval is.
 
-## The dispatch
+## The envelope
 
 <svg viewBox="0 0 720 240" role="img" aria-label="A tool output enters VendoToolResult and leaves as nothing, an app embed, or an approval embed" style={{ width: "100%", height: "auto" }}>
   <rect x="8" y="94" width="150" height="52" rx="10" fill="#faf9fc" stroke="#e9e6f1" />
@@ -38,21 +38,38 @@ A `vendo_*` tool answers your loop with either plain data or a small versioned r
   <text x="494" y="205" fontFamily="sans-serif" fontSize="11" fill="#7c7989">the approve or deny card</text>
 </svg>
 
-## The envelope
-
 | Output | What happened | Fields |
 | --- | --- | --- |
 | plain data | the guarded call executed cleanly | whatever your action returned |
 | `vendo/app-ref@1` | `vendo_make` accepted a build that is still streaming | `appId`, `title`, `status: "building"` |
 | `vendo/approval-ref@1` | the call parked for approval | `approvalId`, `summary` |
 
-`status` on an app ref is always `"building"`, win or lose. A build that fails terminally is never wrapped in one, so the ref never means done.
+`status` is always `"building"`. A build that fails terminally is never wrapped in a ref, so a ref never means done.
 
-Readers tolerate unknown extra fields. Anything additive stays inside `@1`, and a breaking change bumps the kind.
+Readers ignore unknown extra fields. Additive changes stay inside `@1`. A breaking change bumps the kind.
+
+## Which parts are ours
+
+Your renderer sees your tool parts and Vendo's in one list. `isVendoToolPart` is the branch, and the only place you should match on the prefix. It is true for a tool part whose name starts with `vendo_`, in both part shapes the AI SDK streams (`tool-<name>` and `dynamic-tool`).
+
+```tsx focus={3-5}
+import { isVendoToolPart, VendoToolResult } from "@vendoai/vendo/react";
+
+if (isVendoToolPart(part)) {
+  return <VendoToolResult key={key} output={part.output} />;
+}
+// your own parts fall through to your own rendering
+```
+
+It is a type guard, so `part.output` and `part.state` typecheck inside the branch with no cast.
+
+It answers "is this ours", not "is it finished". A part still streaming has no output, and `<VendoToolResult>` renders nothing for it. Add `part.state === "output-available"` yourself only where you want to show a running one.
+
+Put the branch anywhere among your own. It matches on the tool name, so a `dynamic-tool` part of yours is never caught by it.
 
 ## The three embeds
 
-Import all three from `@vendoai/vendo/react`, which re-exports them so you need no second package. Each finds the wire on its own and polls until it reaches a terminal state.
+All three come from `@vendoai/vendo/react` — no second package. Each finds the wire on its own and polls until it reaches a terminal state.
 
 | Component | Renders | Reaches |
 | --- | --- | --- |
@@ -60,13 +77,13 @@ Import all three from `@vendoai/vendo/react`, which re-exports them so you need 
 | `<VendoAppEmbed refValue>` | the build beat while the build streams, then the live app | a mounted app, or the build's own failure with a retry |
 | `<VendoApprovalEmbed refValue>` | the approve or deny card, resolving in place | `"pending"`, `"executed"`, `"declined"`, `"expired"` |
 
-None of the three takes config props beyond the one shown. Wire, auth and theme are settings they read from around them, and a failure speaks the failed or expired vocabulary rather than a silent blank.
+None of them takes config props beyond the one shown. Wire, auth, and theme come from around them.
 
-Default to `<VendoToolResult>` wherever you render a finished tool part. Reach for the other two only when you hold a ref that did not come from a live tool call, such as one you stored and want to re-render later.
+Use `<VendoToolResult>` wherever you render a finished tool part. Reach for the other two only when you hold a ref that did not come from a live tool call — one you stored and want to re-render later.
 
 ## No setup
 
-Drop an embed in and it works. With no provider around it, it reads the wire at `/api/vendo`, sends your host session cookie the way the browser already would, and paints on the `--vendo-*` tokens. Every embed on the page shares one client, so ten of them are still one connection.
+Drop an embed in and it works. With no provider around it, it reads the wire at `/api/vendo`, sends your host session cookie the way the browser already would, and styles itself from the `--vendo-*` tokens. Every embed on the page shares one client, so ten of them are still one connection.
 
 ```tsx app/page.tsx focus={4}
 import { VendoToolResult } from "@vendoai/vendo/react";
@@ -79,7 +96,7 @@ export default function Chat() {
 
 ## The provider, when you need it
 
-`VendoProvider` is settings for everything inside it, and it wins over the defaults. Wrap your chat once when any of them is wrong for you: a wire mounted under a base path, a client of your own, brand tokens, your host components.
+`VendoProvider` sets all of that for everything inside it. Wrap your chat once when a default is wrong for you: a wire under a base path, a client of your own, brand tokens, your host components.
 
 ```tsx app/page.tsx focus={5}
 import { VendoProvider, VendoToolResult } from "@vendoai/vendo/react";
@@ -98,11 +115,11 @@ The [headless hooks](/reference/hooks) read the same settings, bare or wrapped, 
 
 ## Approvals never block the loop
 
-A guarded call that needs approval does not throw and does not stall your turn. The tool returns an approval ref right away, your model reads "pending, the person has to approve this", and the call itself parks server-side.
+A guarded call that needs approval does not throw and does not stall your turn. The tool returns an approval ref right away, your model reads "pending, the person has to approve this", and the call parks server-side.
 
 When the person approves in the card, the wire runs the parked call and the card resolves in place. Deny throws it away.
 
-A call parked at the [MCP door](/outside-agents/your-own-agent) is the one exception: approving there grants the call, and the outside agent's own retry of it is what runs it. The card waits through that gap on its working beat, then settles on "Approved — ran" once the retry spends the approval.
+A call parked at the [MCP door](/outside-agents/your-own-agent) is the one exception. Approving there grants the call, and the outside agent's own retry is what runs it. The card shows its working state through that gap, then settles on "Approved — ran" once the retry spends the approval.
 
 <Frame>
   <img
@@ -113,11 +130,11 @@ A call parked at the [MCP door](/outside-agents/your-own-agent) is the one excep
   />
 </Frame>
 
-A pending approval expires after 60 minutes on a sweep, and the card then reads "expired". Change it with `createVendo({ guard: guard({ approvals: { parkedCallTtlMs } }) })`, where `0` means never.
+A pending approval expires after 60 minutes, and the card then reads "expired". Change it with `createVendo({ guard: guard({ approvals: { parkedCallTtlMs } }) })`, where `0` means never.
 
 ## Dispatching it yourself
 
-`parseVendoToolEnvelope(output)` returns the typed envelope or `null`, which is exactly what `<VendoToolResult>` calls. Use it server-side, or anywhere you want the branch in your own code.
+`parseVendoToolEnvelope(output)` returns the typed envelope or `null` — exactly what `<VendoToolResult>` calls. Use it server-side, or anywhere you want the branch in your own code.
 
 ```ts focus={3-4}
 import { parseVendoToolEnvelope } from "@vendoai/core";
@@ -126,6 +143,6 @@ const envelope = parseVendoToolEnvelope(output);
 if (envelope?.kind === "vendo/app-ref@1") saveForLater(envelope.appId);
 ```
 
-It is a runtime value rather than a type, so it ships from `@vendoai/core`. Add that package to your dependencies to import it.
+It is a runtime value, not a type, so it ships from `@vendoai/core` — add that package to import it.
 
-A malformed envelope returns `null` too. The tool pack is the only writer, so a bad shape is a bug there rather than something your chat should half-render.
+Malformed output returns `null` too. The tool pack is the only writer, so a bad shape is a bug there, not something your chat should half-render.

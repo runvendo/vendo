@@ -4,9 +4,9 @@ sidebarTitle: "Handler options"
 description: "Every createVendo option and what it does, plus the nested blocks: models, auth, guard, mcp, apps, profile, and sweep."
 ---
 
-One key is required, an identity, as either `principal` or an `auth` preset. `oauth` becomes required when `mcp` is on.
+Exactly one key is required: an identity, as either an `auth` preset or your own `principal`. `oauth` joins it when `mcp` is on.
 
-`createVendo({ auth })` is day one. `createVendo()` is a type error, and `createVendo({})` throws `VendoError("validation")` naming the missing identity.
+`createVendo({ auth })` is day one. `createVendo()` is a type error, and `createVendo({})` throws `VendoError("validation")` naming the identity it is missing.
 
 ## Composition
 
@@ -234,6 +234,6 @@ createVendo({ principal: async () => ({ kind: "user", subject: "dev" }) });
 
 If you want logged-out visitors served, resolve them to a principal of your own choosing. Marking it `ephemeral: true` keeps it out of org membership and blocks it from connecting external accounts.
 
-The preset seams `facts`, `pools`, and `memberships` run once per context resolution. `facts` becomes the prompt's `[User]` block, `pools` feeds the limits policy, and `memberships` answers `can()`. Every asserted membership is already a pool named `org:<orgId>`, so an org cap needs no `pools` seam of its own.
+The identity seams `facts`, `pools`, and `memberships` run once per context resolution. `facts` becomes the prompt's `[User]` block, `pools` feeds the limits policy, and `memberships` answers `can()`. Every asserted membership is already a pool named `org:<orgId>`, so an org cap needs no `pools` seam of its own.
 
 See [Your users](/users-orgs/your-users) for `facts` and [Orgs & memberships](/users-orgs/orgs-and-memberships) for `memberships`.

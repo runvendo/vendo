@@ -1,13 +1,18 @@
 ---
 title: "What is Vendo"
 sidebarTitle: "What is Vendo"
-description: "An agent inside your product that answers from your own API, builds screens on your real data, and asks before it writes."
+description: "Your users build their own features inside your product: screens on their real data pinned into your pages, automations that run on a schedule, their own accounts connected — all through your own API, as them."
 ---
 
-Vendo is an agent you embed in your product. Your users ask for what they want
-in plain language, and it acts through your own API, as them.
+Vendo lets your users add new features to your product and customize it to how
+they work. They describe what they want in plain language, and an agent builds
+it inside your app — through your own API, as them.
 
-The answer is usually a screen, not a paragraph.
+A screen on their real data, pinned into one of your pages. A digest that runs
+every Friday with nobody there. Their own Gmail or Slack, working inside your
+product. They build these themselves, and they keep them.
+
+Answering questions is the least of what it does.
 
 ## What it looks like
 
@@ -53,20 +58,17 @@ The answer is usually a screen, not a paragraph.
 </Columns>
 
 The path a request takes to get there is in
-[how Vendo works](/how-vendo-works).
+[how Vendo works](/product/how-it-works).
 
-## Screens in your brand
+## Screens that stay
 
-When the answer is one to look at, the agent writes a screen instead of
-describing one. It is a real React component running on live data from your own
-API, in your fonts, colors, and radii. `vendo init` reads those out of your app
-and writes them to `.vendo/theme.json`.
+Ask for something to look at and the agent writes a screen instead of describing
+one. It is a real React component running on live data from your own API, in
+your fonts, colors, and radii.
 
-Register your own components and the screen renders your real UI rather than the
-built-in kit.
-
-A finished screen can stay. Pin it into a slot on one of your pages and it holds
-that spot, re-running on every open, so it opens on today's numbers.
+The screen can stay. Put a slot in one of your pages and every finished screen
+grows a button that puts it there. Press it and the screen holds that spot,
+re-running on every open, so it opens on today's numbers.
 
 <Frame caption="Maple's own overview page. The spending card is the one a user asked for.">
   <img
@@ -77,16 +79,18 @@ that spot, re-running on every open, so it opens on today's numbers.
   />
 </Frame>
 
-## What it can reach
+`vendo init` reads your brand out of your app into `.vendo/theme.json`. Register
+your own components and a screen renders your real UI, not the built-in kit.
 
-The agent's hands are a fixed set, and nothing outside it exists. Wherever a
-tool came from, it crosses the same guard on the way out.
+## What they build from
+
+Whatever a user builds is made of these three things.
 
 <div className="direction-cards">
   <CardGroup cols={3}>
-    <Card title="Your API" href="/capabilities/api-tools" img="/images/cards/capability-api.svg">
+    <Card title="Your API" href="/howto/tools" img="/images/cards/capability-api.svg">
       One command reads your OpenAPI, tRPC, server actions, or routes and writes
-      the tool set.
+      the tool set everything runs on.
 
       API tools →
     </Card>
@@ -97,7 +101,7 @@ tool came from, it crosses the same guard on the way out.
       Connected accounts →
     </Card>
     <Card title="On a schedule" href="/capabilities/automations" img="/images/cards/capability-schedule.svg">
-      The same tools, fired by a cron or an event, with nobody there to watch.
+      A user says when, and the same tools fire on a cron or an event.
 
       Automations →
     </Card>
@@ -107,14 +111,12 @@ tool came from, it crosses the same guard on the way out.
 ## It acts as the signed-in user
 
 Every call runs inside your process, through your routes and your auth, carrying
-the asking user's own identity. Vendo's servers never call your API.
+the asking user's own identity. Vendo's servers never call your API. The agent's
+hands are a fixed set, and a user can build only what they could already do by
+clicking.
 
-Before a call lands, the guard reads its risk grade. Reads go through. Writes and
-deletes stop and ask, quoting the exact request rather than the tool's name. A
-decision can be remembered, and raising a tool's risk lapses the grants that came
-before it.
-
-Approved or blocked, every call writes an audit line.
+Reads go through. Writes and deletes stop and ask, quoting the exact request
+rather than the tool's name, and every call writes an audit line either way.
 
 <Frame caption="The ask names the exact request. Every call keeps its own line, approved or not.">
   <img
@@ -124,43 +126,6 @@ Approved or blocked, every call writes an audit line.
     height="996"
   />
 </Frame>
-
-## Where it lives in your product
-
-One provider carries the wire and your brand. What renders inside it is your
-call.
-
-- **The overlay** — a launcher pill in the corner that opens a panel over your
-  page, or docks beside it and lets the page reflow.
-- **The palette** — `⌘K` opens the same conversation in its compact form, with
-  the user's own apps and their activity on the chip strip.
-- **Slots** — a place in one of your pages that a generated view can occupy.
-- **Triggers** — a button anywhere in your product that hands the agent one
-  task, composer prefilled, never sent.
-- **The bare thread**, or [the hooks](/reference/hooks), when the conversation
-  belongs inside your own layout.
-
-Each one re-themes from the same token file, so they cannot drift apart. What
-they render is in [mount the surface](/product/mount-the-surface).
-
-## Start with one package
-
-None of the above is the first step. The agent on its own is: install
-`@vendoai/agents`, write one call, and it answers.
-
-```ts
-import { agent } from "@vendoai/agents";
-
-const support = agent({
-  name: "support",
-  instructions: "Answer in the product's voice; never invent account numbers.",
-});
-
-console.log((await support.chat("Where is order A-1001?")).text);
-```
-
-Tools, a route, a schedule, and the guard are each one line from there —
-[backend quickstart](/backend/quickstart).
 
 ## Start where you are
 

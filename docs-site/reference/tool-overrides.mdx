@@ -1,0 +1,213 @@
+---
+title: "Tool overrides"
+sidebarTitle: "Tool overrides"
+description: "Every field .vendo/overrides.json accepts: per-tool corrections, compound tools, curated menus, and the descriptor fields defineTool does not ask for."
+---
+
+`.vendo/overrides.json` is the human layer of `.vendo/`. `vendo sync`
+regenerates `tools.json` wholesale on every run and never touches this file, so
+this is where a correction survives.
+
+Three layers merge per tool, in order: deterministic extraction
+(`.vendo/tools.json`), the AI pass (`.vendo/judgments.json`), then your
+overrides. Overrides win field by field, and they are the last word.
+
+```json .vendo/overrides.json focus={4-5}
+{
+  "format": "vendo/overrides@3",
+  "tools": {
+    "host_invoices_delete": { "risk": "destructive", "confirmEach": true },
+    "host_internal_debug": { "disabled": true }
+  }
+}
+```
+
+Keep `tools` even when it is empty — it is a required key. The file is strict
+on purpose: a typo in a hand-written override fails loudly rather than being
+silently ignored. `compounds`, `briefs`, `surfaces`, and `remix` are the only
+other top-level keys.
+
+## Per-tool fields
+
+| Field | Type | What it does |
+| --- | --- | --- |
+| `risk` | `read` · `write` · `destructive` · `ungraded` | The grade the guard reads before the call. `ungraded` is explicit, not absence, and the guard's default treats it like `destructive` and asks |
+| `confirmEach` | boolean | Every call earns its own approval, whatever the policy says |
+| `disabled` | boolean | The tool stops existing for the agent. `false` re-enables one extraction turned off |
+| `description` | string | The text the model reads |
+| `title` | string | The short human label approval cards and tool menus show. Presentation, not capability |
+| `audience` | `end-user` · `operator` · `internal` | Who can legitimately call this through your product's own auth. Non-end-user tools are excluded from the embedded agent by default |
+| `semantics` | record of field semantics | What a response field *means*, keyed by collapsed dot path |
+
+Raising risk lapses old grants. The next call parks a fresh approval that names
+the invalidated grant, and audits one `grant-invalidated` decision.
+
+A grade you pin here holds for every tool, listed or not. A
+[connected-account](/capabilities/connected-accounts) tool the agent found by
+searching the provider's catalog is graded live off the provider's own tag —
+name it here by the provider's tool id and your grade beats that tag, the same
+way it beats extraction for a tool of your own.
+
+### Field semantics
+
+`semantics` is annotation on the tool's **response**, keyed by dot path with
+array levels collapsed — `data.amountCents` covers `/data/3/amountCents`. It is
+the highest authority for that field: your annotation beats sync's inference.
+
+```json .vendo/overrides.json
+{
+  "format": "vendo/overrides@3",
+  "tools": {
+    "host_invoices_list": {
+      "semantics": {
+        "data.amountCents": { "kind": "money", "unit": "cents", "currency": "USD" },
+        "data.dueAt": { "kind": "date", "format": "iso" },
+        "data.status": { "kind": "enum", "labels": { "open": "Open", "paid": "Paid" } },
+        "data.customerId": { "kind": "id", "entity": "customer" },
+        "data.branch": { "kind": "code" }
+      }
+    }
+  }
+}
+```
+
+The kinds are `money` (`unit` `cents` or `dollars`, optional `currency`), `date`
+(`format` `iso` or `epoch`), `enum` (`labels`), `id` (optional `entity`),
+`percent` (`scale` `ratio` or `0-100`), `code`, and `plain`. `code` is an
+identifier a person reads — a sha, a branch, a ticket key — as opposed to `id`,
+a handle a screen passes back to a tool and usually never shows.
+
+## Compound tools
+
+The same file's `compounds` array bundles a short sequence of existing tools
+into one capability the agent calls by name. Compounds live only here, never in
+`tools.json` — a compound entry inside `tools.json` is rejected.
+
+```json .vendo/overrides.json focus={4-18}
+{
+  "format": "vendo/overrides@3",
+  "tools": {},
+  "compounds": [
+    {
+      "name": "host_invoice_send_flow",
+      "description": "Create an invoice and email it",
+      "inputSchema": { "type": "object" },
+      "risk": "write",
+      "binding": {
+        "kind": "compound",
+        "steps": [
+          { "id": "create", "tool": "host_invoices_create", "args": { "amount": "args.amount" } },
+          { "id": "send", "tool": "host_invoices_send", "if": "args.email != null", "args": { "id": "steps.create.id" } }
+        ]
+      }
+    }
+  ]
+}
+```
+
+### Step shape
+
+| Key | Required | What it does |
+| --- | --- | --- |
+| `id` | yes | Names the step's output for later steps. Ids must be unique within the compound |
+| `tool` | yes | The primitive tool this step calls |
+| `args` | no | Argument name → JSONata expression |
+| `if` | no | JSONata expression; the step runs only when it is truthy |
+| `forEach` | no | JSONata expression producing an array; the step runs once per item, with `item` bound |
+
+Every expression is evaluated against `{ args, steps, item }`, not taken as a
+literal — that is how `steps.create.id` hands one step's output to the next. A
+compound holds between 1 and 50 steps, and a `forEach` may not exceed 1000
+items.
+
+### The two rules the loader enforces
+
+Once the file parses, two more checks run against the merged result:
+
+1. `risk` must equal the **maximum** of the step risks. `ungraded` dominates
+   that maximum — a compound cannot claim to know its own risk while one of its
+   steps is ungraded.
+2. A step may only name an **enabled primitive** host or connector tool. Never
+   another compound, never a capability tool registered through `add()`.
+
+An entry that breaks either is quarantined with a console warning rather than
+failing the boot, so read the log once after adding one.
+
+Each step still crosses the guard on its own descriptor, so approvals, grants,
+and audit apply per step. A compound-level grant never rides into a step's
+`actAs`.
+
+## Remix opt-outs and briefs
+
+`remix.ignoreSlots` names the `<Remixable>` slots sync should leave alone. A
+slot listed here is never captured, so it gets no baseline and no ✦.
+
+```json .vendo/overrides.json
+{
+  "format": "vendo/overrides@3",
+  "tools": {},
+  "remix": { "ignoreSlots": ["PricingTable"] }
+}
+```
+
+`briefs` is the last top-level key: `{ name, text, tools? }` entries of reviewed
+prose attached to primitive tools. It parses and validates today, but nothing
+consumes it yet, so writing one changes nothing.
+
+## The fields defineTool does not ask for
+
+`defineTool` returns a plain `ToolDefinition`, so every descriptor field the
+helper does not ask for is a spread away.
+
+```ts highlight={2-3}
+const refundOrder = {
+  ...defineTool({ /* … */ }),
+  confirmEach: true,
+  title: "Refund an order",
+};
+```
+
+`confirmEach` makes every call earn its own approval, whatever the policy says.
+`title` is the human label approval cards and tool menus show.
+
+What the helper does ask for is fixed:
+
+- `input` is the single statement of the arguments. It becomes the JSON Schema
+  the model is shown **and** the parse that runs before `execute`, so the two
+  can never drift apart. A call that does not match is refused before your
+  function runs.
+- `risk` is required, and it is a grade: `read`, `write`, or `destructive`. You
+  wrote the tool, so you know. Only extraction is allowed to answer `ungraded`.
+- `context` is the run context — `context.principal` is whose authority the call
+  carries.
+- `execute` returns the output, or throws. The denial outcomes belong to the
+  guard: nothing you write can fake an approval.
+
+## Curated menus and hand-written tools
+
+`surfaces.agent` and `surfaces.mcp` each name the tools that one surface
+offers. A menu is curation, not a permission boundary: it decides what a
+surface *offers*, never what the guard allows.
+
+```json .vendo/overrides.json
+{
+  "format": "vendo/overrides@3",
+  "tools": {},
+  "surfaces": {
+    "mcp": { "tools": ["host_invoices_list", "host_refundOrder"] }
+  }
+}
+```
+
+The key set is a closed enum, so a typo'd surface name fails at parse rather
+than silently curating nothing.
+
+An authored menu is an allowlist of exact names, so a hand-written tool has to
+be in it. If `surfaces.mcp` names a menu, add `host_refundOrder` to it —
+otherwise the door will not offer it, and a call to it answers the same
+not-found an unknown name gets. Vendo's own `vendo_*` tools bypass the menu and
+always ride along; yours does not.
+
+Forget to add it, and Vendo warns once per surface per boot, naming the tool you
+left out — but the warning does not add it for you. See
+[Curate the menu](/outside-agents/how-the-door-works#curate-the-menu).

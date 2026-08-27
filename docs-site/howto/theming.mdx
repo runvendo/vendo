@@ -1,37 +1,20 @@
 ---
-title: "Theming"
-sidebarTitle: "Theming"
+title: "Theme it"
+sidebarTitle: "Theme it"
+icon: "palette"
 description: "One token file sets the colors, type, radii, density, and motion of every Vendo surface in your product."
 ---
 
 Your brand, extracted from your own UI on day one, then yours to edit.
 
-## The picture
+<Steps>
 
-The same Vendo overlay, in two products. Same markup, same components, different token file.
+<Step title="Open .vendo/theme.json">
 
-| Token | Maple | A dark brand |
-| --- | --- | --- |
-| `colors.accent` | `#111111` | `#8b5cf6` |
-| `colors.background` | `#FBFBFA` | `#14151a` |
-| `radius.medium` | `14px` | `5px` |
-| `density` | `comfortable` | `compact` |
-| `motion` | `full` | `reduced` |
-| `--vendo-color-scheme` | `light` | `dark` |
+`vendo init` already wrote it, filled from your app's own CSS. Five groups,
+one file.
 
-Nothing in the chrome hardcodes a Vendo brand. A dark background flips the
-whole surface on its own.
-
-That last row is derived, not written. Vendo takes the relative luminance of
-`colors.background`, flips to `dark` below `0.179`, and the chrome's
-`light-dark()` branches follow.
-
-## The token file
-
-Five groups, one file. Every shipped surface and every
-[prewired primitive](/generated/host-components) reads them.
-
-```json .vendo/theme.json focus={2,12,13,14,15}
+```json .vendo/theme.json
 {
   "colors": {
     "background": "#FBFBFA",
@@ -53,96 +36,81 @@ Five groups, one file. Every shipped surface and every
 | Group | What it drives |
 | --- | --- |
 | `colors` | surfaces, text, accents, borders |
-| `typography` | the body font, and the size the whole type scale is derived from |
+| `typography` | the body font, and the size the type scale is derived from |
 | `radius` | every corner in the chrome |
 | `density` | control heights, padding, and gaps |
 | `motion` | `160ms`, or `0ms` when you set it to `reduced` |
 
-Those five groups are the whole required shape. Every token added since is
-optional, so a theme file written a year ago still parses today.
+</Step>
 
-These land as `--vendo-*` CSS variables on the surface root. Read them from
-your own styles and a custom panel tracks the same theme:
+<Step title="Adjust the tokens you care about">
 
-```css
-.my-card {
-  padding: var(--vendo-density-card-padding);
-  transition:
-    background-color var(--vendo-motion-duration)
-    var(--vendo-motion-easing);
+Edit values in place. Here a purple accent, tighter corners, and a compact
+scale:
+
+```json .vendo/theme.json focus={7,13,14}
+{
+  "colors": {
+    "background": "#FBFBFA",
+    "surface": "#FFFFFF",
+    "text": "#111111",
+    "muted": "#908C85",
+    "accent": "#8b5cf6",
+    "accentText": "#FFFFFF",
+    "danger": "#B42318",
+    "border": "#ecebe8"
+  },
+  "typography": { "fontFamily": "Inter, sans-serif", "baseSize": "15px" },
+  "radius": { "small": "3px", "medium": "6px", "large": "10px" },
+  "density": "compact",
+  "motion": "full"
 }
 ```
 
-## Where it comes from
+Keep all five groups. The file is a whole theme, not a patch.
 
-You do not write it from scratch. You inherit it, then change what you want.
+</Step>
 
-<svg viewBox="0 0 760 118" role="img" aria-label="vendo init reads your live UI, writes .vendo/theme.json into your repo, and you edit it like any other file" style={{ width: "100%", height: "auto", margin: "1.5rem 0" }}>
-  <g fill="none" stroke="currentColor" strokeOpacity="0.2">
-    <rect x="1" y="1" width="226" height="52" rx="11" />
-    <rect x="533" y="1" width="226" height="52" rx="11" />
-  </g>
-  <rect x="267" y="1" width="226" height="52" rx="11" fill="#6c3bff" fillOpacity="0.06" stroke="#6c3bff" strokeOpacity="0.45" />
-  <g fill="none" stroke="#6c3bff" strokeWidth="1.5" strokeLinecap="round">
-    <path d="M235 27h20" /><path d="M501 27h20" />
-  </g>
-  <g fill="#6c3bff">
-    <path d="M255 23l7 4-7 4z" /><path d="M521 23l7 4-7 4z" />
-  </g>
-  <g fill="currentColor" fontSize="13.5" fontWeight="600" textAnchor="middle">
-    <text x="114" y="32">vendo init</text>
-    <text x="646" y="32">You</text>
-  </g>
-  <text x="380" y="32" fill="#6c3bff" fontSize="13.5" fontWeight="600" textAnchor="middle">.vendo/theme.json</text>
-  <g fill="currentColor" fillOpacity="0.55" fontSize="11.5" textAnchor="middle">
-    <text x="114" y="76">reads your live UI</text>
-    <text x="380" y="76">written into your repo</text>
-    <text x="646" y="76">edit it like any other file</text>
-  </g>
-</svg>
+<Step title="Every surface re-themes">
 
-`vendo init` reads your app's own CSS and writes the file. It then prints the
-paste that imports it into your provider:
+The provider you pasted from init already imports the file, so there is
+nothing else to wire.
 
-```tsx app/layout.tsx focus={5}
-import theme from "../.vendo/theme.json";
-import type { VendoTheme } from "@vendoai/vendo";
+```tsx app/layout.tsx focus={2}
 import { VendoProvider } from "@vendoai/vendo/react";
+import theme from "../.vendo/theme.json";
 
-<VendoProvider baseUrl="/api/vendo" theme={theme as VendoTheme}>
+<VendoProvider baseUrl="/api/vendo" theme={theme}>
   {children}
 </VendoProvider>
 ```
 
-The prop takes a partial theme and merges it group by group over Vendo's
-neutral default. Pass the file, an inline object, or the file with a few keys
-spread on top.
+Save and reload. The overlay, the palette, slots, generated screens, approval
+modals, and toasts each stamp these tokens on their own root and move
+together. Nothing in the chrome hardcodes a Vendo brand.
 
-Later runs of `vendo sync` re-read your app and update the slots you have not
-touched. A slot you edited by hand is pinned and reported rather than
-overwritten, and `vendo sync --theme-refresh` takes your app's value back.
+</Step>
 
-<Note>
-  `createVendo` has its own `theme` key, resolved once at boot. It feeds app
+</Steps>
+
+## Good to know
+
+- Extraction reads your root layout, the CSS that layout imports, and
+  `tailwind.config.*`, taking the shadcn and Tailwind names exactly:
+  `--primary`, `--background`, `--card`, `--font-sans`, `--radius`.
+- Every group also lands as `--vendo-*` CSS variables on the surface root, so
+  `var(--vendo-density-card-padding)` in your own styles tracks the same theme.
+- `--vendo-color-scheme` is derived, not written. Vendo takes the relative
+  luminance of `colors.background` and flips to `dark` below `0.179`, so a dark
+  brand gets dark chrome on its own.
+- Those five groups are the whole required shape. Every token added since is
+  optional, so a theme file written a year ago still parses.
+- `vendo sync` re-reads your app and updates the slots you have not touched. A
+  slot you edited by hand is pinned and reported, and `vendo sync
+  --theme-refresh` takes your app's value back.
+- `createVendo` has its own `theme` key, resolved once at boot. It feeds app
   generation and the one theme line in the agent's prompt, not the chrome.
   Leave it unset and the server reads `.vendo/theme.json`.
-</Note>
-
-## Where to go next
-
-Theme is how it looks. These three are what it knows.
-
-<Columns cols={3}>
-  <Card title="Instructions" icon="file-pen" href="/customize/instructions">
-    The prose your agent reads before every turn.
-  </Card>
-  <Card title="Context" icon="user" href="/customize/context">
-    Who is asking, and what their screen shows.
-  </Card>
-  <Card title="Knowledge" icon="book-open" href="/customize/knowledge">
-    Answers from your docs, with citations.
-  </Card>
-</Columns>
 
 ## Token reference
 

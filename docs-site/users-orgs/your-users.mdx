@@ -32,7 +32,7 @@ Your resolver may only mint `kind: "user"`. Returning `kind: "org"` is rejected
 at the wire, because org context is derived from membership rather than
 resolved; so is any subject in the reserved `vendo:` namespace.
 
-[Auth](/production/auth) is where the resolver itself lives — the presets, the
+[Auth](/howto/auth) is where the resolver itself lives — the presets, the
 session decode, and away runs. This page is only about what rides on top of it.
 
 ---
@@ -102,7 +102,7 @@ to guards and tools and is never rendered into the prompt.
 ## Signed-out and ephemeral visitors
 
 A resolver that answers `null` refuses the request — the host owns sign-in, so
-that is correct. [Auth](/production/auth) covers what the chrome does next.
+that is correct. [Auth](/howto/auth) covers what the chrome does next.
 
 To serve logged-out visitors, resolve them to a principal of your own and mark
 it `ephemeral: true`. That subject still chats and still builds, but four doors
@@ -125,7 +125,7 @@ close:
 ## Where to go next
 
 <CardGroup cols={3}>
-  <Card title="Auth" href="/production/auth">
+  <Card title="Auth" href="/howto/auth">
     The resolver that mints the subject, and the presets that fill it.
 
     `auth: authJs()`

@@ -1,16 +1,16 @@
 ---
 title: "In your existing agent"
-sidebarTitle: "Overview"
+sidebarTitle: "Quickstart: in your agent"
 description: "Spread Vendo's guarded tool pack into an AI SDK or Mastra loop you already run, and render what it returns in your own chat."
 ---
 
 Keep your loop. Vendo adds the guarded tools and renders what they return.
 
-Both paths start with [`npx vendo init`](/), which reads your repo, asks how
-people will use your agent, and writes the wiring. Pick the framework your loop
-already runs and follow that page end to end — each one is complete on its own.
+Every path starts with [`npx vendo init`](/), which reads your repo, asks how
+people will use your agent, and writes the wiring. Pick how your loop runs and
+follow that page end to end — each one is complete on its own.
 
-<CardGroup cols={2}>
+<CardGroup cols={3}>
 
 <Card title="Quickstart: AI SDK" icon="/images/logos/vercel.svg" href="/existing-agent/ai-sdk">
 Per-request packs, `dynamic-tool` parts, one route edit.
@@ -24,6 +24,10 @@ A static definition, the request-context caller, one route edit.
 `VENDO_PRINCIPAL_KEY`
 </Card>
 
-</CardGroup>
+<Card title="Quickstart: MCP" icon="/images/logos/mcp.svg" href="/outside-agents/quickstart">
+Any agent that speaks MCP gets the same guarded tools.
 
-Either way, the render contract is the same: [Embeds in your chat](/existing-agent/embeds) has the envelope a `vendo_*` tool returns and the components that turn it into a surface.
+`createVendo({ mcp: true })`
+</Card>
+
+</CardGroup>

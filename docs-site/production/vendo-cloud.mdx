@@ -10,8 +10,8 @@ automations.
 
 ## Get a key
 
-`vendo login` opens your browser at the approval page, you approve the code
-while signed in to the console, and the minted key is written to `.env.local`.
+`vendo login` opens your browser at the approval page. Approve the code while
+signed in to the console, and the minted key is written to `.env.local`.
 
 ```bash Terminal highlight={1}
 $ npx vendo login
@@ -21,9 +21,6 @@ Approved — VENDO_API_KEY saved to .env.local (…a1b2)
 
 The key is never printed. A non-TTY caller gets the URL and pairing code on
 stdout instead, so a coding agent can hand them to you.
-
-If the polling process dies before you approve, run `vendo login` again. It
-resumes the pending claim and the code you were already shown still works.
 
 ---
 
@@ -46,8 +43,8 @@ the environment, so nothing is decided in a hidden branch.
 
 <Note>
   There is no validate endpoint and no entitlement cache. `vendo doctor` checks
-  that the key is present and well formed locally, and a bad or revoked key
-  surfaces on the first real service call as `Invalid or revoked API key (401)`.
+  locally that the key is present and well formed; a bad or revoked one surfaces
+  on the first real service call as `Invalid or revoked API key (401)`.
 </Note>
 
 ---
@@ -56,28 +53,14 @@ the environment, so nothing is decided in a hidden branch.
 
 Every key carries one of two scopes, fixed when it is minted.
 
-<AccordionGroup>
-  <Accordion title="Runtime (the default)">
-    Reads and writes this project's data. This is what apps, agents, and CI
-    publishers need.
+| Scope | What it can do | Minted by |
+| --- | --- | --- |
+| Runtime (the default) | Read and write this project's data — what apps, agents, and CI publishers need | `vendo cloud keys create`, or the console |
+| Admin | Everything Runtime can, plus the two doors that permanently destroy or re-own data: `store/erase` and `store/lifecycle/promote` | The console only |
 
-    Every new key and every key minted before scopes shipped is Runtime.
-  </Accordion>
-  <Accordion title="Admin">
-    Everything Runtime can do, plus the two lifecycle doors that permanently
-    destroy or re-own data: `POST /api/v1/store/erase` and
-    `POST /api/v1/store/lifecycle/promote`.
-
-    A runtime-scoped key that hits either is refused with HTTP 403 and the
-    `blocked` code, before the request body is read.
-  </Accordion>
-</AccordionGroup>
-
-Scope is chosen in the console's **Create key** dialog. Runtime is preselected
-and Admin is a deliberate second click.
-
-`vendo cloud keys create` mints Runtime keys only. Use the console when you
-need Admin.
+Runtime is preselected in the console's **Create key** dialog and Admin is a
+deliberate second click. A runtime-scoped key that hits an admin door is refused
+with HTTP 403 and the `blocked` code, before the request body is read.
 
 ```bash Terminal highlight={1}
 vendo cloud keys create --project <projectId> --name "ci-publisher"
@@ -102,8 +85,8 @@ usage meters at the published rates and pauses at the plan's spend cap.
 | Teams | $499 / month | $499 of usage / month | $1,000 / month |
 | Enterprise | Custom | Committed usage | None |
 
-Usage meters org-wide across every project, at rates that are identical on
-every plan including Free.
+Usage meters org-wide across every project, at rates that are identical on every
+plan including Free.
 
 | Rate | Price |
 | --- | --- |
@@ -115,19 +98,15 @@ every plan including Free.
 | Automation runs | $3 per 1,000 runs |
 
 Free hard-stops at $5 with a clear error naming the reset date, never a charge.
-Owners are emailed at 50%, 90%, and 100% of the cap, and usage pauses when the
-cap is reached.
+Owners are emailed at 50%, 90%, and 100% of the cap.
 
 ---
 
 ## Hosted sandbox
 
-Server-backed apps need a machine. `cloudSandbox` is the adapter behind them,
-and the key composes it into the unset sandbox slot for you.
-
-Machines boot from Cloud's pooled base image, Node plus the in-box agent.
-Snapshot references are prefixed `vendo:v2:` and resume only against the
-console.
+Server-backed apps need a machine. The key composes `cloudSandbox` into the
+unset sandbox slot, and machines boot from Cloud's pooled base image — Node plus
+the in-box agent.
 
 <Warning>
   Egress is HTTP(S) only. Raw TCP is severed even to allowlisted hosts, so a
@@ -155,7 +134,7 @@ const vendo = createVendo({
 
 Automations run in **your** process, on your data, with the owner's grants.
 Nothing about them is deployed anywhere else. What a key buys you is the one
-thing that is genuinely painful to run yourself: something reliable to knock on
+part that is genuinely painful to run yourself: something reliable to knock on
 the door.
 
 Once a minute, Cloud calls every enrolled deployment:
@@ -164,10 +143,10 @@ Once a minute, Cloud calls every enrolled deployment:
 POST https://your-app.example.com/api/vendo/tick
 ```
 
-Enrolling is not a step you take: a deployment with a key derives the tick
-secret from that key and registers itself — its public URL and that secret —
-every time it boots, so a redeploy re-enrols itself. Set `VENDO_BASE_URL` to the
-deployment's full public URL and there is nothing else to configure.
+Enrolling is not a step you take. A keyed deployment derives the tick secret
+from its key and registers its own public URL at every boot, so a redeploy
+re-enrols itself — set `VENDO_BASE_URL` to the deployment's full public URL and
+there is nothing else to configure.
 
 The body is empty and the call carries a standard-webhooks signature over that
 secret, so your deployment can tell it is Cloud. Cloud holds no schedule, decides
@@ -175,21 +154,14 @@ nothing about what is due, and never writes a run: your engine answers
 `202 { fired: n }`, and the ledger the console shows you is the one your
 deployment wrote. A duplicate knock claims nothing.
 
-Without a key, that knock is yours to wire: set `VENDO_TICK_SECRET` and have any
-cron send it as a bearer token. That variable also overrides the derived secret
-when you do have a key. A development process is the exception either way —
-Cloud cannot reach a localhost wire, so a dev process runs its own ticker.
+Set `VENDO_TICK_SECRET` to override the derived secret, or to wire your own cron
+without a key. A development process is the exception either way — Cloud cannot
+reach a localhost wire, so a dev process runs its own ticker.
 
 External triggers ride the Composio connectors. Connect the account once in the
 console; `hooks.vendo.run` is the public URL the service posts to, and it
 forwards the delivery verbatim to your deployment's own webhook door and relays
 your answer back.
-
-<Note>
-  Because the run happens in your process, a `fn:` step into a generated app's
-  own sandbox machine works exactly as it does locally. There is no second
-  runner that has to reach it.
-</Note>
 
 ---
 
@@ -202,11 +174,8 @@ const snapshot = await vendo.apps.share(appId, ctx);
 const record = await vendo.apps.publish(appId, ctx);
 ```
 
-`share` returns a frozen copy with `id`, `doc`, and `createdAt`. `publish`
-returns the assigned `version` alongside `id`, `appId`, and `createdAt`.
-
-Both responses are validated against the frozen wire schemas before they
-resolve.
+`share` returns a frozen copy with `id`, `doc`, and `createdAt`. `publish` adds
+the assigned `version` alongside `id`, `appId`, and `createdAt`.
 
 ---
 
@@ -221,8 +190,7 @@ resolve.
 
 Key format is `vnd_` followed by 40 hex characters. `vendo init --cloud-key`
 rejects a malformed key before writing it, and doctor warns on one already in
-the environment.
-
+the environment — [`E-CLOUD-001`](/production/troubleshooting/e-cloud-001).
 Neither makes a network call to do so.
 
 To point at a different console, for instance a staging environment:
@@ -232,25 +200,3 @@ export VENDO_CLOUD_URL=https://console.staging.vendo.run
 ```
 
 Individual CLI commands also take `--api-url <url>` for a one-off override.
-
----
-
-## Where to go next
-
-<CardGroup cols={3}>
-  <Card title="Persistence" href="/production/persistence">
-    What the hosted store holds, what it refuses, and how to erase a user.
-
-    `eraseStore(vendo.store)`
-  </Card>
-  <Card title="Model credentials" href="/production/model-credentials">
-    The gateway the key points at, and how to pin a model.
-
-    `VENDO_MODEL`
-  </Card>
-  <Card title="Telemetry" href="/production/telemetry">
-    What a keyed deployment reports about itself, and how to turn it off.
-
-    `VENDO_TELEMETRY_DISABLED=1`
-  </Card>
-</CardGroup>

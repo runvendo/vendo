@@ -10,22 +10,19 @@ Drop a file. Build on it.
 
 Attachments used to ride one message and end with it. A file dropped in chat is
 now **saved** — into that user's own files, private to them, still there in next
-week's conversation. The agent reads it and answers from it, and can build an
-app on top of it.
+week's conversation. The agent reads it, answers from it, and can build an app on
+top of it.
 
-The message that follows carries only a reference to the file. That is what
-keeps a transcript light: a spreadsheet lands once, and the conversation about
-it stays a conversation, not a copy of the file repeated on every turn.
-
-Images are the deliberate exception. They still ride the message itself, because
-that is how a model sees a picture at all.
+The message that follows carries only a reference to the file, which is what
+keeps a transcript light: a spreadsheet lands once, and the conversation about it
+stays a conversation. Images are the deliberate exception. They still ride the
+message itself, because that is how a model sees a picture at all.
 
 ## Where files go
 
-Each user gets `/user/files/` inside their own workspace — the same filesystem
-the agent works in, scoped to that one person. Nothing is shared between users,
-and nothing here belongs to a thread, so a file survives every conversation that
-comes after it.
+Each user gets `/user/files/` inside their own workspace, scoped to that one
+person. Nothing is shared between users, and nothing here belongs to a thread, so
+a file outlives every conversation that comes after it.
 
 `POST /files` is the door a browser uses:
 
@@ -42,25 +39,18 @@ jan,31000
 { "path": "/user/files/sales-2026.csv", "bytes": 24 }
 ```
 
-The body is the file's own raw bytes under its own media type — there is no
-multipart form to assemble, so the name rides the query string, percent-encoded.
-
-`x-vendo-upload` is required and its value is not read. A raw body cannot be
-`application/json`, so this door sits outside the wire's CSRF floor and asks for
-a header a cross-site form post cannot set. Without it the upload comes back a
-`400`. The client below sends it for you.
+The body is the file's own raw bytes under its own media type, so the name rides
+the query string, percent-encoded. `x-vendo-upload` is required and its value is
+never read — it is simply a header a cross-site form post cannot set. A name is a
+**file name**, never a path: `nested/report.csv` and `../escape.csv` are refused
+rather than quietly rewritten.
 
 <Note>
   **Same name replaces.** Upload `sales-2026.csv` again and the new file *is*
-  `sales-2026.csv` — last write wins, no `-v2` suffix, no second copy. This is
-  deliberate: re-sending a corrected export is the common case, and a drawer that
-  silently accumulated four near-identical spreadsheets would be worse than one
-  that keeps the newest.
+  `sales-2026.csv` — last write wins, no `-v2` suffix, no second copy. Re-sending
+  a corrected export is the common case, and a drawer of four near-identical
+  spreadsheets would be worse than one that keeps the newest.
 </Note>
-
-A name is a **file name**, never a path. `nested/report.csv` and `../escape.csv`
-are refused rather than quietly rewritten, so nothing can address anything
-outside the user's own files.
 
 ## From the browser
 
@@ -76,8 +66,8 @@ thread, or picking one with the paperclip, uploads it and sends the reference.
 
 ## From your own code
 
-`putUserFile` is the same write, called server-side — for pushing a file at a
-user without waiting for them to bring it:
+`putUserFile` is the same write, called server-side — for pushing a file at a user
+without waiting for them to bring it:
 
 ```ts
 await vendo.putUserFile({
@@ -87,9 +77,8 @@ await vendo.putUserFile({
 });
 ```
 
-It writes exactly what the chat door writes, so nothing downstream can tell the
-two apart. It **delivers nothing and starts no turn** — the file is simply there,
-and the user reaches it the next time they chat.
+It **delivers nothing and starts no turn**. The file is simply there, and the user
+reaches it the next time they chat.
 
 ## What the agent does with it
 
@@ -101,23 +90,15 @@ Three tools come with every deployment — no adapter, no key, no configuration:
 | `vendo_user_files_read` | `read` | Reads one of them, by name |
 | `vendo_user_files_put` | `write` | Saves one, by name. Text as `content`; anything else base64 with `encoding: "base64"` |
 
-All three run through the same guard, audit trail and approval rules as every
-other tool, so on the `cautious` preset the write parks for the person. None of
-them takes a path — only a **file name** — so nothing they are asked for can
-address anything outside that one user's files. There is no subject argument
-either: each call opens the drawer of the principal that made it and no other.
+They run through the same guard, audit trail, and approval rules as every other
+tool, so on the `cautious` preset the write parks for the person. None of them
+takes a path or a subject — each call opens the drawer of the principal that made
+it and no other.
 
-A long file is read a window at a time — 200 lines, or 12,000 characters,
-whichever comes first — so a spreadsheet gets walked rather than truncated. The
-result says `truncated` and hands back a `nextOffset` to pass as `offset` on the
-next call. `offset` counts lines, never characters.
-
-Because the tools are on the ordinary registry, the listing is also how the
-agent finds a file in a **later** conversation. Nothing about last month's
-upload is in this conversation's history — the agent looks, finds it, and reads
-it. Being on the ordinary registry is also why they are at the
-[MCP door](/outside-agents/how-the-door-works): an outside agent holding a
-user-bound token gets the same three tools against that same user's files.
+The list is also how the agent finds last month's upload in a conversation that
+knows nothing about it. And because these are ordinary tools, they are at the
+[MCP door](/outside-agents/how-the-door-works) too: an outside agent holding a
+user-bound token gets the same three against that same user's files.
 
 ## What reads back
 
@@ -126,18 +107,10 @@ Any file can be **saved**. Only these read back as text:
 `csv` · `tsv` · `txt` · `log` · `sql` · `md` · `json` · `ndjson` · `xml` ·
 `html` · `yaml` · `yml`
 
-Anything else — a PDF, an image, an `.xlsx` workbook, a `.parquet` export, or
-any extension Vendo does not recognize — comes back with its name, size and
-media type, `readable: false`, and this:
-
-> `sales.parquet` is saved, but its contents cannot be read back yet. Only these
-> read back as text: csv, tsv, txt, log, sql, md, json, ndjson, xml, html, yaml,
-> yml. Tell the user what the file is and ask them for one of those if you need
-> what is inside it.
-
-That is an `ok`, not an error. The bytes are safe, and the sentence tells the
-agent what to ask the person for instead of leaving it to narrate an empty
-result.
+Anything else — a PDF, an image, an `.xlsx` workbook, a `.parquet` export — comes
+back with its name, size, and media type, plus a sentence telling the agent to ask
+the user for one of the readable formats instead. That is an `ok`, not an error:
+the bytes are safe either way.
 
 <Warning>
   **The extension is the whole evidence.** Nothing stores a media type, so a
@@ -147,65 +120,43 @@ result.
 
 ## Building on a file
 
-**There is nothing to wire here.** Once your users can drop files (the upload
-door above), everything in this section happens on its own — no API to call, no
-configuration. This is what the agent does with a file, automatically.
-
-The whole flow, as your user experiences it:
+**There is nothing to wire here.** Once your users can drop files, everything
+below happens on its own. The whole flow, as your user experiences it:
 
 1. **They drop `sales-2026.csv`** into the chat and ask: *"make me a dashboard of this."*
 2. **The agent reads the file and builds an app.** The rows it needs are copied into the app's own saved items — the app's private storage, separate from the user's files. The dashboard renders from those saved rows.
-3. **The file and the app now live separately.** The copy is a snapshot, not a live link — the app doesn't read the user's files afterward, and nothing re-reads them on its behalf.
-4. **In December they drop the updated `sales-2026.csv`.** Same name, so it replaces the old copy — no duplicates. The dashboard still shows what it was built from —
-5. **— until they ask.** *"Refresh my dashboard."* The agent reads the new file, rewrites the app's saved items, and says what it did: file replaced, app updated.
+3. **The file and the app now live separately.** The copy is a snapshot, not a live link, so nothing re-reads the user's files on the app's behalf.
+4. **In December they drop the updated `sales-2026.csv`.** Same name, so it replaces the old copy. The dashboard still shows what it was built from —
+5. **— until they ask.** *"Refresh my dashboard."* The agent reads the new file, rewrites the app's saved items, and says what it did.
 
-<Note>
-  No watcher, no polling, no background sync — a file sitting in the drawer
-  changes nothing until the user talks to the agent. That's deliberate:
-  everything the agent does is visible in the conversation.
-</Note>
-
-What *is* yours to wire is already above on this page: the upload door
-(`POST /files`), `client.files.upload` in your UI, and `putUserFile` from your
-backend. The agent's three file tools ship with every deployment.
+No watcher, no polling, no background sync: a file sitting in the drawer changes
+nothing until the user talks to the agent, so everything that happens is visible
+in the conversation.
 
 <Warning>
   In this release a PDF or an image **lands in the drawer and can be read about,
-  but does not reach an app**. Only tabular data is copied into an app. Putting a
-  document into an app's own file storage is a follow-up.
+  but does not reach an app**. Only tabular data is copied into an app.
 </Warning>
 
 ## Size
 
 An upload is capped at **5 MiB** (`5242880` bytes), and
-`createVendo({ uploadMaxBytes })` moves it. That is a cap on the *door* — on
-what one browser request through `POST /files`, or one `vendo_user_files_put`
-call, may carry. Both doors read the same number, so a file refused in chat
-cannot be admitted by asking over MCP instead.
+`createVendo({ uploadMaxBytes })` moves it. That is a cap on the *door*: both
+`POST /files` and `vendo_user_files_put` read the same number, so a file refused
+in chat cannot be admitted by asking over MCP instead.
 
-An over-cap upload is a `validation` refusal — a `400` on `POST /files`, before
-anything is written — and it names both the knob and where the bytes would have
-landed:
-
-> "sales-2026.csv" is 8388608 bytes and the upload door allows at most 5242880:
-> send a smaller file, or raise createVendo({ uploadMaxBytes }). These bytes land
-> in this deployment's store, which caps one file at 5242880 bytes — wire
-> createVendo({ files }) with a FilesAdapter (s3Files) before raising the door
-> past it.
-
-`putUserFile` is a trusted server caller and the door's cap does not apply to
-it. What bounds it instead is the backing: with no `files:` adapter configured,
-files are kept in your store's own blobs, up to 5 MiB each. Raising
-`uploadMaxBytes` past that without a bucket only moves the failure one step
-later.
+`putUserFile` is a trusted server caller, so the door's cap does not apply to it.
+What bounds it is the backing — with no `files:` adapter, files are kept in your
+store's own blobs, up to 5 MiB each.
 
 ## Your own bucket
 
-`s3Files` is the ready-made `files:` adapter. It signs SigV4 itself over
-WebCrypto, so it runs on an edge target, and it talks to anything S3-compatible:
-Cloudflare R2, AWS S3, Supabase Storage, MinIO.
+`s3Files` puts every file in a bucket you own, and is what you wire before raising
+`uploadMaxBytes` past 5 MiB. It talks to anything S3-compatible — Cloudflare R2,
+AWS S3, Supabase Storage, MinIO — and signs SigV4 over WebCrypto, so it runs on an
+edge target too.
 
-```ts
+```ts focus={4-11}
 import { createVendo, s3Files } from "@vendoai/vendo/server";
 
 createVendo({
@@ -221,18 +172,7 @@ createVendo({
 });
 ```
 
-`endpoint` is the origin your provider's dashboard gives you — R2
-`https://<account>.r2.cloudflarestorage.com`, AWS `https://s3.<region>.amazonaws.com`,
-Supabase `https://<ref>.supabase.co/storage/v1/s3`, MinIO your own. `region`
-defaults to `"auto"`, which is what R2 requires and MinIO ignores; AWS and
-Supabase need their real one. `prefix` scopes keys inside the bucket so one
-bucket can hold several deployments, and `credentials` takes an optional
-`sessionToken` for temporary credentials.
-
-The adapter reads no environment of its own: which credentials reach it is your
-composition's question. There is one backing for every file — no tiering, no
-spillover. Unset, files are store blobs; set, every file is in your bucket.
-
-Nothing about this requires a Vendo Cloud key. `vendo doctor` prints where a
-deployment's uploads land, and the boot block adds a `files` row when you have
-wired an adapter of your own.
+`endpoint` is the origin your provider's dashboard gives you, and `region`
+defaults to `"auto"` — what R2 requires and MinIO ignores, while AWS and Supabase
+need their real one. There is one backing for every file: unset, files are store
+blobs; set, every file is in your bucket.

@@ -36,40 +36,34 @@ same guard your own UI answers to.
 
 ## Who is calling
 
-The bearer on the request is a JWT your broker signed, and the door verifies it
-against the broker's published keys. The `sub` claim is one of your own user
-ids, in your own spelling.
+An agent that turns up with nothing gets a `401`, and the challenge on it points
+at your broker. Vendo Cloud runs that broker for you: the person signs in there
+with your app's own login, and the agent leaves with a short-lived bearer. The
+door itself serves no `/authorize` or `/token`, which is why the exchange in
+[Service keys & broker](/outside-agents/service-keys-and-broker) posts to the
+broker instead.
 
-The door then asks your auth preset to resolve that subject to a live
-principal, on every request. Return `null` there and the token is dead on the
-next call, sessions included.
-
-An anonymous or ephemeral principal is never served a session. The door
-persists grants and audit rows, so it needs a durable subject.
+The bearer names one of your own user ids, in your own spelling. The door
+verifies its signature, then asks your auth code to turn that id into a live
+user — on every request, not once per session. Return `null` there and the token
+is dead on the next call, sessions included. That is the kill switch, and
+[Wire auth](/howto/auth) is where it lives.
 
 ## What the agent sees
 
-With no menu authored, `tools/list` answers with your merged, enabled tools
-whose `audience` is `end-user` or unset. Operator and internal tools stay off
-it. Author a `surfaces.mcp` menu and that list is the menu instead — see
-[Curate the menu](#curate-the-menu) below.
+`tools/list` answers with your enabled tools whose `audience` is `end-user` or
+unset. Operator and internal tools stay off it. Names, descriptions, and input
+schemas are served verbatim from your registry, and a tool's `title` is what a
+client shows a person instead of the wire name.
 
-Names, descriptions, and input schemas are served verbatim from your registry.
-A tool's `title` is what a client shows a person instead of the wire name.
+Vendo's own `vendo_*` tools ride along: `vendo_make` for a generated screen, the
+saved-apps viewer, and the caller's own files. The file tools are scoped to the
+bearer's subject and take no subject argument, so a token for `user_1904` reaches
+that person's files and no one else's. See [User data](/customize/user-data) for
+what saves and what reads back.
 
-Vendo's own `vendo_*` tools ride along: `vendo_make` for a generated screen; the
-saved-apps viewer, which is `vendo_apps_list`, `vendo_apps_open`, and
-`vendo_apps_call`; and the caller's own files, which is
-`vendo_user_files_list`, `vendo_user_files_read`, and `vendo_user_files_put`.
-They are runtime plumbing and are never curated away — a `surfaces.mcp` menu
-filters your tools, and the `vendo_*` prefix bypasses it.
-
-The file tools are scoped to the bearer's subject and take no subject argument,
-so a token for `user_1904` reaches that person's files and no one else's. See
-[User data](/customize/user-data) for what saves, what reads back, and the cap.
-
-Each listing carries MCP `annotations` derived from the tool's Vendo risk
-label, so a client can warn before a write without re-reading prose.
+Each listing carries MCP `annotations` derived from the tool's risk label, so a
+client can warn before a write without re-reading prose.
 
 | Risk | `readOnlyHint` | `destructiveHint` |
 | --- | --- | --- |
@@ -78,53 +72,37 @@ label, so a client can warn before a write without re-reading prose.
 | `destructive` | `false` | `true` |
 | `ungraded` | *omitted* | *omitted* |
 
-An `ungraded` tool asserts neither hint. MCP's own default for
-`destructiveHint` is `true`, so leaving both out keeps the client on the spec's
-conservative reading.
+An `ungraded` tool asserts neither hint, which leaves the client on MCP's own
+cautious reading of a tool it knows nothing about.
 
 ## Curate the menu
 
-A shorter, deliberate menu is named in `.vendo/overrides.json` under
-`surfaces.mcp`.
+For a shorter, deliberate menu, name the tools you want in `.vendo/overrides.json`:
 
-```json .vendo/overrides.json focus={7-9}
+```json .vendo/overrides.json
 {
   "format": "vendo/overrides@3",
-  "tools": {
-    "host_listAccounts": { "title": "List your accounts" },
-    "host_transferMoney": { "title": "Send money" }
-  },
   "surfaces": {
     "mcp": { "tools": ["host_listAccounts", "host_transferMoney"] }
   }
 }
 ```
 
-The door then lists exactly those tools, and a call to any other name returns
-the not-found error an unknown name returns. The menu is a filter, not a
-checked list, so a tool a later `add()` registers is never stranded. The file
-itself resolves once at boot: edit it and restart.
-
-A menu is curation, not a permission boundary. Your policy, approvals, audit,
-`disabled`, and audience exclusions decide what may run, and none of them read
-this block.
+The door then lists exactly those, and any other name comes back not-found. The
+file resolves once at boot, so edit it and restart. A menu is curation, not a
+permission boundary: your policy and approvals still decide what may run, and the
+`vendo_*` tools bypass the filter.
 
 ## How a call reaches your host tools
 
 The agent has no session in your product, so the inbound bearer is never
-forwarded to your host routes. Door tool calls reach your API through the
-`actAs` seam.
+forwarded to your host routes. Door calls reach your API through the `actAs`
+seam: Vendo hands `actAs` the caller and the consent recorded for that client,
+and uses the auth material you return. Without `actAs` configured, the tool
+returns a `not-implemented` error.
 
-The door records the caller's consent for that client id and projects it onto
-every context it mints. When a call resolves to a host route, Vendo hands
-`actAs(principal, grant)` that projection and uses the auth material it returns.
-
-Without `actAs` configured the tool returns a `not-implemented` error. A grant
-whose subject is not the current principal fails closed with
-`act-as-subject-mismatch`.
-
-The authenticated user is the authority. Scopes on the token buy no exemption,
-and the door adds none.
+The signed-in user is the authority. Scopes on the token buy no exemption, and
+the door adds none.
 
 ## What comes back
 
@@ -139,11 +117,10 @@ write.
 | `pending-approval` | the approval id and where to resolve it |
 | `connect-required` | which account to connect in your product, then retry |
 
-`vendo_make` answers with an id, a title, a status, and one line to say out
-loud. The screen itself lands in your product, never in the agent's transcript.
-
-That line is `say`, and it is written for the person rather than for the model.
-An agent relays it close to verbatim and reports nothing else.
+`vendo_make` answers with an id, a title, a status, and one line to say out loud.
+The screen itself lands in your product, never in the agent's transcript. That
+line is `say`, written for the person rather than the model, so an agent relays
+it close to verbatim and reports nothing else.
 
 | `status` | What the agent has |
 | --- | --- |
@@ -152,121 +129,27 @@ An agent relays it close to verbatim and reports nothing else.
 | `partial` | the screen is up, and the server-side work its plan called for is not |
 | `failed` | nothing painted. One narrower retry on the same `app`, then stop |
 
-## Rendering the app in your own chat
-
-React only — there is no web component and no MCP Apps UI resource. If the chat
-calling `vendo_make` is your own frontend, `<VendoAppEmbed>` is the documented
-way to put the app inline in it, off the receipt's own `id`.
-
-```tsx focus={3-9}
-import { VendoProvider, VendoAppEmbed } from "@vendoai/vendo/react";
-
-const result = await client.callTool({ name: "vendo_make", arguments: { request } });
-const receipt = result.structuredContent as { id: string; title: string; status: string };
-
-return (
-  <VendoProvider>
-    <VendoAppEmbed
-      refValue={{ kind: "vendo/app-ref@1", appId: receipt.id, title: receipt.title, status: "building" }}
-    />
-  </VendoProvider>
-);
-```
-
-`status` on the ref is always the literal `"building"`, whatever the receipt
-actually said — the embed polls your own wire for the real state, so a receipt
-that already came back `"ready"` just resolves on its first poll. Skip the
-mount on `"failed"`: nothing painted, and `say` already says why.
-
-While the build streams, the embed paints the app assembling step by step,
-then swaps to the live app in place.
-
-`<VendoProvider>` rides your product's own session, not the MCP token — the
-same wrapper [Embeds in your chat](/existing-agent/embeds) uses, because this
-polling never goes through the door.
+If the chat calling `vendo_make` is your own frontend, `<VendoAppEmbed>` puts the
+app inline in it, off the receipt's own id — see
+[Embeds in your chat](/existing-agent/embeds).
 
 ## Where a screen lands
 
-A new screen goes to the person's own list of views. Pass `slot` on
-`vendo_make` and it takes a named place on your page instead.
+A new screen goes to the person's own list of views. Pass `slot` on `vendo_make`
+and it takes a named place on your page instead — slot ids belong to your
+product, so an agent passes one it was told rather than one it invented.
+[Generate screens](/howto/screens) is where slots come from.
 
-```json tools/call arguments focus={3}
-{
-  "request": "spend by category for the last three months",
-  "slot": "home-hero"
-}
-```
-
-Slot ids belong to your product. Your surfaces report the ones they mount, so
-an agent passes an id it was told rather than one it invented.
-
-`slot` is for something new. Moving an app the person already has is a
-different pair of tools.
-
-| Tool | Arguments | What it does |
-| --- | --- | --- |
-| `vendo_apps_pin` | `app`, `slot` | puts one of the caller's own apps in that slot, and names the `evicted` app it replaced |
-| `vendo_apps_unpin` | `app`, `slot` | takes the app back out. The app itself is untouched |
-
-A slot holds one app, so pinning replaces. Both are writes, and on the
-`cautious` preset they park like any other write.
-
-`vendo_make` refuses `app` and `slot` together, by name. An edit that also
-moved the app would evict whatever held that slot off the back of a change
-nobody aimed there.
-
-<Frame caption="A pin, start to finish. The slot is the caller's own, so the second person's home is untouched.">
-  <img
-    src="/images/existing-agents/mcp-walk-slot-empty.png"
-    alt="Maple's home page with an empty hero slot reading This space builds itself, next to the total balance chart"
-    width="1080"
-    height="750"
-  />
-</Frame>
-
-<Frame>
-  <img
-    src="/images/existing-agents/mcp-walk-pinned.png"
-    alt="The same Maple home page after a pin, the hero slot now holding a savings goals table with a goal and target column for five goals"
-    width="1080"
-    height="750"
-  />
-</Frame>
-
-<Frame>
-  <img
-    src="/images/existing-agents/mcp-walk-other-user.png"
-    alt="Maple's home page signed in as Mia Nakamura, the same hero slot still empty and reading This space builds itself"
-    width="1080"
-    height="630"
-  />
-</Frame>
+`slot` is for something new. `vendo_apps_pin` and `vendo_apps_unpin` move an app
+the person already has, and since a slot holds one app, a pin replaces and names
+what it evicted.
 
 ## Approvals wait for the person
 
 On the `cautious` preset, reads answer straight away and writes park. The agent
 gets an error naming the approval and where it is waiting.
 
-Approving does not resume the call. The agent has to call again, and it has to
-be on the same MCP session.
-
-<Warning>
-  The door mints a fresh call id per `tools/call`, except for an identical call
-  still parked in the same session, and the one-off approval is pinned to that
-  exact id. A client that reconnects between attempts mints a new id and parks
-  again.
-</Warning>
-
-## The discovery your broker owns
-
-The first unauthenticated request answers `401` with a `WWW-Authenticate`
-challenge naming the door's protected-resource metadata. That document names
-your broker as the authorization server.
-
-A broker-fronted door serves no `/authorize`, `/token`, or `/register` of its
-own. Those live at the broker, which is why the exchange in
-[Service keys & broker](/outside-agents/service-keys-and-broker) posts there.
-
-Broker mode is declared, never discovered. Nothing is registered anywhere and
-nothing is fetched at boot, so no deploy can repoint a live door behind its
-back.
+Approving does not resume the call. The agent has to call again, and it has to be
+on the same MCP session — a client that reconnects between attempts parks a
+second time instead of running. [Approve actions](/howto/approvals) is where the
+grading lives.

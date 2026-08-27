@@ -1,14 +1,14 @@
 ---
 title: "Service keys & broker"
-description: "The one long-lived credential behind tokenFor: where it lives on each posture, how the audit attributes it, and how to rotate it."
+description: "The one long-lived secret behind tokenFor: where it lives, what the audit shows, and how to rotate it."
 sidebarTitle: "Service keys & broker"
 ---
 
-A service key is the one long-lived credential in this path. It never touches
-your agent, and it never leaves your backend. `vendo.tokenFor()` spends it for
-you — this page is what is behind that call.
+Behind `vendo.tokenFor()` sits one long-lived secret: your service key. It stays
+on your backend, your agent never sees it, and every call trades it for a token
+that lasts ten minutes. This page is what happens behind that one call.
 
-<svg viewBox="0 0 760 118" role="img" aria-label="A service key path: the key, the token exchange, a ten-minute bearer, your door" style={{ width: "100%", height: "auto", margin: "1.5rem 0" }}>
+<svg viewBox="0 0 760 118" role="img" aria-label="A service key path: the key, the token exchange, a ten-minute token, your door" style={{ width: "100%", height: "auto", margin: "1.5rem 0" }}>
   <g fill="none" stroke="currentColor" strokeOpacity="0.2">
     <rect x="1" y="1" width="164" height="52" rx="11" />
     <rect x="199" y="1" width="164" height="52" rx="11" />
@@ -24,129 +24,66 @@ you — this page is what is behind that call.
   <g fill="currentColor" fontSize="13.5" fontWeight="600" textAnchor="middle">
     <text x="83" y="32">Service key</text>
     <text x="281" y="32">tokenFor()</text>
-    <text x="479" y="32">10-minute bearer</text>
+    <text x="479" y="32">10-minute token</text>
     <text x="677" y="32">Your door</text>
   </g>
   <g fill="currentColor" fillOpacity="0.55" fontSize="11.5" textAnchor="middle">
     <text x="83" y="76">lives in your backend</text>
-    <text x="281" y="76">RFC 8693 exchange</text>
-    <text x="479" y="76">bound to one user id</text>
-    <text x="677" y="76">verifies the signature</text>
+    <text x="281" y="76">token exchange</text>
+    <text x="479" y="76">acts as one user</text>
+    <text x="677" y="76">checks the signature</text>
   </g>
 </svg>
 
 ## Where the key lives
 
-**On a local door (no key).** The key is any opaque string you generate. It
-lives in your own environment as `VENDO_SERVICE_KEY`, the composition lists it,
-and `vendo init --use-case mcp` writes both for you by default — this is what it
-generates:
+You never create this key or paste it anywhere. The first time anything reaches
+your door, Vendo Cloud mints one for your tenant — which is why init never asks.
+The console is where you see it, rotate it, or revoke it.
 
-```ts lib/vendo.ts focus={8}
-import { authJs } from "@vendoai/vendo/auth/auth-js";
-import { createVendo, guard } from "@vendoai/vendo/server";
-
-const serviceKey = process.env.VENDO_SERVICE_KEY ?? "";
-
-export const vendo = createVendo({
-  auth: authJs(),
-  guard: guard({ policy: {} }),
-  mcp: serviceKey === "" ? true : { serviceAuth: { keys: [serviceKey] } },
-});
-```
-
-The empty-string fallback is deliberate: a door with no key still opens for
-browser-based agents, it just cannot mint for your backend. More than one key
-can be live at once, which is what makes rotation a deploy rather than an
-outage.
-
-**On Vendo Cloud.** The key is provisioned with your tenant on first use — init
-does not ask, and there is nothing to copy. The console lists it, and rotates
-and revokes it.
-
-Either way your agent never sees the key. It only ever gets the short-lived
-token minted from it, and `tokenFor` is the only place your own code touches
-either.
+Your agent only ever gets the ten-minute token, never the key, and `tokenFor` is
+the only line of your own code that touches either one.
 
 ## Who the audit says acted
 
-The exchange binds two identities to every call the token makes: the person the
-token names, and the key that asked.
+Every call the token makes is recorded under two names: the user it acts as, and
+the key that asked for it.
 
-The key rides as a client id of the form `svc:<hash8>`, the first eight hex of
-the presented key's digest. The audit row names which key acted without the key
-value going anywhere near it.
+The key shows up as a short fingerprint — `svc:5c006a4c`, say — so an audit row
+can tell you which key acted without the key itself ever landing in it.
 
-Your policy sees the same person your own UI sees. A write still parks for
-approval, and the approval names the tool and the user, not the agent.
+To your policy this is that user, not an agent: a write still parks for
+approval, and the approval names the tool and the person.
 
 ## Rotating a key
 
-<Steps>
-  <Step title="Create the replacement">
-    A new key alongside the one you are retiring — a second entry in
-    `serviceAuth.keys` on a local door, or a new key in the console on Cloud.
-  </Step>
-  <Step title="Ship it">
-    Update `VENDO_SERVICE_KEY` where your backend runs and deploy.
-  </Step>
-  <Step title="Retire the old one">
-    Drop it from the list, or delete it in the console. Tokens it already minted
-    keep working until they expire, which is at most ten minutes.
-  </Step>
-</Steps>
+Rotating never cuts anything off mid-flight. Create the replacement in the
+console, restart your backend so it picks the new one up — the SDK fetches the
+key itself, there is nothing to copy — then delete the old one. Tokens the old
+key already handed out keep working for up to ten minutes.
 
 ## When the mint refuses
 
+Three of these come from the exchange; the last shows up later and gets misread.
+
 | Answer | What it means |
 | --- | --- |
-| `invalid_client` | unknown key, or a retired one |
-| `invalid_request` | a subject that is not a real id — `tokenFor` refuses it before it asks |
-| `invalid_target` | the `resource` sent does not identify this MCP server |
-| `401` on the first tool call | the subject is not a user your product recognizes |
+| `invalid_client` | This server doesn't know that key, or it was deleted |
+| `invalid_request` | The user id wasn't a real id — `tokenFor` catches it before it asks |
+| `invalid_target` | The `resource` sent names some other MCP server, not this one |
+| `401` on the first tool call | The token is fine; the user id in it isn't someone you recognize |
 
-The first row is deliberately one answer for two causes. Anything narrower would
-tell whoever is guessing which half of the credential they got right.
+`invalid_client` is vague on purpose: anything more specific would tell whoever
+is guessing which half of the credential they got right.
 
-The `401` is the one that looks like a key problem and is not. The exchange
-never checks the user id, so a token for a stranger mints fine and dies at
-`principal()` on the first real request.
+The `401` looks like a key problem and isn't. The exchange never checks that the
+user id is real, so a token for a stranger mints happily and dies on the first
+request, when the door asks your app who that is and gets nobody back.
 
-## What the broker owns
+## The broker
 
-A broker is an authorization server in front of your door. On Cloud, your
-`VENDO_API_KEY` is the whole configuration — the runtime reads the broker URL
-and the federation secret from Cloud and provisions the tenant on first use.
-
-To point at a broker you run yourself, set both values where you deploy. An
-explicit override always wins over the Cloud default.
-
-```bash .env
-VENDO_MCP_BROKER_URL=https://broker.example.com/mcp
-VENDO_MCP_FEDERATION_SECRET=…
-```
-
-`VENDO_MCP_BROKER_URL` decides two things at once. Its origin becomes the issuer
-your door trusts, and the URL itself becomes the audience every token must
-carry. The door then stops serving `/authorize`, `/token` and `/register`, and
-verifies each inbound bearer as a JWT the broker signed. Keys come from the
-issuer's own metadata, so ordinary rotation at the broker needs nothing from
-you.
-
-`VENDO_MCP_FEDERATION_SECRET` answers the broker's login handshake. The broker
-owns the sign-in surface and your app owns the users, and that shared secret is
-how the two agree on an answer.
-
-`VENDO_BASE_URL` has to name an HTTPS origin either way — Vendo Cloud refuses to
-register a forwarding address that is not https, and init refuses that pair
-before it writes.
-
-Who has to *reach* that origin depends on the path. Signing a person in is a
-browser redirect: the broker sends the user's own browser to your door's
-`/federate`, and the door reads their session cookie there, so the door has to
-be reachable by whoever signs in — public for a public agent's users. The
-backend-agent path reaches nothing inward: `tokenFor` calls the broker outbound
-from your own backend, so a private HTTPS origin your backend and agent can
-already reach is enough for it. Everything else about the door is unchanged by
-the posture, the client URL included — see the
-[quickstart](/outside-agents/quickstart) for both postures end to end.
+The broker is the piece that hands out the tokens, and on Vendo Cloud you don't
+run it — `VENDO_API_KEY` is the whole setup. It asks one thing of you:
+`VENDO_BASE_URL` has to be an `https://` origin. Only the sign-in page needs to
+be reachable from a browser — `tokenFor` dials out from your backend, so nothing
+has to reach in.

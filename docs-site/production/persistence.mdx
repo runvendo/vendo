@@ -1,7 +1,7 @@
 ---
 title: "Persistence"
 sidebarTitle: "Persistence"
-description: "Where threads, apps, records, grants, approvals, and audit rows live on Vendo Cloud, what the store refuses, and how to erase a user."
+description: "Where threads, apps, records, grants, approvals, and audit rows live on Vendo Cloud, and what the store refuses."
 ---
 
 Your Cloud key is your database. Threads, apps, records, blobs, state, grants,
@@ -23,26 +23,22 @@ export const vendo = createVendo({
 ```
 
 The adapter never reads the environment. The composition does, then hands the
-adapter a key and a base URL.
+adapter a key and a base URL. Your boot log says which one won:
 
-Your boot log says which one won:
-
-```text vendo ready highlight={3}
+```text vendo ready highlight={2}
 ◆  vendo ready
-│  ✓ sandbox   cloud    VENDO_API_KEY
 │  ✓ store     cloud    VENDO_API_KEY
-│  ✓ models    cloud    VENDO_API_KEY (gateway)
 ```
 
-Tenancy is resolved server-side from the key's organization, on every call.
-Nothing in your process picks a tenant.
+Tenancy resolves server-side from the key's organization on every call — nothing
+in your process picks a tenant. `ensureSchema()` is a no-op here, because the
+service owns its own migrations.
+
+Passing your own `store` adapter also works, and always wins.
 
 ---
 
 ## What lands where
-
-The hosted store speaks the same wire your process would speak to a local
-database, one hop shorter.
 
 | What | Where it goes | Notes |
 | --- | --- | --- |
@@ -50,90 +46,29 @@ database, one hop shorter.
 | Generated apps | `vendo_apps` | Plus their workspace files and history |
 | App data | `app:<appId>:<name>` collections | 256 KB per record, 5 MB per file |
 | Grants and approvals | `vendo_grants`, `vendo_approvals` | What a user has standing consent for |
-| Audit | `vendo_audit` | Append-only, see below |
+| Audit | `vendo_audit` | Append-only |
 | Automation runs | `vendo_runs` | One row per firing |
 
-Blobs ride the same store unless you pass a `files` adapter. One adapter serves
-both writes and the erase cascade, so rows and objects can never drift apart.
-
-`ensureSchema()` is a no-op against Vendo Cloud. The service owns its own
-migrations.
+Blobs ride the same store unless you pass a `files` adapter, so rows and
+objects can never drift apart.
 
 ---
 
 ## What the store refuses
 
-The store refuses three things outright. Each one shows up in a log rather
-than as a silent no-op.
+Three writes are refused outright, each with a code rather than a silent no-op.
 
-<AccordionGroup>
-  <Accordion title="Audit is append-only">
-    Writing `vendo_audit` with an id that already exists fails with `conflict`.
-    Deleting an audit row is refused with `blocked`.
+| Write | Refusal |
+| --- | --- |
+| Re-writing a `vendo_audit` id that already exists | `conflict` |
+| Deleting an audit row | `blocked` — audit rows are permanent |
+| Moving a `vendo_apps`, `vendo_grants`, or `vendo_threads` row to a different subject | Refused; delete the row and re-seed it under the new subject |
 
-    The erase API below is the only sanctioned way to remove one.
-  </Accordion>
-  <Accordion title="Ownership flips are refused">
-    `vendo_apps`, `vendo_grants`, and `vendo_threads` reject a same-id write
-    that moves a row to a different subject.
-
-    To transfer ownership, delete the row and re-seed it under the new subject.
-  </Accordion>
-  <Accordion title="Secrets never ride the hosted wire">
-    The hosted store has no secrets surface, by construction. Secret values
-    resolve from your process environment first, and Vendo Cloud's secrets
-    provider answers only for names the environment leaves unset.
-
-    Nothing sends a secret value to the console as store data.
-  </Accordion>
-</AccordionGroup>
+Secrets never ride the hosted wire. The store has no secrets surface by
+construction: values resolve from your process environment first, and Cloud's
+secrets provider answers only for names the environment leaves unset.
 
 ---
-
-## Erasing a user
-
-Erasure is the deletion path for right-to-erasure requests, for tearing down a
-test app, and for purging old runs. It cascades across every store table, and
-which call you make depends on which store this deployment composed.
-
-A LOCAL store — the default, or your own Postgres — runs the SQL cascade through
-`eraseStore`, which takes the `files` adapter so rows and objects go together:
-
-```ts highlight={4}
-import { eraseStore } from "@vendoai/vendo/server";
-
-// Everything this subject owns, across every table.
-const report = await eraseStore(vendo.store, { files }).bySubject(subjectId);
-
-// Everything one app owns.
-const byApp = await eraseStore(vendo.store, { files }).byApp(appId);
-```
-
-The HOSTED store carries its own erase door with the same two methods and no
-`files` — the console cascades its own storage server-side. `eraseStore` cannot
-be handed that store: it throws `Unknown VendoStore handle` before any request
-goes out.
-
-```ts highlight={3}
-import type { HostedStore } from "@vendoai/vendo/server";
-
-const hosted = (vendo.store as HostedStore).erase;
-const report = await hosted.bySubject(subjectId);
-const byApp = await hosted.byApp(appId);
-```
-
-Either way the call returns per-table deleted counts, so you can log the cascade
-or assert on it. [Erasing a user](/users-orgs/erasing-a-user) has the one branch
-that serves both postures — the branch the Maple demo ships.
-
-<Warning>
-  Against Vendo Cloud, the erase door needs an **admin-scoped** `VENDO_API_KEY`.
-  A runtime-scoped key is refused with HTTP 403 and the `blocked` code before
-  the request body is read.
-
-  Every key defaults to the runtime scope. Mint an admin key from your
-  project's Keys page in the console, where Admin is a deliberate second click.
-</Warning>
 
 ---
 
@@ -150,30 +85,8 @@ const inserted = await jobs.atomic?.insertIfAbsent(record);
 ```
 
 `claim` returns `true` for the single caller whose read of `expected` still
-matched. `insertIfAbsent` and `compareAndSwap` return `null` when another
-caller won.
+matched. `insertIfAbsent` and `compareAndSwap` return `null` when another caller
+won.
 
 Both are optional on the handle, which is why the calls above are guarded. Your
 own collections expose them; Vendo's internal tables vary.
-
----
-
-## Where to go next
-
-<CardGroup cols={3}>
-  <Card title="Vendo Cloud" href="/production/vendo-cloud">
-    What the key covers, what it costs, and how to mint a scoped one.
-
-    `vnd_ + 40 hex`
-  </Card>
-  <Card title="Auth" href="/production/auth">
-    The subject every row above is scoped to, and where it comes from.
-
-    `principal.subject`
-  </Card>
-  <Card title="Deploying" href="/production/deploying">
-    The eight checks that have to pass before your users arrive.
-
-    `npx vendo doctor`
-  </Card>
-</CardGroup>

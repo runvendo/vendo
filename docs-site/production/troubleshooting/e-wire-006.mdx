@@ -6,7 +6,7 @@ description: "Doctor found no visible agent surface mounted, so users have no wa
 
 ```text wiring/surface
 broken: no visible agent surface is mounted — <VendoProvider> renders nothing
-by itself; add <VendoOverlay /> (the launcher pill + panel) or render your own
+by itself; add <VendoOverlay /> (the conversation panel) or render your own
 surface (<VendoThread />, <VendoToolResult>, the BYO embeds)
 ```
 
@@ -29,7 +29,7 @@ markers: `<VendoOverlay`, `<VendoThread`, `<VendoTrigger`, `<VendoPalette`,
 
 ## The fix
 
-Mount `<VendoOverlay />`, the launcher pill plus panel, anywhere inside the
+Mount `<VendoOverlay />`, the conversation panel, anywhere inside the
 provider.
 
 ```tsx app/layout.tsx {1,5}

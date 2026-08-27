@@ -84,11 +84,11 @@ The new version invalidates any in-client approval granted against the pre-rebas
 
 **Anonymous sessions carry into sign-in.** The first authenticated request with a valid anonymous cookie adopts that session's threads, apps (with their records and blobs), and state into the signed-in user, then retires the cookie.
 
-Grants, approvals, connected accounts, and history are deliberately kept where they were. Nothing on the host side changes, as long as your `principal(req)` returns `null` before sign-in and a real principal after. See [Auth](/production/auth).
+Grants, approvals, connected accounts, and history are deliberately kept where they were. Nothing on the host side changes, as long as your `principal(req)` returns `null` before sign-in and a real principal after. See [Auth](/howto/auth).
 
 **Reserved `vendo:` subject namespace.** Webhook deliveries execute under `vendo:webhook:<source>`. `principal(req)` resolvers that return a `vendo:*` subject or `kind: "org"` are rejected at the wire, because those identities are Vendo-owned.
 
-Update audit readers that filter on the bare `webhook:<source>` form to match the new prefix. See [Auth](/production/auth).
+Update audit readers that filter on the bare `webhook:<source>` form to match the new prefix. See [Auth](/howto/auth).
 
 **Stop a running automation.** `POST /api/vendo/runs/:id/stop` cancels an in-flight run cooperatively: the current step finishes, outstanding tool calls drain, and the run reaches a cancelled terminal state.
 
@@ -100,7 +100,7 @@ Auth.js and Supabase mint provider-native sessions offline. Clerk and Auth0 sign
 
 All presets cache tokens until expiry with a safety margin, and key cache entries by a secret fingerprint so rotation invalidates immediately.
 
-They also route through the impersonation guard: a `grant.subject` mismatch with the current principal fails closed with an `act-as-subject-mismatch` outcome before any outbound call. See [Auth](/production/auth).
+They also route through the impersonation guard: a `grant.subject` mismatch with the current principal fails closed with an `act-as-subject-mismatch` outcome before any outbound call. See [Auth](/howto/auth).
 
 **Loud credential-forwarding traps.** Two silent misconfigurations now surface loudly. `vendo init` writes `VENDO_BASE_URL=http://localhost:3000` into `.env.example` with a note that present-mode credential forwarding is disabled without it.
 
@@ -160,7 +160,7 @@ Server code boots from `/app/start.sh` when present, otherwise `/app/server.js`.
 
 Create is always read-class, because it produces a jailed tree document. Edit is downgraded to read-class only when the app is owner-scoped, is a tree app, and the instruction does not require server code.
 
-Server-flavored edits, host writes, destructive actions, and egress keep their approval cards. A tree-classified edit that unexpectedly emits server code fails closed before persistence. See [How Vendo works](/how-vendo-works).
+Server-flavored edits, host writes, destructive actions, and egress keep their approval cards. A tree-classified edit that unexpectedly emits server code fails closed before persistence. See [How Vendo works](/product/how-it-works).
 
 </Update>
 
@@ -202,7 +202,7 @@ Missing consent fails closed with a clean not-implemented tool error. See [Serve
 
 **Approval replay for one-off door calls.** When a caller retries an identical destructive call in the same session, the door reuses the parked `ToolCall` id, so a one-off approval authorizes the retry instead of silently re-parking it.
 
-A third attempt re-asks, and consent-source projections never persist. See [How Vendo works](/how-vendo-works).
+A third attempt re-asks, and consent-source projections never persist. See [How Vendo works](/product/how-it-works).
 
 **Cold-start door mount hint.** `McpDoorConfig.mount` lets a cold-composed umbrella advertise its door path on the server card. Learned paths never override the configured mount, so a caller discovers the door on the first request.
 

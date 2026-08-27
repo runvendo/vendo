@@ -132,9 +132,7 @@ createVendo({
 | `harness` | `vendo({ maxSteps, historyWindow, maxOutputTokens, contextTokenBudget })` | The thinker, and the thinker's own per-turn knobs |
 | `agent` | a whole agent built by `agent()` | This deployment adopts what that agent already composed |
 
-`policy`, `judge`, and `approvals` were top-level `createVendo` keys and are gone. Passing one now throws at boot naming this slot.
-
-The old `agent: { … }` options bag is gone the same way. What the deployment curates, `instructions`, `toolOutputCap`, `maxInitialTools`, and `loadout`, stays at the top level.
+`policy`, `judge`, and `approvals` were top-level `createVendo` keys, and so was the `agent: { … }` options bag. All four are gone, and passing one now throws at boot naming the slot it moved to. What the deployment curates — `instructions`, `toolOutputCap`, `maxInitialTools`, `loadout` — stays at the top level.
 
 ## `@vendoai/vendo/server` exports
 
@@ -459,7 +457,7 @@ interface TurnRun {
 
 ### Approvals and `resume`
 
-A call the guard wants a person for PARKS, and parking ends the turn. Both lanes answer `interrupted` in the time the turn took, with an `Interruption` per card and `resume()` to carry on.
+A call the guard wants a person for PARKS, and parking ends the turn. Both `chat()` and `run()` answer `interrupted` in the time the turn took, with an `Interruption` per card and `resume()` to carry on.
 
 `Interruption` is a two-arm union, so narrow on `type` before you read a card:
 

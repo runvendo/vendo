@@ -4,19 +4,17 @@ sidebarTitle: "Edge runtimes"
 description: "Run Vendo on Cloudflare Workers, Bun, Deno, Hono, Fastify, or Lambda: what init generates, the three rules, and the adapter contract if you mount the handler yourself."
 ---
 
-The handler takes a standard `Request` and returns a standard `Response`. It
-runs on any Web-standard runtime, not just Node.
-
-A CI gate bundles the server entry for a Worker target and boots it under real
-workerd on every change, so the wiring below stays supported.
+The handler takes a standard `Request` and returns a standard `Response`, so it
+runs anywhere the Web platform does. CI bundles the server entry for a Worker
+and boots it under real workerd on every change.
 
 ## What init writes
 
 Run `npx vendo init --framework custom`. Detection lands here on its own when
 the host is neither Next.js nor Express.
 
-It generates `vendo/server.ts`: a lazy composition that takes `Request` in and
-returns `Response`, with the environment passed per call.
+It generates `vendo/server.ts`: a lazy composition that takes `Request` in,
+returns `Response`, and reads the environment per call.
 
 ```ts vendo/server.ts highlight={12,13,14,15,16}
 import { createAnthropic } from "@ai-sdk/anthropic";
@@ -46,9 +44,8 @@ export function handleVendoRequest(request: Request, env: VendoEnv) {
 }
 ```
 
-Every Cloud seam is named in the composition. Nothing is inferred from the
-environment at this layer, because on a Worker there is no ambient environment
-to infer from.
+Every Cloud seam is named here on purpose. A Worker has no ambient environment
+to read, so nothing is left for the key to fill on its own.
 
 ---
 
@@ -65,8 +62,8 @@ export default { fetch: (request: Request, env: VendoEnv) => handleVendoRequest(
 app.all("/api/vendo/*", (c) => handleVendoRequest(c.req.raw));
 ```
 
-The client side does not change. Mount `<VendoProvider>` with the theme and
-your base path, and put `<VendoOverlay />` inside it.
+The client side does not change. Mount `<VendoProvider>` with your base path and
+put `<VendoOverlay />` inside it.
 
 ---
 
@@ -74,46 +71,41 @@ your base path, and put `<VendoOverlay />` inside it.
 
 <Steps>
   <Step title="Construct lazily.">
-    `createVendo()` performs no I/O and starts no timers at construction, but
-    the generated lazy-singleton shape is still the contract.
-
     Workers forbids async work in module scope, and environment variables only
-    exist per request there.
+    exist per request there. Keep the lazy-singleton shape above.
   </Step>
-  <Step title="Pass the adapters.">
-    The model ladder and the local store engines need Node. On a Worker they
-    refuse with guidance instead of half working.
-
-    The generated wiring above names every one of them, which is why it runs
-    unchanged.
+  <Step title="Pass every adapter.">
+    The default model ladder and the local store engines need Node, so on a
+    Worker they refuse with guidance instead of half working. The generated
+    wiring names all of them, which is why it runs unchanged.
   </Step>
   <Step title="Set VENDO_BASE_URL.">
-    Point it at the deployed app's full public URL, path prefix included.
-
+    Your deployed app's full public URL, path prefix included.
     Present-credential forwarding fails closed without it.
   </Step>
 </Steps>
 
-The model rule has an exact shape. On an edge runtime the Cloud gateway is the
-stock Anthropic provider pointed at the console:
+On the edge the Cloud gateway is spelled out by hand — the stock Anthropic
+provider pointed at the console:
 
 ```ts highlight={1}
 createAnthropic({ apiKey: VENDO_API_KEY, baseURL: `${VENDO_CLOUD_URL}/api/v1` })("vendo")
 ```
 
-Call `vendoModel()` on a Worker and it throws that same sentence back at you on
-first use, rather than pretending.
+Call `vendoModel()` on a Worker and it throws that same sentence back at you.
 
-The screen toolchain in `@vendoai/apps/edge` type-checks against vendored `lib`
-bytes, so install the exact `typescript` its `EDGE_TYPESCRIPT_VERSION` names —
-the peer range is wide and will not nudge you there.
+<Note>
+  `@vendoai/apps/edge` type-checks against vendored `lib` bytes, so install the
+  exact `typescript` its `EDGE_TYPESCRIPT_VERSION` names. The peer range is wide
+  and will not nudge you there.
+</Note>
 
 ---
 
 ## Mounting the handler yourself
 
-If you skip the generated adapter and mount `vendo.handler` under a base path
-by hand, your adapter has to do five things.
+Skip the generated adapter and mount `vendo.handler` by hand, and your adapter
+has to do five things.
 
 | Rule | Why |
 | --- | --- |
@@ -125,36 +117,5 @@ by hand, your adapter has to do five things.
 
 `vendo doctor` judges an unknown-framework host by its wiring, never by another
 framework's file layout. A missing server half reports
-[`E-WIRE-007`](/production/troubleshooting/e-wire-007) and a missing client half
+[`E-WIRE-007`](/production/troubleshooting/e-wire-007), a missing client half
 [`E-WIRE-008`](/production/troubleshooting/e-wire-008).
-
----
-
-## What Vendo calls your runtime
-
-Telemetry and error reports name the runtime from the globals it advertises:
-`workerd`, `edge-light`, `bun`, `deno`, `node`, or `unknown`.
-
-A crash on the edge is never read as a crash on Node.
-
----
-
-## Where to go next
-
-<CardGroup cols={3}>
-  <Card title="Model credentials" href="/production/model-credentials">
-    The gateway your edge composition points at, and how to pin a model.
-
-    `VENDO_MODEL`
-  </Card>
-  <Card title="Vendo Cloud" href="/production/vendo-cloud">
-    The key every adapter above takes, and where to mint one.
-
-    `vendo login`
-  </Card>
-  <Card title="Deploying" href="/production/deploying">
-    The eight checks that have to pass before your users arrive.
-
-    `npx vendo doctor`
-  </Card>
-</CardGroup>

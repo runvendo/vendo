@@ -1,27 +1,26 @@
 ---
 title: "Mount the surface"
-description: "The provider, the overlay, the command palette, slots, triggers, and the bare thread: what each one renders and the props that move it."
+description: "The provider, the overlay, the command palette, and slots: what each one renders and the props that move it."
 sidebarTitle: "Mount the surface"
 ---
 
 One provider carries the wire and your brand. Everything below renders inside
-it and re-themes from the same token file.
+it and reads the same token file.
 
 ## The provider
 
 `vendo init` never writes a client file. It prints one paste at the end of the
-run, naming your layout and the exact lines.
+run, with your layout path and the exact lines.
 
 <CodeGroup>
 
 ```tsx App Router
 // app/layout.tsx
 import { VendoOverlay, VendoProvider } from "@vendoai/vendo/react";
-import type { VendoTheme } from "@vendoai/vendo";
 import theme from "../.vendo/theme.json";
 
 // then wrap the app:
-<VendoProvider baseUrl="/api/vendo" theme={theme as VendoTheme}>
+<VendoProvider baseUrl="/api/vendo" theme={theme}>
   {children}
   <VendoOverlay />
 </VendoProvider>
@@ -30,11 +29,10 @@ import theme from "../.vendo/theme.json";
 ```tsx Pages Router
 // pages/_app.tsx
 import { VendoOverlay, VendoProvider } from "@vendoai/vendo/react";
-import type { VendoTheme } from "@vendoai/vendo";
 import theme from "../.vendo/theme.json";
 
 // then wrap the app:
-<VendoProvider baseUrl="/api/vendo" theme={theme as VendoTheme}>
+<VendoProvider baseUrl="/api/vendo" theme={theme}>
   <Component {...pageProps} />
   <VendoOverlay />
 </VendoProvider>
@@ -45,9 +43,8 @@ import theme from "../.vendo/theme.json";
 `baseUrl` is where the route is mounted, path prefix included. A deployment
 served under `/maple` passes `baseUrl="/maple/api/vendo"`.
 
-The `theme` cast narrows TypeScript's widened JSON string literals. If init
-also wrote `.vendo/fonts.css`, import it beside the theme so generated screens
-carry your brand font wherever your own stylesheet does not reach.
+If init also wrote `.vendo/fonts.css`, import it beside the theme so generated
+screens use your brand font where your own stylesheet does not reach.
 
 ### The props
 
@@ -56,25 +53,28 @@ carry your brand font wherever your own stylesheet does not reach.
 | `baseUrl` | The wire mount, path prefix included. Default `/api/vendo`. |
 | `theme` | Your brand tokens, merged over Vendo's defaults. |
 | `components` | Your own React components the agent may render. See [host components](/generated/host-components). |
-| `tools` | Friendly labels and field formatting for tool chips and approval cards. |
+| `tools` | Labels and field formatting for tool chips and approval cards. |
 | `routes` · `onNavigate` | Your pages by name, and your router doing the moving when a generated link is pressed. |
 | `intl` | Display currency and locale for every formatter. Defaults to USD and `en-US`. |
-| `greeting` · `discoverability` | The first-run intro and starter prompts, or `"quiet"` to stand them down. |
+| `greeting` · `discoverability` | The first-run intro and starter prompts. `"quiet"` stands them down. |
 | `captureScreen` | `false` stops the page snapshot riding each send. See [how it works](/product/how-it-works#what-the-agent-can-see). |
 
 <Warning>
-  A component registry has to live in a `"use client"` file. Declaring it in a
-  Server Component layout crashes React Server Components serialization once
-  the registry holds real components, and every page 500s.
+  A component registry has to live in a `"use client"` file. Declare it in a
+  Server Component layout and React Server Components serialization crashes
+  once the registry holds real components — every page 500s.
 </Warning>
 
 ## The overlay
 
-The default drop-in: a launcher pill in the corner that opens the conversation
-panel. On phones it becomes a full-bleed takeover below 768px.
+The conversation panel. A bare `<VendoOverlay />` puts nothing on the page: it
+renders once something opens it — `useVendoOverlay`, a `VendoTrigger`, the
+command palette, or a slot. Below 768px the panel becomes a full-bleed
+takeover.
 
-The pill is white-label. It reads "AI agent" until you give it your own label
-and mark.
+The `launcher` prop adds the built-in pill in a corner of the viewport. The
+pill is white-label. It reads "AI agent" until you give it your own label and
+mark.
 
 ```tsx
 <VendoOverlay
@@ -95,9 +95,9 @@ and mark.
   />
 </Frame>
 
-`position` takes any viewport corner. `offset` nudges the whole cluster inward
-when your own UI already lives in that corner, and `launcher="none"` hides the
-pill so you can drive the panel yourself.
+`launcher={{}}` gives you the pill exactly as it ships. `position` takes any
+viewport corner and defaults to `bottom-right`. `offset` nudges the whole
+cluster inward when your own UI already lives in that corner.
 
 ### Where the panel sits
 
@@ -113,14 +113,14 @@ page behind it inert.
   />
 </Frame>
 
-`placement="dock"` is the side-panel posture. The panel holds the right edge
-full height and your page reflows beside it, staying visible and clickable.
+`placement="dock"` pins the panel to the right edge at full height. Your page
+reflows beside it and stays visible and clickable.
 
 ```tsx
 <VendoOverlay placement="dock" dockWidth={460} />
 ```
 
-`dockWidth` is also the amount the page reflows by, so the two can never
+`dockWidth` sets the panel width and the reflow together, so the two can never
 disagree. It defaults to 420.
 
 ### Conversations survive
@@ -129,7 +129,7 @@ A reload resumes the conversation the user was in, mid-stream replies
 included. The panel's header lists earlier conversations to pick back up.
 
 None of that needs wiring. A remembered conversation that no longer exists
-falls back to a fresh start on its own.
+falls back to a fresh start.
 
 ### Drive it yourself
 
@@ -140,17 +140,16 @@ plus the props to hand back to the overlay.
 const overlay = useVendoOverlay();
 
 <button onClick={overlay.toggle}>Ask</button>
-<VendoOverlay {...overlay.overlayProps} launcher="none" />
+<VendoOverlay {...overlay.overlayProps} />
 ```
 
-The `thread` prop is the one sanctioned injection point. Pass your own thread
-component and the overlay stays the shell: portal, scrim, focus, and the
-mobile sheet.
+The `thread` prop swaps in your own thread component. The overlay stays the
+shell: portal, scrim, focus, and the mobile sheet.
 
 ## The command palette
 
-`⌘K` on macOS, `Ctrl+K` elsewhere, opens the same conversation panel in its
-compact form.
+`⌘K` on macOS, `Ctrl+K` elsewhere, toggles the same conversation panel. With
+no conversation yet, it opens compact.
 
 ```tsx
 import { VendoPalette } from "@vendoai/ui/chrome";
@@ -158,12 +157,13 @@ import { VendoPalette } from "@vendoai/ui/chrome";
 <VendoPalette />
 ```
 
-Mount it beside the overlay, which is where the palette opens. Its commands
-render on the chip strip above the composer: a new conversation, each of the
-user's own apps, and their activity.
+Mount it beside the overlay, which is the surface it opens. Typed text that
+matches no command is just the message.
 
-Pass `onCommand` and every chip activation routes through you instead. Typed
-text that matches no command is simply the message.
+It also publishes a command set: a new conversation, each of the user's own
+apps, and their activity. Nothing renders that list for you. Pass `onCommand`
+and every command routes through you, to place wherever you like. Without one,
+only **New conversation** goes anywhere.
 
 The binding is a singleton no matter how many palettes mount, and it never
 steals a keystroke from a focused input of yours. Pass a chord
@@ -181,8 +181,8 @@ your own.
 
 ## Slots
 
-A slot is a place in your own page that a generated view can occupy. It comes
-from `@vendoai/vendo` itself — nothing extra to install.
+A slot is a place in your own page that a generated view can occupy. It ships
+in `@vendoai/vendo` — nothing extra to install.
 
 ```tsx
 "use client";
@@ -203,9 +203,9 @@ import { VendoSlot } from "@vendoai/vendo/react";
 
 Empty, it renders an invitation: a skeleton, up to three prompt chips that
 prefill the composer, and a button that opens the panel. Filled, the view
-mounts in place. If that view throws, `children` you passed come back, never a
-blank hole — but they also stand in for the invitation, so a slot that should
-invite has none.
+mounts in place. If that view throws, the `children` you passed come back
+instead of a blank hole — but `children` also stand in for the invitation, so
+a slot that should invite must not have them.
 
 <Columns cols={2}>
   <Frame>
@@ -227,62 +227,24 @@ invite has none.
 </Columns>
 
 Every mounted slot reports itself to the server, which is how the panel knows
-which places exist — and a slot that stops rendering ages out on its own, so the
-list is always the places your product really has. `label` is what a person
-reads when they pick one, and it defaults to the id read as words.
-`description` is optional, and it's the sentence an agent reads to pick between
-two slots a label alone can't separate.
+which places exist. A slot that stops rendering ages out on its own.
 
-A pin needs no wiring of its own: a slot that exists is already a destination.
-With one slot in your product, a finished view shows a one-click **Pin to
+`label` is what a person reads when they pick one, and it defaults to the id
+read as words. `description` is optional: it is the sentence an agent reads to
+pick between two slots a label alone cannot separate.
+
+Pinning needs no wiring — a slot that exists is already a destination. With
+one slot in your product, a finished view shows a one-click **Pin to
 dashboard** and it lands there. With several, the same button becomes an
-**Add to…** picker of your slots and the person chooses.
-
-## Triggers
-
-A button anywhere in your product that hands one task to the agent. It fills
-the composer and never sends, so it is safe on any prompt.
-
-```tsx
-import { VendoTrigger } from "@vendoai/ui/chrome";
-
-<VendoTrigger
-  prompt="Walk me through this month's spending."
-  context={`This month by category: ${summary}`}
->
-  Ask about this month
-</VendoTrigger>
-```
-
-`context` rides along so the agent starts oriented on what is on screen. For
-your own element instead of this button, call `openVendoConversation({ prompt })`.
-
-## The bare thread
-
-`VendoThread` is the conversation with no shell: composer, streaming replies,
-tool chips, approval cards, and generated views arriving inline. Use it when
-the conversation belongs inside your own layout.
-
-```tsx
-import { VendoThread } from "@vendoai/ui/chrome";
-
-<VendoThread
-  greeting="What can I help you build?"
-  suggestions={["Show my overdue invoices", "Draft this month's summary"]}
-/>
-```
-
-The same wire is available headless through [the
-hooks](/reference/hooks), for a conversation UI you draw yourself.
+**Add to…** picker and the person chooses.
 
 ## Tool labels
 
-Chrome renders a chip every time the agent calls a tool, and an approval card
-when a call needs a decision. Without configuration it prettifies the raw id,
-so `host_email_send` reads as "Email send".
+Every tool call renders a chip, and a call that needs a decision renders an
+approval card. Without configuration Vendo prettifies the raw id, so
+`host_email_send` reads as "Email send".
 
-Pass your own copy through the provider's `tools` prop for user-facing
-surfaces.
+Pass your own copy through the provider's `tools` prop.
 
 ```tsx
 const tools: ToolMetaMap = {
@@ -311,7 +273,7 @@ panel. The decision itself is server-side: see
 [what stops a call](/product/how-it-works#what-stops-a-call).
 
 <CardGroup cols={2}>
-  <Card title="Theming" href="/customize/theming" img="/images/cards/product-theming.svg">
+  <Card title="Theming" href="/howto/theming" img="/images/cards/product-theming.svg">
     The token file every surface above reads, and how init fills it from your
     own brand.
   </Card>

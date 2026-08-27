@@ -96,6 +96,4 @@ Removal is rarely what a broken install needs. In order of increasing reset:
 
 `vendo init --force` never touches source files. The route, the composition, and `vendo-actions.ts` are yours once created, so a broken one is deleted by hand and recreated by the next plain `vendo init`.
 
-A plain re-run prints "Already wired" and still re-runs extraction, the theme reconcile, and the AI-pass offer. Deleted scaffolds come back; edited files are never overwritten.
-
-Day to day the `predev` and `prebuild` hooks already run [`vendo sync`](/reference/cli#vendo-sync), so re-init is for restoring scaffolds or reviewing queued loosenings, not for keeping tools current.
+A plain re-run prints "Already wired", brings deleted scaffolds back, and never overwrites a file you edited — [Re-running init](/reference/vendo-init#re-running-init) has the rest.

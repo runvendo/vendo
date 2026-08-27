@@ -25,45 +25,15 @@ pnpm exec vendo init
 
 </CodeGroup>
 
-Answer the first question with **Through my own agent loop (AI SDK / Mastra)**, and take **Vendo Cloud** on the model one. Init reads your repo, writes the wire route, and lands a `VENDO_API_KEY` in `.env.local`.
-
-Init wrote `lib/vendo.ts` for you (`src/lib/vendo.ts` when your app lives under `src/`) — the `createVendo` call, and the caller resolver beside it, so your chat route, your wire route, and the pack all share one instance.
-
-```ts lib/vendo.ts focus={6}
-import { authJs } from "@vendoai/vendo/auth/auth-js";
-import { createVendo } from "@vendoai/vendo/server";
-
-const auth = authJs();
-export const vendo = createVendo({ auth });
-export const resolvePrincipal = (req: Request) => auth.principal(req);
-```
-
-Init wires whichever provider it detects — swap `authJs()` for another preset any time ([Auth](/production/auth) lists all five).
-
-With no provider yet, init wrote a demo principal in place of a preset, and the resolver beside it hands your chat route that same subject:
-
-```ts lib/vendo.ts
-import { createVendo } from "@vendoai/vendo/server";
-
-// init writes both — swap them for
-// your real session lookup.
-const principal = async () => ({
-  kind: "user" as const,
-  subject: "demo-user",
-});
-export const vendo = createVendo({ principal });
-export const resolvePrincipal = (_req: Request) => principal();
-```
-
-Either way, your agent and your wire route have to resolve the same subject — a mismatch has no error; the embed just polls a screen it will never be shown ([Auth](/production/auth)).
+Answer the first question with **Through my own agent loop (AI SDK / Mastra)**, and take **Vendo Cloud** on the model one.
 
 </Step>
 
 <Step title="Spread the tools into your agent">
 
-One Mastra definition serves every user, so `vendoMastraTools` takes no principal — it returns a Promise, which is why the agent takes the tools-as-function form. Every tool lands under a `vendo_` prefix — one per registered host action, plus `vendo_make` (a live view) and `vendo_delegate` (a whole task for Vendo's own agent); trim the pack with `include` or `exclude` by final tool name.
+`vendoMastraTools` is async, so the agent takes the tools-as-function form. Tools arrive under a `vendo_` prefix; `include` and `exclude` trim the pack.
 
-```ts src/mastra/agents/your-agent.ts focus={10}
+```ts src/mastra/agents/your-agent.ts focus={2,10}
 import { Agent } from "@mastra/core/agent";
 import { vendoMastraTools } from "@vendoai/vendo/mastra";
 import { vendo } from "@/lib/vendo";
@@ -94,53 +64,53 @@ requestContext.set(VENDO_PRINCIPAL_KEY, caller);
 params.requestContext = requestContext;
 ```
 
-`RequestContext` is Mastra's own per-invocation carrier, and Vendo's tools read the principal off it on every call. Set `VENDO_SESSION_KEY` on the same context to carry your own session id into the audit trail.
+One agent definition serves every user, so the caller travels per request: Vendo's tools read the principal off Mastra's `RequestContext` on every call.
 
 </Step>
 
 <Step title="Render the embeds">
 
-Mastra streams tool calls as `dynamic-tool` or as `tool-<name>`, depending on how the tool was declared, so match both.
+Mastra streams tool calls in two shapes, `dynamic-tool` and `tool-<name>`. `isVendoToolPart` covers both.
 
 ```tsx components/vendo-part.tsx focus={5-8}
-import { getToolName, isToolUIPart, type UIMessage } from "ai";
-import { VendoToolResult } from "@vendoai/vendo/react";
+import { getToolName, type UIMessage } from "ai";
+import { isVendoToolPart, VendoToolResult } from "@vendoai/vendo/react";
 
 export function VendoPart({ part }: { part: UIMessage["parts"][number] }) {
-  if (!isToolUIPart(part)) return null; // true for both shapes
+  if (!isVendoToolPart(part)) return null; // your own parts render elsewhere
   return part.state === "output-available"
     ? <VendoToolResult output={part.output} />
     : <span>Running {getToolName(part)}…</span>;
 }
 ```
 
-Nothing to wrap: the embed finds the wire itself and rides your host session cookie, and that one component covers plain data, app refs, and approval refs. Full contract: [Embeds in your chat](/existing-agent/embeds).
-
-</Step>
-
-<Step title="See it live">
-
-Run your own chat and ask for something behind your API. The answer comes back as a working card, inside your own bubble.
-
-Init wrote `VENDO_BASE_URL` into `.env.local`; deployments set the same variable to the public URL, path prefix included ([environment variables](/reference/environment-variables)).
-
-<Frame>
-  <img
-    src="/images/existing-agents/mastra-approval.png"
-    alt="The Mastra example chat with the vendo_send_trip_report tool pill above an approval card carrying the report, the recipient, and Approve and Deny buttons"
-    width="672"
-    height="605"
-  />
-</Frame>
+Nothing to wrap: the embed finds the wire at `/api/vendo` and rides your host session cookie. The guard narrows the part, so `state` and `output` typecheck. One component covers data, apps, and approvals — [Embeds in your chat](/existing-agent/embeds) has the full contract.
 
 </Step>
 
 </Steps>
 
-## Apps in your product
+## Make it yours
 
-Your agent can build apps now. Where they land in your product, and how to teach your model when to build one, is one more quickstart: [Apps in your product](/generated/quickstart).
+The setup was the same for everyone. These, in order, make it yours.
 
-## The full example
-
-[`examples/mastra-agent`](https://github.com/runvendo/vendo/tree/main/examples/mastra-agent) is the stock [`create-mastra`](https://mastra.ai/docs) weather starter, fronted with Next.js per Mastra's guide, with this diff applied. Every added line sits between `--- vendo` and `--- /vendo` markers, about sixty of them in total.
+<CardGroup cols={3}>
+  <Card title="Wire auth" icon="key" href="/howto/auth">
+    Swap the demo principal for your real sign-in.
+  </Card>
+  <Card title="Add tools" icon="wrench" href="/howto/tools">
+    Point Vendo at your API — the agent gets hands.
+  </Card>
+  <Card title="Approve actions" icon="shield-check" href="/howto/approvals">
+    Decide what runs and what asks first.
+  </Card>
+  <Card title="Generate screens" icon="wand-magic-sparkles" href="/howto/screens">
+    Ask for a view, pin it into your grid.
+  </Card>
+  <Card title="Theme it" icon="palette" href="/howto/theming">
+    Your fonts, colors, and radii on every surface.
+  </Card>
+  <Card title="Set instructions" icon="file-pen" href="/howto/instructions">
+    The brief your agent reads before every turn.
+  </Card>
+</CardGroup>

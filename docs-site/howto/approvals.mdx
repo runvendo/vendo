@@ -1,0 +1,123 @@
+---
+title: "Approve actions"
+sidebarTitle: "Approve actions"
+icon: "shield-check"
+description: "The posture every tool call starts under, one rule of your own, and the label that makes an approval card read like your product."
+---
+
+Every tool call passes the guard before it runs, on your server, so no client
+can talk it out of a decision. Reads go through. Anything that cannot be taken
+back stops and asks the person who is signed in.
+
+<Steps>
+
+<Step title="See the posture you already have">
+
+`vendo init` wrote `guard({ policy: {} })` into your composition and a starter
+`.vendo/policy.json` beside it. Together they say: reads and writes run,
+destructive calls ask a person, and anything sync could not grade — `ungraded`
+— asks too.
+
+An ask parks the turn on an approval card in the thread, showing the exact
+request. Approve it and the same turn resumes and the tool runs.
+
+There is nothing to configure. That is the posture until you write a rule.
+
+</Step>
+
+<Step title="Write your own rule">
+
+A rule is a `match`, an `action`, and an optional `note`. Rules are read in
+order and the first one that matches wins. Write them in the file init already
+created, or inline in your `createVendo` call.
+
+<CodeGroup>
+
+```json .vendo/policy.json
+{
+  "format": "vendo/policy@1",
+  "rules": [
+    { "match": { "tool": "host_transferMoney" }, "action": "ask" },
+    { "match": { "risk": "destructive" }, "action": "ask" },
+    { "match": { "risk": "read" }, "action": "run" }
+  ]
+}
+```
+
+```ts lib/vendo.ts
+import { createVendo, guard } from "@vendoai/vendo/server";
+import { clerk } from "@vendoai/vendo/auth/clerk";
+
+export const vendo = createVendo({
+  auth: clerk(),
+  guard: guard({
+    policy: {
+      rules: [
+        { match: { tool: "host_transferMoney" }, action: "ask" },
+        { match: { risk: "destructive" }, action: "ask" },
+        { match: { risk: "read" }, action: "run" },
+      ],
+    },
+  }),
+});
+```
+
+</CodeGroup>
+
+`match` takes `tool` (a glob), `risk`, `venue`, and `presence`. Give it any
+subset and every field you name has to hold. `action` is `run`, `ask`, or
+`block`, and a blocked call hands your `note` back as the reason.
+
+A call no rule matches keeps the built-in posture from step 1, so a short list
+of rules is a complete policy.
+
+Inline rules win outright: set `rules` in code and the file's rules are
+ignored. There is no merge.
+
+</Step>
+
+<Step title="Label the tool so the card reads human">
+
+Without your copy the card falls back to the tool's authored title, or to a
+prettified raw id — `host_email_send` reads as "Email send". Your own words go
+through the provider's `tools` prop.
+
+```tsx app/providers.tsx
+"use client";
+
+import { VendoProvider } from "@vendoai/vendo/react";
+import type { ToolMetaMap } from "@vendoai/vendo/react";
+
+const usd = (cents: number) => `$${(cents / 100).toFixed(2)}`;
+
+const tools: ToolMetaMap = {
+  host_transferMoney: {
+    label: "Send money",
+    description: "Move money between your accounts.",
+    formatField: (key, value) =>
+      key === "amount" && typeof value === "number"
+        ? usd(value)
+        : undefined,
+  },
+};
+
+// then pass it to the provider you already mounted:
+<VendoProvider baseUrl="/api/vendo" tools={tools}>
+  {children}
+</VendoProvider>
+```
+
+`label` titles the card and the tool chip, `description` is the line under the
+title, and `formatField` renders one field the way your product writes it.
+
+</Step>
+
+</Steps>
+
+## Good to know
+
+- Every approval, every denial, and every call that ran lands in the audit log.
+- `formatField` is display only. The raw arguments still drive the decision, so
+  formatting a field cannot change what the user is approving.
+- `risk` grades come from `vendo sync`, and anything it cannot grade lands
+  `ungraded`. See [tools](/howto/tools).

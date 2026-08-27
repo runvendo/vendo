@@ -136,7 +136,7 @@ pointed at.
    people use your agent: embedded in their app (most apps, and the
    recommended pick), through their own agent loop, or from outside AI apps
    over MCP. Should the assistant act as their signed-in user, on the provider
-   init detected ([which preset?](/production/auth)). Where the model comes
+   init detected ([which preset?](/howto/auth)). Where the model comes
    from: a free Vendo Cloud key is one browser click and needs no provider
    account, or they bring their own Anthropic or OpenAI key. And where their
    app runs in dev — init prefills the port their `dev` script names, so this
@@ -340,10 +340,9 @@ then mount both in the root layout:
 
 ```tsx app/layout.tsx
 import { VendoProvider, VendoOverlay } from "@vendoai/vendo/react";
-import type { VendoTheme } from "@vendoai/vendo";
 import theme from "../.vendo/theme.json";
 
-<VendoProvider baseUrl="/api/vendo" theme={theme as VendoTheme}>
+<VendoProvider baseUrl="/api/vendo" theme={theme}>
   {children}
   <VendoOverlay />
 </VendoProvider>
@@ -484,7 +483,7 @@ the answer once they have an https origin to point it at.
    the door stays shut until that seam is filled. An `auth` preset owns the
    seam outright: pass `oauth` (or `principal`, or `actAs`) beside `auth` and
    `createVendo` THROWS naming the mixed keys. Which preset:
-   [host auth](/production/auth).
+   [host auth](/howto/auth).
 
    ```ts
    export const vendo = createVendo({
@@ -644,9 +643,9 @@ backend, answering from their own API.
 
 ## The leaves
 
-- [Host auth](/production/auth): detect the host's auth provider, wire the
+- [Host auth](/howto/auth): detect the host's auth provider, wire the
   right preset, know when to ask the human.
-- [API tools](/capabilities/api-tools): expose the host API as tools, and what
+- [API tools](/howto/tools): expose the host API as tools, and what
   the extractor reads to find them.
 - [Troubleshooting](/production/troubleshooting): every doctor error code: symptom,
   cause, exact fix.

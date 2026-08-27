@@ -6,7 +6,7 @@ description: "Point the agent at an MCP server or any OpenAPI document and its o
 
 ## Where tools come from
 
-`vendo sync` reads **your** API. A connector reads someone else's, at boot, and hands the result to the same registry.
+`vendo sync` reads **your** API. A connector reads someone else's at boot and hands the result to the same registry.
 
 ```mermaid
 flowchart LR
@@ -26,12 +26,12 @@ flowchart LR
 Connector tools are ordinary tools. They collide-check against your own by name, they take corrections in `.vendo/overrides.json`, and every call goes through the guard.
 
 <Note>
-  For per-user OAuth into Gmail, Slack, or GitHub, use [connected accounts](/capabilities/connected-accounts) instead. Connectors here carry one credential you control, not one per user.
+  For per-user OAuth into Gmail, Slack, or GitHub, use [connected accounts](/capabilities/connected-accounts). A connector carries one credential you control, not one per user.
 </Note>
 
 ## Any REST API with a spec
 
-`openApiConnector` takes the spec **document**, not a path or a URL — read it, bundle it, or fetch it yourself, then hand it over.
+`openApiConnector` takes the spec **document**, not a path or a URL. Read it, bundle it, or fetch it yourself, then hand it over.
 
 ```ts app/api/vendo/[...vendo]/route.ts focus={6,7,8,9,10,11}
 import { readFileSync } from "node:fs";
@@ -56,9 +56,9 @@ const vendo = createVendo({
 | `headers` | Static headers, or a function called per tool call (below). |
 | `name` | The namespace every tool is named under. Defaults to `openapi`. |
 
-Each operation becomes one tool named `openapi_<name>_<operationId>` — `openapi_ledger_getAccount`. Path parameters, query parameters, and the JSON request body come straight off the spec, so the model sees the API's own declared shape.
+Each operation becomes one tool — `openapi_ledger_getAccount`. Path, query, and body parameters come straight off the spec, so the model sees the API's own declared shape.
 
-Risk comes from the method, never the name: `DELETE` is `destructive`, everything else is `ungraded` until you grade it. An ungraded call is one the guard asks about.
+Risk comes from the method, never the name: `DELETE` is `destructive`, everything else is `ungraded`, and the guard asks about every ungraded call. Grade them by name:
 
 ```json .vendo/overrides.json
 {
@@ -69,10 +69,6 @@ Risk comes from the method, never the name: `DELETE` is `destructive`, everythin
   }
 }
 ```
-
-<Note>
-  This is the same extractor `vendo sync` runs over a spec in your repo, and the same HTTP dispatch your own tools execute through. A spec behaves identically whichever door it comes in.
-</Note>
 
 ## An MCP server
 
@@ -92,7 +88,7 @@ const vendo = createVendo({
 });
 ```
 
-Tools are named `mcp_<name>_<tool>`. Risk is read off the server's own annotations: `destructiveHint` is `destructive`, `readOnlyHint` is `read`, and anything else is `write`.
+Tools are named `mcp_<name>_<tool>`. Risk comes off the server's own annotations: `destructiveHint` is `destructive`, `readOnlyHint` is `read`, anything else is `write`.
 
 ## One credential per user
 
@@ -112,14 +108,12 @@ openApiConnector({
 The resolver receives `principal`, `presence` (`present` or `away`), and `grant` when the guard decided the call against a standing permission.
 
 <Warning>
-  Hand back a service-level credential when `principal` is undefined, never a specific user's. That case is real: `mcpConnector` also resolves headers when it **lists** the server's tools, a system operation with no principal. `openApiConnector` reads its listing straight off the document, so it only resolves headers for real calls.
+  Hand back a service-level credential when `principal` is undefined, never a specific user's. `mcpConnector` also resolves headers when it **lists** a server's tools, and that listing is a system operation with no principal.
 </Warning>
 
-An MCP connector with a resolver also keeps one protocol session per subject, so a server that binds auth to the session can never mix two users up.
+An MCP connector with a resolver keeps one protocol session per subject, so a server that binds auth to the session can never mix two users up.
 
-## Which layer holds the credential
-
-Three separate things can put a credential on a call, and two of them are this page.
+## Which credential runs the call
 
 | Layer | Who sets it up | Whose credential runs the call |
 | --- | --- | --- |
@@ -127,8 +121,6 @@ Three separate things can put a credential on a call, and two of them are this p
 | A connector's [headers resolver](#one-credential-per-user) | You, once, at boot | Whatever you hand back for that principal |
 | [Connected accounts](/capabilities/connected-accounts) | Each user, through one OAuth popup | Theirs — the broker holds it and runs the call |
 
-The resolver is the per-user path for the connectors on this page: `openApiConnector` and `mcpConnector` both take one, it runs on every call with the acting principal in hand, and what it returns is that call's headers. So a host can send a different token for every user without a broker in the way.
-
 <Warning>
-  **[Tenant connectors](/capabilities/tenant-connectors) have no per-user path in this release.** The token an org pastes at registration is vaulted once for that org and rides static headers, so every member of that org calls with the same credential. The resolver above is not reachable from a tenant registration.
+  [Tenant connectors](/capabilities/tenant-connectors) have no per-user path. The token an org pastes at registration is vaulted once for that org and rides static headers, so every member of that org calls with the same credential.
 </Warning>

@@ -44,9 +44,9 @@ Init never writes to a file you authored. Mounting `<VendoProvider>` is the one 
 | `--base-url <url>` | a full `http(s)` URL | where the app runs **in dev**. Lands in `.env.local` as `VENDO_BASE_URL`; never a deployed URL |
 | `--theme <slot=value>` | repeatable | answers an uncertain theme slot |
 | `--posture <name>` | `local`, `broker` | which authorization server fronts the door. Not asked — `broker` opts out of the dev sign-in key. `--use-case mcp` only |
-| `--service-key` | | generate a machine-to-machine service key. `--use-case mcp` only |
+| `--service-key` | | the dev sign-in key, which a local door already wires by default. `--use-case mcp` only |
 
-`--posture broker` with a dev URL that is not `https://` exits `1`: Vendo Cloud registers that origin as the tenant's forwarding address and refuses one that is not https, so the door would be written and then fail on its first request. Take `--posture local` — zero config, and it works on http — or pass an https origin. The check reads the URL the run actually resolved, so it catches a broker posture picked at the prompt too, not just `--posture broker` on the command line.
+`--posture broker` exits `1` on a dev URL that is not `https://`. Vendo Cloud registers that origin as the tenant's forwarding address and refuses a non-https one, so the door would be written and then fail on its first request. Take `--posture local`: zero config, and it works on http. [The rest of the rule](/reference/vendo-init#every-flag).
 
 ### Overriding detection
 
@@ -68,7 +68,7 @@ Init never writes to a file you authored. Mounting `<VendoProvider>` is the one 
 
 `--ai-polish` is the older spelling of `--ai` and still works.
 
-With no answers on the command line, `--agent` prints one JSON object of the questions it still needs answered, writes nothing, and exits `0`. The agent relays them to you and re-runs init with your answers as flags, and that run writes. Answers passed on the first call skip the ask pass and write in one go. Full shape on [Agent mode](/reference/vendo-init#agent-mode).
+With no answers on the command line, `--agent` prints one JSON object of the questions it still needs, writes nothing, and exits `0`. Your agent relays them to you, then re-runs init with your answers as flags — that run writes. Pass every answer on the first call and there is no ask pass at all. Full shape on [Agent mode](/reference/vendo-init#agent-mode).
 
 The full walkthrough is on [vendo init](/reference/vendo-init).
 
@@ -78,7 +78,7 @@ Claims a Vendo Cloud key through the [claim ceremony](https://vendo.run/auth.md)
 
 The minted `VENDO_API_KEY` is written to `.env.local` in the current working directory and never printed. Run it from the same directory you ran init in.
 
-The pending claim persists to `~/.vendo/pending-claims/<hash>.json` (mode `0600`, inside a `0700` directory), where `<hash>` is the first 16 hex characters of the SHA-256 of the directory the claim was opened for. A fresh `vendo login` **in that same directory** resumes the claim after a crash. Scoping by directory is what stops two logins in two projects from resuming each other's ceremony. A pre-0.4.2 `~/.vendo/pending-claim.json` is read once, honored only if its recorded directory matches, migrated to the new path, and deleted.
+The pending claim persists to `~/.vendo/pending-claims/<hash>.json` (mode `0600`, inside a `0700` directory), hashed from the directory the claim was opened for. A fresh `vendo login` **in that same directory** resumes the claim after a crash, and scoping by directory is what stops two logins in two projects from resuming each other's ceremony. A pre-0.4.2 `~/.vendo/pending-claim.json` is migrated on first read, and only when its recorded directory matches.
 
 | Flag | Effect |
 | --- | --- |
@@ -336,9 +336,7 @@ npx vendo config status
 | --- | --- |
 | `status [dir]` | show each surface's owner, `file` or `unset` |
 
-Surfaces: `design-rules.md`, `brief.md`, `theme.json`, `policy.json`, `overrides.json`. Per surface, resolution is a value passed to `createVendo`, then the local file, then unset.
-
-A value passed in code wins over the file but is not visible to the CLI, so `status` reports only `file` or `unset`.
+Surfaces: `design-rules.md`, `brief.md`, `theme.json`, `policy.json`, `overrides.json`. Each resolves as a value passed to `createVendo`, then the local file, then unset — see [the content surfaces](/reference/dot-vendo#the-content-surfaces). A value passed in code wins over the file but is invisible to the CLI, so `status` only ever reports `file` or `unset`.
 
 `.vendo/overrides.json` gates both app generation and tool enablement. Enablement resolves boot-once on the first request, so an edit applies on the next restart; generation picks it up per generation.
 
