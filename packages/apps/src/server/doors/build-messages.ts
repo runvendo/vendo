@@ -103,6 +103,26 @@ export const buildWatchdogMs = effectiveBuildWatchdogMs;
  */
 const QUOTA_SIGNAL = /\bquota\b|insufficient_quota|\bbilling\b|\b402\b/i;
 const TIMEOUT_SIGNAL = /time?d?\s*out|timeout|abort/i;
+/**
+ * A box turn that used its whole message budget, which arrives as `unavailable`
+ * — the SAME code a busy service answers with, and the reason four escalated
+ * builds were reported as capacity ("busy, try again shortly") when what really
+ * happened is that each one ran the budget out to the millisecond. That sentence
+ * invites a retry, so the lane retried, and every retry spent the full window
+ * again. A budget is a hang-detector: it expires deterministically, so waiting
+ * cannot help and the answer is not retryable.
+ *
+ * Wording, not the word "budget" alone: `TIMEOUT_SIGNAL` above deliberately
+ * does not match this line, so nothing else classifies it first.
+ *
+ * BYTE-FOR-BYTE COUPLED to a sentence in another package this one may not
+ * import — `@vendoai/harnesses`' claude-code rungs (`box.ts` and `local.ts`
+ * throw it identically). Same coupling, and the same hazard, as
+ * `MODEL_UNAVAILABLE_SIGNAL` below; the seam is driven against the real throw in
+ * the umbrella's tests/build-budget-reason.test.ts, the one package that sees
+ * both sides.
+ */
+const BUDGET_SIGNAL = /outran its \d+ms message budget/;
 /** The engine's stream-catch marker (generation/engine.ts askModel). It is the
  *  ONLY thing that distinguishes a provider's own error line from a validation
  *  finding once both are strings in the terminal throw's `issues`. */
@@ -176,7 +196,9 @@ export const buildFailureReason = (
   // dropped connection. "generation failed" reads as a verdict on the ask, so the
   // person rewrites a request that was never the problem; this one says wait.
   if (isVendoError(error) && error.code === "unavailable") {
-    return { reason: "busy, try again shortly", retryable: true };
+    return BUDGET_SIGNAL.test(error.message)
+      ? { reason: "the build ran out of its time budget", retryable: false }
+      : { reason: "busy, try again shortly", retryable: true };
   }
   return { reason: "generation failed", retryable: true };
 };
