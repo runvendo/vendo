@@ -1139,6 +1139,43 @@ export default function Ledger() {
 
     expect(result.issues.map(({ message }) => message).join("\n")).toContain('prop "columns" on <DataTable> takes');
   });
+
+  /** The other boundary, and the one that hung a live host for 20 minutes: the
+   *  value really IS the wrong shape, but only in one nested field, and both
+   *  sides of the prop-shaped sentence summarized to the same words — `takes a
+   *  list of rows, but this value is a list of rows`. A refusal that contradicts
+   *  itself names no repair, so the screen agent retried until the watchdog
+   *  killed it and never reached a terminal state.
+   *
+   *  A SEAM test on purpose: the `align` enum below is printed from the real
+   *  zod `tableColumn` (`contract/kit/specs.ts`) by the real typings printer and
+   *  refused by the real compiler, so nothing here can agree with itself. */
+  it("falls back to the compiler's sentence when both sides summarize alike", async () => {
+    const result = await checkComponentScreen({
+      // Hoisted out of the JSX — the shape the prompt's own `.map()` habit leads
+      // to — so tsc widens `align: "end"` to `string` with no contextual type to
+      // hold the literal.
+      source: `import { DataTable, useQuery } from "@vendo/screen";
+
+const columns = [{ key: "recipient", label: "To" }, { key: "amount_cents", label: "Amount", align: "end" }];
+
+export default function Ledger() {
+  const pending = useQuery("list_pending_transfers");
+  return <DataTable rows={pending.data} columns={columns} />;
+}
+`,
+      hostTools: tools,
+      catalog: [...catalog, "DataTable"],
+      runQuery: async () => ROWS,
+    });
+
+    const text = result.issues.map(({ message }) => message).join("\n");
+    expect(text).not.toContain("takes a list of rows, but this value is a list of rows");
+    // The repair the compiler's own nested sentence carries: the field that
+    // disagrees, and the values it will take.
+    expect(text).toContain("Types of property 'align' are incompatible");
+    expect(text).toContain('Type \'string\' is not assignable to type \'"end" | "start" | "center"\'');
+  });
 });
 
 describe("stage 4 — it runs the screen for real", () => {
