@@ -22,7 +22,7 @@ export type { ToolMeta, ToolMetaMap } from "./chrome/humanize.js";
 export type { VendoAppEmbedProps, VendoApprovalEmbedProps, VendoApprovalEmbedState, VendoToolResultProps } from "./embeds.js";
 // The components behind the frozen prop contracts, exported from the root so
 // a BYO chat page needs only `@vendoai/ui`.
-export { VendoAppEmbed, VendoApprovalEmbed, VendoToolResult } from "./chrome/embeds.js";
+export { VendoAppEmbed, VendoApprovalEmbed, VendoToolResult, isVendoToolPart } from "./chrome/embeds.js";
 // The outside-agent ask, as one element: the door ships the rendered approval
 // with the parked call's outcome, and this asks, decides and settles it.
 export { VendoApproval, type PendingApproval, type VendoApprovalProps } from "./chrome/vendo-approval.js";

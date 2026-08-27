@@ -1,12 +1,22 @@
 import {
   VENDO_APP_REF_KIND,
   VENDO_AUTOMATION_REF_KIND,
+  VENDO_TOOL_PACK_PREFIX,
   isVendoError,
   parseVendoToolEnvelope,
   type ApprovalDecision,
   type ToolOutcome,
   type UIPayload,
 } from "@vendoai/core";
+import {
+  getToolName,
+  isToolUIPart,
+  type DynamicToolUIPart,
+  type ToolUIPart,
+  type UIDataTypes,
+  type UIMessagePart,
+  type UITools,
+} from "ai";
 import {
   effectiveAppBuildUiDeadlineMs,
 } from "@vendoai/apps/contract";
@@ -479,6 +489,22 @@ export function VendoAppEmbed({ refValue, theme }: VendoAppEmbedProps) {
       {approval.modal}
     </ChromeRoot>
   );
+}
+
+/**
+ * The branch a BYO renderer takes to tell Vendo's tool parts from its own, and
+ * the ONLY place a host should match on the `vendo_` prefix.
+ *
+ * True for a tool part the pack minted, in BOTH shapes the AI SDK streams —
+ * `tool-<name>` (statically declared) and `dynamic-tool` (resolved at runtime,
+ * which is what Mastra emits for a tools-as-function agent). It narrows to the
+ * tool-part union, so `part.state` and `part.output` typecheck at the call site
+ * without a cast.
+ */
+export function isVendoToolPart<TOOLS extends UITools>(
+  part: UIMessagePart<UIDataTypes, TOOLS>,
+): part is ToolUIPart<TOOLS> | DynamicToolUIPart {
+  return isToolUIPart(part) && getToolName(part).startsWith(VENDO_TOOL_PACK_PREFIX);
 }
 
 /**

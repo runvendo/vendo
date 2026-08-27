@@ -17,6 +17,13 @@ export const TOOL_NAME_PATTERN = /^[a-zA-Z0-9_-]{1,64}$/;
  *  side string-matching the other. */
 export const VENDO_APPS_TOOL_PREFIX = "vendo_apps_";
 
+/** The namespace every tool Vendo projects into a HOST's own agent loop carries,
+ *  so a BYO loop's tools and ours never collide: a registered host tool `host_x`
+ *  ships as `vendo_host_x`, and the built-ins are already prefixed. Named here,
+ *  below both the tool pack that mints the names and the renderer that has to
+ *  recognise them, so the two sides never string-match each other. */
+export const VENDO_TOOL_PACK_PREFIX = "vendo_" as const;
+
 /**
  * The ONE public tool for asking Vendo to make something to look at.
  *

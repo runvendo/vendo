@@ -41,6 +41,7 @@ export {
   VendoAppEmbed,
   VendoApprovalEmbed,
   VendoToolResult,
+  isVendoToolPart,
   // chrome/vendo-approval.tsx — the outside-agent ask, as one element.
   VendoApproval,
   type PendingApproval,
