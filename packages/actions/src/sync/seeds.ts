@@ -523,6 +523,7 @@ interface CaptureContext {
   realRoot: string;
   extraRoots: readonly string[];
   remixableDir: string;
+  /** Realpathed — the split measures the wiring file's imports against it. */
   generatedDir: string;
   budgetBytes?: number;
   samplePropsFor?: (file: string, slot: string) => Record<string, Json> | undefined;
@@ -707,6 +708,12 @@ export async function capturePins(
   const files = [...new Set(walked)].sort();
   const remixableDir = path.join(out, "remixable");
   const generatedDir = path.join(out, "generated");
+  // The wiring file's imports are relative paths, so both ends have to be
+  // measured in the SAME space: resolveImportSource realpaths every module it
+  // returns, and a project root reached through a symlink (a macOS temp dir, a
+  // linked checkout) would otherwise emit an import that climbs out of the
+  // project and bakes an absolute machine path into a file the host commits.
+  const realGeneratedDir = path.join(realRoot, path.relative(root, generatedDir));
   const wiring: WiringSlot[] = [];
   const homes = new Map<string, string>();
 
@@ -715,7 +722,7 @@ export async function capturePins(
   const bySlot = await collectResolvedSites(root, realRoot, extra.real, files, result);
 
   const captureCtx: CaptureContext = {
-    root, realRoot, extraRoots: extra.real, remixableDir, generatedDir, budgetBytes, samplePropsFor, ignoreSlots, wiring, homes, result,
+    root, realRoot, extraRoots: extra.real, remixableDir, generatedDir: realGeneratedDir, budgetBytes, samplePropsFor, ignoreSlots, wiring, homes, result,
   };
   for (const [slot, sites] of [...bySlot.entries()].sort(([left], [right]) => left.localeCompare(right))) {
     await captureSlot(slot, sites, captureCtx);

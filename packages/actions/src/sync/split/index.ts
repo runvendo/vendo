@@ -30,7 +30,9 @@ export interface SplitInput {
   /** Its real path, for resolving the imports it writes. */
   file: string;
   root: string;
-  /** Where the wiring file will sit — the paths it imports are relative to it. */
+  /** Where the wiring file will sit, REALPATHED — the paths it imports are
+   *  relative to it, and every module they point at is realpathed too, so a
+   *  root behind a symlink must not measure the two ends in different spaces. */
   generatedDir: string;
   /** The host's own declared sample props for this component, when a
    *  registration carries them — what the gauntlet paints a props-dependent
