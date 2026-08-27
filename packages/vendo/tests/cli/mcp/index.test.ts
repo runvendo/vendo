@@ -41,7 +41,7 @@ describe("mcp telemetry", () => {
     expect(await runMcp(["unknown"], { output: output().sink, telemetry: failed.telemetry })).toBe(1);
     expect(failed.event("command_run").properties).toMatchObject({
       command: "mcp",
-      ok: false,
+      ok: "false",
       failedStep: "unknown-command",
     });
   });

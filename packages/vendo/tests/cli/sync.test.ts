@@ -493,8 +493,8 @@ describe("sync telemetry", () => {
 
     const ok = await telemetryCapture();
     expect(await runSync({ targetDir: ".", output, fetchImpl, sync: async () => report(), telemetry: ok.telemetry })).toBe(0);
-    expect(ok.event("command_run").properties).toMatchObject({ command: "sync", ok: true });
-    expect(typeof ok.event("command_run").properties.durationMs).toBe("number");
+    expect(ok.event("command_run").properties).toMatchObject({ command: "sync", ok: "true" });
+    expect(Number(ok.event("command_run").properties.durationMs)).not.toBeNaN();
 
     const gated = await telemetryCapture();
     expect(await runSync({
@@ -505,7 +505,7 @@ describe("sync telemetry", () => {
       sync: async () => report([{ tool: "host_x", change: "removed" }]),
       telemetry: gated.telemetry,
     })).toBe(2);
-    expect(gated.event("command_run").properties).toMatchObject({ command: "sync", ok: false });
+    expect(gated.event("command_run").properties).toMatchObject({ command: "sync", ok: "false" });
 
     await rm(ok.home, { recursive: true, force: true });
     await rm(gated.home, { recursive: true, force: true });
@@ -545,7 +545,7 @@ describe("telemetry project attribution + cloud-key sourcing (P1 review)", () =>
     dirs.push(tele.home);
     await runSync({ targetDir: dir, output: quiet, fetchImpl: offline, sync: async () => report(), telemetry: tele.telemetry });
     const props = tele.event("command_run").properties;
-    expect(props.cloud).toBe(true);
+    expect(props.cloud).toBe("true");
     expect(props.cloudKeyHash).toBe(createHash("sha256").update(CLOUD_KEY).digest("hex"));
   });
 
