@@ -188,11 +188,17 @@ export function planMcp(input: McpPlanInput): McpPlan {
     );
   }
   if (authWired === null && input.authAlreadyWired !== true) {
+    // Init decides auth ONLY for a composition it is creating, so by the time
+    // this run ends the anonymous composition is on disk and a bare re-run can
+    // never reach this branch differently — telling the user to "re-run" alone
+    // was a loop with no exit. Name the file and say to replace it.
+    const composed = relative(root, composition).split(sep).join("/");
     return refuse(
       "The MCP door mints its own principals through an OAuth adapter and cannot open without one, so "
-      + "nothing MCP was written. Wire an auth preset — auth: clerk(), authJs(), supabase() or auth0() all "
-      + "carry it — then re-run `npx vendo init`. (jwt() and an anonymous composition do not carry the "
-      + "oauth half: https://docs.vendo.run/outside-agents/quickstart.)",
+      + "nothing MCP was written. Wire an auth preset that carries it — auth: clerk(), authJs(), supabase() "
+      + `or auth0() — then delete ${composed} and re-run \`npx vendo init\`: init never rewrites a `
+      + "composition it already wrote, so a re-run on its own adds no door. (jwt() and an anonymous "
+      + "composition do not carry the oauth half: https://docs.vendo.run/outside-agents/quickstart.)",
     );
   }
 
