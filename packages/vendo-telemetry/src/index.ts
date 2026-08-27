@@ -4,7 +4,7 @@ import { createTelemetry, DEFAULT_POSTHOG_KEY, type Telemetry } from "./client.j
 
 export { envOptOut } from "./consent.js";
 export { loadConfig, type TelemetryConfig } from "./config.js";
-export { EVENT_ALLOWLIST, type EventName } from "./events.js";
+export { EVENT_ALLOWLIST, LOG_EVENTS, type EventName } from "./events.js";
 export { type Telemetry } from "./client.js";
 export { PROJECT_ID_SALT, repoHost, type RepoHost } from "./base-props.js";
 export { scrubErrorDetail } from "./scrub.js";

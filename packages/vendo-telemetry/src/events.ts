@@ -104,3 +104,16 @@ export const EVENT_ALLOWLIST: Record<EventName, ReadonlySet<string>> = {
   agent_run: new Set([...BASE_PROP_KEYS]),
   error_class: new Set([...BASE_PROP_KEYS, "errorClass"]),
 } as const;
+
+/**
+ * The events that are operational records rather than product analytics: they
+ * say "this ran, here is how it went", and nobody funnels or retains them.
+ * They go to PostHog's Logs product instead of `/capture/` — same key, same
+ * consent, same allowlist, but a store with enforced 30-day retention. The
+ * split is by destination only; an event is never sent to both.
+ */
+export const LOG_EVENTS: ReadonlySet<EventName> = new Set<EventName>([
+  "doctor_run",
+  "command_run",
+  "agent_run",
+]);
