@@ -118,6 +118,15 @@ const checkoutOf = (source: Record<string, AppSourceFile> | undefined, directory
  *  whatever was asked for. The allowlist is the security boundary and does not
  *  move, so the brief tells the truth about it instead.
  *
+ *  Two more of the same kind, measured the same day once the first was gone: the
+ *  image's baked `@vendoai/ui` predates the frame protocol, so a build that used
+ *  it lost the time to find that out; and `callHost` is named here as the way to
+ *  reach host data, which sent an agent hunting this disk for a tool list that
+ *  is deliberately absent (no `toolDoor`, below). `callHost` is real — it is a
+ *  postMessage to the embedding page, so it answers at RUNTIME and never in
+ *  here — so the brief says which side of that line it is on rather than
+ *  dropping it and taking the capability with it.
+ *
  *  `briefing` is the rendered pack, appended as its own SECTION on the same join
  *  the screen agent's brief uses: the instructions above it are this rung's own,
  *  the product knowledge below it is the bytes the other rung read. */
@@ -131,14 +140,18 @@ WHY A GENERATED SCREEN WAS NOT ENOUGH:
 ${request.why}
 
 HOW IT SHIPS
-- Write the source under ${directory}/src and install whatever npm packages it needs.
+- Write the source under ${directory}/src and install whatever npm packages it
+  needs. Install @vendoai/ui from npm rather than using the copy already on this
+  machine: the baked one predates the frame protocol below and does not have it.
 - The document that serves your bundle is one <div id="root"></div>: mount into
   that element, and once your first render is really in the DOM (an empty mount
   measures as height 0, which the host renders as a collapsed frame) call
-  startFrameProtocol(mount) from @vendoai/ui/kit — install it like any other
-  package. That is what sizes the frame and applies the host's brand tokens, and
-  callHost(tool, args) from the same module is the only way to reach the host's
-  data.
+  startFrameProtocol(mount) from @vendoai/ui/kit. That is what sizes the frame
+  and applies the host's brand tokens, and callHost(tool, args) from the same
+  module is how the SHIPPED app reaches the host's data. Both speak to the page
+  that embeds the app, so neither answers in here: there is no host on this
+  machine and no tool list to read. Write against them and move on — looking for
+  the host's tools on this disk finds nothing and costs you the build.
 - Bundle it with esbuild to ${directory}/${ENTRY}: ONE self-contained file, no
   imports left at runtime and no network calls at all — the sealed bundle renders
   in an iframe where every request is blocked.
