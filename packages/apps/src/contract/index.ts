@@ -23,7 +23,6 @@ export {
   appSourceFileSchema,
   appSeedSchema,
   seedComponentName,
-  storageDeclSchema,
   type AppBuildFailure,
   type AppBuildProposal,
   type AppBundle,
@@ -31,7 +30,6 @@ export {
   type AppMemory,
   type AppSeed,
   type AppSourceFile,
-  type StorageDecl,
 } from "@vendoai/core";
 export { refuseBundleArtifact, validateAppDocument, type AppDocumentValidation } from "./app-validation.js";
 // the one door in — every app write passes admission; validateAppDocument above

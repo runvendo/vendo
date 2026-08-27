@@ -3,7 +3,7 @@ import { ENGINE_ALLOWLIST_VERSION, engineAppHistory } from "../engine-collection
 import type { VendoErrorCode } from "../errors.js";
 import { isoDateTimeSchema, type IsoDateTime } from "../ids.js";
 import { STORE_WIRE_APPEND_MESSAGES_OPS, STORE_WIRE_PATHS, STORE_WIRE_TURN_OPS, VENDO_STORE_WIRE_FORMAT } from "../store-wire.js";
-import type { AuditQuery, CollectionFootprint, StoreOps, StoreOpsWithAppData, UsageCountQuery } from "../store.js";
+import type { AuditQuery, CollectionFootprint, StoreOps, UsageCountQuery } from "../store.js";
 import { assert, assertBytesEqual, assertDeepEqual } from "./assertions.js";
 import { omitted, type ConformanceCase, type ConformanceOmission, type ConformanceSuite } from "./index.js";
 
@@ -143,12 +143,8 @@ const USAGE_ABSENT = "this mount omits the usage family (optional — a store wi
 /** ...and for the turn envelopes, optional on the same rule. */
 const TURN_ABSENT = "this mount omits the turn family (optional — a caller that finds it absent makes the individual calls it always did)";
 
-/** ...and for the app-row drawers, optional on the same rule. */
-const APP_DATA_ABSENT = "this mount omits the appData family (optional — a store with nowhere to keep app rows leaves it off, and the doors onto them refuse rather than write elsewhere)";
-
-/** appData rows live in the app's own drawer, and the local backend fails an
-    app-scoped write closed when the app has no row — so every appData case
-    seeds one first, with the shape the typed `vendo_apps` door accepts. */
+/** Seeds an app record with the shape the typed `vendo_apps` door accepts, for
+    the cases whose subject is an app rather than a subject. */
 const seedApp = async (ops: StoreOps, appId: string): Promise<void> => {
   await ops.engine.put("vendo_apps", {
     id: appId,
@@ -198,17 +194,6 @@ const opsCase = (
     }
   },
 });
-
-/** A case whose SUBJECT is the optional appData family: the mount that omits it
-    omits every one of them, the way {@link APPEND_ABSENT}'s cases report. Cases
-    over another family that merely LOOK at an app row guard that leg instead,
-    so the family's absence never takes their subject down with it. */
-const appDataCase = (
-  opts: StoreOpsConformanceOptions,
-  name: string,
-  body: (ops: StoreOpsWithAppData) => Promise<void | ConformanceOmission>,
-): ConformanceCase => opsCase(opts, name, async (ops) =>
-  ops.appData === undefined ? omitted(APP_DATA_ABSENT) : await body(ops as StoreOpsWithAppData));
 
 export function storeOpsConformance(opts: StoreOpsConformanceOptions): ConformanceSuite {
   return {
@@ -546,26 +531,16 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
         const refusal = await ops.engine.get("host_invoices", "inv_1").then(() => null, (error: unknown) => error);
         const message = String((refusal as { message?: unknown } | null)?.message ?? refusal);
         assert(message.includes(`v${ENGINE_ALLOWLIST_VERSION}`), `the refusal should name the allowlist version, got ${message}`);
-        assert(message.includes("appData"), `the refusal should point at the appData family, got ${message}`);
+        assert(message.includes("vendo_apps_sql"), `the refusal should point at the app's own database, got ${message}`);
 
-        // A gate that throws after writing is not a gate. The probe is an
-        // app-scoped name — outside the allowlist exactly like `host_invoices`,
-        // but reachable through the ONE surviving door onto those rows, so the
-        // refused write can be looked for instead of assumed away.
-        await seedApp(ops, "app_gate");
+        // An app-scoped name too — outside the allowlist exactly like
+        // `host_invoices`, and the shape a generated app is most likely to
+        // reach for when it wants a drawer of its own.
         await assertThrowsCode(
           () => ops.engine.put("app:app_gate:invoices", { id: "inv_1", data: { total: 1 } }),
           "blocked",
           "an app-scoped collection on engine.put",
         );
-        // Only a mount that serves the OPTIONAL appData family has a door to
-        // look through; the refusal above is this case's subject either way.
-        if (ops.appData !== undefined) {
-          assert(
-            await ops.appData.get({ appId: "app_gate", collection: "invoices", owner: "user_1" }, "inv_1") === null,
-            "the refused put wrote its row anyway",
-          );
-        }
       }),
 
       /** `engine` is a NEW door onto the same routed doors the local backend
@@ -658,9 +633,8 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
         );
       }),
 
-      /** The namespace is the blob store's ONLY partition, and every appData
-          file, every workspace object and every host upload is separated by
-          nothing else. An implementation that composes its physical key by
+      /** The namespace is the blob store's ONLY partition, and every workspace
+          object and every host upload is separated by nothing else. An implementation that composes its physical key by
           joining the namespace and the key with a delimiter — the obvious way
           to build one on a flat object store — aliases namespace `a` + key
           `b/c` onto namespace `a/b` + key `c`, and the read that crosses is
@@ -699,294 +673,6 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
         assert(got !== null, "a stored zero-byte blob read back as absent");
         assertBytesEqual(got!.bytes, new Uint8Array([]), "a zero-byte blob did not round-trip");
         assertDeepEqual(await ops.blobs.list("conf_bempty"), ["empty.bin"], "a zero-byte blob is missing from its namespace's listing");
-      }),
-
-      // =====================================================================
-      // appData
-      // =====================================================================
-
-      appDataCase(opts, "appData.put stamps the target owner as refs.subject", async (ops) => {
-        await seedApp(ops, "app_stamp");
-        const target = { appId: "app_stamp", collection: "notes", owner: "own_a" };
-        const put = await ops.appData.put(target, { id: "n1", data: { text: "hi" } });
-        assert(
-          put.refs?.["subject"] === "own_a",
-          `put should stamp the owner as refs.subject, got ${String(put.refs?.["subject"])}`,
-        );
-        const got = await ops.appData.get(target, "n1");
-        assert(got?.refs?.["subject"] === "own_a", "the stamped record did not read back for its owner");
-      }),
-
-      /** Generated code has no field for the owner, so a `refs.subject` in the
-          record is a caller trying to write as someone else. Refused, never
-          silently overwritten with the real owner. */
-      appDataCase(opts, "appData.put refuses a caller-supplied refs.subject", async (ops) => {
-        await seedApp(ops, "app_putsub");
-        const target = { appId: "app_putsub", collection: "notes", owner: "own_a" };
-        await assertThrowsCode(
-          () => ops.appData.put(target, { id: "n1", data: {}, refs: { subject: "own_b" } }),
-          "validation",
-          "a caller-supplied refs.subject on appData.put",
-        );
-        assert(await ops.appData.get(target, "n1") === null, "the refused put wrote its row anyway");
-      }),
-
-      appDataCase(opts, "appData.list refuses a caller-supplied refs.subject", async (ops) => {
-        await seedApp(ops, "app_listsub");
-        const target = { appId: "app_listsub", collection: "notes", owner: "own_a" };
-        await assertThrowsCode(
-          () => ops.appData.list(target, { refs: { subject: "own_b" } }),
-          "validation",
-          "a caller-supplied refs.subject on appData.list",
-        );
-      }),
-
-      appDataCase(opts, "appData.list never returns another owner's rows", async (ops) => {
-        await seedApp(ops, "app_scope");
-        const a = { appId: "app_scope", collection: "notes", owner: "own_a" };
-        const b = { appId: "app_scope", collection: "notes", owner: "own_b" };
-        await ops.appData.put(a, { id: "mine", data: {} });
-        await ops.appData.put(b, { id: "theirs", data: {} });
-        assertDeepEqual(
-          (await ops.appData.list(a)).records.map((r) => r.id),
-          ["mine"],
-          "list returned rows outside the target owner's scope",
-        );
-        assertDeepEqual(
-          (await ops.appData.list(b)).records.map((r) => r.id),
-          ["theirs"],
-          "list returned rows outside the target owner's scope",
-        );
-      }),
-
-      /** Both halves, deliberately — the same trap `delete` below calls out: a
-          `get` that returns null for EVERYONE also passes the negative
-          assertion on its own, so the owner's own read is asserted too. */
-      appDataCase(opts, "appData.get returns null for another owner's row", async (ops) => {
-        await seedApp(ops, "app_getscope");
-        const owner = { appId: "app_getscope", collection: "notes", owner: "own_a" };
-        const other = { appId: "app_getscope", collection: "notes", owner: "own_b" };
-        await ops.appData.put(owner, { id: "secret", data: { v: 1 } });
-        assert(await ops.appData.get(other, "secret") === null, "get read another owner's row");
-        const mine = await ops.appData.get(owner, "secret");
-        assert(mine !== null, "get returned null for the owner's own row");
-        assertDeepEqual(mine!.data, { v: 1 }, "get returned the wrong row for its owner");
-      }),
-
-      /** Both halves, deliberately: a `delete` that does nothing at all also
-          leaves the other owner's row alone, so the negative assertion on its
-          own is passed by an empty function. */
-      appDataCase(opts, "appData.delete deletes only the caller's own row", async (ops) => {
-        await seedApp(ops, "app_delscope");
-        const owner = { appId: "app_delscope", collection: "notes", owner: "own_a" };
-        const other = { appId: "app_delscope", collection: "notes", owner: "own_b" };
-        await ops.appData.put(owner, { id: "keep", data: { v: 1 } });
-        await ops.appData.delete(other, "keep");
-        assert(await ops.appData.get(owner, "keep") !== null, "delete destroyed another owner's row");
-        await ops.appData.delete(owner, "keep");
-        assert(await ops.appData.get(owner, "keep") === null, "delete left the owner's own row behind");
-      }),
-
-      /** `put` has an unconditional upsert's blast radius — an unconditional upsert on
-          (collection, id) — so an id another owner holds must be refused, not
-          overwritten and re-stamped into a row the loser can neither read nor
-          delete. */
-      appDataCase(opts, "appData.put refuses an id another owner holds", async (ops) => {
-        await seedApp(ops, "app_putconflict");
-        const owner = { appId: "app_putconflict", collection: "notes", owner: "own_a" };
-        const other = { appId: "app_putconflict", collection: "notes", owner: "own_b" };
-        await ops.appData.put(owner, { id: "taken", data: { v: 1 } });
-        await assertThrowsCode(
-          () => ops.appData.put(other, { id: "taken", data: { v: 2 } }),
-          "conflict",
-          "a put against an id another owner holds",
-        );
-        const still = await ops.appData.get(owner, "taken");
-        assert(still !== null, "the refused put destroyed the holder's row");
-        assertDeepEqual(still!.data, { v: 1 }, "the refused put overwrote the holder's row");
-        assert(await ops.appData.get(other, "taken") === null, "the refused put re-stamped the row");
-      }),
-
-      /** The owner scope has to survive the WALK, not just the first page. A
-          backend that stamps the scope onto the initial query and then follows
-          its own cursor without re-applying it hands page two of everybody's
-          rows to whoever paged first — and every case above passes, because
-          none of them asks for a second page. */
-      appDataCase(opts, "appData.list paginates one owner's drawer without loss, duplicates, or a neighbour's rows", async (ops) => {
-        await seedApp(ops, "app_pager");
-        const owner = { appId: "app_pager", collection: "notes", owner: "own_a" };
-        const other = { appId: "app_pager", collection: "notes", owner: "own_b" };
-        const expected = ["ap_a", "ap_b", "ap_c", "ap_d", "ap_e"];
-        for (const id of expected) await ops.appData.put(owner, { id, data: { id } });
-        for (const id of ["their_1", "their_2", "their_3"]) await ops.appData.put(other, { id, data: { id } });
-        await assertPaginates("appData.list", expected, async (cursor) => {
-          const page = await ops.appData.list(owner, { limit: PAGE, cursor });
-          return { ids: page.records.map((record) => record.id), cursor: page.cursor };
-        });
-      }),
-
-      /** The appId is the second half of the scope, and it is the half nothing
-          proves: every isolation case above moves the OWNER. Two apps holding
-          one collection name is the ordinary case (every generated app invents
-          `notes`), and an implementation that scopes on the owner alone puts
-          both apps' rows in one drawer for the user who installed both. */
-      appDataCase(opts, "appData keeps two apps' drawers apart", async (ops) => {
-        await seedApp(ops, "app_one");
-        await seedApp(ops, "app_two");
-        const one = { appId: "app_one", collection: "notes", owner: "own_a" };
-        const two = { appId: "app_two", collection: "notes", owner: "own_a" };
-        await ops.appData.put(one, { id: "same", data: { whose: "one" } });
-        await ops.appData.put(two, { id: "same", data: { whose: "two" } });
-
-        assertDeepEqual((await ops.appData.get(one, "same"))?.data, { whose: "one" }, "one app read another app's row");
-        assertDeepEqual((await ops.appData.get(two, "same"))?.data, { whose: "two" }, "one app read another app's row");
-        assertDeepEqual((await ops.appData.list(one)).records.map((record) => record.id), ["same"], "an app listed another app's rows");
-
-        await ops.appData.putFile(one, "f.bin", new Uint8Array([1]));
-        await ops.appData.putFile(two, "f.bin", new Uint8Array([2]));
-        assertBytesEqual((await ops.appData.getFile(one, "f.bin"))!.bytes, new Uint8Array([1]), "one app read another app's file");
-        await ops.appData.delete(one, "same");
-        await ops.appData.deleteFile(one, "f.bin");
-        assert(await ops.appData.get(two, "same") !== null, "deleting in one app destroyed another app's row");
-        assert(await ops.appData.getFile(two, "f.bin") !== null, "deleting in one app destroyed another app's file");
-      }),
-
-      appDataCase(opts, "appData.list honors caller refs alongside the owner scope", async (ops) => {
-        await seedApp(ops, "app_refs");
-        const a = { appId: "app_refs", collection: "notes", owner: "own_a" };
-        const b = { appId: "app_refs", collection: "notes", owner: "own_b" };
-        await ops.appData.put(a, { id: "inv", data: {}, refs: { kind: "invoice" } });
-        await ops.appData.put(a, { id: "memo", data: {}, refs: { kind: "memo" } });
-        await ops.appData.put(b, { id: "their_inv", data: {}, refs: { kind: "invoice" } });
-        assertDeepEqual(
-          (await ops.appData.list(a, { refs: { kind: "invoice" } })).records.map((r) => r.id),
-          ["inv"],
-          "the caller's refs filter and the owner scope did not both apply",
-        );
-      }),
-
-      appDataCase(opts, "appData file twins round-trip and stay owner-isolated", async (ops) => {
-        await seedApp(ops, "app_files");
-        const owner = { appId: "app_files", collection: "notes", owner: "own_a" };
-        const other = { appId: "app_files", collection: "notes", owner: "own_b" };
-        const bytes = new Uint8Array([0, 7, 255]);
-        await ops.appData.putFile(owner, "receipt.bin", bytes, { contentType: "application/octet-stream" });
-        const got = await ops.appData.getFile(owner, "receipt.bin");
-        assert(got !== null, "the stored file returned null for its owner");
-        assertBytesEqual(got!.bytes, bytes, "file bytes did not round-trip");
-        assert(got!.contentType === "application/octet-stream", "file contentType did not round-trip");
-
-        assert(await ops.appData.getFile(other, "receipt.bin") === null, "getFile read another owner's file");
-        await ops.appData.deleteFile(other, "receipt.bin");
-        assert(await ops.appData.getFile(owner, "receipt.bin") !== null, "deleteFile destroyed another owner's file");
-        // The positive half — without it an empty deleteFile passes the line above.
-        await ops.appData.deleteFile(owner, "receipt.bin");
-        assert(await ops.appData.getFile(owner, "receipt.bin") === null, "deleteFile left the owner's own file behind");
-      }),
-
-      /** The owner prefix is the backend's scoping mechanism, not part of the
-          caller's key space: a generated app that stored `receipt.bin` must get
-          `receipt.bin` back, and its prefix filters are its own keys' prefixes. */
-      appDataCase(opts, "appData.listFiles returns keys without the owner prefix", async (ops) => {
-        await seedApp(ops, "app_listfiles");
-        const owner = { appId: "app_listfiles", collection: "notes", owner: "own_a" };
-        const other = { appId: "app_listfiles", collection: "notes", owner: "own_b" };
-        await ops.appData.putFile(owner, "images/a.png", new Uint8Array([1]));
-        await ops.appData.putFile(owner, "docs/a.txt", new Uint8Array([2]));
-        await ops.appData.putFile(other, "images/b.png", new Uint8Array([3]));
-
-        assertDeepEqual(
-          (await ops.appData.listFiles(owner)).sort(),
-          ["docs/a.txt", "images/a.png"],
-          "listFiles returned prefixed keys or crossed owners",
-        );
-        assertDeepEqual(
-          await ops.appData.listFiles(owner, "images/"),
-          ["images/a.png"],
-          "the prefix filter was not relative to the caller's own key space",
-        );
-      }),
-
-      /** The owner is the FIRST PATH SEGMENT of every appData file key
-          (`<owner>/<key>`), so an owner holding "/" is not a name, it is a
-          second key segment: owner "own_a/sub" reading "x.bin" reads owner
-          "own_a"'s "sub/x.bin". Hosts pick their own subject spelling and
-          path-like ones are ordinary, so the fence is the grammar and the
-          answer is a refusal — a sanitised owner would land two people in one
-          drawer. Every verb, because every verb composes the key. */
-      appDataCase(opts, "appData refuses an owner outside the grammar", async (ops) => {
-        await seedApp(ops, "app_owner");
-        const owner = { appId: "app_owner", collection: "notes", owner: "own_a" };
-        await ops.appData.put(owner, { id: "n1", data: { v: 1 } });
-        await ops.appData.putFile(owner, "sub/x.bin", new Uint8Array([9]));
-
-        const crafted = { appId: "app_owner", collection: "notes", owner: "own_a/sub" };
-        const verbs: [string, () => Promise<unknown>][] = [
-          ["put", () => ops.appData.put(crafted, { id: "n2", data: {} })],
-          ["get", () => ops.appData.get(crafted, "n1")],
-          ["list", () => ops.appData.list(crafted)],
-          ["delete", () => ops.appData.delete(crafted, "n1")],
-          ["putFile", () => ops.appData.putFile(crafted, "y.bin", new Uint8Array([1]))],
-          ["getFile", () => ops.appData.getFile(crafted, "x.bin")],
-          ["listFiles", () => ops.appData.listFiles(crafted)],
-          ["deleteFile", () => ops.appData.deleteFile(crafted, "x.bin")],
-        ];
-        for (const [verb, run] of verbs) {
-          await assertThrowsCode(run, "validation", `appData.${verb} with an owner containing "/"`);
-        }
-        // A refusal, not a no-op that quietly worked on the foreign drawer.
-        assert(
-          await ops.appData.getFile(owner, "sub/x.bin") !== null,
-          "a crafted owner reached the real owner's file",
-        );
-        await assertThrowsCode(
-          () => ops.appData.get({ ...owner, owner: "" }, "n1"),
-          "validation",
-          "an empty appData owner",
-        );
-
-        // NOT a slug grammar: a subject is the host's own user id in the host's
-        // own spelling, and "auth0|…" and "user:with:colons" are contract
-        // elsewhere in this repo. Only "/" is refused.
-        for (const [index, exotic] of ["auth0|64f0", "user:with:colons", "person@example.com"].entries()) {
-          const target = { appId: "app_owner", collection: "notes", owner: exotic };
-          const put = await ops.appData.put(target, { id: `ok_${index}`, data: { who: exotic } });
-          assert(put.refs?.["subject"] === exotic, `the owner ${exotic} was not stamped`);
-          await ops.appData.putFile(target, "f.bin", new Uint8Array([2]));
-          assertDeepEqual(await ops.appData.listFiles(target), ["f.bin"], `listFiles broke for owner ${exotic}`);
-        }
-      }),
-
-      appDataCase(opts, "appData refuses a collection name outside the grammar", async (ops) => {
-        await seedApp(ops, "app_grammar");
-        const legal = { appId: "app_grammar", collection: "box:inbox", owner: "own_a" };
-        const put = await ops.appData.put(legal, { id: "ok", data: {} });
-        assert(put.id === "ok", "a legal box: collection was not accepted");
-
-        for (const collection of ["has spaces", "a/b"]) {
-          const illegal = { appId: "app_grammar", collection, owner: "own_a" };
-          await assertThrowsCode(
-            () => ops.appData.put(illegal, { id: "no", data: {} }),
-            "validation",
-            `the collection name ${JSON.stringify(collection)} on put`,
-          );
-          // A read verb too: the name is composed on every verb, not just writes.
-          await assertThrowsCode(
-            () => ops.appData.get(illegal, "no"),
-            "validation",
-            `the collection name ${JSON.stringify(collection)} on get`,
-          );
-        }
-
-        // The appId shares the name with the collection and is parsed back out
-        // of it on the assumption it holds no colon, so it carries its own
-        // refusal: "app_grammar:box" + "evil" would otherwise be the same
-        // drawer as "app_grammar" + "box:evil".
-        await assertThrowsCode(
-          () => ops.appData.put({ appId: "app_grammar:box", collection: "evil", owner: "own_a" }, { id: "no", data: {} }),
-          "validation",
-          "an appId containing a colon",
-        );
       }),
 
       // =====================================================================
@@ -1751,15 +1437,9 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
           is all still there, and a deletion request answered with a receipt.
           Scoped to the app and nothing else: the user who installed it keeps
           their conversations, and the app NEXT to it keeps everything. */
-      appDataCase(opts, "lifecycle.erase removes one app's data, and only that app's", async (ops) => {
+      opsCase(opts, "lifecycle.erase removes one app's data, and only that app's", async (ops) => {
         await seedApp(ops, "app_gone");
         await seedApp(ops, "app_stays");
-        const gone = { appId: "app_gone", collection: "notes", owner: "user_1" };
-        const stays = { appId: "app_stays", collection: "notes", owner: "user_1" };
-        await ops.appData.put(gone, { id: "row", data: { v: 1 } });
-        await ops.appData.put(stays, { id: "row", data: { v: 1 } });
-        await ops.appData.putFile(gone, "f.bin", new Uint8Array([1]));
-        await ops.appData.putFile(stays, "f.bin", new Uint8Array([1]));
         await ops.engine.put(engineAppHistory("app_gone"), { id: "ver_1", data: { version: 1 } });
         await ops.transcripts.putThread({ id: "thr_app_erase", subject: "user_1", messages: [] });
         await ops.harness.set("thr_app_erase", "user_1", { v: 1 });
@@ -1767,13 +1447,9 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
         const report = await ops.lifecycle.erase({ appId: "app_gone" });
         assert(report !== null && report !== undefined, "erase must return a report");
 
-        assert(await ops.appData.get(gone, "row") === null, "erase left the app's rows behind");
-        assert(await ops.appData.getFile(gone, "f.bin") === null, "erase left the app's files behind");
         assert(await ops.engine.get(engineAppHistory("app_gone"), "ver_1") === null, "erase left the app's history behind");
         assert(await ops.engine.get("vendo_apps", "app_gone") === null, "erase left the app record itself behind");
 
-        assert(await ops.appData.get(stays, "row") !== null, "erase took the neighbouring app's rows");
-        assert(await ops.appData.getFile(stays, "f.bin") !== null, "erase took the neighbouring app's files");
         assert(await ops.engine.get("vendo_apps", "app_stays") !== null, "erase took the neighbouring app record");
         // The person is not the app: uninstalling one keeps their conversations
         // — and with them the harness continuity that lives on the thread row.
@@ -2395,15 +2071,9 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
           const neighbour = await makeNeighbour(made.ops);
           const [mine, theirs] = [made.ops, neighbour.ops];
           try {
-            const target = { appId: "app_tenant", collection: "notes", owner: "user_1" };
-            await seedApp(mine, "app_tenant");
-            await seedApp(theirs, "app_tenant");
             for (const [ops, whose] of [[mine, "mine"], [theirs, "theirs"]] as const) {
               await ops.engine.put("vendo_placement_slots", { id: "slot_1", data: { whose } });
               await ops.blobs.put("conf_tenant", "file.bin", new TextEncoder().encode(whose));
-              // The app-row leg only where the OPTIONAL family is served; every
-              // other drawer here is required, so the case still runs without it.
-              await ops.appData?.put(target, { id: "row_1", data: { whose } });
               await ops.transcripts.putThread({ id: "thr_1", subject: "user_1", messages: [{ whose }] });
               await ops.secrets.set("conf_token", whose);
               await ops.workspace.commit([{ path: "w.json", data: { whose } }], { owner: "user_1" });
@@ -2421,9 +2091,6 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
                 new TextEncoder().encode(whose),
                 "a blob crossed the tenant line",
               );
-              if (ops.appData !== undefined) {
-                assertDeepEqual((await ops.appData.get(target, "row_1"))?.data, { whose }, "an app row crossed the tenant line");
-              }
               assertDeepEqual(
                 ((await ops.transcripts.getThread("thr_1"))!.data as Record<string, unknown>)["messages"],
                 [{ whose }],
@@ -2448,9 +2115,6 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
             // where a missing tenant predicate is worst.
             await mine.lifecycle.erase({ subject: "user_1" });
             assert(await theirs.transcripts.getThread("thr_1") !== null, "one tenant's erase took the neighbour's thread");
-            if (theirs.appData !== undefined) {
-              assert(await theirs.appData.get(target, "row_1") !== null, "one tenant's erase took the neighbour's app row");
-            }
           } finally {
             await neighbour.close?.();
             await made.close?.();

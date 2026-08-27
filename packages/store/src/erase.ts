@@ -169,22 +169,20 @@ export function eraseStore(store: VendoStore, options: { files: FilesAdapter }):
     report[table] += result.rows.length;
   };
 
-  /** App-scoped data shared by the subject and app cascades: the app's record
-      collections and blob namespaces (`app:<appId>:...` — §3's naming
-      convention). */
-  const eraseAppData = async (report: EraseReport, appId: string): Promise<void> => {
-    const prefix = `app:${escapeLike(appId)}:%`;
-    await del(report, "vendo_records", "collection LIKE $1 ESCAPE '\\'", [prefix]);
+  /** App-scoped engine rows shared by the subject and app cascades. The app's
+      OWN data is not here and never was a `vendo_records` collection: it lives
+      in the app's own SQL database, which the apps runtime drops with the app
+      (`AppDatabase.drop`). */
+  const eraseAppScoped = async (report: EraseReport, appId: string): Promise<void> => {
     // The capped version log (and the pin-intent trail inside it) is the one
-    // app-scoped drawer neither selector could see: its name is
-    // `vendo:app-history:<id>`, not the `app:<id>:` prefix above, and its rows
-    // carry NO refs at all (apps/src/server/persistence/history.ts:104), so the
-    // refs containment leg below never matched them either. Every stored version
+    // app-scoped drawer neither selector could see: it is addressed by
+    // COLLECTION NAME (`vendo:app-history:<id>`) and its rows carry NO refs at
+    // all (apps/src/server/persistence/history.ts:104), so the refs containment
+    // leg in each cascade never matched them. Every stored version
     // of every deleted app survived its app until this line existed. Named
     // through core's ONE builder — the same one that composes it on the write
     // side — so the two can never drift apart.
     await del(report, "vendo_records", "collection = $1", [engineAppHistory(appId)]);
-    await del(report, "vendo_blobs", "namespace LIKE $1 ESCAPE '\\'", [prefix]);
     // Build contract §9.2: an app that is gone grants nothing to anyone.
     await del(report, "vendo_app_grants", "app_id = $1", [appId]);
     // Whatever a retention sweep already lifted out of those drawers. Two
@@ -218,7 +216,7 @@ export function eraseStore(store: VendoStore, options: { files: FilesAdapter }):
       const owned = (await db.query("SELECT id FROM vendo_apps WHERE subject = $1", [subject])).rows
         .map((row) => String(row["id"]));
       await del(report, "vendo_apps", "subject = $1", [subject]);
-      for (const appId of owned) await eraseAppData(report, appId);
+      for (const appId of owned) await eraseAppScoped(report, appId);
 
       // v6: the transcript rows hang off the thread row, which owns the subject.
       // Delete them BEFORE the thread row, or the join that identifies them is
@@ -261,18 +259,6 @@ export function eraseStore(store: VendoStore, options: { files: FilesAdapter }):
       // credited back on erase — accepted: erase is a host-admin operation, and
       // deleting a person's data wins over pool accounting.
       await del(report, "vendo_usage", "subject = $1", [subject]);
-      // An appData file twin carries no refs: its owner is the leading key leg
-      // (`<owner>/<key>`) inside the app's own namespace. For the subject's own
-      // apps the cascade above already took them with the namespace, but a
-      // PROMOTED org app belongs to the ORG (§9.7 — `subject = $1` never
-      // reaches it), so without this selector a departing member's files inside
-      // an org app would outlive them.
-      await del(
-        report,
-        "vendo_blobs",
-        "namespace LIKE 'app:%' AND key LIKE $1 ESCAPE '\\'",
-        [`${escapeLike(subject)}/%`],
-      );
       // The tenant connector tokens this subject owns. An ORG is a row subject
       // (§9.7), and its connectors' vault names carry it, so erasing the org
       // takes the live credentials with the registrations — without this, a
@@ -318,7 +304,7 @@ export function eraseStore(store: VendoStore, options: { files: FilesAdapter }):
 
       // App row first (same gate-closing order as bySubject), then its data.
       await del(report, "vendo_apps", "id = $1", [appId]);
-      await eraseAppData(report, appId);
+      await eraseAppScoped(report, appId);
       await del(report, "vendo_grants", "app_id = $1", [appId]);
       await del(report, "vendo_audit", "app_id = $1", [appId]);
       await del(report, "vendo_records", "refs @> $1::jsonb", [appRef]);

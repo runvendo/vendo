@@ -206,7 +206,7 @@ export const ESCALATE_TOOL = "escalate";
  * that is what a caller mounts. The `app.tsx` a run starts from reaches the model
  * as {@link ScreenInput.source} instead, and only for a remix.
  */
-const EDIT_TOOLS: readonly string[] = ["vendo_apps_open", "vendo_apps_data_list"];
+const EDIT_TOOLS: readonly string[] = ["vendo_apps_open", "vendo_apps_sql"];
 
 /**
  * The assembly verbs, by NAME rather than by risk.

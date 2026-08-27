@@ -11,17 +11,18 @@ import {
   type RunContext,
   type ToolDescriptor,
   type ToolOutcome,
+  type SqlDialect,
   type ToolRegistry,
 } from "@vendoai/core";
 import {
   type AppDocument,
   type ScreenAssembler,
 } from "../../contract/index.js";
-import type { AppDataAccess } from "../persistence/app-data.js";
 import { runAutomateTool } from "./automate-tool.js";
-import { deleteAppData, listAppData, putAppData } from "./data-tools.js";
+import { appSqlDescriptor, runAppSql, VENDO_APPS_SQL_TOOL } from "./sql-tool.js";
 import { runMakeTool } from "./make-tool.js";
 import { input, resolveAppRef } from "./tool-args.js";
+import type { AppSqlAccess } from "../persistence/app-sql.js";
 import type { AppsRuntime, AutomationsSeam } from "../runtime/types.js";
 
 const DRAFT_2020_12 = "https://json-schema.org/draft/2020-12/schema";
@@ -209,70 +210,26 @@ const descriptors = [
     },
     risk: "write",
   },
-  {
-    name: "vendo_apps_data_list",
-    description: "List records from a declared Vendo app data collection.",
-    inputSchema: {
-      $schema: DRAFT_2020_12,
-      type: "object",
-      properties: {
-        appId: { type: "string", minLength: 1 },
-        collection: { type: "string", minLength: 1 },
-        refs: { type: "object", additionalProperties: { type: "string", minLength: 1 } },
-        limit: { type: "integer", minimum: 1 },
-        cursor: { type: "string", minLength: 1 },
-      },
-      required: ["appId", "collection"],
-      additionalProperties: false,
-    },
-    risk: "read",
-  },
-  {
-    name: "vendo_apps_data_put",
-    description: "Create or replace a record in a declared Vendo app data collection.",
-    inputSchema: {
-      $schema: DRAFT_2020_12,
-      type: "object",
-      properties: {
-        appId: { type: "string", minLength: 1 },
-        collection: { type: "string", minLength: 1 },
-        id: { type: "string", minLength: 1 },
-        data: {},
-        refs: { type: "object", additionalProperties: { type: "string", minLength: 1 } },
-      },
-      required: ["appId", "collection", "id", "data"],
-      additionalProperties: false,
-    },
-    risk: "write",
-  },
-  {
-    name: "vendo_apps_data_delete",
-    description: "Delete a record from a declared Vendo app data collection.",
-    inputSchema: {
-      $schema: DRAFT_2020_12,
-      type: "object",
-      properties: {
-        appId: { type: "string", minLength: 1 },
-        collection: { type: "string", minLength: 1 },
-        id: { type: "string", minLength: 1 },
-      },
-      required: ["appId", "collection", "id"],
-      additionalProperties: false,
-    },
-    risk: "write",
-  },
 ] satisfies ToolDescriptor[];
 
-export const agentToolDescriptors: ToolDescriptor[] = descriptors.map((descriptor) => {
-  // Deliberately NOT `?? descriptor.name`: a silent fallback to the identifier is
-  // the defect itself. A tool missing from the table stays titleless and
-  // `agent-tools.test.ts` fails, which is the loud outcome.
-  const title = VENDO_TOOL_TITLES[descriptor.name];
-  return title === undefined ? descriptor : { ...descriptor, title };
-});
+/** The apps pack's tools. `dialect` is the app database's, when one is
+ *  composed: `vendo_apps_sql` states the SQL it will really be run as, and is
+ *  absent entirely when there is no database to run it against. */
+export const agentToolDescriptors = (dialect?: SqlDialect): ToolDescriptor[] =>
+  [...descriptors, ...(dialect === undefined ? [] : [appSqlDescriptor(dialect)])]
+    .map((descriptor) => {
+      // Deliberately NOT `?? descriptor.name`: a silent fallback to the
+      // identifier is the defect itself. A tool missing from the table stays
+      // titleless and `agent-tools.test.ts` fails, which is the loud outcome.
+      const title = VENDO_TOOL_TITLES[descriptor.name];
+      return title === undefined ? descriptor : { ...descriptor, title };
+    });
 
 export interface AgentToolsDataDependencies {
-  data: AppDataAccess;
+  /** The app's own database, when one is composed. Unset — a deployment with
+   *  no store, no `appDatabase` and no key — and `vendo_apps_sql` is not
+   *  offered at all: no adapter, no tool. */
+  sql?: AppSqlAccess;
   requireOwned(appId: AppId, ctx: RunContext): Promise<AppDocument>;
   /** B1 — claim the slot for an id this door just minted, before either engine
    *  runs. `AppsRuntime.place` cannot: it gates on an app record, and there is
@@ -308,7 +265,7 @@ export interface AgentToolsDataDependencies {
  * had happened. The three facts are: the change did not happen, why it cannot, and
  * that a copy of their own is the way through — including who can make one, so a
  * model reading this cannot promise a fork it has no tool for (this registry is
- * make · automate · reseed · open · pin · data_*).
+ * make · automate · reseed · open · pin · unpin · slots · sql).
  */
 const FORBIDDEN_FACTS = "The change was not made: this is the team's copy of the app and this user has "
   + "read-only access to it. A copy of their own would be theirs to change — they fork it from the app's "
@@ -336,7 +293,7 @@ export const createAgentTools = (
   dependencies: AgentToolsDataDependencies,
 ): ToolRegistry => ({
   async descriptors() {
-    return structuredClone(agentToolDescriptors);
+    return structuredClone(agentToolDescriptors(dependencies.sql?.dialect));
   },
   async execute(call, ctx: RunContext): Promise<ToolOutcome> {
     try {
@@ -398,14 +355,8 @@ export const createAgentTools = (
         await runtime.unplace({ app: appId, slot }, ctx);
         return { status: "ok", output: { app: appId, slot } };
       }
-      if (call.tool === "vendo_apps_data_list") {
-        return await listAppData(dependencies, call, ctx);
-      }
-      if (call.tool === "vendo_apps_data_put") {
-        return await putAppData(dependencies, call, ctx);
-      }
-      if (call.tool === "vendo_apps_data_delete") {
-        return await deleteAppData(dependencies, call, ctx);
+      if (call.tool === VENDO_APPS_SQL_TOOL) {
+        return await runAppSql(dependencies, call, ctx);
       }
       return { status: "error", error: { code: "not-found", message: `Unknown tool: ${call.tool}` } };
     } catch (error) {

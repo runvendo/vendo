@@ -3,8 +3,6 @@ import { VendoError, safeErrorMessage, vendoErrorCodeSchema, type VendoErrorCode
 import { isoDateTimeSchema, type Json } from "./ids.js";
 import { limitActionSchema } from "./limits.js";
 import {
-  APP_DATA_COLLECTION_PATTERN,
-  APP_DATA_OWNER_PATTERN,
   recordQuerySchema,
   vendoRecordSchema,
   type TurnCommit,
@@ -35,7 +33,14 @@ export const STORE_WIRE_PATHS = {
   "blobs.get": "/blobs/get",
   "blobs.delete": "/blobs/delete",
   "blobs.list": "/blobs/list",
-  // appData (8)
+  // appData (8) — RETIRED. An app's data is a SQL database of its own now
+  // (core's `AppDatabase`), and no mount serves these; they answer the
+  // enveloped 501 every unknown op answers. The SLOTS stay because the level
+  // below is an index into this table's declared order, and removing eight
+  // entries from the middle would silently shift `STORE_WIRE_APPEND_MESSAGES_OPS`
+  // and `STORE_WIRE_TURN_OPS` onto ops that are not those ops — the console #468
+  // shape the warning on STORE_WIRE_APPEND_MESSAGES_OPS was written about. The
+  // level may only ever grow; a retired op keeps its place in it.
   "appData.put": "/app-data/put",
   "appData.get": "/app-data/get",
   "appData.list": "/app-data/list",
@@ -131,7 +136,7 @@ const cursorQuerySchema = z.object({
 // engine — the collection-addressed body shape
 //
 // Named for its SHAPE, not for the family: `engine` takes seven verbs over a
-// `collection` + args body, and the appData family addresses the same rows
+// `collection` + args body, and other families address the same rows
 // through a `target` instead. The generic records family that once shared
 // these bodies is gone; its paths answer an enveloped 501.
 // ---------------------------------------------------------------------------
@@ -228,63 +233,6 @@ export const storeWireBlobsDeleteRequestSchema = z.object({
 export const storeWireBlobsListRequestSchema = z.object({
   namespace: z.string().min(1),
   prefix: z.string().optional(),
-}).passthrough();
-
-// ---------------------------------------------------------------------------
-// appData
-// ---------------------------------------------------------------------------
-
-/** The owner on the target is the runtime's stamp from the host's login
-    session, never something generated code names. Fenced by
-    `APP_DATA_OWNER_PATTERN` because it is the first path segment of every
-    appData file key, so a "/" in it crosses into another owner's drawer. */
-export const appDataTargetSchema = z.object({
-  appId: z.string().min(1),
-  collection: z.string().regex(APP_DATA_COLLECTION_PATTERN),
-  owner: z.string().regex(APP_DATA_OWNER_PATTERN),
-}).passthrough();
-
-export const storeWireAppDataPutRequestSchema = z.object({
-  target: appDataTargetSchema,
-  record: recordInputSchema,
-}).passthrough();
-
-export const storeWireAppDataGetRequestSchema = z.object({
-  target: appDataTargetSchema,
-  id: z.string().min(1),
-}).passthrough();
-
-export const storeWireAppDataListRequestSchema = z.object({
-  target: appDataTargetSchema,
-  query: recordQuerySchema.optional(),
-}).passthrough();
-
-export const storeWireAppDataDeleteRequestSchema = z.object({
-  target: appDataTargetSchema,
-  id: z.string().min(1),
-}).passthrough();
-
-/** File bytes are base64-encoded on the wire, exactly like `blobs.put`. */
-export const storeWireAppDataPutFileRequestSchema = z.object({
-  target: appDataTargetSchema,
-  key: z.string().min(1),
-  bytes: z.string().min(1), // base64
-  contentType: z.string().optional(),
-}).passthrough();
-
-export const storeWireAppDataGetFileRequestSchema = z.object({
-  target: appDataTargetSchema,
-  key: z.string().min(1),
-}).passthrough();
-
-export const storeWireAppDataListFilesRequestSchema = z.object({
-  target: appDataTargetSchema,
-  prefix: z.string().optional(),
-}).passthrough();
-
-export const storeWireAppDataDeleteFileRequestSchema = z.object({
-  target: appDataTargetSchema,
-  key: z.string().min(1),
 }).passthrough();
 
 // ---------------------------------------------------------------------------

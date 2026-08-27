@@ -38,7 +38,10 @@ export interface Db {
       default on a container platform or under the OS temp dir. Absent for a
       Postgres url, for `memory://`, and for a real disk. */
   readonly ephemeral?: EphemeralDataDir;
-  query(text: string, params?: unknown[]): Promise<{ rows: Record<string, unknown>[] }>;
+  /** `rowCount` is what the statement returned or AFFECTED — the only way an
+      UPDATE or a DELETE can say it did anything. Absent where the engine does
+      not report one; callers fall back to `rows.length`. */
+  query(text: string, params?: unknown[]): Promise<{ rows: Record<string, unknown>[]; rowCount?: number }>;
   close(): Promise<void>;
   raw(): unknown;
   /** 02-store §4 — serialize schema migration against concurrent migrators.
@@ -77,7 +80,7 @@ export function createPostgresDb(url: string): Db {
     async query(text, params = []) {
       if (closed) throw new Error("[vendo] store is closed");
       const result = await pool.query(text, params);
-      return { rows: result.rows as Record<string, unknown>[] };
+      return { rows: result.rows as Record<string, unknown>[], rowCount: result.rowCount ?? result.rows.length };
     },
     async close() {
       if (closed) return;
@@ -96,7 +99,7 @@ export function createPostgresDb(url: string): Db {
       const client = await pool.connect();
       const txQuery: Query = async (text, params = []) => {
         const result = await client.query(text, params);
-        return { rows: result.rows as Record<string, unknown>[] };
+        return { rows: result.rows as Record<string, unknown>[], rowCount: result.rowCount ?? result.rows.length };
       };
       try {
         await txQuery("BEGIN");

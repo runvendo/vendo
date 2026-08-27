@@ -11,14 +11,12 @@ import {
   type FilesAdapter,
   type Json,
   type RecordStore,
-  type StoreOpsWithAppData,
+  type StoreOps,
   type UsageCountQuery,
   type UsageTallyQuery,
   type UsageTallyRow,
   type VendoRecord,
 } from "@vendoai/core";
-import { appDataFiles, appDataRows } from "./app-data-rows.js";
-import { backfillAppDataOnDb, reownAppData } from "./backfill-app-data.js";
 import type { Db, Query } from "./db.js";
 import { eraseStore } from "./erase.js";
 import { storeFiles, storeFilesForDb } from "./files-store.js";
@@ -280,7 +278,7 @@ const rowIdOf = (message: unknown): string => {
 export function createStoreOps(
   store: VendoStore,
   options: { files?: FilesAdapter; workspaceOwner?: string } = {},
-): StoreOpsWithAppData {
+): StoreOps {
   const db = dbFor(store);
   /** Whose drawer a workspace verb addresses. The call names it when the mount
    *  serves more than one user (`/user/**` is the subject's, `/orgs/<org>/**`
@@ -392,7 +390,7 @@ export function createStoreOps(
       messages: input.messages.map((message) => ({ id: rowIdOf(message), message })),
     });
 
-  const ops: StoreOpsWithAppData = {
+  const ops: StoreOps = {
     // -----------------------------------------------------------------------
     // engine — seven verbs onto the routed doors, with the per-collection
     // policy living there; the ONE addition is the allowlist gate, which is why
@@ -468,40 +466,6 @@ export function createStoreOps(
       },
       async list(namespace, prefix) {
         return await store.blobs(namespace).list(prefix);
-      },
-    },
-
-    // -----------------------------------------------------------------------
-    // appData — everything generated apps invent. The composer
-    // (app-data-rows.ts) owns the naming, the owner stamp and the refusal of a
-    // caller-supplied one; this block only decides the transaction scope.
-    // -----------------------------------------------------------------------
-    appData: {
-      async put(target, record) {
-        return await db.transaction((q) => appDataRows(txDb(q), target).put(record));
-      },
-      async get(target, id) {
-        return await appDataRows(db, target).get(id);
-      },
-      async list(target, query) {
-        return await appDataRows(db, target).list(query);
-      },
-      async delete(target, id) {
-        await appDataRows(db, target).delete(id);
-      },
-      /** The file twins are single-statement blob verbs, exactly like the blobs
-       *  family above, so none of them opens a transaction. */
-      async putFile(target, key, bytes, meta) {
-        await appDataFiles(store, target).put(key, bytes, meta);
-      },
-      async getFile(target, key) {
-        return await appDataFiles(store, target).get(key);
-      },
-      async listFiles(target, prefix) {
-        return await appDataFiles(store, target).list(prefix);
-      },
-      async deleteFile(target, key) {
-        await appDataFiles(store, target).delete(key);
       },
     },
 
@@ -927,7 +891,7 @@ export function createStoreOps(
       },
       /** §9.5 — the app row flip and the workspace document move, which the
        *  umbrella ran as a two-step seam, are ONE transaction here, and so is
-       *  everything else the app owns: its appData and its bearer token. */
+       *  the app's bearer token. */
       async promote(appId, orgId) {
         await db.transaction(async (q) => {
           const tdb = txDb(q);
@@ -937,14 +901,6 @@ export function createStoreOps(
             throw new VendoError("not-found", `App ${appId} was not found`);
           }
           if (from === orgId) return; // already the org's — idempotent
-          // Legacy appData carries no owner stamp, and this runs BEFORE the row
-          // flip on purpose: the stamp it writes is `vendo_apps.subject`, still
-          // `from` at this point, so the reown below is ONE uniform
-          // `from` → `orgId` rename with no legacy-vs-stamped ambiguity left in
-          // the table. Do not "simplify" it to after the flip: the stamp would
-          // then write `orgId` while the rename still looks for `from`, and the
-          // two halves would disagree about which rows are legacy.
-          await backfillAppDataOnDb(tdb, { appId });
           await workspaceRows(tdb, filesFor(tdb)).moveApp(
             appId,
             { kind: "user", subject: from },
@@ -960,12 +916,6 @@ export function createStoreOps(
           if (flipped.rows[0] === undefined) {
             throw new VendoError("conflict", `app ${appId} belongs to another subject`);
           }
-          // The app's data changes hands with the app: appData is auto-scoped
-          // to the owner, and the owner IS `vendo_apps.subject`, so without
-          // this the org goes blind to its own app's rows and files. A blob
-          // primary-key collision here throws and rolls the whole promote back
-          // — §9.5 is all-or-nothing, and there is no resolution to invent.
-          await reownAppData(tdb, appId, from, orgId);
         });
       },
     },

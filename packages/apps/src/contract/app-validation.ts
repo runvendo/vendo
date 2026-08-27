@@ -22,8 +22,6 @@ export type AppDocumentValidation =
   | { ok: true; app: AppDocument }
   | { ok: false; error: { code: string; message: string } };
 
-const HOST_REFERENCE_PATTERN = /^host\.[A-Za-z0-9_][A-Za-z0-9_.-]*$/;
-
 const fail = (code: string, message: string): AppDocumentValidation => ({
   ok: false,
   error: { code, message },
@@ -67,23 +65,6 @@ const sourceError = (app: AppDocument): AppDocumentValidation | null => {
     }
     if ((file.text === undefined) === (file.blobRef === undefined)) {
       return fail("validation", `source file "${path}" must carry exactly one of text or blobRef`);
-    }
-  }
-  return null;
-};
-
-const storageError = (app: AppDocument): AppDocumentValidation | null => {
-  for (const [name, declaration] of Object.entries(app.storage ?? {})) {
-    if (name === "state") {
-      return fail("validation", 'storage collection "state" is reserved');
-    }
-    if (declaration.about.length === 0) {
-      return fail("validation", `storage collection "${name}" must have a non-empty about`);
-    }
-    for (const reference of Object.values(declaration.refs ?? {})) {
-      if (!HOST_REFERENCE_PATTERN.test(reference)) {
-        return fail("validation", `invalid host reference "${reference}"`);
-      }
     }
   }
   return null;
@@ -134,7 +115,6 @@ const validateAppDocumentUnsafe = (input: unknown): AppDocumentValidation => {
   const violation = componentsError(app)
     ?? componentToolsError(app)
     ?? sourceError(app)
-    ?? storageError(app)
     ?? referenceFieldsError(app)
     ?? buildStateError(app);
   if (violation !== null) return violation;

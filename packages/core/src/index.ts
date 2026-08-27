@@ -51,6 +51,7 @@ export * from "./sha256.js";
 export * from "./skills.js";
 export * from "./slot-limits.js";
 export * from "./sse-keepalive.js";
+export * from "./app-database.js";
 export * from "./store.js";
 export * from "./thread-window.js";
 export * from "./store-wire.js";

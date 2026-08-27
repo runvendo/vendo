@@ -4,16 +4,12 @@ import { VendoError } from "../errors.js";
 import type { IsoDateTime } from "../ids.js";
 import { STORE_WIRE_PATHS, VENDO_STORE_WIRE_FORMAT, type StoreWireStatus } from "../store-wire.js";
 import {
-  APP_DATA_COLLECTION_PATTERN,
-  APP_DATA_OWNER_PATTERN,
-  type AppDataTarget,
   type AuditFilters,
   type AuditTallyRow,
   type CollectionFootprint,
   type RecordInput,
   type RecordQuery,
   type StoreOps,
-  type StoreOpsWithAppData,
   type UsageEvent,
   type UsageTallyRow,
   type VendoRecord,
@@ -87,7 +83,7 @@ const copyRecord = (r: VendoRecord): VendoRecord => ({
 // memory StoreOps — just enough to pass the conformance suite
 // ---------------------------------------------------------------------------
 
-export function memoryStoreOps(): StoreOpsWithAppData {
+export function memoryStoreOps(): StoreOps {
   // records: Map<collection, Map<id, record>>
   const collections = new Map<string, Map<string, VendoRecord & { seq: number }>>();
   let sequence = 0;
@@ -146,9 +142,9 @@ export function memoryStoreOps(): StoreOpsWithAppData {
   const wsIdempotencyKeys = new Map<string, string>();
 
   // ---------------------------------------------------------------------------
-  // rows — the shared generic-collection implementation the engine and appData
-  // families are both built on. NOT an op family of its own: the wire's generic
-  // records family is gone, so nothing outside this module reaches these verbs.
+  // rows — the shared generic-collection implementation the engine family is
+  // built on. NOT an op family of its own: the wire's generic records family is
+  // gone, so nothing outside this module reaches these verbs.
   // ---------------------------------------------------------------------------
 
   const putRecord = (collection: string, input: RecordInput): VendoRecord => {
@@ -339,84 +335,6 @@ export function memoryStoreOps(): StoreOpsWithAppData {
     },
     async list(namespace, prefix = "") {
       return [...ns(namespace).keys()].filter((k) => k.startsWith(prefix));
-    },
-  };
-
-  // ---------------------------------------------------------------------------
-  // appData family
-  // ---------------------------------------------------------------------------
-
-  /** The owner leg is fenced for the reason `ownedKey` shows: it is the first
-      path segment of every file key, so owner "a/b" and owner "a" writing
-      "b/…" would be one and the same key. */
-  const appOwner = (target: AppDataTarget): string => {
-    if (!APP_DATA_OWNER_PATTERN.test(target.owner)) {
-      throw new VendoError("validation", `app data owner "${target.owner}" must be non-empty and free of "/"`);
-    }
-    return target.owner;
-  };
-
-  /** The reference's own copy of the naming grammar — rows land in one
-      collection per app+collection, files in the blob namespace of the same
-      name. The real backend composes both in one place, which core cannot
-      import. Every verb goes through here, so the owner fence rides along. */
-  const appCollection = (target: AppDataTarget): string => {
-    if (target.appId === "" || target.appId.includes(":")) {
-      throw new VendoError("validation", `app data appId "${target.appId}" must be non-empty and free of ":"`);
-    }
-    if (!APP_DATA_COLLECTION_PATTERN.test(target.collection)) {
-      throw new VendoError("validation", `app data collection "${target.collection}" is not a legal name`);
-    }
-    appOwner(target);
-    return `app:${target.appId}:${target.collection}`;
-  };
-
-  /** Files are scoped by key prefix rather than by a stamp, so the owner leg
-      never reaches the caller — `listFiles` strips it back off. */
-  const ownedKey = (target: AppDataTarget, key: string): string => `${appOwner(target)}/${key}`;
-
-  const refuseSubject = (refs: Record<string, string> | undefined, verb: string): void => {
-    if (refs !== undefined && "subject" in refs) {
-      throw new VendoError("validation", `appData.${verb} may not supply refs.subject; the owner is stamped from the session`);
-    }
-  };
-
-  const appData: NonNullable<StoreOps["appData"]> = {
-    async put(target, record) {
-      const collection = appCollection(target);
-      refuseSubject(record.refs, "put");
-      const held = col(collection).get(record.id);
-      if (held !== undefined && held.refs?.["subject"] !== target.owner) {
-        throw new VendoError("conflict", `app data id "${record.id}" is already held in this collection`);
-      }
-      return rows.put(collection, { ...record, refs: { ...record.refs, subject: target.owner } });
-    },
-    async get(target, id) {
-      const record = await rows.get(appCollection(target), id);
-      return record?.refs?.["subject"] === target.owner ? record : null;
-    },
-    async list(target, query = {}) {
-      const collection = appCollection(target);
-      refuseSubject(query.refs, "list");
-      return rows.list(collection, { ...query, refs: { ...query.refs, subject: target.owner } });
-    },
-    async delete(target, id) {
-      const collection = appCollection(target);
-      if (col(collection).get(id)?.refs?.["subject"] !== target.owner) return;
-      await rows.delete(collection, id);
-    },
-    async putFile(target, key, bytes, meta) {
-      await blobs.put(appCollection(target), ownedKey(target, key), bytes, meta);
-    },
-    async getFile(target, key) {
-      return blobs.get(appCollection(target), ownedKey(target, key));
-    },
-    async listFiles(target, prefix = "") {
-      const keys = await blobs.list(appCollection(target), ownedKey(target, prefix));
-      return keys.map((key) => key.slice(target.owner.length + 1));
-    },
-    async deleteFile(target, key) {
-      await blobs.delete(appCollection(target), ownedKey(target, key));
     },
   };
 
@@ -985,7 +903,6 @@ export function memoryStoreOps(): StoreOpsWithAppData {
   return {
     engine,
     blobs,
-    appData,
     transcripts,
     harness,
     workspace,

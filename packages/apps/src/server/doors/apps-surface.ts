@@ -22,10 +22,10 @@ import type { AppsRuntime } from "../runtime/types.js";
 const createAppReadDoors = (
   deps: Pick<AppsRuntimeContext,
     "config" | "engine" | "caller" | "history" | "opener" | "owned" | "requireOwned"
-    | "grantedRecords">,
+    | "grantedRecords" | "runtime">,
 ): Pick<AppsRuntime, "get" | "list" | "history" | "open" | "call" | "seen"> => {
   const { config, engine, caller, history, opener, owned, requireOwned } = deps;
-  const { grantedRecords } = deps;
+  const { grantedRecords, runtime } = deps;
   const appSeen = appSeenStore(engine);
   return {
     async get(appId, ctx) {
@@ -109,9 +109,14 @@ const createAppReadDoors = (
       // grade, the server's existing classification of what a call does;
       // everything else keeps the action arm, because two identical mutations
       // are two separate acts and each has to earn its own approval.
+      // The RESOLVED grade, not the authored one: `vendo_apps_sql` is one tool
+      // over statements that read and statements that write, and its authored
+      // grade is the pessimistic one.
       const descriptor = (await config.tools.descriptors(ctx).catch(() => []))
         .find((candidate) => candidate.name === ref);
-      return descriptor?.risk === "read"
+      const risk = await runtime().agentToolRisk({ id: `call_arm_${ref}`, tool: ref, args }, ctx)
+        ?? descriptor?.risk;
+      return risk === "read"
         ? caller.callQuery(app, ref, args, ctx)
         : caller.call(app, ref, args, ctx);
     },
@@ -180,22 +185,24 @@ const createAppCopyDoors = (
 /** The app-record slice of `AppsRuntime`. */
 export const createAppsSurface = (
   deps: Pick<AppsRuntimeContext,
-    "config" | "engine" | "caller" | "data" | "history" | "opener" | "interchange"
+    "config" | "engine" | "caller" | "sql" | "history" | "opener" | "interchange"
     | "parkedActions" | "parkedBuilds" | "placementRows" | "owned" | "requireOwned"
     | "grantedRecords" | "reportLifecycle" | "claimSlot" | "markUnbuilt"
     | "runtime">,
 ): Pick<AppsRuntime,
   "get" | "list" | "delete" | "fork" | "share" | "publish" | "seen"
   | "exportApp" | "importApp" | "history" | "open" | "call" | "agentTools"> => {
-  const { config, engine, data, history } = deps;
+  const { config, engine, sql, history } = deps;
   const { parkedActions, parkedBuilds, placementRows } = deps;
   const { requireOwned, reportLifecycle, claimSlot, markUnbuilt, runtime } = deps;
   return {
     ...createAppReadDoors(deps),
     ...createAppCopyDoors(deps),
     async delete(appId, ctx) {
-      const app = await requireOwned(appId, ctx, "owner");
-      await data.clear(app, ctx.principal.subject, await history.documents(appId));
+      await requireOwned(appId, ctx, "owner");
+      // The app's whole database goes with the app — one schema (BYO) or one
+      // edge database (Cloud), and every person's `mine.` tables inside it.
+      await sql?.drop(appId);
       await history.clear(appId);
       await parkedActions.clearForApp(appId);
       await parkedBuilds.clearForApp(appId);
@@ -224,7 +231,7 @@ export const createAppsSurface = (
 
     agentTools() {
       return createAgentTools(runtime(), {
-        data,
+        ...(sql === undefined ? {} : { sql }),
         requireOwned,
         claimSlot,
         markUnbuilt,

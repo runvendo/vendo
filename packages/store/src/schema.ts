@@ -100,8 +100,9 @@ import type { Db } from "./db-postgres.js";
     those hand-wired cascades is simply the row going away.
 
     `vendo_state`'s OTHER tenant, an app's per-user state, is dropped rather than
-    migrated: nothing has written it since the appData family took over, so the
-    table's only live rows were the harness slots the backfill below relocates.
+    migrated: an app's own data lives in the app's own SQL database, so nothing
+    has written this table in a long time and the table's only live rows were the
+    harness slots the backfill below relocates.
     The v2 backfill goes with it — it relocated legacy rows INTO this table, and
     there is no longer anywhere to put them. Any legacy `vendo_records` row under
     collection `vendo_state` simply stays where it is, unread, rather than being
@@ -531,10 +532,11 @@ const DATA_BACKFILL_V6 = [
 // one no read path could ever return — it is left to die with the table rather
 // than promoted onto a row it never belonged to.
 //
-// The table's OTHER tenant — an app's per-user state — is dropped with it. It has
-// had no writer since appData took over, so this destroys no live data; and the
-// DROP is what makes the whole point of the move true, that there is exactly one
-// place a bookmark can live.
+// The table's OTHER tenant — an app's per-user state — is dropped with it. An
+// app's own data lives in the app's own SQL database, so this table has had no
+// writer in a long time and the DROP destroys no live data; and the DROP is what
+// makes the whole point of the move true, that there is exactly one place a
+// bookmark can live.
 const DATA_BACKFILL_V12 = [
   `DO $$
    BEGIN

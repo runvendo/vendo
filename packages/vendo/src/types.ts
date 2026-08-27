@@ -19,6 +19,7 @@ import type { VendoAgent as ComposedAgent } from "@vendoai/agents";
 import type { AutomationsEngine } from "@vendoai/automations";
 import type {
   ActAs,
+  AppDatabase,
   FilesAdapter,
   Harness,
   Json,
@@ -292,6 +293,11 @@ export interface CreateVendoConfig {
       Configured, it composes the `vendo_knowledge_search` agent tool; unset,
       the tool does not exist (precedence: selectKnowledge). */
   knowledge?: KnowledgeAdapter;
+  /** ADAPTER RULE, app-database seam — where a generated app's own SQL tables
+      live. Unset and a store is wired, every app gets its own fenced schema
+      inside that store's Postgres: the zero-config rung, nothing to configure.
+      Passed explicitly, the adapter always wins. */
+  appDatabase?: AppDatabase;
   /** Connectors — the tools YOUR deployment brings, under ONE credential you
       hold: `openApiConnector({…})`, `mcpConnector({…})`, `composioConnector({…})`,
       `cloudTools({…})`, or a host's own {@link Connector}. Each is used verbatim.

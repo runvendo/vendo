@@ -45,7 +45,7 @@ Passing your own `store` adapter also works, and always wins.
 | Threads and messages | `vendo_threads`, `vendo_thread_messages` | Scoped to the principal's subject; a thread never crosses subjects |
 | Harness state | `vendo_threads.harness_state` | One slot per thread, so a session-owning harness resumes across restarts. Writes never bump the thread's `revision` or `updated_at` — resuming is not an edit |
 | Generated apps | `vendo_apps` | Plus their workspace files and history |
-| App data | `app:<appId>:<name>` collections | 256 KB per record, 5 MB per file |
+| App data | one schema per app, `vendo_app_<id>_<digest>` | Real SQL. `shared.` tables are the app's; `mine.` tables are one per user |
 | Grants and approvals | `vendo_grants`, `vendo_approvals` | What a user has standing consent for |
 | Audit | `vendo_audit` | Append-only |
 | Automation runs | `vendo_runs` | One row per firing |

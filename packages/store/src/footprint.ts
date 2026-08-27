@@ -27,10 +27,10 @@ const PER_TABLE_SQL = PER_TABLE_COLLECTIONS.map((collection) =>
     .join(" + ")})::bigint AS bytes`).join("\n UNION ALL ");
 
 /** What this store is holding, per collection (01 §12 `footprint`). Two reads:
- *  the generic table, which groups itself (and so covers every appData
- *  collection that exists without anyone enumerating them), and the collections
- *  that own a table. Empty collections are omitted, and the answer is sorted, so
- *  two footprints of the same store are diffable. */
+ *  the generic table, which groups itself (and so covers every collection that
+ *  exists without anyone enumerating them), and the collections that own a
+ *  table. Empty collections are omitted, and the answer is sorted, so two
+ *  footprints of the same store are diffable. */
 export async function collectionFootprints(db: Db): Promise<CollectionFootprint[]> {
   const generic = await db.query(
     "SELECT collection, sum(pg_column_size(r.*))::bigint AS bytes FROM vendo_records r GROUP BY collection",

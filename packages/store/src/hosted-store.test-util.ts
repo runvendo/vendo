@@ -7,7 +7,6 @@ import {
   assertIndexedField,
   canonicalJson,
   collectionKind,
-  type AppDataTarget,
   type AuditEvent,
   type BlobStore,
   type CollectionFootprint,
@@ -80,12 +79,7 @@ const routesOf = (family: string): Map<string, string> => new Map(
 );
 
 const ENGINE_ROUTES = routesOf("engine");
-const APP_DATA_ROUTES = routesOf("appData");
 const SECRETS_ROUTES = routesOf("secrets");
-
-/** The ref key the appData family stamps its owner on, and the one key a caller
- *  may never supply — packages/store's APP_DATA_OWNER_REF, mirrored. */
-const OWNER_REF = "subject";
 
 const sameValue = (
   current: VendoRecord,
@@ -288,84 +282,9 @@ async function blobsWireOp(blobs: BlobStore, op: string, body: Body, miss: Miss)
   }
 }
 
-/** Store Wire v1 appData door: an app's own rows and files, addressed by a
- *  `{appId, collection, owner}` target instead of a collection string. Mirrors
- *  packages/store's app-data-rows.ts — rows land in `app:<appId>:<collection>`
- *  with the owner stamped on `refs.subject` (a caller that supplies it is
- *  refused), reads are scoped to that stamp, and files ride the twin blob
- *  namespace under an `<owner>/` key prefix. A fake that skipped the stamping
- *  would let an unscoped read pass here and fail against the console. */
-async function appDataOp(
-  records: (collection: string) => RecordStore,
-  blobStore: (namespace: string) => BlobStore,
-  op: string,
-  body: Body,
-  miss: Miss,
-): Promise<Response> {
-  const target = body.target as AppDataTarget;
-  const scope = `app:${target.appId}:${target.collection}`;
-  const rows = records(scope);
-  const owned = (key: string): string => `${target.owner}/${key}`;
-  const refuseCallerOwner = (refs: Record<string, string> | undefined): void => {
-    if (refs?.[OWNER_REF] !== undefined) {
-      throw new VendoError(
-        "validation",
-        `app data may not supply refs.${OWNER_REF}; the runtime stamps the owner from the host's session`,
-      );
-    }
-  };
-  switch (op) {
-    case "put": {
-      const record = body.record as { id: string; data: unknown; refs?: Record<string, string> };
-      refuseCallerOwner(record.refs);
-      const held = await rows.get(record.id);
-      if (held !== null && held.refs?.[OWNER_REF] !== target.owner) {
-        throw new VendoError("conflict", `app data id ${JSON.stringify(record.id)} is already held in this collection`);
-      }
-      return json({
-        record: await rows.put({ ...record, refs: { ...record.refs, [OWNER_REF]: target.owner } } as never),
-      });
-    }
-    case "get": {
-      const record = await rows.get(body.id as string);
-      return json({ record: record?.refs?.[OWNER_REF] === target.owner ? record : null });
-    }
-    case "list": {
-      const query = (body.query ?? {}) as { refs?: Record<string, string> };
-      refuseCallerOwner(query.refs);
-      return json(await rows.list({ ...query, refs: { ...query.refs, [OWNER_REF]: target.owner } } as never));
-    }
-    case "delete": {
-      const record = await rows.get(body.id as string);
-      if (record?.refs?.[OWNER_REF] === target.owner) await rows.delete(body.id as string);
-      return json({ ok: true });
-    }
-    case "putFile":
-      return blobsWireOp(blobStore(scope), "put", { ...body, key: owned(body.key as string) }, miss);
-    case "getFile":
-      return blobsWireOp(blobStore(scope), "get", { ...body, key: owned(body.key as string) }, miss);
-    case "deleteFile":
-      return blobsWireOp(blobStore(scope), "delete", { ...body, key: owned(body.key as string) }, miss);
-    case "listFiles": {
-      const keys = await blobStore(scope).list(owned((body.prefix as string | undefined) ?? ""));
-      return json({ keys: keys.map((key) => key.slice(target.owner.length + 1)) });
-    }
-    default:
-      return miss(`unknown appData op: ${op}`);
-  }
-}
-
-/** The console's typed data plane, as much of it as this seam needs. An app's
+/** The console's typed data plane, as much of it as this seam needs: an app's
  *  tables — and each table's columns — are DECLARED before rows may land in
- *  them, and a write to something undeclared answers 409 carrying the DDL that
- *  would make it legal instead of applying the write.
- *
- *  A `create_table` declares the table with NO data columns (its id and owner
- *  belong to the mount, not the app), so the first write into a new table costs
- *  two rounds — create_table, then add_column — which is why the client's
- *  handshake is a loop and not a single retry. Nothing here is a stub of the
- *  client's expectations: rows land through the same appData door as every other
- *  write and come back out through the same read. */
+ *  them, and the schema door below is where that declaration arrives. */
 function appSchemas() {
   // `<appId> <table>` → declared column names; neither half carries a space.
   const tables = new Map<string, Set<string>>();
@@ -373,19 +292,6 @@ function appSchemas() {
   const columnsOf = (operation: Body): string[] =>
     ((operation.columns ?? []) as { name: string }[]).map((column) => column.name);
   return {
-    /** The DDL this write needs first, or undefined when it may land. */
-    proposalFor(appId: string, table: string, data: unknown): Body | undefined {
-      const declared = tables.get(key(appId, table));
-      if (declared === undefined) return { op: "create_table", table, scope: "private", columns: [] };
-      const missing = Object.keys((data ?? {}) as object).filter((name) => !declared.has(name));
-      if (missing.length === 0) return undefined;
-      return {
-        op: "add_column",
-        table,
-        scope: "private",
-        columns: missing.map((name) => ({ name, type: "text" })),
-      };
-    },
     /** The schema door: an in-order DdlOperation array, applied as given, and
      *  the app's tables afterwards. `add_column` against a table that was never
      *  created is refused — a client that dropped an operation from the middle
@@ -407,13 +313,6 @@ function appSchemas() {
     },
   };
 }
-
-/** The capability the proposal above rides on. A client that does not declare
- *  it cannot read a proposal, so the mount refuses the undeclared table the old
- *  way instead — which is what makes the header load-bearing here: a client that
- *  stopped sending it fails against this fake rather than degrading in silence. */
-const declares = (header: string | null, capability: string): boolean =>
-  (header ?? "").split(",").some((name) => name.trim() === capability);
 
 /** Everything the handler learns from the request before routing: the recorded
  *  shape the caller asserts against, with the body parsed into it. */
@@ -503,7 +402,7 @@ export function fakeConsole() {
       return envelope(
         "not-implemented",
         `the store wire no longer serves ${op} — the generic records family was removed.`
-        + " Use the appData ops for an app's own rows and files, or the engine ops for Vendo's own collections.",
+        + " Use the engine ops for Vendo's own collections.",
       );
     }
     // The engine door: Vendo's OWN drawers, seven collection-addressed verbs
@@ -519,25 +418,6 @@ export function fakeConsole() {
     // The schema door, beside the wire ops: one app's DDL, in order.
     if (rest[0] === "schema" && rest.length === 2 && post) {
       return json({ tables: schemas.apply(rest[1]!, (body.operations ?? []) as Body[]) });
-    }
-    const appDataOpName = post ? APP_DATA_ROUTES.get(path) : undefined;
-    if (appDataOpName !== undefined) {
-      // Rows are typed; files are not. A row write into a table this app has
-      // not declared answers the proposal rather than landing.
-      if (appDataOpName === "put") {
-        const target = body.target as AppDataTarget;
-        const proposal = schemas.proposalFor(
-          target.appId,
-          target.collection,
-          (body.record as { data?: unknown }).data,
-        );
-        if (proposal !== undefined) {
-          return declares(recorded.capabilities, "schema-proposal")
-            ? json({ error: "schema-proposal", proposal }, 409)
-            : envelope("validation", `no table ${JSON.stringify(target.collection)} in app ${target.appId}`);
-        }
-      }
-      return appDataOp(records, (n) => adapter.blobs(n), appDataOpName, body, miss);
     }
     // The audit drawer's own read, and the vault — both over the same backing
     // the engine door writes to. `retention.*` is deliberately NOT here: it is

@@ -38,15 +38,7 @@ export { createIdempotencyLedger } from "./idempotency.js";
 export { maybeDbFor } from "./store.js";
 export { createStoreForDb } from "./store.js";
 export type { Db, Query } from "./db-postgres.js";
-export {
-  appDataFiles,
-  appDataRows,
-  appDataCollection,
-  appDataNamespace,
-  appDataFileKey,
-  APP_DATA_OWNER_REF,
-} from "./app-data-rows.js";
-export { backfillAppDataStamps, type AppDataBackfillReport } from "./backfill-app-data.js";
+export { postgresAppDatabase, appSchema } from "./app-database.js";
 export {
   DEDICATED_RECORD_COLLECTIONS,
   RESERVED_COLLECTIONS,

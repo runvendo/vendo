@@ -24,6 +24,8 @@ import {
   type ScreenAssembler,
   type Tree,
 } from "../../contract/index.js";
+import { sqlRisk } from "../persistence/app-sql-guard.js";
+import { VENDO_APPS_SQL_TOOL } from "./sql-tool.js";
 import {
   BUILD_WATCHDOG_REASON,
   NO_ASSEMBLER,
@@ -578,8 +580,15 @@ export const createBuildSurface = (
      *
      * `undefined` means the static descriptor stands.
      */
-    async agentToolRisk() {
-      return undefined;
+    async agentToolRisk(call) {
+      // `vendo_apps_sql` is ONE tool over statements that do very different
+      // things, so its authored grade is the pessimistic one and the real grade
+      // is the statement's. Without this a SELECT from a running app would take
+      // the action arm, and a screen that refetches would park a fresh approval
+      // on every render (05 §2's pinned-id lesson).
+      return call.tool === VENDO_APPS_SQL_TOOL && typeof (call.args as { sql?: unknown }).sql === "string"
+        ? sqlRisk((call.args as { sql: string }).sql)
+        : undefined;
     },
   };
 };

@@ -54,7 +54,6 @@ const APP_DOCUMENT_FIELDS = [
   "description",
   "ui",
   "components",
-  "storage",
   // A component screen IS its `app.tsx` (open.ts reads `source[SCREEN_FILE]`),
   // so an archive without `source` carries the document's metadata and nothing
   // that can ever open. Inline only — see {@link assertPortableSource}.

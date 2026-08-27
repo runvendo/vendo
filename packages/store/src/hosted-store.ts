@@ -16,7 +16,6 @@ import {
   STORE_WIRE_PATHS,
   STORE_WIRE_TURN_OPS,
   type StoreOps,
-  type StoreOpsWithAppData,
   storeWireErrorSchema,
   storeWireSchemaProposalSchema,
   type StoreWireStatus,
@@ -69,29 +68,6 @@ export interface HostedStoreOptions {
   baseUrl?: string;
   /** Per-request abort timeout, in milliseconds. */
   timeoutMs?: number;
-  /** Whose drawer the StoreAdapter façade addresses when the collection (or
-   * blob namespace) is app-scoped — `app:<appId>:<name>`, which the appData
-   * family serves, and appData scopes every read and stamps every write with an
-   * owner. The op surface (`ops.appData`) is unaffected: every one of its verbs
-   * already carries the owner in its target.
-   *
-   * This option exists because the façade's signature has nowhere to put one:
-   * `records(collection)` takes a string, and the caller never had to think
-   * about ownership while the generic records family served these rows
-   * unscoped. It cannot be inferred — an owner is the host's own user id in the
-   * host's own spelling — so it is bound here, once, exactly as
-   * `createStoreOps`' `workspaceOwner` binds the workspace drawer.
-   *
-   * READ THIS BEFORE LEAVING IT UNSET. The default is the single-player
-   * `"user_local"`, and it is a real footgun for anyone else: a host that
-   * serves MORE THAN ONE end user through one `hostedStore` instance and takes
-   * the default puts every user's app rows and files in ONE owner's drawer,
-   * where they read each other's data. Nothing refuses it — `"user_local"` is a
-   * legal owner — so the symptom is cross-user reads in production, not an
-   * error at composition. A multi-user mount constructs one `hostedStore` per
-   * end user with that user's subject here, or stays on `ops.appData`, whose
-   * every verb names its owner at the call. */
-  owner?: string;
   fetch?: typeof fetch;
 }
 
@@ -107,8 +83,7 @@ export interface HostedStore extends VendoStore {
   };
   /** The 50-op named-operation surface over the same mount and the same key —
    * `vendo/store-wire@1` (see {@link hostedStoreOps}). The StoreAdapter doors
-   * above are built ON these ops: engine for Vendo's own collections, appData
-   * for an app's own drawers. */
+   * above are built ON these ops. */
   ops: StoreOps;
 }
 
@@ -159,19 +134,6 @@ function parseNullableRecord(value: unknown): VendoRecord | null {
   return parseRecord(value);
 }
 
-/** `app:<appId>:<collection>` is the app-scoped spelling of a record collection
- * and of a blob namespace alike (01-core §12). Split back into the appData
- * target it addresses, or undefined for a name that is not app-scoped. The
- * appId segment is colon-free by construction, so the FIRST colon after the
- * prefix ends it and everything after is the collection (`box:`-prefixed names
- * keep their own colon). */
-const APP_SCOPE = /^app:([^:]+):(.+)$/;
-
-const appScope = (scope: string): { appId: string; collection: string } | undefined => {
-  const match = APP_SCOPE.exec(scope);
-  return match === null ? undefined : { appId: match[1]!, collection: match[2]! };
-};
-
 /** The Cloud hosted-store adapter — the OSS side of the hosted-store seam
  * (docs/superpowers/specs/2026-07-18-hosted-store-onepager.md): a plain
  * StoreAdapter speaking RPC-over-HTTP to the console's /api/v1/store routes,
@@ -211,34 +173,15 @@ export function hostedStore(options: HostedStoreOptions): HostedStore {
   };
   const sendJson = postJson(send);
 
-  // The StoreAdapter façade rides the SAME 50 ops as `ops` below — it has no
-  // doors of its own since the generic records family left the wire. A
-  // collection (or blob namespace) either names an app's own drawer, which the
-  // appData family serves with the owner stamped on, or it names one of Vendo's
-  // own, which the engine family serves behind its allowlist. There is no third
-  // home, so a host collection the allowlist does not know is refused by the
-  // service rather than quietly written somewhere. It reads a failure the way
-  // this adapter always has (raiseStoreError), not the way the protocol client
-  // does — see storeWireClient.
+  // The StoreAdapter façade rides the SAME ops as `ops` below — it has no doors
+  // of its own since the generic records family left the wire. Every collection
+  // (and blob namespace) names one of Vendo's own drawers, which the engine
+  // family serves behind its allowlist, so a name the allowlist does not know
+  // is refused by the service rather than quietly written somewhere. It reads a
+  // failure the way this adapter always has (raiseStoreError), not the way the
+  // protocol client does — see storeWireClient.
   const facade = storeWireClient(options, raiseStoreError);
-  const owner = options.owner ?? "user_local";
-  const targetFor = (scope: { appId: string; collection: string }) => ({ ...scope, owner });
-
   const records = (collection: string): RecordStore => {
-    const scope = appScope(collection);
-    if (scope !== undefined) {
-      const target = targetFor(scope);
-      // No claim and no atomic: the appData family has no compare-and-set verbs
-      // on the wire, and an adapter that advertises a capability it cannot
-      // serve is worse than one that omits it (01-core §12 makes both optional).
-      return {
-        get: (id) => facade.appData.get(target, id),
-        put: (record) => facade.appData.put(target, record),
-        delete: (id) => facade.appData.delete(target, id),
-        list: (query?: RecordQuery) => facade.appData.list(target, query),
-      };
-    }
-
     const store: RecordStore = {
       get: (id) => facade.engine.get(collection, id),
       put: (record) => facade.engine.put(collection, record),
@@ -270,16 +213,6 @@ export function hostedStore(options: HostedStoreOptions): HostedStore {
   };
 
   const blobs = (namespace: string): BlobStore => {
-    const scope = appScope(namespace);
-    if (scope !== undefined) {
-      const target = targetFor(scope);
-      return {
-        put: (key, bytes, meta) => facade.appData.putFile(target, key, bytes, meta),
-        get: (key) => facade.appData.getFile(target, key),
-        delete: (key) => facade.appData.deleteFile(target, key),
-        list: (prefix) => facade.appData.listFiles(target, prefix),
-      };
-    }
     return {
       put: (key, bytes, meta) => facade.blobs.put(namespace, key, bytes, meta),
       get: (key) => facade.blobs.get(namespace, key),
@@ -471,7 +404,7 @@ const raiseWireError = async (response: Response): Promise<never> => {
  * client that spelled its own route was free to drift from the contract third
  * parties build against (it did, for as long as erase was hardcoded here).
  */
-export function hostedStoreOps(options: HostedStoreOptions): StoreOpsWithAppData {
+export function hostedStoreOps(options: HostedStoreOptions): StoreOps {
   return storeWireClient(options, raiseWireError);
 }
 
@@ -486,7 +419,7 @@ export function hostedStoreOps(options: HostedStoreOptions): StoreOpsWithAppData
 function storeWireClient(
   options: HostedStoreOptions,
   raise: (response: Response) => Promise<never>,
-): StoreOpsWithAppData {
+): StoreOps {
   const base = (options.baseUrl ?? "https://console.vendo.run").replace(/\/$/, "");
   const send = consoleSender({
     base,
@@ -603,11 +536,12 @@ function storeWireClient(
       body: JSON.stringify(body),
     }));
 
-  /** The app a proposal would be confirmed against. App-data ops carry it in
-      their target, which is the ONLY place an appId exists on this wire —
-      Vendo's own engine drawers belong to no app and the mount declares them
-      itself. A proposal on an op without one gets no handshake: an appId
-      guessed from anywhere else declares a table in some other app's schema. */
+  /** The app a proposal would be confirmed against: an op's `target.appId`, the
+      ONLY place an appId may come from on this wire — Vendo's own engine drawers
+      belong to no app and the mount declares them itself. No live op carries a
+      target today, so no op gets the handshake, which is the correct answer
+      rather than a gap: an appId guessed from anywhere else declares a table in
+      some other app's schema. */
   const appIdOf = (body: unknown): string | undefined => {
     const appId = (body as { target?: { appId?: unknown } } | null | undefined)?.target?.appId;
     return typeof appId === "string" ? appId : undefined;
@@ -684,7 +618,7 @@ function storeWireClient(
   const reportOf = (payload: unknown): unknown =>
     field(payload, "report", "invalid report", (value) => value !== undefined);
 
-  /** The one file-read posture, shared by `blobs.get` and `appData.getFile` so
+  /** The one file-read posture, used by `blobs.get` so
       the two can never drift: a missing file is null at the seam (01-core §12),
       whether the service answers `{blob: null}` or an ENVELOPED not-found. A
       bare 404 has already degraded to not-implemented and stays loud — a
@@ -751,7 +685,7 @@ function storeWireClient(
   };
   const servesTurn = async (): Promise<boolean> => (await status()).ops >= STORE_WIRE_TURN_OPS;
 
-  const ops: StoreOpsWithAppData = {
+  const ops: StoreOps = {
     // Vendo's OWN engine drawers, over collection-addressed bodies, with the
     // allowlist gated service-side on every verb.
     engine: {
@@ -829,44 +763,6 @@ function storeWireClient(
           namespace,
           ...(prefix === undefined || prefix === "" ? {} : { prefix }),
         }));
-      },
-    },
-    // Everything generated apps invent. The whole address rides ONE `target`
-    // (appId + collection + owner) instead of a collection string, because the
-    // owner is the runtime's stamp: the service scopes reads and stamps writes
-    // from it, so no verb here takes a subject.
-    appData: {
-      async put(target, record) {
-        return recordOf(await mutate("appData.put", P["appData.put"], { target, record }));
-      },
-      async get(target, id) {
-        return nullableRecordOf(await post("appData.get", P["appData.get"], { target, id }));
-      },
-      async list(target, query) {
-        return listOf(await post("appData.list", P["appData.list"], { target, query: query ?? {} }));
-      },
-      async delete(target, id) {
-        await mutate("appData.delete", P["appData.delete"], { target, id });
-      },
-      async putFile(target, key, bytes, meta) {
-        await mutate("appData.putFile", P["appData.putFile"], {
-          target,
-          key,
-          bytes: bytesToBase64(bytes),
-          ...(meta?.contentType === undefined ? {} : { contentType: meta.contentType }),
-        });
-      },
-      async getFile(target, key) {
-        return fileOf("appData.getFile", P["appData.getFile"], { target, key });
-      },
-      async listFiles(target, prefix) {
-        return keysOf(await post("appData.listFiles", P["appData.listFiles"], {
-          target,
-          ...(prefix === undefined || prefix === "" ? {} : { prefix }),
-        }));
-      },
-      async deleteFile(target, key) {
-        await mutate("appData.deleteFile", P["appData.deleteFile"], { target, key });
       },
     },
     transcripts: {

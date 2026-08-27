@@ -23,7 +23,6 @@ import type {
   AdmissionOrigin,
 } from "../../contract/index.js";
 import { createAccessChecks } from "../doors/access-checks.js";
-import type { AppDataAccess } from "../persistence/app-data.js";
 import { engineOf, type EngineOps } from "../persistence/engine.js";
 import { createAuditReporters } from "../persistence/audit-reports.js";
 import { createApprovalFlow } from "../persistence/approval-flow.js";
@@ -34,7 +33,7 @@ import type { GenerationDependencies } from "../generation/engine.js";
 import { createGenerationContext } from "./generation-context.js";
 import { createAppHistory, type AppHistoryAccess } from "../persistence/history.js";
 import { createAppInterchange, type AppInterchange } from "../persistence/interchange.js";
-import { createAppData } from "../persistence/app-data.js";
+import { createAppSql, type AppSqlAccess } from "../persistence/app-sql.js";
 import { createAppOpener } from "../persistence/open.js";
 import { createParkedActions, type ParkedActions } from "../persistence/parked-action.js";
 import { createParkedBuilds, type ParkedBuilds } from "../persistence/parked-build.js";
@@ -61,8 +60,8 @@ export interface AppsRuntimeContext {
    *  (slots.ts). Beside placementRows because it answers the other half of the
    *  same question: which slots EXIST, not which app is in one. */
   slots: SlotRegistry;
-  /** The app's own workspace documents (app-data.ts). */
-  data: AppDataAccess;
+  /** The app's own SQL database, when one is composed (app-sql.ts). */
+  sql: AppSqlAccess | undefined;
   /** The capped version log and its pin-intent trail (history.ts). */
   history: AppHistoryAccess;
   /** W0 — the undecided in-app actions the guard parked (parked-action.ts). */
@@ -196,12 +195,12 @@ export interface AppsRuntimeContext {
 const createStores = (
   config: AppsConfig,
 ): Pick<AppsRuntimeContext,
-  "engine" | "placementRows" | "slots" | "data" | "history"
+  "engine" | "placementRows" | "slots" | "sql" | "history"
   | "parkedActions" | "parkedBuilds"> => {
   const engine = engineOf(config.ops, config.store);
   const placementRows = placementStore(engine);
   const slots = createSlotRegistry(engine);
-  const data = createAppData({ ops: config.ops, store: config.store });
+  const sql = config.appDatabase === undefined ? undefined : createAppSql(config.appDatabase);
   const history = createAppHistory(engine);
   // Lane E — parked egress approvals (approved state lives on the document's
   // egressApproved field; this collection holds only undecided cards).
@@ -214,7 +213,7 @@ const createStores = (
   // nothing has been called: the record IS the awaiting-consent state, and it
   // exists so the yes can arrive long after the turn that raised the card.
   const parkedBuilds = createParkedBuilds(engine);
-  return { engine, placementRows, slots, data, history, parkedActions, parkedBuilds };
+  return { engine, placementRows, slots, sql, history, parkedActions, parkedBuilds };
 };
 
 /** The composed seams the doors call through: interchange, the caller, and the

@@ -9,12 +9,13 @@ import type { Connector } from "@vendoai/actions";
 import {
   consoleUrlFromEnv,
   VendoError,
+  type AppDatabase,
   type KnowledgeAdapter,
   type SecretsProvider,
   type StoreAdapter,
 } from "@vendoai/core";
 import { bindKnowledgeStore, cloudKnowledge } from "@vendoai/knowledge";
-import { envSecrets } from "@vendoai/store";
+import { envSecrets, postgresAppDatabase, type VendoStore } from "@vendoai/store";
 import { chainSecrets, cloudSecrets } from "./cloud-secrets.js";
 import { warnDeprecatedOnce } from "./config-keys.js";
 import { cloudTools } from "./cloud-tools.js";
@@ -204,6 +205,25 @@ export function selectConnections(
     ...cloud,
     ...(toolkits === undefined ? {} : { apps: [...toolkits] }),
   });
+}
+
+/** ADAPTER RULE, app-database seam: which SQL database an app's own tables live
+    in. Precedence, top to bottom:
+      1. an explicitly passed adapter always wins (`createVendo({ appDatabase })`);
+      2. BYO, and it needs NOTHING configured — the store the host already wired
+         gives every app its own fenced schema inside the host's Postgres. This
+         is the zero-config rung: a host with a store has app databases;
+      3. nothing. A store with no SQL handle behind it (a hosted store, or a
+         host's own adapter) has nowhere to put an app's tables, so no adapter
+         composes and `vendo_apps_sql` is not offered at all — the same "no
+         adapter, no tool" silence the knowledge seam keeps.
+    The adapters themselves never read the environment. */
+export function selectAppDatabase(
+  configured: AppDatabase | undefined,
+  store: VendoStore,
+): AppDatabase | undefined {
+  if (configured !== undefined) return configured;
+  return postgresAppDatabase(store);
 }
 
 /** ADAPTER RULE, secrets seam (cloned from selectConnections): generated-app

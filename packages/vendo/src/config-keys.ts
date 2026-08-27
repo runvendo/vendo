@@ -46,6 +46,7 @@ export const CREATE_VENDO_CONFIG_KEYS = [
   "sandbox",
   "harness",
   "knowledge",
+  "appDatabase",
   "connectors",
   "connectedAccounts",
   "connections",

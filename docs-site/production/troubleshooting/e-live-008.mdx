@@ -1,7 +1,7 @@
 ---
 title: "E-LIVE-008"
 sidebarTitle: "E-LIVE-008"
-description: "Retired: the generic records.* store family this warning covered was replaced by appData.* and engine.*."
+description: "Retired: the generic records.* store family this warning covered was replaced by engine.*, and an app's own data by its own SQL database."
 ---
 
 ```text retired
@@ -23,9 +23,9 @@ named families, so there is nothing left to warn about.
 
 ## The fix
 
-Move every `records.*` call to the family that owns the data. App-invented
-rows and files go through `appData.*`; Vendo's own collections go through
-`engine.*`.
+Move every `records.*` call to the family that owns the data. Vendo's own
+collections go through `engine.*`; an app's own rows live in the app's own SQL
+database, reached with the `vendo_apps_sql` tool.
 
 A call left on the old `/records/*` route now answers `not-implemented`
 (HTTP 501) naming the operation, so a stale integration fails loudly instead

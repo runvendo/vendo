@@ -164,21 +164,6 @@ export interface StoreAdapter {
 
 import type { StoreWireStatus } from "./store-wire.js";
 
-/** The grammar a collection name invented by generated code must satisfy:
-    a short slug, optionally `box:`-prefixed. */
-export const APP_DATA_COLLECTION_PATTERN = /^(box:)?[A-Za-z0-9_-]{1,64}$/;
-
-/** The grammar an appData owner must satisfy: non-empty and free of "/".
-    Deliberately NOT a slug — a subject is the host's own user id in the host's
-    own spelling, and `auth0|64f…`, `user:with:colons` and
-    `https://idp.example/u/1` are all contract elsewhere in this repo. "/" is
-    the one character that cannot be allowed here, because appData files carry
-    their owner as the first path segment of the blob key (`<owner>/<key>`):
-    owner `a/b` and owner `a` writing `b/…` are the same key, so a "/" in an
-    owner is a silent cross-user file read. Refused, never rewritten — a
-    sanitised owner would map two people onto one drawer. */
-export const APP_DATA_OWNER_PATTERN = /^[^/]+$/;
-
 /** Every secret-vault name an ORG's tenant connectors are stored under, as a
     LIKE-able prefix, and the name for one of them.
 
@@ -196,16 +181,6 @@ export const tenantConnectorSecretPrefix = (org: string): string =>
 
 export const tenantConnectorSecret = (org: string, name: string): string =>
   `${tenantConnectorSecretPrefix(org)}${encodeURIComponent(name)}`;
-
-/** Where one appData op lands. */
-export interface AppDataTarget {
-  appId: string;
-  collection: string;
-  /** Stamped by the RUNTIME from the host's login session — generated code has
-      no field for it, and a caller that supplies `refs.subject` is refused.
-      Must satisfy {@link APP_DATA_OWNER_PATTERN}. */
-  owner: string;
-}
 
 // ---------------------------------------------------------------------------
 // engine.list — the forward walk
@@ -489,21 +464,22 @@ export interface TurnCommit {
   audit?: VendoRecord;
 }
 
-/** The typed contract for all 50 store operations across 14 families.
+/** The typed contract for the store's named operations, across 13 families.
     Lean by design — this is the CONTRACT interface, not the implementation.
 
-    Five members are OPTIONAL, and all five mean the same thing: an
+    Four members are OPTIONAL, and all four mean the same thing: an
     implementation that cannot serve the family says so by OMITTING it, never by
-    accepting the call and doing something else (`appData`,
-    `transcripts.appendMessages`, `retention`, `usage` and `turn`, following
-    `RecordStore.claim`/`atomic`). Everything else is required. */
+    accepting the call and doing something else (`transcripts.appendMessages`,
+    `retention`, `usage` and `turn`, following `RecordStore.claim`/`atomic`).
+    Everything else is required. */
 export interface StoreOps {
   /** Vendo's OWN engine data — grants, approvals, audit, threads, runs, apps,
       effects, and the automations and guard drawers — reached through seven
       collection-addressed verbs. `assertEngineCollection`
       (engine-collections.ts) gates the collection name on every verb, so
       nothing outside the allowlist passes. NOT a place for host or
-      generated-app data: that is `appData`. */
+      generated-app data: an app's data lives in its own SQL database
+      ({@link AppDatabase}). */
   engine: {
     get(collection: string, id: string): Promise<VendoRecord | null>;
     put(collection: string, record: RecordInput): Promise<VendoRecord>;
@@ -518,23 +494,6 @@ export interface StoreOps {
     get(namespace: string, key: string): Promise<{ bytes: Uint8Array; contentType?: string } | null>;
     delete(namespace: string, key: string): Promise<void>;
     list(namespace: string, prefix?: string): Promise<string[]>;
-  };
-  /** Everything generated apps invent. Reads are auto-scoped to the target's
-      owner and writes are stamped with it, so no verb here takes a subject.
-
-      OPTIONAL: a store with nowhere to keep app rows leaves the family off, and
-      the doors onto it refuse the way a store with no ops surface at all is
-      already refused. Every store this repo ships serves it — see
-      {@link StoreOpsWithAppData}. */
-  appData?: {
-    put(target: AppDataTarget, record: RecordInput): Promise<VendoRecord>;
-    get(target: AppDataTarget, id: string): Promise<VendoRecord | null>;
-    list(target: AppDataTarget, query?: RecordQuery): Promise<{ records: VendoRecord[]; cursor?: string }>;
-    delete(target: AppDataTarget, id: string): Promise<void>;
-    putFile(target: AppDataTarget, key: string, bytes: Uint8Array, meta?: { contentType?: string }): Promise<void>;
-    getFile(target: AppDataTarget, key: string): Promise<{ bytes: Uint8Array; contentType?: string } | null>;
-    listFiles(target: AppDataTarget, prefix?: string): Promise<string[]>;
-    deleteFile(target: AppDataTarget, key: string): Promise<void>;
   };
   transcripts: {
     putThread(thread: { id: string; subject: string; messages: unknown[]; title?: string }): Promise<VendoRecord>;
@@ -703,8 +662,3 @@ export interface StoreOps {
   footprint(): Promise<CollectionFootprint[]>;
   status(): Promise<StoreWireStatus>;
 }
-
-/** A `StoreOps` that serves the optional `appData` family. The stores this repo
-    ships answer with this, so their callers reach app rows without a check —
-    only a THIRD-PARTY surface may omit the family. */
-export type StoreOpsWithAppData = StoreOps & Required<Pick<StoreOps, "appData">>;

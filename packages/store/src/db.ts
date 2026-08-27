@@ -383,7 +383,7 @@ function createPgliteDb(dataDir: string): Db {
     async query(text, params = []) {
       const active = await open();
       const result = await active.query<Record<string, unknown>>(text, params);
-      return { rows: result.rows as Record<string, unknown>[] };
+      return { rows: result.rows as Record<string, unknown>[], rowCount: result.affectedRows ?? result.rows.length };
     },
     async close() {
       if (closed) return;
@@ -419,7 +419,7 @@ function createPgliteDb(dataDir: string): Db {
       return active.transaction(async (tx) => {
         const txQuery: Query = async (text, params = []) => {
           const result = await tx.query<Record<string, unknown>>(text, params);
-          return { rows: result.rows as Record<string, unknown>[] };
+          return { rows: result.rows as Record<string, unknown>[], rowCount: result.affectedRows ?? result.rows.length };
         };
         if (opts?.beforeWork) await opts.beforeWork(txQuery);
         return await work(txQuery);

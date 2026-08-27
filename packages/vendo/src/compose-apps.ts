@@ -23,7 +23,7 @@ import {
 import { appAccess } from "@vendoai/store";
 import { askUserRegistry } from "./ask-user.js";
 import { cloudApps } from "./cloud-apps.js";
-import { cloudKeyOptions } from "./compose-selection.js";
+import { cloudKeyOptions, selectAppDatabase } from "./compose-selection.js";
 import type { VendoComposition } from "./compose-context.js";
 import { vendoVerbsRegistry } from "./vendo-verbs.js";
 import { environment } from "./wire/shared.js";
@@ -41,14 +41,15 @@ interface AppsSeams {
 /** Persistence, permission and interchange: the seams the runtime reads and
  *  writes THROUGH. */
 const appsStoreSeams = (composition: VendoComposition, seams: AppsSeams): Partial<AppsConfig> => {
-  const { store, ops, guard, boundTools, inference, catalog, seedBaselines, files } = composition;
+  const { config, store, ops, guard, boundTools, inference, catalog, seedBaselines, files } = composition;
   const { access } = seams;
+  const appDatabase = selectAppDatabase(config.appDatabase, store);
   return {
     store,
-    // Adapter rule — the SAME ops surface the deployment selected, so app data
-    // lands owner-stamped through the named-operation family instead of the
-    // raw façade.
+    // Adapter rule — the SAME ops surface the deployment selected.
     ops,
+    // Adapter rule, app-database seam: one SQL database per app.
+    ...(appDatabase === undefined ? {} : { appDatabase }),
     guard,
     tools: boundTools,
     model: inference.agent.model,
@@ -219,7 +220,7 @@ const appsTailSeams = (composition: VendoComposition, seams: AppsSeams): Partial
 /** 06-apps §1 — the app runtime, and the three registries that join the ONE
  *  tool registry the moment it exists. */
 export const composeApps = (composition: VendoComposition): Pick<VendoComposition,
-  "access" | "apps" | "appsRuntime" | "resolveAppToolRisk"> => {
+  "access" | "apps" | "appsRuntime" | "resolveAppToolRisk" | "appSqlDialect"> => {
   const { store, actions, capability } = composition;
   const boxTemplate = environment("VENDO_BOX_TEMPLATE");
   // ADAPTER RULE, share/publish seam: the apps block never reads the
@@ -300,5 +301,12 @@ export const composeApps = (composition: VendoComposition): Pick<VendoCompositio
     schedule: async ({ appId, cron }, ctx) =>
       await apps.schedule(appId as AppId, cron, ctx) as unknown as Json,
   }));
-  return { access, apps, appsRuntime: apps, resolveAppToolRisk: apps.agentToolRisk };
+  const appSqlDialect = selectAppDatabase(composition.config.appDatabase, store)?.dialect;
+  return {
+    access,
+    apps,
+    appsRuntime: apps,
+    resolveAppToolRisk: apps.agentToolRisk,
+    ...(appSqlDialect === undefined ? {} : { appSqlDialect }),
+  };
 };

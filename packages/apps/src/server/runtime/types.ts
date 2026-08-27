@@ -10,6 +10,7 @@
 import type {
   AccessLevel,
   AppAccess,
+  AppDatabase,
   AppGrantRecord,
   AppId,
   ApprovalId,
@@ -89,14 +90,15 @@ export interface AutomationsSeam {
 /** 06-apps §1 plus block-plan decisions 3–4. */
 export interface AppsConfig {
   store: StoreAdapter;
-  /**
-   * The deployment's 35-op store surface, when it has one. App data goes
-   * through its `appData` family so every row is stamped with the live
-   * caller's subject and every read is scoped to it. Absent — a store that
-   * offers neither its own ops nor a SQL handle — app data falls back to the
-   * raw `store` façade collections, unowned, exactly as it landed before.
-   */
+  /** The deployment's 35-op store surface, when it has one. */
   ops?: StoreOps;
+  /**
+   * ADAPTER RULE, app-database seam — one SQL database per app. The umbrella
+   * fills it from the store the host already wired (its own fenced schema per
+   * app, zero new configuration), from `createVendo({ appDatabase })`, or from
+   * Vendo Cloud. Unset, `vendo_apps_sql` is not offered: no adapter, no tool.
+   */
+  appDatabase?: AppDatabase;
   guard: Guard;
   tools: ToolRegistry;
   /**

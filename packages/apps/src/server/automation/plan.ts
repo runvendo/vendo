@@ -64,7 +64,7 @@ export interface AutomationPlan {
   /** The automation's own name, the way the person would say it out loud. */
   name?: string;
   /** The app records collection the automation writes displayable results
-   *  into (the store rows the tree queries via vendo_apps_data_list). */
+   *  into — a table in the app's own database, read back by the board. */
   resultsCollection?: string;
   /** The id of the EXISTING automation this plan is a new version of — set only
    *  when the instruction changed one of {@link AutomationPlanInput.existing}
@@ -76,8 +76,16 @@ export type AutomationPlanResult =
   | { kind: "plan"; plan: AutomationPlan }
   | { kind: "failure"; issues: string[] };
 
-const RESULTS_TOOL = "vendo_apps_data_put";
-const COLLECTION_NAME = /^[a-z][a-z0-9_-]{0,40}$/i;
+const RESULTS_TOOL = "vendo_apps_sql";
+/** The app-database table-name grammar (app-sql-guard.ts NAME). */
+const COLLECTION_NAME = /^[a-z][a-z0-9_]{0,27}$/i;
+/** The one statement the publish step runs. The row's id and its payload are
+ *  both PARAMETERS, so the jsonata the planner writes never has to nest a
+ *  quote inside a quote inside JSON. */
+export const resultsStatement = (table: string): string =>
+  `INSERT INTO mine.${table} (id, data) VALUES (?, ?) ON CONFLICT (id) DO UPDATE SET data = excluded.data`;
+export const resultsPublishArgs = (appId: string, table: string): string =>
+  `{"appId":"'${appId}'","sql":"'${resultsStatement(table)}'","params":"['latest', $string(<the displayable result>)]"}`;
 
 /**
  * §12's law at authoring time: is this a thing Vendo will not do while nobody is
@@ -157,15 +165,15 @@ const stepsContract = (input: AutomationPlanInput): string => `TASK MODEL (this 
 - NOTHING IRREVERSIBLE RUNS AWAY. Sending, messaging, paying and deleting are not in the TOOLS list and never will be: Vendo does not do a thing it cannot take back while nobody is watching. Author the part that CAN run unattended — read, decide, publish the result — and leave the irreversible part out. The person does that part themselves, on demand, from the app.
 - EVERY value inside "args" is a JSON STRING containing a JSONATA expression evaluated against {event, steps, item} — never a bare number, boolean, object, or array. A prior step's output is "steps.<stepId>...". A literal string is single-quoted INSIDE the string ("'like this'"); a literal number is written as its expression ("20"); an object is built in jsonata ("{\\"count\\": $count(steps.rows.items)}").
 - "if" skips the step unless the jsonata expression is truthy. "forEach" is a jsonata expression producing an array; the step runs once per element with that element bound to item (max 1000).
-- RESULTS: the app's board reads STORE ROWS, not run logs. The LAST step MUST persist the displayable result through tool "${RESULTS_TOOL}" with args {"appId":"'${input.appId}'","collection":"'<collection>'","id":"'latest'","data":"<jsonata for the displayable result>"} — and set the top-level "resultsCollection" to that collection name.
+- RESULTS: the app's board reads a TABLE in the app's own database, not run logs. The LAST step MUST persist the displayable result through tool "${RESULTS_TOOL}" with args ${resultsPublishArgs(input.appId, "<table>")} — the table already exists with columns (id, data), the id is always 'latest', and the second parameter is a jsonata expression for the displayable result. Set the top-level "resultsCollection" to that table name.
 EXAMPLE (shape only — use the real tools and the real request):
-{"name":"Morning digest","when":"0 8 * * *","task":{"kind":"steps","steps":[{"id":"rows","tool":"host_list_things"},{"id":"summary","tool":"host_things_summarize","args":{"count":"$count(steps.rows.items)"}},{"id":"publish","tool":"${RESULTS_TOOL}","args":{"appId":"'${input.appId}'","collection":"'digest'","id":"'latest'","data":"steps.rows"}}]},"resultsCollection":"digest"}`;
+{"name":"Morning digest","when":"0 8 * * *","task":{"kind":"steps","steps":[{"id":"rows","tool":"host_list_things"},{"id":"summary","tool":"host_things_summarize","args":{"count":"$count(steps.rows.items)"}},{"id":"publish","tool":"${RESULTS_TOOL}","args":{"appId":"'${input.appId}'","sql":"'${resultsStatement("digest")}'","params":"['latest', $string(steps.rows)]"}}]},"resultsCollection":"digest"}`;
 
 const goalContract = (input: AutomationPlanInput): string => `TASK MODEL (this instruction needs PER-RUN JUDGMENT):
 "task" is {"kind":"goal","prompt":"<the instructions an away agent follows on every firing>","budget":{"maxToolCalls":<n>}?}.
 - The prompt must be self-contained (the agent sees only it plus the tools), name the tools to use from the TOOLS list, and state the judgment to exercise each run.
 - NOTHING IRREVERSIBLE RUNS AWAY. The tools that send, message, pay or delete are not in the TOOLS list, so the prompt must not ask for them: Vendo does not do a thing it cannot take back while nobody is watching. Have the agent read, judge, and publish what it found; the person acts on it themselves, on demand.
-- RESULTS: when the app's board should show the outcome, the prompt must ALSO instruct the agent to persist the displayable result through tool "${RESULTS_TOOL}" with appId "${input.appId}", a stable collection, and id "latest" — and set the top-level "resultsCollection" to that collection name.`;
+- RESULTS: when the app's board should show the outcome, the prompt must ALSO instruct the agent to persist the displayable result through tool "${RESULTS_TOOL}" with appId "${input.appId}", the statement \`${resultsStatement("<table>")}\` and params ['latest', <the result as a string>] — and set the top-level "resultsCollection" to that table name.`;
 
 /** One line per automation the app's list already names. */
 const existingLine = ({ id, when, task }: AutomationRecord): string =>
@@ -186,7 +194,7 @@ When the INSTRUCTION changes one of THOSE rather than asking for another one, se
 };
 
 const planContract = (input: AutomationPlanInput): string => `You are the Vendo automation planner. Return ONLY one JSON object — no prose, no markdown fences.
-Shape: {"name":"<short automation name>","when":<when>,"task":<task model>,"resultsCollection":"<records collection>"?,"replaces":"<existing automation id>"?}
+Shape: {"name":"<short automation name>","when":<when>,"task":<task model>,"resultsCollection":"<results table>"?,"replaces":"<existing automation id>"?}
 ${existingSection(input)}
 "when" (exactly one form):
 - "<5-field cron, UTC>" — a bare STRING, for clock times (e.g. daily 8am = "0 8 * * *"). Plain English ("every monday") is refused.
@@ -275,14 +283,14 @@ const stepsIssues = (
     // that ran EARLIER (a bare "steps" token or a forward reference
     // publishes nothing at run time).
     if (step.tool === RESULTS_TOOL) {
-      const dataExpression = (step.args?.data ?? "").replace(/'[^']*'|"[^"]*"/g, "");
+      const dataExpression = (step.args?.params ?? "").replace(/'[^']*'|"[^"]*"/g, "");
       const referencedPrior = [...dataExpression.matchAll(/\bsteps\.([A-Za-z_][A-Za-z0-9_]*)/g)]
         .some((match) => priorIds.has(match[1] as string));
       if (!referencedPrior && !/\bevent\b/.test(dataExpression)) {
-        issues.push(`step "${step.id}" publishes hand-typed data — the "${RESULTS_TOOL}" data expression must derive from an EARLIER step's output (steps.<priorStepId>...) or the trigger event; add the read step that fetches the live data first`);
+        issues.push(`step "${step.id}" publishes hand-typed data — the "${RESULTS_TOOL}" params expression must derive from an EARLIER step's output (steps.<priorStepId>...) or the trigger event; add the read step that fetches the live data first`);
       }
       if (typeof resultsCollection === "string"
-        && step.args?.collection?.trim() === `'${resultsCollection}'`
+        && step.args?.sql?.trim() === `'${resultsStatement(resultsCollection)}'`
         && step.args?.appId?.trim() === `'${input.appId}'`) {
         publishesDeclaredCollection = true;
       }
@@ -293,7 +301,7 @@ const stepsIssues = (
   // board permanently empty — require the publish step to target exactly
   // this app and that collection (literal jsonata strings).
   if (typeof resultsCollection === "string" && !publishesDeclaredCollection) {
-    issues.push(`resultsCollection "${resultsCollection}" is declared but no step publishes it — add a "${RESULTS_TOOL}" step with args {"appId":"'${input.appId}'","collection":"'${resultsCollection}'","id":"'latest'","data":...}`);
+    issues.push(`resultsCollection "${resultsCollection}" is declared but no step publishes it — add a "${RESULTS_TOOL}" step with args ${resultsPublishArgs(input.appId, resultsCollection)}`);
   }
   return issues;
 };
@@ -342,8 +350,8 @@ const validatePlan = (
   }
   const resultsCollection = candidate.resultsCollection;
   if (resultsCollection !== undefined) {
-    if (typeof resultsCollection !== "string" || !COLLECTION_NAME.test(resultsCollection) || resultsCollection === "state") {
-      issues.push('resultsCollection must be a short bare identifier (and never the reserved "state")');
+    if (typeof resultsCollection !== "string" || !COLLECTION_NAME.test(resultsCollection)) {
+      issues.push("resultsCollection must be a short bare identifier: a letter followed by letters, digits or underscores, up to 28 characters");
     }
   }
   if (task.kind === "steps") {

@@ -46,6 +46,11 @@ export {
 // consumer of this package — can prove its erase cascade against the REAL
 // writer instead of a hand-rolled copy of the rows it produces.
 export { createAppHistory, type AppHistoryAccess } from "./persistence/history.js";
+// One database per app: the door onto an AppDatabase adapter, and the guard
+// that is the whole of the mine./shared. permission model.
+export { createAppSql, APP_SQL_MAX_ROWS, type AppSqlAccess, type AppSqlResult } from "./persistence/app-sql.js";
+export { guardSql, mineTable, sharedTable, sqlRisk, type GuardedSql } from "./persistence/app-sql-guard.js";
+export { appSqlDescriptor, runAppSql, VENDO_APPS_SQL_TOOL } from "./doors/sql-tool.js";
 export {
   seedBaselineSchema,
   seedComponentName,

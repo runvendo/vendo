@@ -82,20 +82,6 @@ export const componentEntrySchema: z.ZodType<ComponentEntry> = z.union([z.string
 export const bundleOf = (entry: ComponentEntry): ComponentBundle =>
   typeof entry === "string" ? { source: entry, origin: "authored" } : entry;
 
-/** 01-core §9 */
-export interface StorageDecl {
-  about: string;
-  kind?: "records" | "files";
-  refs?: Record<string, string>;
-}
-
-/** 01-core §9 */
-export const storageDeclSchema = z.object({
-  about: z.string(),
-  kind: z.enum(["records", "files"]).optional(),
-  refs: z.record(z.string()).optional(),
-}).passthrough() satisfies z.ZodType<StorageDecl>;
-
 /**
  * A terminal build failure recorded by the runtime when app generation threw
  * (model error, quota exhaustion, timeout). SERVER-WRITTEN ONLY: the model
@@ -364,7 +350,6 @@ export interface AppDocument {
    * travels with `components` on copy.
    */
   componentTools?: Record<string, string[]>;
-  storage?: Record<string, StorageDecl>;
   /**
    * Contract §3.2 — the app's own code, at rest. Keys are POSIX-relative paths
    * inside the app directory ("src/App.tsx", "vendo.json"), the app's own
@@ -458,7 +443,6 @@ export const appDocumentSchema = z.object({
   ui: z.enum(["tree", "bundle"]).optional(),
   components: z.record(componentEntrySchema).optional(),
   componentTools: z.record(z.array(z.string())).optional(),
-  storage: z.record(storageDeclSchema).optional(),
   source: z.record(appSourceFileSchema).optional(),
   bundle: appBundleSchema.optional(),
   automations: z.array(z.string()).optional(),

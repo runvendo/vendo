@@ -198,8 +198,8 @@ export function assertEngineCollection(collection: string): void {
     `collection ${JSON.stringify(collection)} is not an engine collection `
     + `(engine allowlist v${ENGINE_ALLOWLIST_VERSION})`
     + (suggestion === undefined ? "." : ` — did you mean ${JSON.stringify(suggestion)}?`)
-    + " App data belongs to the appData family (ops.appData.*), which takes an"
-    + " { appId, collection, owner } target.",
+    + " An app's own data belongs to the app's own SQL database, reached with"
+    + " the vendo_apps_sql tool, not to the engine.",
   );
 }
 

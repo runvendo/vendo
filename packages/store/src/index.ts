@@ -19,20 +19,9 @@ export { createStoreOps } from "./ops.js";
 // mount over a Db it owns — the ledger MUST be the one that shares a database
 // with the mutations it gates.
 export { createIdempotencyLedger } from "./idempotency.js";
-// The one composer of appData names and the owner stamp: everything that
-// serves the family (the local backend here, the surfaces above it) spells
-// `app:<appId>:<collection>` and `<owner>/<key>` through these and nowhere else.
-export {
-  appDataFiles,
-  appDataRows,
-  appDataCollection,
-  appDataNamespace,
-  appDataFileKey,
-  APP_DATA_OWNER_REF,
-} from "./app-data-rows.js";
-// The one-shot migration for appData that predates the owner stamp: without it
-// every such row goes invisible the moment a door flips onto the family.
-export { backfillAppDataStamps, type AppDataBackfillReport } from "./backfill-app-data.js";
+// ADAPTER RULE, app-database seam: one SQL database per app, as its own fenced
+// schema inside the store the host already wired.
+export { postgresAppDatabase, appSchema } from "./app-database.js";
 // The reserved-collection map (02-store §2): exported so remote StoreAdapters
 // (`hostedStore` below) can mirror this engine's per-collection
 // capability shape — claim on non-routed collections, atomic on generic

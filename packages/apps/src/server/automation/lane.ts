@@ -74,29 +74,17 @@ export const replacedAutomationId = (
 ): AutomationId | undefined =>
   ask !== undefined && ADDS_ANOTHER.test(ask) ? undefined : plan.replaces;
 
-/** Put the automation onto the document: the app's note of the id, plus the
- *  results collection its last step publishes into.
- *
- *  The collection declaration is not bookkeeping: a screen may only query a
- *  collection the stored document declares (`app-data.ts` declaredStorage), so
- *  this is what lets the board rewire read the automation's rows at all. */
-export const applyAutomationPlan = <Doc extends Pick<AppDocument, "automations" | "storage">>(
+/** Put the automation onto the document: the app's note of the id. The results
+ *  TABLE is not declared anywhere — an app's database has no manifest; the
+ *  table either exists or it does not, and `ensureResults` below makes it. */
+export const applyAutomationPlan = <Doc extends Pick<AppDocument, "automations">>(
   document: Doc,
-  plan: AutomationPlan,
+  _plan: AutomationPlan,
   automationId: AutomationId,
 ): Doc => {
   const automated = structuredClone(document);
   const named = automated.automations ?? [];
   automated.automations = named.includes(automationId) ? named : [...named, automationId];
-  if (plan.resultsCollection !== undefined && automated.storage?.[plan.resultsCollection] === undefined) {
-    automated.storage = {
-      ...automated.storage,
-      [plan.resultsCollection]: {
-        about: `Latest results written by the "${plan.name ?? "automation"}" automation for the app board.`,
-        kind: "records",
-      },
-    };
-  }
   return automated;
 };
 
@@ -112,9 +100,9 @@ export const automationResultsInstruction = (input: {
   /** The automation's own name, when it has one. */
   name?: string;
   resultsCollection: string;
-}): string => `The app now has a ${input.mode === "steps" ? "steps" : "goal-driven"} automation${input.name === undefined ? "" : ` ("${input.name}")`} that runs while the user is away and writes its latest displayable result into the app data collection "${input.resultsCollection}" — one record, id "latest", replaced on every run. Rewire the screen to show it:
-- Read it with useQuery("vendo_apps_data_list", { appId: "${input.appId}", collection: "${input.resultsCollection}" }) — that input is LITERAL JSON, exactly as written. It answers { records: [{ id, data }] }, and a row's data is whatever the automation stored, so the latest result is records[0].data.
-- The collection is EMPTY until the automation first fires, and this screen is rendered against the rows the query really returns before it can be saved — so handle records[0] being undefined and show one short "nothing yet" line instead of reading through it.
+}): string => `The app now has a ${input.mode === "steps" ? "steps" : "goal-driven"} automation${input.name === undefined ? "" : ` ("${input.name}")`} that runs while the user is away and writes its latest displayable result into the app's own database — table mine.${input.resultsCollection}, columns (id, data), one row with id 'latest', replaced on every run. Rewire the screen to show it:
+- Read it with useQuery("vendo_apps_sql", { appId: "${input.appId}", sql: "SELECT data FROM mine.${input.resultsCollection} WHERE id = ?", params: ["latest"] }) — that input is LITERAL JSON, exactly as written. It answers { columns, rows, rowCount }, and \`data\` is a JSON string, so the latest result is JSON.parse(rows[0].data).
+- The table is EMPTY until the automation first fires, and this screen is rendered against the rows the query really returns before it can be saved — so handle rows[0] being undefined and show one short "nothing yet" line instead of reading through it.
 - Keep the layout; change only what is needed to surface the result (add one small section if none fits).`;
 
 /**
@@ -172,6 +160,10 @@ export interface AutomationLaneDeps extends GenerationDependencies {
    * this runs after `land`.
    */
   rebind?: (instruction: string) => Promise<{ document?: GeneratedAppDocument; issues: string[] }>;
+  /** Make the automation's results table before anything reads or writes it —
+   *  an app's database has no manifest, so the table has to be created, and
+   *  neither the planner's step nor the rebound board is the place for DDL. */
+  ensureResults?: (table: string) => Promise<void>;
   /** The ONE place the app's note of the automation reaches the stored row, and
    *  the first write of the two — the rewire's own save comes after it. */
   land: (document: GeneratedAppDocument) => Promise<void>;
@@ -254,14 +246,14 @@ export const runAutomationLane = async (
   }, deps.ctx);
   let landed = applyAutomationPlan(document, plan, record.id);
   await deps.land(landed);
+  if (plan.resultsCollection !== undefined) await deps.ensureResults?.(plan.resultsCollection);
   const armed = await armAutomation(seam, record.id, deps.ctx);
   findings.push(...armed.issues.map((issue) => warn(where, issue)));
-  // The rewire comes AFTER the land, and has to: the assembler reads the STORED
-  // row, and a screen may only query a collection that row DECLARES
-  // (`app-data.ts` declaredStorage) — the checks run the rewired screen's query
-  // for real, so a rewire asked any earlier is refused with "records collection
-  // not found". Its own save carries this row's automations list and storage
-  // forward, so the row it leaves behind IS the answer. A failed rewire never
+  // The rewire comes AFTER the land and after `ensureResults`, and has to: the
+  // assembler reads the STORED row, and the checks run the rewired screen's
+  // query for real — a rewire asked any earlier reads a table that does not
+  // exist yet. Its own save carries this row's automations list forward, so the
+  // row it leaves behind IS the answer. A failed rewire never
   // blocks the automation: it is created and armed either way, and the miss is
   // reported for a retry.
   if (plan.resultsCollection !== undefined && deps.rebind !== undefined) {
@@ -302,9 +294,9 @@ export const runAutomationLane = async (
  */
 export const createAutomationLane = (
   deps: Pick<AppsRuntimeContext,
-    "requireOwned" | "persistEdit" | "assembleEdit" | "reportGuard">,
+    "requireOwned" | "persistEdit" | "assembleEdit" | "reportGuard" | "sql">,
 ) => {
-  const { requireOwned, persistEdit, assembleEdit, reportGuard } = deps;
+  const { requireOwned, persistEdit, assembleEdit, reportGuard, sql } = deps;
   const authorAutomation = async (
     input: {
       appId: AppId;
@@ -347,6 +339,15 @@ export const createAutomationLane = (
         // row's list and storage forward, so the app can never lose its note of
         // the automation to its own rewire, and the row it leaves behind is what
         // comes back here.
+        ...(sql === undefined ? {} : {
+          ensureResults: async (table: string) => {
+            await sql.run(
+              appId,
+              ctx.principal.subject,
+              `CREATE TABLE IF NOT EXISTS mine.${table} (id TEXT PRIMARY KEY, data TEXT)`,
+            );
+          },
+        }),
         rebind: async (instruction) => {
           const rebound = await assembleEdit(appId, instruction, ctx);
           if (rebound.kind === "assembled") return { document: withoutId(rebound.app), issues: [] };

@@ -168,7 +168,7 @@ export const composeSurfaces = (composition: VendoComposition): Pick<VendoCompos
  *  the component catalog beside it. */
 const capabilityAndCatalog = (composition: VendoComposition): Pick<VendoComposition,
   "capability" | "catalog"> => {
-  const { config, appsMounted, automationsMounted } = composition;
+  const { config, appsMounted, automationsMounted, appSqlDialect } = composition;
   // ONE composition call for everything that contributes tools or skills. It
   // runs here, before the apps runtime, because the skills it merges reach the
   // harness and the tools it merges reach the one registry. The apps runtime the
@@ -193,9 +193,10 @@ const capabilityAndCatalog = (composition: VendoComposition): Pick<VendoComposit
         // nothing to arm, so the model is not shown a tool that can only fail.
         tools: toolsFromRegistry(
           appsAgentTools,
-          automationsMounted
-            ? agentToolDescriptors
-            : agentToolDescriptors.filter((descriptor) => descriptor.name !== VENDO_AUTOMATE_TOOL),
+          // `vendo_apps_sql` states the LIVE dialect, and is absent entirely
+          // when no app database composed — no adapter, no tool.
+          agentToolDescriptors(appSqlDialect)
+            .filter((descriptor) => automationsMounted || descriptor.name !== VENDO_AUTOMATE_TOOL),
         ),
         skills: [buildingAppsSkill],
       } satisfies Contribution]

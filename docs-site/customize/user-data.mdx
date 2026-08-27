@@ -124,10 +124,10 @@ the bytes are safe either way.
 below happens on its own. The whole flow, as your user experiences it:
 
 1. **They drop `sales-2026.csv`** into the chat and ask: *"make me a dashboard of this."*
-2. **The agent reads the file and builds an app.** The rows it needs are copied into the app's own saved items — the app's private storage, separate from the user's files. The dashboard renders from those saved rows.
+2. **The agent reads the file and builds an app.** The rows it needs are copied into a table in the app's own SQL database, separate from the user's files. The dashboard renders from those saved rows.
 3. **The file and the app now live separately.** The copy is a snapshot, not a live link, so nothing re-reads the user's files on the app's behalf.
 4. **In December they drop the updated `sales-2026.csv`.** Same name, so it replaces the old copy. The dashboard still shows what it was built from —
-5. **— until they ask.** *"Refresh my dashboard."* The agent reads the new file, rewrites the app's saved items, and says what it did.
+5. **— until they ask.** *"Refresh my dashboard."* The agent reads the new file, rewrites the app's table, and says what it did.
 
 No watcher, no polling, no background sync: a file sitting in the drawer changes
 nothing until the user talks to the agent, so everything that happens is visible
