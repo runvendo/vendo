@@ -65,7 +65,7 @@
     "@vendoai/core": "workspace:*",
     "acorn": "^8.15.0",
     "croner": "^9.0.0",
-    "esbuild": "^0.25.12",
+    "esbuild": "^0.28.2",
     "fflate": "^0.8.2",
     "jsdom": "^25.0.0",
     "preact": "10.24.3",

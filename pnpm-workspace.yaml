@@ -209,3 +209,33 @@ overrides:
   # check on main. Still inside both consumers' declared ranges (postcss
   # ^3.3.16, @ai-sdk/provider-utils ^3.3.8).
   "nanoid@<3.3.18": ">=3.3.18 <4"
+  # 2026-08-26 advisory: Go stdlib crypto/tls may complete a resumed handshake
+  # that should have failed, when Config.RootCAs/ClientCAs are mutated between
+  # the initial and the resumed handshake, CVE-2025-68121 (CVSS 9.1). Not a JS
+  # advisory — it rides inside the Go-compiled esbuild BINARY, so `pnpm audit`
+  # is blind to it and only an image scanner (Trivy, on examples/demo-bank)
+  # reports it. Patched Go lines are 1.24.13, 1.25.7 and 1.26.0-rc.3.
+  #
+  # Fixed by bumping the three DECLARED consumers to ^0.28.2 (root, and the
+  # `dependencies` entries in @vendoai/apps and genbench), NOT by a floor here.
+  #
+  # Toolchain stamps read out of each @esbuild/linux-x64 binary rather than
+  # trusted from the release notes: 0.25.12 -> go1.23.12 (EOL, never patched),
+  # 0.27.0 -> go1.25.4, 0.27.7 -> go1.25.7, 0.28.2 -> go1.26.5. Mind 0.27.0 —
+  # its notes advertise the move off the EOL go1.23 line, but go1.25.4 is three
+  # patches BELOW the fix, so flooring at "the release that bumped Go" would
+  # still ship the CVE. 0.27.7 is the first version actually clear of it.
+  #
+  # A floor of `esbuild@<0.27.7` -> `>=0.27.7 <0.29` was tried and reverted: it
+  # dedupes the tree to one 0.28.2, but vite@6.4.3 declares `esbuild: ^0.25.0`
+  # and means it, so corpus/hosts/express-host's `vite build` then dies with
+  # 21 x "Transforming destructuring to the configured target environment is not
+  # supported yet". That is the cross-a-major walk the rest of this file warns
+  # about, caught by the build instead of shipped.
+  #
+  # So one vulnerable copy stays, reachable only through vite (vitest,
+  # @vitejs/plugin-react) — dev tooling, absent from demo-bank's `next start`
+  # path, in the image only because the Dockerfile installs devDependencies
+  # too. It leaves with a vite major bump or a prod-only image, neither of which
+  # belongs in a CVE patch. The copy that mattered — the one @vendoai/apps
+  # lazy-loads in server/checking/toolchain.ts — is on 0.28.2.
