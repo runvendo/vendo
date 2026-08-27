@@ -162,7 +162,11 @@ export function consentAsk(
   rows: readonly CardFieldRow[],
   meta?: ToolMeta,
 ): ConsentAsk {
-  const host = (meta?.description ?? presentation.note)?.trim();
+  // `||`, not `??`: a host that authors a BLANK description has authored no
+  // sentence, and `??` would keep the empty string and suppress the rung below
+  // it — the generic consequence line all over again, which is the bug this
+  // ladder exists to fix.
+  const host = meta?.description?.trim() || presentation.note?.trim();
   const authored = host !== undefined && host.length > 0 && host !== presentation.title ? host : undefined;
   const question = presentation.question ?? `${presentation.title}?`;
   const does = authored === undefined && presentation.question === undefined
