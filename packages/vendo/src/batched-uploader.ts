@@ -83,7 +83,7 @@ export function createBatchedUploader<T>(options: BatchedUploaderOptions<T>): Ba
         const response = await cloudKeyFetch<unknown>(options.path, {
           apiKey: options.cloud.apiKey,
           ...(options.method === undefined ? {} : { method: options.method }),
-          // The seam already resolved VENDO_CLOUD_URL into baseUrl; an empty
+          // The seam already resolved VENDO_CONSOLE_URL into baseUrl; an empty
           // env pins resolution to it (or the console default) so no hidden
           // process-env read survives here (adapter rule).
           ...(options.cloud.baseUrl === undefined ? {} : { apiUrl: options.cloud.baseUrl }),

@@ -2,7 +2,7 @@ import { createRequire } from "node:module";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { acceptsSamplingParams, UNKNOWN_MODEL_MAX_OUTPUT_TOKENS } from "@vendoai/apps";
-import { log, meterExhaustedFromError, VendoError } from "@vendoai/core";
+import { consoleUrlFromEnv, log, meterExhaustedFromError, VendoError } from "@vendoai/core";
 import type { LanguageModel } from "ai";
 import {
   describeDevCredential,
@@ -402,7 +402,7 @@ export class DevModelController {
     if (credential.rung === "vendo-cloud") {
       // The gateway speaks the Anthropic Messages wire, so the anthropic
       // provider serves it — pointed at the console instead of Anthropic.
-      const base = (this.env["VENDO_CLOUD_URL"] ?? CONSOLE_URL).replace(/\/+$/, "");
+      const base = (consoleUrlFromEnv(this.env) ?? CONSOLE_URL).replace(/\/+$/, "");
       const baseURL = base.endsWith("/api/v1") ? base : `${base}/api/v1`;
       return this.delegate(
         credential,

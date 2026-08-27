@@ -28,7 +28,7 @@ User commands:
   invite --org <id> --email <email> --role <admin|member>
 
 Global options:
-  --api-url <url>  Override VENDO_CLOUD_URL / https://console.vendo.run
+  --api-url <url>  Override VENDO_CONSOLE_URL / https://console.vendo.run
   --json           JSON output
 `;
 

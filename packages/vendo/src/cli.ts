@@ -55,7 +55,7 @@ Options:
   --json                     Sync/doctor: print one machine-readable report object
   --report                   Sync only: push the report to Vendo Cloud
   --key <key>                Sync/cloud: override VENDO_API_KEY
-  --api-url <url>            Sync/cloud/login: override VENDO_CLOUD_URL
+  --api-url <url>            Sync/cloud/login: override VENDO_CONSOLE_URL
   --version                  Print the version
 `;
 

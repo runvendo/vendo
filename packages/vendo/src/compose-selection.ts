@@ -7,6 +7,7 @@
  */
 import type { Connector } from "@vendoai/actions";
 import {
+  consoleUrlFromEnv,
   type KnowledgeAdapter,
   type SecretsProvider,
   type StoreAdapter,
@@ -30,11 +31,11 @@ import { environment } from "./wire/shared.js";
 export const DEFAULT_TOOL_OUTPUT_CAP = 32_000;
 
 /** The shared Cloud-default leg of the ADAPTER RULE: VENDO_API_KEY fills a
-    seam the host left unset, VENDO_CLOUD_URL overrides the console base URL. */
+    seam the host left unset, VENDO_CONSOLE_URL overrides the console base URL. */
 export function cloudKeyOptions(): { apiKey: string; baseUrl?: string } | undefined {
   const apiKey = environment("VENDO_API_KEY");
   if (apiKey === undefined) return undefined;
-  const baseUrl = environment("VENDO_CLOUD_URL");
+  const baseUrl = consoleUrlFromEnv();
   return { apiKey, ...(baseUrl === undefined ? {} : { baseUrl }) };
 }
 
@@ -56,7 +57,7 @@ export function selectConnectors(
   toolkits: string[],
 ): Connector[] {
   const apiKey = environment("VENDO_API_KEY");
-  const baseUrl = environment("VENDO_CLOUD_URL");
+  const baseUrl = consoleUrlFromEnv();
   const cloudArgs = { ...(baseUrl === undefined ? {} : { baseUrl }) };
   if (configured === undefined) {
     return apiKey === undefined ? [] : [cloudTools({ apiKey, ...cloudArgs })];
@@ -74,7 +75,7 @@ export function selectConnectors(
          `vendoKnowledge()` is handed the composed store here
          (bindKnowledgeStore), so the host never plumbs one;
       2. VENDO_API_KEY makes the Cloud engine the default for the seam the host
-         left unfilled (VENDO_CLOUD_URL overrides the console base URL) —
+         left unfilled (VENDO_CONSOLE_URL overrides the console base URL) —
          the same rung every other Cloud-backed seam above already has;
       3. nothing configured at all: no adapter, no tool. That silence is
          intended — the agent must not advertise a knowledge base the host
@@ -103,7 +104,7 @@ export function selectKnowledge(
       2. BYO — a connector's own connections capability (connections must live
          where the connector executes);
       3. VENDO_API_KEY makes the Cloud adapter the default for the seam the
-         host left unfilled (VENDO_CLOUD_URL overrides the console base URL);
+         host left unfilled (VENDO_CONSOLE_URL overrides the console base URL);
       4. the unconfigured fallback, which fails closed with setup guidance.
     The adapters themselves never read the environment. */
 /** Wraps a connections adapter so a successful `disconnect` drops the
@@ -166,7 +167,7 @@ export function selectConnections(
          non-empty env value wins (the hard BYO rule: setting a Vendo key
          never shadows a secret the operator already ships in the env) — and
          VENDO_API_KEY chains the Cloud secrets provider behind it for the
-         names the environment leaves unset (VENDO_CLOUD_URL overrides the
+         names the environment leaves unset (VENDO_CONSOLE_URL overrides the
          console base URL);
       3. keyless, the envSecrets default alone (unchanged behavior).
     The providers themselves never read VENDO_API_KEY; a Cloud lookup failure

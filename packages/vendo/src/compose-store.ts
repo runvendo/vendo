@@ -43,7 +43,7 @@ export function isHostedStore(store: VendoStore): store is HostedStore {
       1. an explicitly passed store always wins (BYO — the host's own Postgres
          or PGlite via createStore, the hard BYO rule);
       2. VENDO_API_KEY makes the Cloud hosted store the default for the seam
-         the host left unfilled (VENDO_CLOUD_URL overrides the console base) —
+         the host left unfilled (VENDO_CONSOLE_URL overrides the console base) —
          Vendo data lives with Vendo, tenant = the key's org, resolved
          server-side on every call;
       3. the local createStore default (02-store §4 re-derived: encryption is

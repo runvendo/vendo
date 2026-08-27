@@ -18,7 +18,7 @@ const DEFAULT_TIMEOUT_MS = 300_000;
 
 export interface CloudSandboxOptions {
   apiKey: string;
-  /** Defaults to the Vendo console; the composition seam passes VENDO_CLOUD_URL. */
+  /** Defaults to the Vendo console; the composition seam passes VENDO_CONSOLE_URL. */
   baseUrl?: string;
   /** Per-request abort timeout, in milliseconds. */
   timeoutMs?: number;

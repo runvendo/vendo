@@ -399,7 +399,7 @@ export function customServerSource(typescript: boolean, auth: AuthMatch | null =
   const envType = typescript
     ? `\nexport interface VendoEnv {\n` +
       `  VENDO_API_KEY?: string;\n` +
-      `  VENDO_CLOUD_URL?: string;\n` +
+      `  VENDO_CONSOLE_URL?: string;\n` +
       `  VENDO_BASE_URL?: string;\n` +
       `}\n`
     : "";
@@ -444,8 +444,9 @@ export function customServerSource(typescript: boolean, auth: AuthMatch | null =
     `  if (vendo === null) {\n` +
     `    const processEnv = globalThis.process?.env ?? {};\n` +
     `    const apiKey = env.VENDO_API_KEY ?? processEnv.VENDO_API_KEY;\n` +
-    `    const baseUrl = (env.VENDO_CLOUD_URL ?? processEnv.VENDO_CLOUD_URL ?? "https://console.vendo.run").replace(/\\/+$/, "");\n` +
-    `    const cloud = apiKey === undefined || apiKey === "" ? undefined : { apiKey, baseUrl };\n` +
+    `    // The VENDO CONSOLE's origin — not your app's. Your app's public URL is VENDO_BASE_URL.\n` +
+    `    const consoleUrl = (env.VENDO_CONSOLE_URL ?? processEnv.VENDO_CONSOLE_URL ?? "https://console.vendo.run").replace(/\\/+$/, "");\n` +
+    `    const cloud = apiKey === undefined || apiKey === "" ? undefined : { apiKey, baseUrl: consoleUrl };\n` +
     `    vendo = createVendo({\n` +
     (auth === null ? anonymousPrincipalLines(typescript) : authConfigLines(auth))
       .split("\n").map((line) => (line === "" ? line : `    ${line}`)).join("\n") +

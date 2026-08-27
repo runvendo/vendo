@@ -14,6 +14,7 @@ import {
   selectSandbox,
 } from "@vendoai/apps";
 import {
+  consoleUrlFromEnv,
   VendoError,
   type FilesAdapter,
   type Harness,
@@ -248,7 +249,7 @@ export function provideCloudAdapters(adapters: CloudAdapters): void {
 const cloudKey = (): { apiKey: string; baseUrl?: string } | undefined => {
   const apiKey = process.env["VENDO_API_KEY"];
   if (apiKey === undefined || apiKey === "") return undefined;
-  const baseUrl = process.env["VENDO_CLOUD_URL"];
+  const baseUrl = consoleUrlFromEnv();
   return { apiKey, ...(baseUrl === undefined ? {} : { baseUrl }) };
 };
 
