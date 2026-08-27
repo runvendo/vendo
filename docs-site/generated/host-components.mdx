@@ -44,11 +44,11 @@ const vendo = createVendo({ catalog: registry });
 ## What a screen may name
 
 <Frame caption="A name outside these two sets fails the save. It never renders as an empty box.">
-  <svg viewBox="0 0 700 118" width="100%" role="img" aria-label="A generated screen may name the Kit's 51 components plus the components this host registered, and nothing else.">
+  <svg viewBox="0 0 700 118" width="100%" role="img" aria-label="A generated screen may name the Kit's 49 components plus the components this host registered, and nothing else.">
     <rect x="1" y="1" width="330" height="72" rx="10" fill="currentColor" fillOpacity="0.04" stroke="currentColor" strokeOpacity="0.22" />
     <text x="166" y="27" fontSize="8" letterSpacing="1.2" textAnchor="middle" fill="currentColor" fillOpacity="0.55">SHIPPED WITH VENDO</text>
     <text x="166" y="48" fontSize="14" fontWeight="600" textAnchor="middle" fill="currentColor">the Kit</text>
-    <text x="166" y="64" fontSize="11" textAnchor="middle" fill="currentColor" fillOpacity="0.55">51 components, themed by your tokens</text>
+    <text x="166" y="64" fontSize="11" textAnchor="middle" fill="currentColor" fillOpacity="0.55">49 components, themed by your tokens</text>
     <text x="350" y="43" fontSize="18" fontWeight="500" textAnchor="middle" fill="currentColor" fillOpacity="0.35">+</text>
     <rect x="369" y="1" width="330" height="72" rx="10" fill="#6c3bff" fillOpacity="0.08" stroke="#6c3bff" strokeOpacity="0.35" />
     <text x="534" y="27" fontSize="8" letterSpacing="1.2" textAnchor="middle" fill="#6c3bff" fillOpacity="0.8">SHIPPED WITH YOUR PRODUCT</text>
@@ -64,15 +64,17 @@ The Kit is one family, and every component in it reads your [theme tokens](/cust
 
 | Family | Components |
 | --- | --- |
-| Layout | `Stack` `Row` `Grid` `Surface` `Card` `Divider` |
-| Values | `Text` `Money` `DateTime` `Percent` `Num` `EnumBadge` `Icon` |
-| Data | `DataTable` `CardList` `Stat` `Badge` `KeyValue` `Timeline` `Avatar` `CodeBlock` |
+| Layout | `Stack` `Row` `Grid` `SplitPane` `Surface` `Card` `Divider` |
+| Values | `Text` `EnumBadge` `Icon` |
+| Data | `DataTable` `TableRow` `CardList` `Calendar` `Stat` `Badge` `KeyValue` `Timeline` `Avatar` `CodeBlock` |
 | Charts | `LineChart` `BarChart` `DonutChart` `Sparkline` `Progress` |
 | Forms | `Input` `Select` `DatePicker` `Textarea` `Checkbox` `Switch` `Radio` `Slider` `SegmentedControl` `Combobox` `DateRange` `Button` `Link` `Form` `Disclaimer` |
 | Feedback | `Tabs` `Callout` `Accordion` `Menu` `Tooltip` `EmptyState` `Steps` |
 | Overlays | `Modal` `Sheet` `Toast` |
 
-`Accordion` is the one Kit name a generated screen may not reach for, because its panels arrive as element-valued props. `Tabs` takes its panels as children, so it stays available.
+A screen writes every figure itself with `Intl` (`toLocaleString`, `toLocaleDateString`), in the units the host stores. The Kit displays and themes what you hand it. Nothing in it formats.
+
+Charts follow the same rule. Every figure they print — a slice's legend line, a bar's value label, a hovered point, an x tick — comes from a per-row formatter the screen writes: `format={(row) => money(row.amount)}` on a `DonutChart`, or per series on a `LineChart` and `BarChart`. The value axis is the one exception, plotted straight off the scale, so plot the units you want read.
 
 <Note>
   Two names people look for are deliberately absent. `DataTable` is the only table, and it sorts, filters, searches, paginates, resolves dot-path keys, and formats each cell.
