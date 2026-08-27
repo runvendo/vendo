@@ -1,7 +1,7 @@
 /**
  * The per-turn system prompt: base rules, the host's instructions, `[User]`
  * (session identity facts, server-trust), `[Memory]` (what this person asked to
- * be remembered), `[Situation]` (the stream's data context — functions never
+ * be remembered), `[Context]` (the stream's data context — functions never
  * serialize; they are the guard's, at check-time), and the guard's directions.
  * Assembled per turn because it needs the ctx a `Turn` deliberately does not
  * carry; it rides `Turn.system`.
@@ -59,7 +59,7 @@ export function assemblePrompt(input: PromptInput): string {
     sections.push(input.instructions.trim());
   }
   if (user !== undefined) sections.push(user);
-  // Beside `[User]` and before `[Situation]`: who they are, then what they asked
+  // Beside `[User]` and before `[Context]`: who they are, then what they asked
   // to be remembered about themselves, then what is on their screen now — and
   // the guard's directions after all three, where nothing above can reach.
   // The cap is kept where the promise of a capped block is made, not asked of

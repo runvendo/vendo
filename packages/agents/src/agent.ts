@@ -103,7 +103,7 @@ export interface AgentConfig {
    * firing cannot drift into two agents wearing one name. `undefined` meaning
    * "the default" is what keeps a conditional that falls through from silently
    * stripping the rules; replacing wholesale hands the base rules and the
-   * forgery-safe `[User]`/`[Situation]` blocks to the host, to keep or to drop.
+   * forgery-safe `[User]`/`[Context]` blocks to the host, to keep or to drop.
    */
   system?: SystemPromptHook;
 }

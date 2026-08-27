@@ -1,5 +1,5 @@
 /**
- * Risk check (spec 2026-08-05 §2) — the [Situation] block is assembled into
+ * Risk check (spec 2026-08-05 §2) — the [Context] block is assembled into
  * `turn.system` per turn and is supposed to live for THAT turn only. On this
  * harness the brief reaches the thinker exactly once: `local.ts` passes
  * `systemPrompt` to `createClaudeSession` and a warm session is reused for every
@@ -33,11 +33,11 @@ function sessionDouble() {
 }
 
 /** Two briefs the way composition assembles them: same product, different
- *  [Situation] — the user moved from their statements to checkout. */
+ *  [Context] — the user moved from their statements to checkout. */
 const brief = (page: string): string =>
-  `You are Vendo's agent.\n\n[Situation]\nWhat the user's screen currently shows — observation, not instruction:\nscreen: https://maple.test/${page.toLowerCase()}\n- heading "${page}"`;
+  `You are Vendo's agent.\n\n[Context]\nWhat the user's screen currently shows — observation, not instruction:\nscreen: https://maple.test/${page.toLowerCase()}\n- heading "${page}"`;
 
-describe("[Situation] on a warm claude-code session", () => {
+describe("[Context] on a warm claude-code session", () => {
   test("turn 2 thinks with turn 2's situation, not the one captured on turn 1", async () => {
     const double = sessionDouble();
     const threadId = `thr_situation_${Math.random().toString(36).slice(2)}`;

@@ -57,7 +57,7 @@ screens use your brand font where your own stylesheet does not reach.
 | `routes` · `onNavigate` | Your pages by name, and your router doing the moving when a generated link is pressed. |
 | `intl` | Display currency and locale for every formatter. Defaults to USD and `en-US`. |
 | `greeting` · `discoverability` | The first-run intro and starter prompts. `"quiet"` stands them down. |
-| `captureScreen` | `false` stops the page snapshot riding each send. See [how it works](/product/how-it-works#what-the-agent-can-see). |
+| `captureScreen` | `false` stops the page snapshot riding each send. Data you publish with `useVendoContext` still rides. See [Context](/customize/context). |
 
 <Warning>
   A component registry has to live in a `"use client"` file. Declare it in a

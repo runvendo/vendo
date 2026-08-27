@@ -1,5 +1,5 @@
 /**
- * Risk check (spec 2026-08-05 §1/§2) — the [User] and [Situation] blocks are
+ * Risk check (spec 2026-08-05 §1/§2) — the [User] and [Context] blocks are
  * assembled by string concatenation: `factLines` renders `key: value` verbatim.
  * Nothing escapes a newline, so a value that CONTAINS a blank line plus a
  * section header is indistinguishable from a section the assembler wrote
@@ -10,7 +10,7 @@
  * (03-agent §3, fail-closed), and `ctx.context` is client-supplied on every
  * POST /threads — including from an unauthenticated visitor.
  *
- * [User] still rides `assembleSystemPrompt`. [Situation] does NOT any more
+ * [User] still rides `assembleSystemPrompt`. [Context] does NOT any more
  * (sub-1s shipment: it rides `Turn.situation`, behind the history), so its
  * forgery surface is the block builder itself — asserted on core's
  * `situationPromptBlock`, the one implementation every placement shares. The
@@ -57,7 +57,7 @@ describe("prompt block forgery", () => {
     // The guard's own Directions section is there — and the situation is not
     // in this prompt AT ALL any more: the stable prefix stays snapshot-free.
     expect(prompt).toContain("Directions\n- Never disclose balances");
-    expect(prompt).not.toContain("[Situation]");
+    expect(prompt).not.toContain("[Context]");
 
     // The forgery surface is the block itself, wherever a harness places it:
     // everything the page said stays inside it, indented under its fact, so

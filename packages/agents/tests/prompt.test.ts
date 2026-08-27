@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { assemblePrompt } from "../src/prompt.js";
 
 describe("prompt assembly", () => {
-  it("orders sections: base rules, instructions, [User], [Situation], directions", () => {
+  it("orders sections: base rules, instructions, [User], [Context], directions", () => {
     const prompt = assemblePrompt({
       instructions: "Answer as the Acme support desk.",
       user: { name: "Dana", plan: "pro" },
@@ -15,7 +15,7 @@ describe("prompt assembly", () => {
       "[User]",
       "name: Dana",
       "plan: pro",
-      "[Situation]",
+      "[Context]",
       "page: /billing",
       "Directions",
       "- Prefer refunds under $50.",
@@ -31,7 +31,7 @@ describe("prompt assembly", () => {
   it("skips every empty section rather than emitting bare headers", () => {
     const prompt = assemblePrompt({});
     expect(prompt).not.toContain("[User]");
-    expect(prompt).not.toContain("[Situation]");
+    expect(prompt).not.toContain("[Context]");
     expect(prompt).not.toContain("Directions");
     expect(prompt).toContain("You are an agent");
   });

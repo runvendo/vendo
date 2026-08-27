@@ -221,7 +221,7 @@ export async function assembleSystemPrompt(
   // Spec 2026-08-05 §1 — the host's asserted profile of the present user
   // (ctx.user, server-trust, refreshed per request by the auth preset's
   // resolver). Stable for the user's whole session, so it may live in the
-  // cacheable prompt. §2's [Situation] block deliberately does NOT: it changes
+  // cacheable prompt. §2's [Context] block deliberately does NOT: it changes
   // every message, so composition delivers it beside the prompt
   // (`Turn.situation`, harness-turn.ts) and the harness places it behind the
   // history — a volatile block in here is what kept the prompt cache cold.

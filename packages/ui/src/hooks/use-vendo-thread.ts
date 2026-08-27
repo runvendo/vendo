@@ -150,7 +150,7 @@ export function useVendoThread(threadId?: string) {
           const message = messages.at(-1);
           if (!message) throw new Error("Cannot send an empty Vendo turn.");
           const activeThreadId = activeThreadIdRef.current;
-          // Spec 2026-08-05 §2/§3 — the [Situation] channel rides the send:
+          // Spec 2026-08-05 §2/§3 — the [Context] channel rides the send:
           // published host data plus the screen snapshot, this turn only. The
           // server re-caps it at the same 8 KB and puts it on ctx.context.
           const situation = currentSituation(captureScreen);

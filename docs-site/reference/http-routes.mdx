@@ -18,7 +18,7 @@ Most routes resolve a principal through `principal(req)`. Three surfaces never c
 
 | Route | Method | Body → Response |
 | --- | --- | --- |
-| `/threads` | POST | `{ threadId?, message, context? }` → an AI SDK UI message stream (SSE), one conversational turn. The response carries `X-Vendo-Thread-Id`. `context` is the situation channel, capped at 8 KiB UTF-8 on a code-point boundary and dropped rather than refused |
+| `/threads` | POST | `{ threadId?, message, context? }` → an AI SDK UI message stream (SSE), one conversational turn. The response carries `X-Vendo-Thread-Id`. `context` fills the prompt's `[Context]` block, capped at 8 KiB UTF-8 on a code-point boundary and dropped rather than refused |
 | `/threads/warm` | POST | no body → `204`. Warms the prompt cache. An engine without a `warm` seam still answers `204` |
 | `/threads/:id/stream` | GET | resume a live turn: SSE with `X-Vendo-Thread-Id`, or `204` when nothing is in flight |
 | `/threads/:id/heartbeat` | POST | `{ active: boolean }`. Beaten by the client while a turn streams so the server can idle-abort on a runtime that never surfaces a disconnect. Only the caller's own in-flight turns answer `true` |
