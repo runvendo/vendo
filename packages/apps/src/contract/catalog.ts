@@ -57,12 +57,19 @@ export interface VendoThemeFont {
   family: string;
   weight: string;
   style: string;
-  source: "next/font" | "public" | "google";
+  source: "next/font" | "public" | "google" | (string & {});
 }
 
 /** 01-core §14. The shape only: `./theme.js` owns the defaults, the merge, and
  * the one mapping onto `--vendo-*` CSS variables that every surface renders
- * through. */
+ * through.
+ *
+ * `density`, `motion` and `typography.fonts[].source` carry a `| (string & {})`
+ * arm so a `.vendo/theme.json` import — whose strings every bundler widens to
+ * `string` — assigns to `theme` with NO cast, while the real values still
+ * autocomplete. The widening is the TS surface only: `vendoThemeSchema` below
+ * stays strict for the on-disk file, and `./theme.js` renders anything else as
+ * the default (`comfortable` / `full`). */
 export interface VendoTheme {
   colors: {
     background: string;
@@ -94,8 +101,8 @@ export interface VendoTheme {
   };
   radius: { small: string; medium: string; large: string };
   shadow?: { small: string; medium: string; large: string };
-  density: "compact" | "comfortable";
-  motion: "full" | "reduced";
+  density: "compact" | "comfortable" | (string & {});
+  motion: "full" | "reduced" | (string & {});
   borderWidth?: string;
   /** Categorical chart series, in order; beyond six a chart reads the ramp
    * `chartPaletteFor` derives from the accent. */

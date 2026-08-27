@@ -175,7 +175,10 @@ function relativeLuminance(color: string): number | null {
 export function densityCssVariables(density: VendoTheme["density"]): Record<string, string> {
   const compact = density === "compact";
   return {
-    "--vendo-density": density,
+    // Normalized, not passed through: `density` widens to `string` so a JSON
+    // import assigns uncast, and every step below already reads an unknown
+    // value as comfortable — the adjective must say the same thing.
+    "--vendo-density": compact ? "compact" : "comfortable",
     "--vendo-density-control-height": compact ? "32px" : "38px",
     "--vendo-density-control-padding": compact ? "6px 10px" : "9px 12px",
     "--vendo-density-card-padding": compact ? "12px" : "16px",
@@ -225,7 +228,7 @@ export function themeCssVariables(theme: VendoTheme): Record<string, string> {
     vars[`--vendo-chart-${i + 1}`] = theme.chartPalette?.[i] ?? color;
   }
   Object.assign(vars, densityCssVariables(theme.density));
-  vars["--vendo-motion"] = theme.motion;
+  vars["--vendo-motion"] = theme.motion === "reduced" ? "reduced" : "full";
   vars["--vendo-motion-duration"] = theme.motion === "reduced"
     ? "0ms"
     : theme.motionDuration ?? themeDefaults.motionDuration;
