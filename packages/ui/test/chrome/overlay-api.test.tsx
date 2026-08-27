@@ -32,11 +32,13 @@ describe("VendoOverlay supported entry API", () => {
     await waitFor(() => expect(screen.getAllByText("Turn complete")).toHaveLength(turns));
   };
 
-  it("opens uncontrolled via defaultOpen and positions the default launcher", () => {
+  it("opens uncontrolled via defaultOpen and renders NO launcher by default", () => {
     render(<VendoProvider client={client}><VendoOverlay defaultOpen /></VendoProvider>);
     expect(dialogQuery()).toBeTruthy();
-    const launcher = screen.getByRole("button", { name: "AI agent" });
-    expect(launcher.getAttribute("data-vendo-launcher")).toBe("bottom-right");
+    // The pill is opt-in: a bare mount puts nothing on the host's page, so the
+    // panel opens only programmatically (props, hook, trigger, palette, slot).
+    expect(screen.queryByRole("button", { name: "AI agent" })).toBeNull();
+    expect(document.querySelector(".fl-launcher")).toBeNull();
   });
 
   it("supports bottom-left and hidden launcher variants", () => {
@@ -103,7 +105,7 @@ describe("VendoOverlay supported entry API", () => {
   });
 
   it("locks body scroll and inerts the background while open, and cleans both up on close", async () => {
-    const { container } = render(<VendoProvider client={client}><VendoOverlay /></VendoProvider>);
+    const { container } = render(<VendoProvider client={client}><VendoOverlay launcher={{}} /></VendoProvider>);
     const host = container; // RTL mount div, a direct body child
     expect(document.body.style.overflow).toBe("");
     expect(host.hasAttribute("inert")).toBe(false);
@@ -130,7 +132,7 @@ describe("VendoOverlay supported entry API", () => {
   });
 
   it("autofocuses the composer on open", async () => {
-    render(<VendoProvider client={client}><VendoOverlay /></VendoProvider>);
+    render(<VendoProvider client={client}><VendoOverlay launcher={{}} /></VendoProvider>);
     fireEvent.click(screen.getByRole("button", { name: "AI agent" }));
     const composer = screen.getByRole("textbox", { name: "Message" });
     await waitFor(() => expect(document.activeElement).toBe(composer));
@@ -159,7 +161,7 @@ describe("VendoOverlay supported entry API", () => {
   });
 
   it("keeps the conversation across close/reopen instead of discarding it (ENG-221)", async () => {
-    render(<VendoProvider client={client}><VendoOverlay defaultOpen /></VendoProvider>);
+    render(<VendoProvider client={client}><VendoOverlay defaultOpen launcher={{}} /></VendoProvider>);
     await sendMessage("remember me");
     expect(screen.getByText("remember me")).toBeTruthy();
 
@@ -181,7 +183,7 @@ describe("VendoOverlay supported entry API", () => {
   });
 
   it("preserves the conversation across an Escape close too", async () => {
-    render(<VendoProvider client={client}><VendoOverlay defaultOpen /></VendoProvider>);
+    render(<VendoProvider client={client}><VendoOverlay defaultOpen launcher={{}} /></VendoProvider>);
     await sendMessage("via escape");
 
     fireEvent.keyDown(dialogQuery()!, { key: "Escape" });
@@ -253,7 +255,7 @@ describe("VendoOverlay supported entry API", () => {
         <>
           <button type="button" style={{ display: "none" }} onClick={overlay.toggle}>hidden-invoker</button>
           <button type="button" onClick={overlay.toggle}>visible-invoker</button>
-          <VendoOverlay {...overlay.overlayProps} />
+          <VendoOverlay {...overlay.overlayProps} launcher={{}} />
         </>
       );
     }

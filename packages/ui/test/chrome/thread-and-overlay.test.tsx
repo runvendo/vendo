@@ -221,7 +221,7 @@ describe("VendoThread and VendoOverlay exports", () => {
   });
 
   it("opens as a modal, traps focus, closes on Escape, and restores launcher focus", async () => {
-    render(<VendoProvider client={client}><VendoOverlay /></VendoProvider>);
+    render(<VendoProvider client={client}><VendoOverlay launcher={{}} /></VendoProvider>);
     const launcher = screen.getByRole("button", { name: "AI agent" });
     launcher.focus();
     fireEvent.click(launcher);

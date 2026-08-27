@@ -67,7 +67,7 @@ describe("launcher pill — background attention", () => {
   const renderPill = (extra?: { onOpenChange?(open: boolean): void }) =>
     render(
       <VendoProvider client={offline} tools={{ host_list_transactions: { label: "Reading your transactions" } }}>
-        <VendoOverlay {...(extra?.onOpenChange ? { onOpenChange: extra.onOpenChange } : {})} />
+        <VendoOverlay launcher={{}} {...(extra?.onOpenChange ? { onOpenChange: extra.onOpenChange } : {})} />
       </VendoProvider>,
     );
 
@@ -238,7 +238,7 @@ describe("launcher pill — waiting asks (numbered badge)", () => {
   });
 
   it("counts the waiting asks as a NUMBER, and outranks the unseen-results dot", async () => {
-    render(<VendoProvider client={client}><VendoOverlay /></VendoProvider>);
+    render(<VendoProvider client={client}><VendoOverlay launcher={{}} /></VendoProvider>);
     await waitFor(() => expect(badge()).toBeTruthy());
     expect(badge()!.textContent).toBe("1");
     // dot ≺ number (spec §3): with an ask waiting, the count is what shows.
@@ -290,7 +290,7 @@ describe("closing the panel mid-run (G1: closing is leaving)", () => {
     wire.state.threadReplyGate = new Promise<void>(resolve => { release = resolve; });
     render(
       <VendoProvider client={client} tools={{ host_list_transactions: { label: "Reading your transactions" } }}>
-        <VendoOverlay defaultOpen />
+        <VendoOverlay defaultOpen launcher={{}} />
       </VendoProvider>,
     );
     const composer = screen.getByRole("textbox", { name: "Message" });

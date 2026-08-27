@@ -31,10 +31,12 @@ describe("the overlay's signed-out panel", () => {
     await wire.close();
   });
 
+  // The pill is opt-in now, and this file's subject is that wire health never
+  // takes it away — so these mounts ask for one.
   function mount(props: Parameters<typeof VendoOverlay>[0] = {}) {
     return render(
       <VendoProvider client={client}>
-        <VendoOverlay defaultOpen {...props} />
+        <VendoOverlay defaultOpen launcher={{}} {...props} />
       </VendoProvider>,
     );
   }

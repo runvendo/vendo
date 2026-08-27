@@ -45,16 +45,19 @@ export interface VendoOverlayProps {
   /** Fires for every open/close request: launcher click, close button, Escape, scrim click, or programmatic toggles. */
   onOpenChange?(open: boolean): void;
   /**
-   * Built-in launcher placement and content. The default is a fixed pill in
-   * the given viewport corner carrying the accent-circle mark and a
-   * WHITE-LABEL text — "AI agent", never a product name. Pass
-   * `"none"` to hide it and drive the overlay programmatically (via
-   * `open`/`onOpenChange` or the `useVendoOverlay` hook), or the object form
-   * to customize: `label` accepts any host string (`null` collapses the pill
-   * to a blob-only orb), `icon` swaps the blob for a host element, and
-   * `offset` nudges the whole launcher cluster (pill, whisper, toast) inward
-   * from its corner when the host's own UI already lives there (F12,
-   * ENG-388).
+   * Built-in launcher placement and content. The default is `"none"`: a bare
+   * `<VendoOverlay />` renders NO pill, and the panel opens programmatically
+   * — `open`/`onOpenChange`, the `useVendoOverlay` hook, `VendoTrigger`, the
+   * palette, or a slot.
+   *
+   * Opt the pill in with a corner string or the object form. `launcher={{}}`
+   * is the plain pill: a fixed pill in the corner carrying the accent-circle
+   * mark and a WHITE-LABEL text — "AI agent", never a product name.
+   * `position` picks the corner (default `"bottom-right"`), `label` accepts
+   * any host string (`null` collapses the pill to a blob-only orb), `icon`
+   * swaps the blob for a host element, and `offset` nudges the whole launcher
+   * cluster (pill, whisper, toast) inward from its corner when the host's own
+   * UI already lives there (F12, ENG-388).
    */
   launcher?: VendoLauncherPosition | "none" | {
     position?: VendoLauncherPosition;
@@ -613,14 +616,14 @@ function RailBody({ signedOut, notice, prefillScope, children }: {
 }
 
 /** 08-ui §4 — floating modal launcher with focus containment and restoration.
- *  Supported entry API (ENG-220): positioned launcher by default, controlled +
+ *  Supported entry API (ENG-220): opt-in positioned launcher, controlled +
  *  uncontrolled programmatic open/close, panel portaled to document.body with
  *  body scroll-lock and an inert background while open. */
 export function VendoOverlay({
   open: openProp,
   defaultOpen = false,
   onOpenChange,
-  launcher = "bottom-right",
+  launcher = "none",
   conversationKey,
   thread: Thread = VendoThread,
   discoverability,

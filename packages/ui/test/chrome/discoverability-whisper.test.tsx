@@ -7,7 +7,9 @@ import { hasSeen } from "../../src/chrome/discoverability.js";
 
 const client = createVendoClient({ baseUrl: "http://localhost:9" });
 
-function renderOverlay(ui: React.ReactElement = <VendoOverlay />) {
+// The whisper rides the launcher pill, and the pill is opt-in — so every mount
+// in this file asks for one.
+function renderOverlay(ui: React.ReactElement = <VendoOverlay launcher={{}} />) {
   return render(<VendoProvider client={client}>{ui}</VendoProvider>);
 }
 
@@ -55,7 +57,7 @@ describe("whisper launcher (ui-usage-dx §6 — ambient discoverability)", () =>
   });
 
   it("discoverability=\"quiet\" disables it without burning the flag", () => {
-    renderOverlay(<VendoOverlay discoverability="quiet" />);
+    renderOverlay(<VendoOverlay launcher={{}} discoverability="quiet" />);
     expect(caption()).toBeNull();
     expect(launcher().hasAttribute("data-vendo-whisper")).toBe(false);
     // A quiet visit is not an eligible visit: flipping the dial on later
@@ -66,7 +68,7 @@ describe("whisper launcher (ui-usage-dx §6 — ambient discoverability)", () =>
   it("provider-level discoverability=\"quiet\" reaches the overlay", () => {
     render(
       <VendoProvider client={client} discoverability="quiet">
-        <VendoOverlay />
+        <VendoOverlay launcher={{}} />
       </VendoProvider>,
     );
     expect(caption()).toBeNull();
@@ -79,7 +81,7 @@ describe("whisper launcher (ui-usage-dx §6 — ambient discoverability)", () =>
   });
 
   it("does not burn the flag while the overlay is open at mount; arms on close (Devin PR#365)", () => {
-    renderOverlay(<VendoOverlay defaultOpen />);
+    renderOverlay(<VendoOverlay launcher={{}} defaultOpen />);
     // Hidden behind the open overlay = never shown = must not be consumed.
     expect(caption()).toBeNull();
     expect(hasSeen("whisper")).toBe(false);
@@ -92,10 +94,10 @@ describe("whisper launcher (ui-usage-dx §6 — ambient discoverability)", () =>
   });
 
   it("arms when a quiet dial flips to default in the same session (Greptile PR#365)", () => {
-    const { rerender } = renderOverlay(<VendoOverlay discoverability="quiet" />);
+    const { rerender } = renderOverlay(<VendoOverlay launcher={{}} discoverability="quiet" />);
     expect(caption()).toBeNull();
     expect(hasSeen("whisper")).toBe(false);
-    rerender(<VendoProvider client={client}><VendoOverlay discoverability="default" /></VendoProvider>);
+    rerender(<VendoProvider client={client}><VendoOverlay launcher={{}} discoverability="default" /></VendoProvider>);
     expect(caption()).toBeTruthy();
     expect(hasSeen("whisper")).toBe(true);
   });

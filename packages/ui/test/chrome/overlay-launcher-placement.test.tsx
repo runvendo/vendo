@@ -52,8 +52,8 @@ describe("VendoOverlay launcher placement (F12)", () => {
     expect(CHROME_CSS).toContain("var(--vendo-launcher-y, 0px)");
   });
 
-  it("keeps the default untouched: bottom-right, no offset variables", () => {
-    render(<VendoProvider client={client}><VendoOverlay /></VendoProvider>);
+  it("an opted-in pill with no config lands bottom-right, no offset variables", () => {
+    render(<VendoProvider client={client}><VendoOverlay launcher={{}} /></VendoProvider>);
     expect(launcher().getAttribute("data-vendo-launcher")).toBe("bottom-right");
     expect(launcher().style.getPropertyValue("--vendo-launcher-x")).toBe("");
     expect(launcher().style.getPropertyValue("--vendo-launcher-y")).toBe("");

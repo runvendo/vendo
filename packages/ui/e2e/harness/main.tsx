@@ -1808,7 +1808,7 @@ function ArrivalDotScenario() {
       {/* The person's render, in the one gesture a spec can drive: reading the
           conversation back is what a thread render costs on the wire. */}
       <button type="button" onClick={() => void client.threads.get("thr_arrival")}>Open the conversation</button>
-      <VendoOverlay />
+      <VendoOverlay launcher={{}} />
     </VendoProvider>
   );
 }
@@ -2135,8 +2135,8 @@ function scenario(pathname: string): { title: string; theme?: Partial<VendoTheme
     case "/approval-lifecycle": return { title: "Approval — pending to settled", content: <ApprovalLifecycleScenario />, ownProvider: true };
     case "/connect-lifecycle": return { title: "Connect — pending to connected", content: <ConnectLifecycleScenario />, ownProvider: true };
     case "/thread-citations": return { title: "Thread — knowledge citations (K1)", content: <ThreadCitationsScenario />, ownProvider: true };
-    case "/overlay": return { title: "Overlay", content: <AutoOpen selector='button[aria-controls="vendo-overlay-dialog"]'><VendoOverlay /></AutoOpen> };
-    case "/overlay-manual": return { title: "Overlay — manual launcher", content: <VendoOverlay /> };
+    case "/overlay": return { title: "Overlay", content: <AutoOpen selector='button[aria-controls="vendo-overlay-dialog"]'><VendoOverlay launcher={{}} /></AutoOpen> };
+    case "/overlay-manual": return { title: "Overlay — manual launcher", content: <VendoOverlay launcher={{}} /> };
     case "/arrival-dot": return { title: "Arrival — the dot for an app nobody has seen", content: <ArrivalDotScenario />, ownProvider: true };
     case "/concurrent": return { title: "Concurrent surfaces", content: <ConcurrentScenario />, ownProvider: true };
     case "/palette": return { title: "Command palette", content: <OpenPalette /> };
@@ -2207,7 +2207,7 @@ function SignedOutScenario() {
   return (
     <VendoProvider client={signedOutClient} theme={mapleTheme}>
       <AutoOpen selector='button[aria-controls="vendo-overlay-dialog"]'>
-        <VendoOverlay />
+        <VendoOverlay launcher={{}} />
       </AutoOpen>
     </VendoProvider>
   );
