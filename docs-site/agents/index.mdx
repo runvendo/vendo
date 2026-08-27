@@ -426,9 +426,8 @@ when you put the choice to your human, rather than after they pick.
 
 **Both walkthroughs build on one file.** Init writes the `createVendo` call in
 `lib/vendo.ts` (`src/lib/vendo.ts` when the app lives under `src/`), with the
-wire route a thin handler over it. The caller resolver beside it is YOURS to
-add — init does not write it, and a chat route that imports a name nobody
-exported is a compile error on your human's first build:
+wire route a thin handler over it. Init exports the caller resolver beside it —
+verify both exports exist before you wire a chat route to them:
 
 ```ts lib/vendo.ts
 export const resolvePrincipal = (req: Request) => auth.principal(req);
@@ -536,8 +535,9 @@ the answer once they have an https origin to point it at.
    with the present user's session, and a door call has none.
 
    Top-level `principal`, `actAs`, and `oauth` are the deprecated spelling of
-   those same members: they still work, but pass one beside `auth` and
-   `createVendo` throws naming the mixed keys.
+   those same members, and `memberships` has a top-level spelling too: each
+   still works alone, but pass any of the four beside `auth` and `createVendo`
+   throws naming the mixed keys.
 
 2. **The discovery route.** The door's discovery documents live at ORIGIN-ROOT
    paths, outside `/api/vendo`, so the catch-all route never sees them and that
