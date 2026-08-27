@@ -911,19 +911,19 @@ function storeWireClient(
       },
     },
     harness: {
-      async get(appId, subject) {
+      async get(threadId, subject) {
         return field(
-          await post("harness.get", P["harness.get"], { appId, subject }),
+          await post("harness.get", P["harness.get"], { threadId, subject }),
           "state",
           "invalid harness state",
           (value) => value !== undefined,
         );
       },
-      async set(appId, subject, state) {
-        await mutate("harness.set", P["harness.set"], { appId, subject, state });
+      async set(threadId, subject, state) {
+        await mutate("harness.set", P["harness.set"], { threadId, subject, state });
       },
-      async clear(appId, subject) {
-        await mutate("harness.clear", P["harness.clear"], { appId, subject });
+      async clear(threadId, subject) {
+        await mutate("harness.clear", P["harness.clear"], { threadId, subject });
       },
     },
     // Every workspace call names its OWNER: the mount serves a whole project,
@@ -1077,11 +1077,16 @@ function storeWireClient(
       async commit(request) {
         if (!await servesTurn()) {
           const { threadId, subject, messages, title } = request.messages;
+          // The messages FIRST: their append is what upserts a thread row that a
+          // first turn has not created yet, and the harness slot is a column on
+          // that row — so landing the slot first would refuse for want of the
+          // very row this call is about to make.
+          const landed = await ops.transcripts.appendMessages!(threadId, subject, messages, { title });
           if (request.harness !== undefined) {
-            await ops.harness.set(request.harness.appId, request.harness.subject, request.harness.state);
+            await ops.harness.set(request.harness.threadId, request.harness.subject, request.harness.state);
           }
           return {
-            messages: await ops.transcripts.appendMessages!(threadId, subject, messages, { title }),
+            messages: landed,
             ...(request.audit === undefined
               ? {}
               : { audit: await ops.engine.put(request.audit.collection, request.audit.record) }),

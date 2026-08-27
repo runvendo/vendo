@@ -61,11 +61,6 @@ describe(".vendoapp interchange through createApps", () => {
     const source = await runtime.importApp(document({ forkedFrom: "app_template" }), ada);
     guard.grants[0] = { ...guard.grants[0]!, appId: source.id };
     await store.records(`app:${source.id}:invoices`).put({ id: "invoice_1", data: { total: 42 } });
-    await store.records("vendo_state").put({
-      id: `${source.id}:user_ada`,
-      data: { selected: "invoice_1" },
-      refs: { subject: "user_ada", app_id: source.id },
-    });
 
     const bytes = await runtime.exportApp(source.id, ada);
     const copy = await runtime.importApp(bytes, grace);
@@ -78,7 +73,6 @@ describe(".vendoapp interchange through createApps", () => {
     expect(await runtime.get(copy.id, ada)).toBeNull();
     expect(await runtime.get(source.id, ada)).toEqual(source);
     expect(await store.records(`app:${copy.id}:invoices`).list()).toEqual({ records: [] });
-    expect(await store.records("vendo_state").get(`${copy.id}:user_grace`)).toBeNull();
     expect(guard.grants).toHaveLength(1);
     expect(guard.grants.some((grant) => grant.appId === copy.id)).toBe(false);
     const operationOf = (event: { detail?: unknown }) => (event.detail as { operation?: string } | undefined)?.operation;

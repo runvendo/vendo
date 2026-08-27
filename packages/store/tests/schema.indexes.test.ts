@@ -94,13 +94,13 @@ describe("hot-list indexes ride the routed read path", () => {
       [[
         "vendo_threads_created_idx", "vendo_apps_created_idx", "vendo_runs_started_idx",
         "vendo_automations_created_idx",
-        "vendo_approvals_created_idx", "vendo_grants_granted_idx", "vendo_state_created_idx",
+        "vendo_approvals_created_idx", "vendo_grants_granted_idx",
         "vendo_app_grants_created_idx", "vendo_effects_at_idx", "vendo_threads_subject_created_idx",
         "vendo_runs_status_started_idx", "vendo_approvals_status_created_idx",
-        "vendo_state_subject_created_idx", "vendo_audit_app_at_idx", "vendo_grants_app_granted_idx",
+        "vendo_audit_app_at_idx", "vendo_grants_app_granted_idx",
       ]],
     );
-    expect(result.rows).toHaveLength(15);
+    expect(result.rows).toHaveLength(13);
   });
 
   it("serves the unfiltered first page from vendo_threads_created_idx", async () => {

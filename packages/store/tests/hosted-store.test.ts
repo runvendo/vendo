@@ -388,7 +388,7 @@ describe("hostedStore error mapping", () => {
       adapterFor(respond("blocked", "vendo_audit is append-only", 403)).records("vendo_audit").delete("aud_1"),
     ).rejects.toMatchObject({ code: "blocked", message: "vendo_audit is append-only" });
     await expect(
-      adapterFor(respond("validation", "bad id", 400)).records("vendo_state").delete("nope"),
+      adapterFor(respond("validation", "bad id", 400)).records("vendo_grants").delete("nope"),
     ).rejects.toMatchObject({ code: "validation", message: "bad id" });
     await expect(
       adapterFor(respond("conflict", "belongs to another subject", 409)).records("vendo_threads").put({ id: "thr_1", data: {} }),
@@ -761,12 +761,6 @@ async function demoHostJourney(store: VendoStore): Promise<void> {
   });
   await expect(audit.delete("aud_journey")).rejects.toMatchObject({ code: "blocked" });
 
-  // State enforces the <appId>:<subject> id grammar on BOTH engines.
-  const state = store.records("vendo_state");
-  await state.put({ id: `app_budget:${subject}`, data: { count: 3 } });
-  expect((await state.get(`app_budget:${subject}`))?.data).toEqual({ count: 3 });
-  await expect(state.put({ id: "no-grammar", data: {} })).rejects.toMatchObject({ code: "validation" });
-
   // Blobs: raw bytes round-trip under the app namespace.
   const blobs = store.blobs("app:app_budget:uploads");
   const payload = encoder.encode("receipt bytes");
@@ -1006,9 +1000,9 @@ const driveEveryOp = async (ops: ReturnType<typeof wireFake>["ops"]): Promise<vo
   await ops.transcripts.deleteThread("thr_1");
   await ops.transcripts.putMessage("thr_1", { role: "user" });
   await ops.transcripts.recordAnswer("thr_1", { text: "done" });
-  await ops.harness.get("app_1", "sub_1");
-  await ops.harness.set("app_1", "sub_1", { step: 3 });
-  await ops.harness.clear("app_1", "sub_1");
+  await ops.harness.get("thr_1", "sub_1");
+  await ops.harness.set("thr_1", "sub_1", { step: 3 });
+  await ops.harness.clear("thr_1", "sub_1");
   await ops.workspace.index();
   await ops.workspace.read(["/a.md"]);
   await ops.workspace.commit([{ path: "/a.md", data: "hi" }]);
@@ -1241,21 +1235,21 @@ describe("hostedStoreOps — the 48-op wire client", () => {
     expect(calls[5]!.body).toEqual({ threadId: "thr_1", answer: { text: "done" } });
   });
 
-  it("harness: get/set/clear keyed by app and subject", async () => {
+  it("harness: get/set/clear keyed by thread and subject", async () => {
     const { calls, ops } = wireFake(ALL_BODIES);
 
-    expect(await ops.harness.get("app_1", "sub_1")).toEqual({ step: 3 });
-    expect(calls[0]!.body).toEqual({ appId: "app_1", subject: "sub_1" });
+    expect(await ops.harness.get("thr_1", "sub_1")).toEqual({ step: 3 });
+    expect(calls[0]!.body).toEqual({ threadId: "thr_1", subject: "sub_1" });
 
-    await ops.harness.set("app_1", "sub_1", { step: 4 });
-    expect(calls[1]!.body).toEqual({ appId: "app_1", subject: "sub_1", state: { step: 4 } });
+    await ops.harness.set("thr_1", "sub_1", { step: 4 });
+    expect(calls[1]!.body).toEqual({ threadId: "thr_1", subject: "sub_1", state: { step: 4 } });
 
-    await ops.harness.clear("app_1", "sub_1");
-    expect(calls[2]!.body).toEqual({ appId: "app_1", subject: "sub_1" });
+    await ops.harness.clear("thr_1", "sub_1");
+    expect(calls[2]!.body).toEqual({ threadId: "thr_1", subject: "sub_1" });
 
     // An absent state is null at the seam.
     const absent = wireFake({ [door("harness.get")]: { state: null } });
-    expect(await absent.ops.harness.get("app_1", "sub_1")).toBeNull();
+    expect(await absent.ops.harness.get("thr_1", "sub_1")).toBeNull();
   });
 
   it("workspace: index/read/commit/history, caller-owned commit key", async () => {
@@ -1689,7 +1683,7 @@ describe("hostedStoreOps — the 48-op wire client", () => {
       .rejects.toThrow(/invalid claim/);
     await expect(answering({ keys: [1] }).blobs.list("uploads")).rejects.toThrow(/invalid blob list/);
     await expect(answering({ blob: {} }).blobs.get("uploads", "a.png")).rejects.toThrow(/invalid blob/);
-    await expect(answering({}).harness.get("app_1", "sub_1")).rejects.toThrow(/invalid harness state/);
+    await expect(answering({}).harness.get("thr_1", "sub_1")).rejects.toThrow(/invalid harness state/);
     await expect(answering({}).workspace.index()).rejects.toThrow(/invalid entries/);
     await expect(answering({ files: [] }).workspace.read(["/a.md"])).rejects.toThrow(/invalid workspace read/);
     await expect(answering({}).lifecycle.erase({ subject: "s" })).rejects.toThrow(/invalid report/);
@@ -1815,7 +1809,7 @@ describe("hostedStore keeps its StoreAdapter surface and gains the op surface", 
     const store = hosted(fakeConsole());
     const unserved: Array<[string, () => Promise<unknown>]> = [
       ["transcripts", () => store.ops.transcripts.listThreads()],
-      ["harness", () => store.ops.harness.get("app_1", "sub_1")],
+      ["harness", () => store.ops.harness.get("thr_1", "sub_1")],
       ["workspace", () => store.ops.workspace.index()],
       ["retention", () => store.ops.retention!.quarantine("vendo_runs", "2026-01-01T00:00:00.000Z")],
       ["lifecycle.promote", () => store.ops.lifecycle.promote("app_1", "org_1")],

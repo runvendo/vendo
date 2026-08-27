@@ -19,7 +19,8 @@ export function text(value: unknown): string {
 
 /** Keyset timestamps compare at millisecond precision. The timestamptz cursor
  *  columns can hold microseconds — the §2 table map is public (direct host
- *  SQL, vendo_state's DEFAULT now()), and caller-supplied ISO timestamps
+ *  SQL, and DEFAULT now() on the columns that carry one), and caller-supplied
+ *  ISO timestamps
  *  (audit `at`, run `startedAt`) are z.string().datetime()-validated, which
  *  accepts sub-ms digits — while cursors round-trip through JS Dates (ms).
  *  Comparing at full precision against a truncated cursor silently skips rows

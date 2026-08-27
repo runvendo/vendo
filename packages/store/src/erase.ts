@@ -44,7 +44,6 @@ export const ERASE_TABLES = [
   "vendo_apps",
   "vendo_records",
   "vendo_blobs",
-  "vendo_state",
   "vendo_threads",
   "vendo_thread_messages",
   "vendo_effects",
@@ -172,7 +171,7 @@ export function eraseStore(store: VendoStore, options: { files: FilesAdapter }):
 
   /** App-scoped data shared by the subject and app cascades: the app's record
       collections and blob namespaces (`app:<appId>:...` — §3's naming
-      convention) and its per-user state. */
+      convention). */
   const eraseAppData = async (report: EraseReport, appId: string): Promise<void> => {
     const prefix = `app:${escapeLike(appId)}:%`;
     await del(report, "vendo_records", "collection LIKE $1 ESCAPE '\\'", [prefix]);
@@ -186,7 +185,6 @@ export function eraseStore(store: VendoStore, options: { files: FilesAdapter }):
     // side — so the two can never drift apart.
     await del(report, "vendo_records", "collection = $1", [engineAppHistory(appId)]);
     await del(report, "vendo_blobs", "namespace LIKE $1 ESCAPE '\\'", [prefix]);
-    await del(report, "vendo_state", "app_id = $1", [appId]);
     // Build contract §9.2: an app that is gone grants nothing to anyone.
     await del(report, "vendo_app_grants", "app_id = $1", [appId]);
     // Whatever a retention sweep already lifted out of those drawers. Two
@@ -222,11 +220,6 @@ export function eraseStore(store: VendoStore, options: { files: FilesAdapter }):
       await del(report, "vendo_apps", "subject = $1", [subject]);
       for (const appId of owned) await eraseAppData(report, appId);
 
-      // Ordering matters for accurate counts: the app cascade above already
-      // removed the subject's own state rows, so the subject-level deletes
-      // below only count rows the cascade did not reach (e.g. this subject's
-      // state under ANOTHER owner's app).
-      await del(report, "vendo_state", "subject = $1", [subject]);
       // v6: the transcript rows hang off the thread row, which owns the subject.
       // Delete them BEFORE the thread row, or the join that identifies them is
       // already gone and the messages outlive the erase.

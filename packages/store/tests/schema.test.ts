@@ -10,8 +10,7 @@ const CONTRACT_COLUMNS: Record<string, string[]> = {
   vendo_apps: ["id", "subject", "enabled", "doc", "created_at", "updated_at"],
   vendo_records: ["collection", "id", "data", "refs", "created_at", "updated_at", "revision"],
   vendo_blobs: ["namespace", "key", "bytes", "content_type", "created_at"],
-  vendo_state: ["app_id", "subject", "data", "updated_at"],
-  vendo_threads: ["id", "subject", "created_at", "updated_at"],
+  vendo_threads: ["id", "subject", "harness_state", "created_at", "updated_at"],
   vendo_thread_messages: ["thread_id", "id", "seq", "message", "revision", "created_at", "updated_at"],
   vendo_effects: ["key", "outcome", "at"],
   vendo_grants: ["id", "subject", "tool", "descriptor_hash", "scope", "duration", "app_id", "automation_id", "source", "granted_at", "revoked_at", "expires_at"],
@@ -50,17 +49,18 @@ for (const backend of backends()) {
     it("stores schema_version and a boot_id in vendo_meta", async () => {
       const rows = await made.sql("SELECT key, value FROM vendo_meta ORDER BY key");
       expect(rows).toEqual(expect.arrayContaining([
-        expect.objectContaining({ key: "schema_version", value: 11 }),
+        expect.objectContaining({ key: "schema_version", value: 12 }),
         expect.objectContaining({ key: "boot_id" }),
       ]));
       expect(rows.find((row) => row.key === "boot_id")?.value).toEqual(expect.any(String));
     });
 
-    it("lands a fresh database directly on schema version 11", async () => {
-      // A brand-new DB never runs the v2 backfill's DELETE against real data; it
-      // just records the current version. (beforeAll already ran ensureSchema.)
+    it("lands a fresh database directly on schema version 12", async () => {
+      // A brand-new DB never had `vendo_state`, so the v12 backfill below is a
+      // no-op on it; it just records the current version. (beforeAll already ran
+      // ensureSchema.)
       const version = (await made.sql("SELECT value FROM vendo_meta WHERE key = 'schema_version'"))[0]?.value;
-      expect(version).toBe(11);
+      expect(version).toBe(12);
     });
 
     it("keeps boot_id stable across a close and reopen", async () => {
@@ -80,7 +80,7 @@ for (const backend of backends()) {
 
       await made.store.ensureSchema();
 
-      expect((await made.sql("SELECT value FROM vendo_meta WHERE key = 'schema_version'"))[0]?.value).toBe(11);
+      expect((await made.sql("SELECT value FROM vendo_meta WHERE key = 'schema_version'"))[0]?.value).toBe(12);
       const rows = await made.sql(
         `SELECT table_name FROM information_schema.tables
          WHERE table_schema = current_schema() AND table_name IN ('vendo_mcp_clients', 'vendo_mcp_grants')
@@ -92,27 +92,53 @@ for (const backend of backends()) {
       ]);
     });
 
-    it("migrates a version 2 database to the current version without re-running the v2 backfill", async () => {
-      // A v2 database may hold a LIVE vendo_records row that happens to match the
-      // v2 backfill predicate; the 2→3 upgrade must not relocate/DELETE it again.
-      await made.sql("UPDATE vendo_meta SET value = '2'::jsonb WHERE key = 'schema_version'");
+    /** v12: harness continuity moves off `vendo_state` and onto the thread row,
+     *  and the table it rode is DROPPED. The migration has to carry a live
+     *  bookmark across — a conversation whose session ref was lost would re-seed
+     *  its harness on the next turn, which is the exact failure durable state
+     *  exists to prevent — while taking nothing it has no right to. */
+    it("migrates a version 11 database: harness state moves onto the thread row, vendo_state is dropped", async () => {
+      // Rebuild the v11 world: the table, and a thread whose slot is still empty.
+      await made.sql(`CREATE TABLE vendo_state (
+        app_id text NOT NULL, subject text NOT NULL, data jsonb NOT NULL,
+        updated_at timestamptz NOT NULL, created_at timestamptz DEFAULT now(),
+        PRIMARY KEY (app_id, subject)
+      )`);
       await made.sql(
-        `INSERT INTO vendo_records (collection, id, data, created_at, updated_at)
-         VALUES ('vendo_state', 'app_live:subject_live', '{"live":true}'::jsonb, now(), now())
-         ON CONFLICT DO NOTHING`,
+        `INSERT INTO vendo_threads (id, subject, created_at, updated_at)
+         VALUES ('thr_mig', 'user_mig', now(), now()), ('thr_mig_other', 'user_other', now(), now())`,
       );
+      await made.sql("UPDATE vendo_threads SET harness_state = NULL");
+      await made.sql(
+        `INSERT INTO vendo_state (app_id, subject, data, updated_at) VALUES
+           ('harness_state:thr_mig',       'user_mig',   '{"harness":"claude-code","value":"native_1"}'::jsonb, now()),
+           ('harness_state:thr_mig_other', 'wrong_user', '{"harness":"claude-code","value":"native_2"}'::jsonb, now()),
+           ('app_legacy',                  'user_mig',   '{"count":7}'::jsonb, now())`,
+      );
+      await made.sql("UPDATE vendo_meta SET value = '11'::jsonb WHERE key = 'schema_version'");
 
       await made.store.ensureSchema();
 
-      expect((await made.sql("SELECT value FROM vendo_meta WHERE key = 'schema_version'"))[0]?.value).toBe(11);
-      const survivor = await made.sql(
-        "SELECT id FROM vendo_records WHERE collection = 'vendo_state' AND id = 'app_live:subject_live'",
-      );
-      expect(survivor).toEqual([{ id: "app_live:subject_live" }]);
-      await made.sql("DELETE FROM vendo_records WHERE collection = 'vendo_state' AND id = 'app_live:subject_live'");
+      expect((await made.sql("SELECT value FROM vendo_meta WHERE key = 'schema_version'"))[0]?.value).toBe(12);
+      // The live bookmark arrived, VERBATIM — the payload is what the reader
+      // decodes, so a reshaped one is a lost session.
+      expect(await made.sql("SELECT harness_state FROM vendo_threads WHERE id = 'thr_mig'"))
+        .toEqual([{ harness_state: { harness: "claude-code", value: "native_1" } }]);
+      // A row whose subject disagreed with its thread's owner was unreachable by
+      // every read path and by the erase cascade, so it is left to die with the
+      // table rather than promoted onto a row it never belonged to.
+      expect(await made.sql("SELECT harness_state FROM vendo_threads WHERE id = 'thr_mig_other'"))
+        .toEqual([{ harness_state: null }]);
+      // And the table is gone — with the per-app tenant that had no writer left.
+      expect(await made.sql(
+        `SELECT table_name FROM information_schema.tables
+         WHERE table_schema = current_schema() AND table_name = 'vendo_state'`,
+      )).toEqual([]);
+
+      await made.sql("DELETE FROM vendo_threads WHERE id IN ('thr_mig', 'thr_mig_other')");
     });
 
-    it("creates all 24 contract tables with every contracted key column", async () => {
+    it("creates all 23 contract tables with every contracted key column", async () => {
       const rows = await made.sql(
         "SELECT table_name, column_name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name LIKE 'vendo_%'",
       );
@@ -136,8 +162,10 @@ for (const backend of backends()) {
       // vendo_usage — the meter a host's limits policy decides on, one row per
       // metered action (01 §12 StoreOps.usage). v11 adds vendo_automations —
       // the automation record itself, first-class and principal-owned, which is
-      // also what re-keys vendo_runs off its app.
-      expect(actual.size).toBe(24);
+      // also what re-keys vendo_runs off its app. v12 DROPS vendo_state: its one
+      // live tenant (a conversation's harness continuity) is a column on
+      // vendo_threads now, and its other tenant had no writer left.
+      expect(actual.size).toBe(23);
       for (const [table, columns] of Object.entries(CONTRACT_COLUMNS)) {
         expect(actual.has(table), table).toBe(true);
         for (const column of columns) expect(actual.get(table)?.has(column), `${table}.${column}`).toBe(true);
@@ -151,7 +179,7 @@ for (const backend of backends()) {
         ["vendo_apps", "doc"],
         ["vendo_records", "data"],
         ["vendo_records", "refs"],
-        ["vendo_state", "data"],
+        ["vendo_threads", "harness_state"],
         ["vendo_thread_messages", "message"],
         ["vendo_effects", "outcome"],
         ["vendo_grants", "scope"],

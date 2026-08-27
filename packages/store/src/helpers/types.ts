@@ -1,5 +1,4 @@
 import {
-  type AppId,
   type ApprovalId,
   type ApprovalRequest,
   type AutomationId,
@@ -58,11 +57,3 @@ export interface RunRow {
   finishedAt?: IsoDateTime;
 }
 
-/** 02-store §3 — one per-user-per-app state singleton row. */
-export interface StateRow {
-  appId: AppId;
-  subject: string;
-  data: Json;
-  createdAt: IsoDateTime;
-  updatedAt: IsoDateTime;
-}

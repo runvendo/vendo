@@ -42,7 +42,7 @@ import type { LanguageModel, UIMessage } from "ai";
 import type { Principal, ToolDescriptor, ToolRegistry } from "@vendoai/core";
 import { defineHarness } from "@vendoai/harnesses";
 import { claudeCode } from "@vendoai/harnesses/claude-code";
-import { createStore, type VendoStore } from "@vendoai/store";
+import { createStore, maybeDbFor, type VendoStore } from "@vendoai/store";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createVendo, type Vendo } from "../src/server.js";
 
@@ -332,10 +332,16 @@ live("claudeCode() through createVendo", () => {
     };
 
     await runTurn("m1", "Remember the number 5591. Just say ok.");
-    const stored = await store.records("vendo_state").list({});
-    console.log("[composed state]", JSON.stringify(stored.records.map((record) => record.id)));
-    // No new table: the state rides vendo_state under a namespaced app id.
-    expect(stored.records.some((record) => String(record.id).includes("harness_state:thr_durable"))).toBe(true);
+    // Read the column, not `harnessStateStore().get` — a read under the wrong
+    // harness name DESTROYS the slot (§1.3), which would sabotage turn 2 below.
+    const db = maybeDbFor(store);
+    if (db === undefined) throw new Error("expected a PGlite-backed store");
+    const stored = await db.query(
+      "SELECT harness_state FROM vendo_threads WHERE id = $1", ["thr_durable"],
+    );
+    console.log("[composed state]", JSON.stringify(stored.rows[0]?.["harness_state"]));
+    // The slot is a column on the thread's own row (v12), not a collection.
+    expect(stored.rows[0]?.["harness_state"]).toMatchObject({ harness: "claude-code" });
 
     const second = await runTurn("m2", "What number did I ask you to remember? Reply with digits only.");
     console.log("[composed resume]", JSON.stringify({ tail: second.slice(-600) }));

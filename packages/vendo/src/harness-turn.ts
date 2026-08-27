@@ -52,7 +52,6 @@ import {
 import type { VendoGuard } from "@vendoai/guard";
 import {
   eraseStore,
-  harnessStateKey,
   harnessStateRow,
   harnessStateStore,
   maybeDbFor,
@@ -718,7 +717,7 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
           // The slot is keyed by the thread's OWNER. A thread that is not this
           // caller's reads as a missing slot and is refused by `resolve`
           // moments later, so the guess is either right or discarded.
-          harness: { appId: harnessStateKey(threadId), subject },
+          harness: { threadId, subject },
         })
         : undefined;
       // The thread is resolved through the SHIPPED repository: same id pattern,
@@ -979,7 +978,7 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
               messages: { threadId: thread.id, subject: thread.subject, messages },
               ...(state === undefined ? {} : {
                 harness: {
-                  appId: harnessStateKey(thread.id),
+                  threadId: thread.id,
                   subject: thread.subject,
                   state: harnessStateRow(config.harness.name, state),
                 },

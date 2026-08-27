@@ -2,7 +2,6 @@ import { VendoError, type Json, type Principal } from "@vendoai/core";
 import { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { backends, type MadeBackend } from "../src/backends.test-util.js";
-import { harnessStateKey } from "../src/harness-state.js";
 // The store deliberately does not depend on `ai` (src/helpers/thread-messages.ts),
 // so its own generic stand-in plays the runtime's `UIMessage` here.
 import {
@@ -257,9 +256,12 @@ for (const backend of backends()) {
  * transactions, so the interleave is unreachable there. Real Postgres only,
  * which the store shards already set POSTGRES_URL for.
  *
- * The overlap is FORCED, not raced: a third connection holds the `vendo_state`
- * row the cascade deletes LAST, so the delete parks with the thread row already
- * gone and not yet committed — precisely the window that strands a row.
+ * The overlap is FORCED, not raced: a third connection holds the
+ * `vendo_thread_messages` row the cascade deletes LAST, so the delete parks with
+ * the thread row already gone and not yet committed — precisely the window that
+ * strands a row. (Before v12 the brake sat on the thread's `vendo_state` row,
+ * which the cascade swept after the messages; harness state is a column on the
+ * thread row now, so the message rows are what the cascade ends on.)
  */
 describe.runIf(process.env["POSTGRES_URL"])("a concurrent transcript write cannot escape the cascade", () => {
   const url = process.env["POSTGRES_URL"]!;
@@ -296,16 +298,11 @@ describe.runIf(process.env["POSTGRES_URL"])("a concurrent transcript write canno
     )
   ).rows.length > 0;
 
-  /** An owned thread with one message, plus the harness-state row the cascade
-   *  deletes last — that row is the parking brake. */
+  /** An owned thread with one message — that message row is the parking brake,
+   *  because it is what the cascade deletes last. */
   const seed = async (id: string): Promise<void> => {
     await threadStore(store).put(alice, { id, messages: [] });
     await threadMessageStore<UIMessage>(store).upsert(alice, id, message("m_seed", "before"), 0);
-    await admin.query(
-      `INSERT INTO vendo_state (app_id, subject, data, created_at, updated_at)
-       VALUES ($1, $2, '{}'::jsonb, now(), now())`,
-      [harnessStateKey(id), alice.subject],
-    );
   };
 
   /** Run `write` while the cascade is parked, then let the cascade finish.
@@ -314,10 +311,10 @@ describe.runIf(process.env["POSTGRES_URL"])("a concurrent transcript write canno
     const brake = new Client({ connectionString: url });
     await brake.connect();
     await brake.query("BEGIN");
-    await brake.query("SELECT 1 FROM vendo_state WHERE app_id = $1 FOR UPDATE", [harnessStateKey(id)]);
+    await brake.query("SELECT 1 FROM vendo_thread_messages WHERE thread_id = $1 FOR UPDATE", [id]);
 
     const deleting = threadStore(store).delete(alice, id);
-    await until(() => blockedOn("vendo_state"));
+    await until(() => blockedOn("vendo_thread_messages"));
 
     let settled = false;
     const writing = write()
@@ -325,7 +322,9 @@ describe.runIf(process.env["POSTGRES_URL"])("a concurrent transcript write canno
       .finally(() => { settled = true; });
     // The write has either finished (it escaped) or parked on the thread row's
     // own lock (it did not). Either way the window is open; release the brake.
-    await until(async () => settled || await blockedOn("vendo_thread_messages"));
+    // Matched on `vendo_threads`, which is NOT a substring of
+    // `vendo_thread_messages` — so this cannot re-detect the parked cascade.
+    await until(async () => settled || await blockedOn("vendo_threads"));
 
     await brake.query("ROLLBACK");
     await brake.end();

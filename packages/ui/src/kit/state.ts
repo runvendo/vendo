@@ -8,8 +8,7 @@
  * way `reshape` does — instead of being written twice.
  *
  * Semantics (the renderer's, unchanged): one namespace per instance, `Json`
- * values, last write wins per key, other keys stand, and `onChange` sees the
- * whole next state so a host can persist it.
+ * values, last write wins per key, and other keys stand.
  */
 
 import type { Json } from "@vendoai/core";
@@ -19,9 +18,7 @@ import { useCallback, useRef, useState } from "react";
 export type KeyedState = Record<string, Json>;
 
 /** The store, as a hook: `[state, setKey]`. */
-export function useKeyedState(
-  onChange?: (state: KeyedState) => void,
-): [KeyedState, (key: string, value: Json) => void] {
+export function useKeyedState(): [KeyedState, (key: string, value: Json) => void] {
   const [state, setState] = useState<KeyedState>({});
   // The ref carries the pending value so two writes in one tick compose
   // instead of the second overwriting the first.
@@ -30,7 +27,6 @@ export function useKeyedState(
     const next = { ...latest.current, [key]: value };
     latest.current = next;
     setState(next);
-    onChange?.(next);
-  }, [onChange]);
+  }, []);
   return [state, setKey];
 }

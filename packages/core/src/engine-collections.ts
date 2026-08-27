@@ -13,7 +13,10 @@ import { VendoError } from "./errors.js";
 // is served by the host and holds no store credential of its own.
 // 10: dropped `vendo_egress_approval` with the persistent-machine egress flow —
 // a build box's registry egress is granted for the build minute, not stored.
-export const ENGINE_ALLOWLIST_VERSION = 10;
+// 11: dropped `vendo_state` with the table itself (store schema v12) — a
+// conversation's harness continuity is a column on `vendo_threads` now, and the
+// per-app state the collection's door served had no writer left.
+export const ENGINE_ALLOWLIST_VERSION = 11;
 
 /** What a collection HOLDS. `knowledge` is the retrieval corpus — documents and
     the chunks an engine mints from them; everything else is `storage`.
@@ -57,7 +60,6 @@ export const ENGINE_COLLECTION_REGISTRY = {
   vendo_runs: { kind: "storage", indexed: ["started_at"] },
   vendo_apps: { kind: "storage" },
   vendo_automations: { kind: "storage" }, // AUTOMATIONS, packages/automations/src/types.ts:20
-  vendo_state: { kind: "storage" },
   vendo_effects: { kind: "storage" },
   vendo_app_grants: { kind: "storage" },
 

@@ -5,8 +5,8 @@
  * its prompt from, and that crosses four owners to get there: `vendo()` writes it
  * into `turn.state`, the harness runtime buffers it and saves it at turn end
  * (`runtime.ts` `onFinish` → `saveHarnessState`), the REAL
- * `harnessStateStore(store)` puts it in `vendo_state`, and the next turn's
- * projection reads it back. A suite that mocked the store would let the writer and
+ * `harnessStateStore(store)` puts it on the thread's own row
+ * (`vendo_threads.harness_state`), and the next turn's projection reads it back. A suite that mocked the store would let the writer and
  * the reader agree about a shape neither ships, which is exactly the failure this
  * repo has already paid for once.
  *
