@@ -342,7 +342,10 @@ const createEditAssembler = (
     instruction: string,
     ctx: RunContext,
   ): Promise<
-    | { kind: "assembled"; app: AppDocument }
+    /** `say` is the run's own closing words, and it travels for the same reason
+     *  the create arm's does: only the thing that changed the screen knows what
+     *  is on it now. */
+    | { kind: "assembled"; app: AppDocument; say?: string }
     /** The CHANGE needs the builder — the escalation ladder, from an app that
      *  already exists. `why` is the escalating agent's own one line; the
      *  document is untouched and still serving. */
@@ -390,7 +393,11 @@ const createEditAssembler = (
     // document every other door hands out — the row is the answer and it must
     // read identically wherever it is read.
     try {
-      return { kind: "assembled", app: await requireOwned(appId, ctx) };
+      return {
+        kind: "assembled",
+        app: await requireOwned(appId, ctx),
+        ...(outcome.say === undefined ? {} : { say: outcome.say }),
+      };
     } catch (error) {
       // Only a MISSING row means nothing rendered. A store that could not answer
       // has said nothing about the screen — the save landed — so reporting it as

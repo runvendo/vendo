@@ -186,6 +186,8 @@ async function tempStore(): Promise<VendoStore> {
 interface Walked {
   /** What the calling agent got back from `vendo_make` — words, never UI. */
   result: ToolResult | undefined;
+  /** The second `vendo_make`, naming the app the first one made: the EDIT arm. */
+  edited: ToolResult | undefined;
   /** Everything that crossed the wire to the surface. */
   chunks: Array<Record<string, unknown>>;
   vendo: ReturnType<typeof createVendo>;
@@ -208,10 +210,14 @@ async function walk(options: {
   review?: LanguageModel;
   /** This host's own design rules, exactly as a deployment sets them. */
   designRules?: string;
+  /** A follow-up ask, aimed at the app the first call made — the EDIT arm of the
+   *  same door, driven by the same scripted model. */
+  then?: string;
 }): Promise<Walked> {
   const store = await tempStore();
   const model = scripted(options.turns);
   let result: ToolResult | undefined;
+  let edited: ToolResult | undefined;
   const harness = defineHarness({
     name: "make-probe",
     async *run(turn) {
@@ -226,6 +232,10 @@ async function walk(options: {
       result = await turn.tools.call(VENDO_MAKE_TOOL, {
         request: options.request ?? "show me what I spent this month",
       });
+      if (options.then !== undefined) {
+        const made = makeReceiptSchema.parse((result as { output: unknown }).output);
+        edited = await turn.tools.call(VENDO_MAKE_TOOL, { app: made.id, request: options.then });
+      }
       yield { type: "text", delta: "ok" };
     },
   });
@@ -250,7 +260,7 @@ async function walk(options: {
     .split("\n\n")
     .filter((block) => block.startsWith("data: ") && !block.includes("[DONE]"))
     .map((block) => JSON.parse(block.slice("data: ".length)) as Record<string, unknown>);
-  return { result, chunks, vendo, model };
+  return { result, edited, chunks, vendo, model };
 }
 
 describe("vendo_make routed through the screen agent (blueprint §1 point 2)", () => {
@@ -405,6 +415,53 @@ describe("vendo_make routed through the screen agent (blueprint §1 point 2)", (
     expect(walked.chunks.filter((chunk) => chunk["type"] === "data-vendo-view")).toHaveLength(0);
     expect(walked.model.calls).toBe(2);
   }, 60_000);
+
+  /**
+   * THE EDIT ARM ANSWERS THE SAME WAY THE CREATE ARM DOES.
+   *
+   * Live 2026-08-27 (TaxDome, six consecutive runs): a `vendo_make` naming an
+   * `app` answered `"<name> is updated."` and `"I couldn't make that change to
+   * <name>."` — the front door composing a sentence out of the app's name, which
+   * is exactly the shape the create arm was cured of. Handed a title and no
+   * facts, the calling agent invented the rest: it reported a per-client document
+   * tracker "still intact" over a stage-by-assignee table it had never seen.
+   *
+   * Both halves are the seam and neither is stubbed: the words are written by the
+   * screen agent at the far end of a REAL edit (real store, real floor, real
+   * paint), and read back off the receipt the calling agent actually got.
+   */
+  it("relays the builder's own words on an EDIT, and the reason a refused one failed", async () => {
+    const landed = await walk({
+      then: "add the total for the month",
+      turns: [
+        call("save_app", { content: SPENDING }, "c1"),
+        speak("Your spending for this month is on your screen."),
+        // The edit's own drive, on the same scripted model.
+        call("save_app", { content: SPENDING.replace("This month", "This month, totalled") }, "c2"),
+        speak("The month's total is on it now — nothing else moved."),
+      ],
+    });
+    const changed = makeReceiptSchema.parse((landed.edited as { output: unknown }).output);
+    expect(changed.status).toBe("ready");
+    expect(changed.say).toBe("The month's total is on it now — nothing else moved.");
+    expect(changed.say).not.toBe("Spending is updated.");
+
+    // …and a change the floor refuses says WHY, in the floor's own sentences,
+    // instead of a name and a shrug.
+    const refused = await walk({
+      then: "add the total for the month",
+      turns: [
+        call("save_app", { content: SPENDING }, "c1"),
+        speak("Your spending for this month is on your screen."),
+        call("save_app", { content: LYING }, "c2"),
+        speak("done"),
+      ],
+    });
+    const declined = makeReceiptSchema.parse((refused.edited as { output: unknown }).output);
+    expect(declined.status).toBe("failed");
+    expect(declined.say).toContain("I couldn't make that change to Spending — ");
+    expect(declined.say).toContain("nope_notATool");
+  }, 120_000);
 });
 
 /**

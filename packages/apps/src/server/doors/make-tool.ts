@@ -267,13 +267,25 @@ const changeExistingApp = async (
   if (result.automation !== undefined && stream !== undefined) {
     publishAutomationCard(stream, result.automation);
   }
+  // THE BUILDER'S OWN WORDS on this arm too (`make-receipt.ts` law 2). The create
+  // arm has relayed them since the front door stopped composing from the app's
+  // name alone; this one never did, so every landed edit answered
+  // "<name> is updated." and every refused one "I couldn't make that change to
+  // <name>" — a title and no facts, which is precisely what the calling agent
+  // invents around. Live 2026-08-27 (TaxDome): told only that, it reported a
+  // per-client document tracker "still intact" over a stage-by-assignee table.
+  // The refusal keeps its own sentence — the floor's lines say what is wrong with
+  // the change, and the builder's last words describe the screen it did not
+  // change.
+  const why = result.issues?.join(" ").trim();
   return receipt({
     id: result.app.id,
     title: result.app.name,
     status: result.failure === undefined ? "ready" : "failed",
     say: result.failure === undefined
-      ? `${result.app.name} is updated.`
-      : `I couldn't make that change to ${result.app.name}.`,
+      ? result.say ?? `${result.app.name} is updated.`
+      : `I couldn't make that change to ${result.app.name}${
+        why === undefined || why === "" ? "." : ` — ${why}`}`,
   });
 };
 

@@ -155,7 +155,7 @@ export interface AppsRuntimeContext {
     instruction: string,
     ctx: RunContext,
   ): Promise<
-    | { kind: "assembled"; app: AppDocument }
+    | { kind: "assembled"; app: AppDocument; say?: string }
     | { kind: "escalate"; why: string }
     | { kind: "failed"; issues: string[] }
   >;

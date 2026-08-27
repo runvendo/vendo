@@ -362,6 +362,7 @@ const createEditDoor = (
     return ({
       app,
       version,
+      ...(edited.say === undefined ? {} : { say: edited.say }),
       ...(issues.length === 0 ? {} : { issues }),
       ...(automation === undefined ? {} : { automation }),
       ...(graduated === undefined ? {} : { graduated }),

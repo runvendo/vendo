@@ -260,6 +260,10 @@ export interface AppsConfig {
 export interface EditResult {
   app: AppDocument;
   version: VersionEntry;
+  /** What the assembling agent SAID when it finished this edit — its own closing
+   *  words, verbatim (`ScreenOutcome.say`), which `vendo_make` puts in the
+   *  receipt's `say`. Absent when the run said nothing; the door falls back. */
+  say?: string;
   issues?: string[];
   /** Additive failure detail: when present, no edit was persisted. */
   failure?: EditFailure;
