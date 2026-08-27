@@ -6,7 +6,7 @@ description: "Point the agent at an MCP server or any OpenAPI document and its o
 
 ## Where tools come from
 
-`vendo sync` reads **your** API. A connector reads someone else's at boot and hands the result to the same registry.
+A connector is an outside API your **deployment** brings, under one credential **you** hold. `vendo sync` reads your own API; a connector reads someone else's at boot and hands the result to the same registry.
 
 ```mermaid
 flowchart LR
@@ -24,10 +24,6 @@ flowchart LR
 ```
 
 Connector tools are ordinary tools. They collide-check against your own by name, they take corrections in `.vendo/overrides.json`, and every call goes through the guard.
-
-<Note>
-  For per-user OAuth into Gmail, Slack, or GitHub, use [connected accounts](/capabilities/connected-accounts). A connector carries one credential you control, not one per user.
-</Note>
 
 ## Any REST API with a spec
 
@@ -120,7 +116,4 @@ An MCP connector with a resolver keeps one protocol session per subject, so a se
 | A connector's static `headers` | You, once, at boot | Yours — the whole deployment shares it |
 | A connector's [headers resolver](#one-credential-per-user) | You, once, at boot | Whatever you hand back for that principal |
 | [Connected accounts](/capabilities/connected-accounts) | Each user, through one OAuth popup | Theirs — the broker holds it and runs the call |
-
-<Warning>
-  [Tenant connectors](/capabilities/tenant-connectors) have no per-user path. The token an org pastes at registration is vaulted once for that org and rides static headers, so every member of that org calls with the same credential.
-</Warning>
+| [Tenant connectors](/capabilities/tenant-connectors) | One of your customer companies, by pasting a token | That company's — one token, shared by all its members |

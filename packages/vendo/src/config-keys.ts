@@ -46,6 +46,7 @@ export const CREATE_VENDO_CONFIG_KEYS = [
   "harness",
   "knowledge",
   "connectors",
+  "connectedAccounts",
   "connections",
   "actAs",
   "serverActions",
@@ -116,8 +117,8 @@ export const REMOVED_CONFIG_KEYS: Readonly<Record<string, string>> = {
   judge: "`judge` is gone: use `guard: guard({ judge })` from @vendoai/vendo/server.",
   approvals: "`approvals` is gone: use `guard: guard({ approvals })` from @vendoai/vendo/server.",
   connectorApps:
-    "`connectorApps` is gone: name the toolkits in `connectors` itself — `connectors: [\"gmail\", \"slack\"]` "
-    + "(strings and connector objects are one list now).",
+    "`connectorApps` is gone: name the services your users connect in `connectedAccounts` — "
+    + "`connectedAccounts: [\"gmail\", \"slack\"]` (`connectors` carries connector objects).",
 };
 
 /** The `agent:` grab-bag members, and where each one went. Reported together
@@ -169,6 +170,20 @@ export function resetDeprecationWarnings(): void {
   warned.clear();
 }
 
+/** Say a deprecation once per key per process. Exported because the shims that
+ *  are VALUE-shaped rather than key-shaped — a string where a `Connector` now
+ *  belongs — live where the value is read, and must share this one set so
+ *  `resetDeprecationWarnings` still reaches them. */
+export function warnDeprecatedOnce(
+  key: string,
+  message: string,
+  warn: (message: string) => void = (message) => console.warn(message),
+): void {
+  if (warned.has(key)) return;
+  warned.add(key);
+  warn(`[vendo] ${message}`);
+}
+
 /**
  * Say, once per key per process, that a set key has moved. Called from
  * `createVendo` with the raw config — the shim itself lives where the value is
@@ -184,9 +199,8 @@ export function warnDeprecatedConfigKeys(
     const value = nested === undefined
       ? config[head as string]
       : (config[head as string] as Record<string, unknown> | undefined)?.[nested];
-    if (value === undefined || warned.has(key)) continue;
-    warned.add(key);
-    warn(`[vendo] ${message}`);
+    if (value === undefined) continue;
+    warnDeprecatedOnce(key, message, warn);
   }
 }
 

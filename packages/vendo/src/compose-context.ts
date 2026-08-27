@@ -184,7 +184,9 @@ export interface VendoComposition {
   configuredBaseUrl: string | undefined;
   urls: ReturnType<typeof resolveVendoUrls>;
   isDevelopmentEnv: boolean;
-  connectorToolkits: string[];
+  /** The connected-account services this deployment named, or `undefined` when
+   *  neither `connectedAccounts` nor a legacy string in `connectors` named any. */
+  connectorToolkits: readonly string[] | undefined;
   resolvedConnectors: Connector[];
   actionsConfig: VendoActionsConfig;
   actions: ActionsRegistry;

@@ -28,7 +28,7 @@ A connection is keyed to the Vendo principal's subject. One user can never read,
 
 ## Naming the services
 
-With a Cloud key and nothing else, the agent gets one tool that lists what this product can connect to and one that asks the user to connect it. Name toolkits when you want a service's tools in the agent's hands from the start.
+With a Cloud key and nothing else, the agent gets one tool that lists what this product can connect to and one that asks the user to connect it. Name the services in `connectedAccounts` when you want their tools in the agent's hands from the start.
 
 ```ts app/api/vendo/[...vendo]/route.ts focus={6}
 import { createVendo } from "@vendoai/vendo/server";
@@ -36,11 +36,15 @@ import { createVendo } from "@vendoai/vendo/server";
 const vendo = createVendo({
   principal: resolvePrincipal,
   instructions: "...",
-  connectors: ["gmail", "slack"],
+  connectedAccounts: ["gmail", "slack"],
 });
 ```
 
-Those strings scope three things at once — the tools the agent sees, the accounts the connect surface offers, and the catalog it advertises — so they can never drift apart. The same list also takes a [connector object](/capabilities/connectors), which is used verbatim.
+Those names scope three things at once — the tools the agent sees, the accounts the connect surface offers, and the catalog it advertises — so they can never drift apart.
+
+<Note>
+  Service names used to go in `connectors`. They still work there for one more minor and warn once; `connectors` is for [connector objects](/capabilities/connectors), where **you** hold the one credential.
+</Note>
 
 ## The connect card
 

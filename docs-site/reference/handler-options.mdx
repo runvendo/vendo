@@ -27,7 +27,8 @@ Exactly one key is required: an identity, as `auth`.
 | `sandbox` | Unlocks built apps: the disposable box one is sealed in. Unset, `VENDO_API_KEY` fills it with the Cloud sandbox; with neither, apps stay tree-only |
 | `harness` | Who thinks. Default `vendo()`, also `claudeCode()`, or your own via `defineHarness`. A harness declaring `requires: { sandbox: true }` with no sandbox is a boot error |
 | `knowledge` | Composes the `vendo_knowledge_search` tool. Unset, that tool does not exist |
-| `connectors` | One mixed list. A string names a Vendo Cloud toolkit and scopes discovery to it; a `Connector` object is used verbatim. `[]` means no connectors |
+| `connectors` | The tools your deployment brings under one credential you hold — `openApiConnector`, `mcpConnector`, `composioConnector`, `cloudTools`, or your own. Each is used verbatim; `[]` means no connectors. A **deprecated** service-name string here means `connectedAccounts` and still works for one more minor |
+| `connectedAccounts` | The services each of your users connects for themselves, by name — `["gmail", "slack"]`. Scopes the agent's tools, the connect surface and its catalog to exactly those. Needs `VENDO_API_KEY`; `[]` means no connected accounts |
 | `connections` | Explicit connected-accounts adapter. Always wins over the composed default |
 | `actAs` | **Deprecated alias** for `auth.actAs` — scoped auth material for away host API execution. Still works; mutually exclusive with `auth` |
 | `serverActions` | The map `vendo sync` emits, keyed `"<module>#<exportName>"`. A missing key fails closed at execution |
@@ -55,7 +56,7 @@ Exactly one key is required: an identity, as `auth`.
 | `automations` | `false` unmounts automations: `/automations`, `/runs`, and `/webhooks` answer not-found and `vendo.emit` refuses |
 | `channels` | `{ text: true }` opens the text channel. Needs `VENDO_API_KEY`; the phone-to-user binding stays in your store |
 
-Passing a key that was removed throws at boot naming its new home: `model` became `models.default`, `paint` split into `models.apps` and `apps: false`, `brief` became `instructions`, `policy` / `judge` / `approvals` moved inside `guard({ … })`, and `connectorApps` became `connectors`.
+Passing a key that was removed throws at boot naming its new home: `model` became `models.default`, `paint` split into `models.apps` and `apps: false`, `brief` became `instructions`, `policy` / `judge` / `approvals` moved inside `guard({ … })`, and `connectorApps` became `connectedAccounts`.
 
 ## `models`
 

@@ -867,7 +867,7 @@ describe("09 §3 public wire", () => {
     expect(explicitNames).not.toContain("gmail_GMAIL_SEND_EMAIL");
   });
 
-  it("a toolkit STRING in connectors scopes the auto-composed cloud connector AND the connect catalog (criterion 9)", async () => {
+  it("connectedAccounts scopes the auto-composed cloud connector AND the connect catalog (criterion 9)", async () => {
     // Same stub-console pattern as the connectors-seam test above: the wire
     // serves a 3-toolkit catalog; the host scopes to gmail only.
     const { createServer } = await import("node:http");
@@ -912,7 +912,7 @@ describe("09 §3 public wire", () => {
       models: { default: {} as LanguageModel },
       principal: vi.fn(async () => principal),
       store,
-      connectors: ["gmail"],
+      connectedAccounts: ["gmail"],
     });
     await vendo.handler(request("GET", "/status"));
 

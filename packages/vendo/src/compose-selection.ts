@@ -7,6 +7,7 @@
  */
 import type { Connector } from "@vendoai/actions";
 import {
+  VendoError,
   type KnowledgeAdapter,
   type SecretsProvider,
   type StoreAdapter,
@@ -14,6 +15,7 @@ import {
 import { bindKnowledgeStore, cloudKnowledge } from "@vendoai/knowledge";
 import { envSecrets } from "@vendoai/store";
 import { chainSecrets, cloudSecrets } from "./cloud-secrets.js";
+import { warnDeprecatedOnce } from "./config-keys.js";
 import { cloudTools } from "./cloud-tools.js";
 import {
   byoConnections,
@@ -38,32 +40,75 @@ export function cloudKeyOptions(): { apiKey: string; baseUrl?: string } | undefi
   return { apiKey, ...(baseUrl === undefined ? {} : { baseUrl }) };
 }
 
+/** TWO products, two keys. `connectors` carries objects — the tools the
+    DEPLOYMENT brings under one credential the host holds. `connectedAccounts`
+    names services each USER connects for themselves.
+
+    One key used to carry both, with the spelling deciding which product a host
+    meant: `connectors: ["gmail"]` was connected accounts and
+    `connectors: [mcpConnector({…})]` was a connector. Strings still resolve
+    here for one more minor, and say where they went; naming services in BOTH
+    keys is refused rather than merged, because which key scopes the connect
+    dock would be a guess.
+
+    Answers `undefined` for a slot no key filled — the only state that still
+    lets VENDO_API_KEY default the UNSCOPED Cloud connector. An empty array on
+    either key is a choice ("no connected accounts"), not silence. */
+export function selectConnectedAccounts(
+  connectedAccounts: readonly string[] | undefined,
+  connectors: readonly (string | Connector)[] | undefined,
+  warn?: (message: string) => void,
+): readonly string[] | undefined {
+  const strings = (connectors ?? []).filter((entry): entry is string => typeof entry === "string");
+  if (strings.length === 0) return connectedAccounts;
+  if (connectedAccounts !== undefined) {
+    throw new VendoError(
+      "validation",
+      `services are named in two places: \`connectors: [${strings.map(quoted).join(", ")}]\` and `
+      + `\`connectedAccounts: [${connectedAccounts.map(quoted).join(", ")}]\`. Which one scopes the connect `
+      + "dock would be a guess, so move every service name into `connectedAccounts` and leave `connectors` "
+      + "for connector objects.",
+    );
+  }
+  warnDeprecatedOnce(
+    "connectors.strings",
+    `a service name in \`connectors\` is deprecated: use \`connectedAccounts: [${strings.map(quoted).join(", ")}]\`. `
+    + "`connectors` carries connector objects — one credential you hold — and `connectedAccounts` names the "
+    + "services each user connects for themselves. Strings still work for one more minor.",
+    ...(warn === undefined ? [] : [warn]),
+  );
+  return strings;
+}
+
+const quoted = (name: string): string => `"${name}"`;
+
 /** ADAPTER RULE, connectors seam: which Connector[] feeds the actions registry,
     and which Cloud toolkits the composed pair is scoped to.
 
-    ONE list carries both spellings. A Connector object is used verbatim; a
-    string names a Cloud toolkit, and the strings together compose the scoped
-    cloudTools connector — which is also what the connections seam below scopes
-    its catalog to, so connect and use can never advertise different sets.
+    A Connector object is used verbatim. The connected-account service names
+    (whichever key carried them — see selectConnectedAccounts) compose the
+    scoped cloudTools connector, which is also what the connections seam below
+    scopes its catalog to, so connect and use can never advertise different
+    sets.
 
-    An explicitly passed list always wins — including an empty one ("no
-    connectors" is a choice). Only a wholly unset slot lets VENDO_API_KEY
-    default the UNSCOPED Cloud tools connector. Strings with no key mount
+    An explicitly filled slot always wins — including an empty one ("no
+    connectors" is a choice). Only a slot NEITHER key filled lets VENDO_API_KEY
+    default the UNSCOPED Cloud tools connector. Named services with no key mount
     nothing: there is no broker to reach them through, and the connections seam
     says so by name rather than dropping them quietly. */
 export function selectConnectors(
   configured: readonly (string | Connector)[] | undefined,
-  toolkits: string[],
+  toolkits: readonly string[] | undefined,
 ): Connector[] {
   const apiKey = environment("VENDO_API_KEY");
   const baseUrl = environment("VENDO_CLOUD_URL");
   const cloudArgs = { ...(baseUrl === undefined ? {} : { baseUrl }) };
-  if (configured === undefined) {
+  if (configured === undefined && toolkits === undefined) {
     return apiKey === undefined ? [] : [cloudTools({ apiKey, ...cloudArgs })];
   }
-  const explicit = configured.filter((entry): entry is Connector => typeof entry !== "string");
-  if (toolkits.length === 0 || apiKey === undefined) return explicit;
-  return [...explicit, cloudTools({ apiKey, ...cloudArgs, apps: toolkits })];
+  const explicit = (configured ?? []).filter((entry): entry is Connector => typeof entry !== "string");
+  if (toolkits === undefined || toolkits.length === 0 || apiKey === undefined) return explicit;
+  return [...explicit, cloudTools({ apiKey, ...cloudArgs, apps: [...toolkits] })];
 }
 
 /** ADAPTER RULE, knowledge seam (ENG-368): which KnowledgeAdapter (if any)
@@ -132,28 +177,31 @@ export function withDisconnectInvalidation(
 export function selectConnections(
   configured: ConnectionsService | undefined,
   connectors: Connector[],
-  toolkits: string[],
+  toolkits: readonly string[] | undefined,
 ): ConnectionsService {
   if (configured !== undefined) return configured;
   if (connectors.some(hasConnections)) return byoConnections(connectors);
+  const named = toolkits ?? [];
   const cloud = cloudKeyOptions();
-  // Named toolkits with no key: the honest unconfigured surface, but saying
+  // Named services with no key: the honest unconfigured surface, but saying
   // which fix THIS config needs. Silently mounting nothing was the old
   // `connectorApps` trap and it does not survive in any form.
   if (cloud === undefined) {
     return unconfiguredConnections(
-      toolkits.length === 0
+      named.length === 0
         ? undefined
-        : `createVendo({ connectors: [${toolkits.map((toolkit) => `"${toolkit}"`).join(", ")}] }) names Vendo Cloud `
-          + "toolkits, which are brokered by the console: set VENDO_API_KEY, or pass a connector object "
-          + `instead (composioConnector({ apps: [${toolkits.map((toolkit) => `"${toolkit}"`).join(", ")}] }))`,
+        : `createVendo({ connectedAccounts: [${named.map(quoted).join(", ")}] }) names services brokered by `
+          + "the console: set VENDO_API_KEY, or pass a connector object instead "
+          + `(composioConnector({ apps: [${named.map(quoted).join(", ")}] }))`,
     );
   }
   // The same scoping the composed cloudTools carries — the connect dock's
-  // catalog must never advertise a toolkit the agent cannot invoke.
+  // catalog must never advertise a toolkit the agent cannot invoke, and that
+  // includes the host who named NO services: `connectedAccounts: []` scopes the
+  // dock to nothing, where a slot neither key filled stays unscoped.
   return cloudConnections({
     ...cloud,
-    ...(toolkits.length === 0 ? {} : { apps: toolkits }),
+    ...(toolkits === undefined ? {} : { apps: [...toolkits] }),
   });
 }
 

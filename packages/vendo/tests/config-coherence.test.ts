@@ -25,6 +25,7 @@ import { createGuard, guard as guardRules } from "@vendoai/guard";
 import { createStore, type VendoStore } from "@vendoai/store";
 import type { LanguageModel, UIMessage } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { resetDeprecationWarnings } from "../src/config-keys.js";
 import { createVendo, type Vendo } from "../src/server.js";
 
 const principal: Principal = { kind: "user", subject: "user_coherence" };
@@ -319,7 +320,7 @@ describe("instructions: one prose story, in the section brief always had", () =>
   });
 });
 
-describe("connectors: one list, strings and objects", () => {
+describe("connectedAccounts and connectors are two keys, two products", () => {
   /** A stub console serving a three-toolkit catalog and per-toolkit tools —
    *  the same shape `server.test.ts` has driven the scoping criterion with. */
   async function stubConsole(): Promise<string> {
@@ -358,10 +359,41 @@ describe("connectors: one list, strings and objects", () => {
     return `http://127.0.0.1:${port}`;
   }
 
-  it("a toolkit STRING scopes tools AND the connect catalog to main's literal set", async () => {
+  const acmeConnector = {
+    name: "acme",
+    descriptors: async () => [{
+      name: "acme_ping",
+      description: "ping acme",
+      inputSchema: { type: "object" },
+      risk: "read" as const,
+    }],
+    execute: async () => ({ status: "ok" as const, output: {} }),
+  };
+
+  it("connectedAccounts scopes tools AND the connect catalog to main's literal set", async () => {
     // RED: drop `apps: toolkits` from selectConnectors and the executable
     // surface loses gmail_GMAIL_SEND_THING; drop it from selectConnections and
     // the catalog advertises slack and notion the agent cannot invoke.
+    vi.stubEnv("VENDO_API_KEY", "vnd_test_key");
+    vi.stubEnv("VENDO_CLOUD_URL", await stubConsole());
+    const vendo = createVendo({
+      models: { default: {} as LanguageModel },
+      principal: async () => principal,
+      store: await tempStore("vendo-coherence-accounts-"),
+      connectedAccounts: ["gmail"],
+    });
+    const names = (await vendo.actions.descriptors()).map((descriptor) => descriptor.name);
+    expect(names).toContain("gmail_GMAIL_SEND_THING");
+    expect(names.some((name) => name.startsWith("slack_") || name.startsWith("notion_"))).toBe(false);
+    expect((await vendo.connections.catalog()).map((entry) => entry.toolkit)).toEqual(["gmail"]);
+  });
+
+  it("the OLD spelling — a service string in connectors — still composes the same surface, and says where it went", async () => {
+    // The deprecation path: nothing existing breaks. RED: drop the string leg
+    // from selectConnectedAccounts and the toolkit mounts nothing at all.
+    resetDeprecationWarnings();
+    const warn = vi.fn();
+    vi.spyOn(console, "warn").mockImplementation(warn);
     vi.stubEnv("VENDO_API_KEY", "vnd_test_key");
     vi.stubEnv("VENDO_CLOUD_URL", await stubConsole());
     const vendo = createVendo({
@@ -372,53 +404,70 @@ describe("connectors: one list, strings and objects", () => {
     });
     const names = (await vendo.actions.descriptors()).map((descriptor) => descriptor.name);
     expect(names).toContain("gmail_GMAIL_SEND_THING");
-    expect(names.some((name) => name.startsWith("slack_") || name.startsWith("notion_"))).toBe(false);
     expect((await vendo.connections.catalog()).map((entry) => entry.toolkit)).toEqual(["gmail"]);
+    expect(warn.mock.calls.flat().join("\n")).toMatch(/connectedAccounts: \["gmail"\]/);
   });
 
-  it("strings and connector OBJECTS mix — neither erases the other", async () => {
+  it("naming services in BOTH keys is refused, never merged", async () => {
+    // The one genuinely ambiguous config: which key scopes the connect dock
+    // would be a guess, so it is a boot error naming both lists.
+    vi.stubEnv("VENDO_API_KEY", "vnd_test_key");
+    expect(() => createVendo({
+      models: { default: {} as LanguageModel },
+      principal: async () => principal,
+      connectors: ["gmail"],
+      connectedAccounts: ["slack"],
+    })).toThrow(/connectors: \["gmail"\][\s\S]*connectedAccounts: \["slack"\]/);
+  });
+
+  it("connectedAccounts and connector OBJECTS mix — neither erases the other", async () => {
     // The trap `connectorApps` had: an explicit connector silently voided the
-    // scope. One list, so there is nothing left to ignore.
+    // scope. Two keys, and each still fills its own half.
     vi.stubEnv("VENDO_API_KEY", "vnd_test_key");
     vi.stubEnv("VENDO_CLOUD_URL", await stubConsole());
     const vendo = createVendo({
       models: { default: {} as LanguageModel },
       principal: async () => principal,
       store: await tempStore("vendo-coherence-mixed-"),
-      connectors: [
-        "gmail",
-        {
-          name: "acme",
-          descriptors: async () => [{
-            name: "acme_ping",
-            description: "ping acme",
-            inputSchema: { type: "object" },
-            risk: "read" as const,
-          }],
-          execute: async () => ({ status: "ok" as const, output: {} }),
-        },
-      ],
+      connectedAccounts: ["gmail"],
+      connectors: [acmeConnector],
     });
     const names = (await vendo.actions.descriptors()).map((descriptor) => descriptor.name);
     expect(names).toContain("gmail_GMAIL_SEND_THING");
     expect(names).toContain("acme_ping");
   });
 
-  it("strings with no Cloud key refuse by NAMING the fix, never silently", async () => {
+  it("an empty connectedAccounts is a CHOICE — no unscoped Cloud connector sneaks in", async () => {
+    // RED: treat `[]` as unset in selectConnectors and a key alone mounts the
+    // console's whole catalog behind a host that said "none".
+    vi.stubEnv("VENDO_API_KEY", "vnd_test_key");
+    vi.stubEnv("VENDO_CLOUD_URL", await stubConsole());
+    const vendo = createVendo({
+      models: { default: {} as LanguageModel },
+      principal: async () => principal,
+      store: await tempStore("vendo-coherence-none-"),
+      connectedAccounts: [],
+    });
+    const names = (await vendo.actions.descriptors()).map((descriptor) => descriptor.name);
+    expect(names.some((name) => name.endsWith("_SEND_THING"))).toBe(false);
+    expect(await vendo.connections.catalog()).toEqual([]);
+  });
+
+  it("named services with no Cloud key refuse by NAMING the fix, never silently", async () => {
     // RED: return plain `unconfiguredConnections()` and the message stops
-    // naming the toolkits the host asked for.
+    // naming the services the host asked for.
     vi.stubEnv("VENDO_API_KEY", "");
     const vendo = createVendo({
       models: { default: {} as LanguageModel },
       principal: async () => principal,
       store: await tempStore("vendo-coherence-nokey-"),
-      connectors: ["gmail", "slack"],
+      connectedAccounts: ["gmail", "slack"],
     });
     expect(vendo.connections.posture).toBe(false);
     await expect(vendo.connections.initiate(principal, { toolkit: "gmail" }))
       .rejects.toThrow(/VENDO_API_KEY[\s\S]*composioConnector/);
     await expect(vendo.connections.initiate(principal, { toolkit: "gmail" }))
-      .rejects.toThrow(/"gmail", "slack"/);
+      .rejects.toThrow(/connectedAccounts: \["gmail", "slack"\]/);
   });
 });
 
@@ -428,7 +477,7 @@ describe("removed keys refuse to compose, naming their replacement", () => {
     ["judge", { judge: {} }, /guard\(\{ judge \}\)/],
     ["approvals", { approvals: { parkedCallTtlMs: 1 } }, /guard\(\{ approvals \}\)/],
     ["brief", { brief: "prose" }, /`instructions`/],
-    ["connectorApps", { connectorApps: ["gmail"] }, /connectors: \["gmail", "slack"\]/],
+    ["connectorApps", { connectorApps: ["gmail"] }, /connectedAccounts: \["gmail", "slack"\]/],
     ["the agent knobs bag", { agent: { maxSteps: 5 } }, /harness: vendo\(\{ maxSteps \}\)/],
   ];
   for (const [name, extra, message] of cases) {

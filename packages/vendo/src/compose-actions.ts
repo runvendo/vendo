@@ -19,7 +19,7 @@ import {
 } from "@vendoai/core";
 import { createByoApprovals } from "./byo-approvals.js";
 import type { VendoActionsConfig, VendoComposition } from "./compose-context.js";
-import { selectConnectors } from "./compose-selection.js";
+import { selectConnectedAccounts, selectConnectors } from "./compose-selection.js";
 import { selectHostTools } from "./dot-vendo.js";
 import { withUniqueToolTitles } from "./duplicate-titles.js";
 import { keepAliveFetch } from "./keep-alive-fetch.js";
@@ -166,9 +166,10 @@ export const composeActions = (composition: VendoComposition): Pick<VendoComposi
   const { config, guard, ops, limiter, store } = composition;
   const posture = baseUrlPosture();
   // Connectors seam (adapter rule): explicit array wins, VENDO_API_KEY
-  // defaults the Cloud tools connector for a wholly unset slot.
-  // One list, two spellings: strings are Cloud toolkits, objects are providers.
-  const connectorToolkits = (config.connectors ?? []).filter((entry): entry is string => typeof entry === "string");
+  // defaults the Cloud tools connector for a slot NEITHER key filled.
+  // Two products, two keys: `connectedAccounts` names services each user
+  // connects, `connectors` carries the deployment's own connector objects.
+  const connectorToolkits = selectConnectedAccounts(config.connectedAccounts, config.connectors);
   const resolvedConnectors = selectConnectors(config.connectors, connectorToolkits);
   const actionsConfig = actionsConfigFor(
     composition,

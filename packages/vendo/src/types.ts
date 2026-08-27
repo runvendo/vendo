@@ -281,24 +281,33 @@ export interface CreateVendoConfig {
       Configured, it composes the `vendo_knowledge_search` agent tool; unset,
       the tool does not exist (precedence: selectKnowledge). */
   knowledge?: KnowledgeAdapter;
-  /** Where outside-service tools come from — ONE list, two spellings, mixed
-      freely.
+  /** Connectors — the tools YOUR deployment brings, under ONE credential you
+      hold: `openApiConnector({…})`, `mcpConnector({…})`, `composioConnector({…})`,
+      `cloudTools({…})`, or a host's own {@link Connector}. Each is used verbatim.
 
-      A STRING names a Vendo Cloud connector toolkit (`"gmail"`, `"slack"`):
-      the composed cloudTools/cloudConnections pair is scoped to exactly the
-      strings in this list, so the discovery index, the executable tools and the
-      connect dock's catalog all bind to the same set instead of lazily
-      advertising the console's whole catalog. Strings need VENDO_API_KEY —
-      without one there is no broker, so the toolkits mount nothing and the
-      connect surface refuses by naming the key (the honest unconfigured path,
-      never a silent drop).
+      Unset lets VENDO_API_KEY default the unscoped Cloud connector; an empty
+      array is still a choice ("no connectors").
 
-      A {@link Connector} OBJECT is an explicit provider (`composioConnector({…})`,
-      `cloudTools({…})`, a host's own) and is used verbatim.
-
-      Unset lets VENDO_API_KEY default the unscoped Cloud connector, exactly as
-      before; an empty array is still a choice ("no connectors"). */
+      @deprecated STRING entries. A bare service name in this list means
+      {@link CreateVendoConfig.connectedAccounts} — a different product, where
+      each USER holds the credential — so it moves to that key:
+      `connectedAccounts: ["gmail", "slack"]`. Strings here still work for one
+      more minor and warn once; naming services in both keys is refused. */
   connectors?: readonly (string | Connector)[];
+  /** Connected accounts — the services each of your USERS connects for
+      themselves (`["gmail", "slack"]`). The user OAuths once, the broker holds
+      their credential, and every later call runs as them.
+
+      The list scopes three things to exactly these services — the tools the
+      agent sees, the accounts the connect surface offers, and the catalog it
+      advertises — so they can never drift apart.
+
+      Needs VENDO_API_KEY: without one there is no broker, so the services mount
+      nothing and the connect surface refuses by naming the key (the honest
+      unconfigured path, never a silent drop). Unset lets VENDO_API_KEY default
+      the unscoped Cloud connector; an empty array is still a choice ("no
+      connected accounts"). */
+  connectedAccounts?: readonly string[];
   /** 04-actions §3 — an explicit connections adapter; always wins over the
       defaults (precedence: selectConnections). */
   connections?: ConnectionsService;
