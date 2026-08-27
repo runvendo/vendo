@@ -9,6 +9,17 @@ Ask your agent for something to look at and a real screen comes back, live on
 your data. These three steps give one of those screens a permanent place in
 your product.
 
+<Note>
+  This page picks up from a running install. If you have not mounted the panel
+  yet, start at the [quickstart](/product/quickstart) — you need
+  `<VendoProvider>` mounted, a model key, and your dev server running before
+  step 1 will do anything.
+
+  Run `npx vendo doctor` if you are not sure. A screen can only read a tool that
+  answers without asking, so if doctor reports ungraded tools, run
+  `npx vendo sync --ai` first.
+</Note>
+
 <Steps>
 
 <Step title="Ask the panel for a view">
@@ -43,20 +54,29 @@ brief.
 A slot is a place in one of your own pages that a generated view can occupy. It
 comes from `@vendoai/vendo` itself, so there is nothing extra to install.
 
-```tsx
+```tsx app/overview/page.tsx
 "use client";
 
 import { VendoSlot } from "@vendoai/vendo/react";
 
-<VendoSlot
-  id="spend-breakdown"
-  emptyState={{
-    suggestions: [
-      "Show my spending by category",
-      "Track my savings goals",
-    ],
-  }}
-/>
+export default function Overview() {
+  return (
+    <section className="cards">
+      {/* your own components */}
+      <BalanceTiles />
+      <VendoSlot
+        id="spend-breakdown"
+        emptyState={{
+          suggestions: [
+            "Show my spending by category",
+            "Track my savings goals",
+          ],
+        }}
+      />
+      <RecentActivity />
+    </section>
+  );
+}
 ```
 
 Empty, it invites: a skeleton, up to three prompt chips that prefill the
@@ -112,3 +132,9 @@ open, so it opens on today's numbers.
 - Nobody uses someone else's app. Sharing one mints a fresh copy that reads the
   new owner's rows under their approvals.
   [Import & fork](/generated/import-and-fork).
+- A screen reads your API through your tools, so it needs their shapes. If
+  `vendo init` reported `blind` tools, add an `openapi.json` at your app root
+  and run `npx vendo sync` — without it a screen builds but paints "returned
+  data in a shape this screen doesn't recognize".
+- Pins are per person. Until you [wire auth](/howto/auth), every visitor is the
+  same anonymous principal, so one person's pinned screen is everyone's.

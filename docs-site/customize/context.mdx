@@ -47,8 +47,8 @@ screen: https://maple.example.com/payments
 
 ## Assert facts about the user
 
-Facts ride the [auth preset](/howto/auth) you already pass. Add a `facts` object
-beside the `display` and `email` your user resolver already returns.
+Facts ride the [`auth`](/howto/auth) key you already pass. On a preset, add a
+`facts` object beside the `display` and `email` your user resolver returns.
 
 ```ts app/api/vendo/[...vendo]/route.ts focus={12-16}
 import { authJs } from "@vendoai/vendo/auth/auth-js";
@@ -76,10 +76,32 @@ export const vendo = createVendo({
 Values are any JSON, and each fact renders as one `key: value` line in the
 `[User]` block, on every turn.
 
-<Note>
-  Facts are a preset-only channel. A hand-wired `principal(request)` has no facts
-  channel — pass an `auth` preset if you want one.
-</Note>
+### No preset? Write the same object
+
+`auth` takes either a preset's result or an object you write, so a host with no
+identity vendor gets facts the same way — `facts` is a sibling of `principal`,
+resolved from the same request.
+
+```ts app/api/vendo/[...vendo]/route.ts focus={9-12}
+import { createVendo } from "@vendoai/vendo/server";
+import { getSession } from "@/lib/session";
+
+export const vendo = createVendo({
+  auth: {
+    principal: async (request) => {
+      const user = await getSession(request);
+      return user ? { kind: "user", subject: user.id } : null;
+    },
+    facts: async (request) => {
+      const user = await getSession(request);
+      return user ? { name: user.name, plan: user.plan } : undefined;
+    },
+  },
+});
+```
+
+Both seams get the same `Request`, so cache your session decode if it is
+expensive — the shipped presets memoize theirs per request.
 
 <Warning>
   Facts go to the model verbatim. Put nothing in them you would not paste into a

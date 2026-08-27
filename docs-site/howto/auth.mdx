@@ -64,12 +64,14 @@ export const vendo = createVendo({
 import { createVendo } from "@vendoai/vendo/server";
 import { getSession } from "@/lib/session";
 
-// your own session lookup, on the raw seam
+// no vendor to name — write the object a preset returns
 export const vendo = createVendo({
-  principal: async (request) => {
-    const user = await getSession(request);
-    if (!user) return null;
-    return { kind: "user", subject: user.id };
+  auth: {
+    principal: async (request) => {
+      const user = await getSession(request);
+      if (!user) return null;
+      return { kind: "user", subject: user.id };
+    },
   },
 });
 ```
@@ -80,10 +82,12 @@ import { createVendo } from "@vendoai/vendo/server";
 // what `vendo init --auth none` writes: every visitor
 // is the same person. Swap in a real session lookup.
 export const vendo = createVendo({
-  principal: async () => ({
-    kind: "user" as const,
-    subject: "demo-user",
-  }),
+  auth: {
+    principal: async () => ({
+      kind: "user" as const,
+      subject: "demo-user",
+    }),
+  },
 });
 ```
 
@@ -91,6 +95,34 @@ export const vendo = createVendo({
 
 `subject` is the whole model, so use the immutable id from your own tables —
 never an email or a username someone can change.
+
+`auth` is one door with two spellings. A preset is a function that returns the
+object above, so anything a preset fills you can also write by hand — and every
+other identity seam is a sibling key in the same object:
+
+- **`principal`** — who is asking. The only required one.
+- **`facts`** — what you assert about them, rendered as the prompt's `[User]`
+  block ([Context](/customize/context)).
+- **`pools`** — shared meters their usage counts into ([Limits](/users-orgs/limits)).
+- **`memberships`** — their orgs and teams ([Orgs](/users-orgs/orgs-and-memberships)).
+- **`actAs`** — how to mint scoped credentials for away runs.
+- **`oauth`** — how the MCP door reads that same session
+  ([Outside agents](/outside-agents/how-the-door-works)).
+
+Spread a preset to keep its work and change one member — this is how you serve
+logged-out visitors without giving up the preset:
+
+```ts
+import { authJs } from "@vendoai/vendo/auth/auth-js";
+import { createVendo } from "@vendoai/vendo/server";
+
+const base = authJs();
+const guest = { kind: "user" as const, subject: "guest", ephemeral: true };
+
+export const vendo = createVendo({
+  auth: { ...base, principal: async (req) => (await base.principal(req)) ?? guest },
+});
+```
 
 `vendo init` picks the preset off your `package.json` and writes this line for
 you. `--auth authJs|clerk|supabase|auth0|jwt|none` picks it without the prompt
@@ -101,8 +133,7 @@ you. `--auth authJs|clerk|supabase|auth0|jwt|none` picks it without the prompt
 <Step title="Share the resolver with your own routes">
 
 Your own agent loop or surface has to land on the same subject the wire does.
-Hoist the preset so both read one instance, and export its resolver beside
-`vendo`.
+Hoist `auth` so both read one instance, and export its resolver beside `vendo`.
 
 ```ts lib/vendo.ts focus={4,6}
 import { authJs } from "@vendoai/vendo/auth/auth-js";
@@ -113,8 +144,8 @@ export const vendo = createVendo({ auth });
 export const resolvePrincipal = (req: Request) => auth.principal(req);
 ```
 
-On the raw seam, export the same function you passed as `principal`. Either way
-your route imports one answer:
+A hand-written door hoists identically — `const auth = { principal: … }` — so
+these three lines are the same either way. Your route imports one answer:
 
 ```ts app/api/chat/route.ts focus={4}
 import { resolvePrincipal, vendo } from "@/lib/vendo";
@@ -148,6 +179,10 @@ every thread, app, and grant the turn creates.
 
 - **Your loop and your wire route have to resolve the same subject.** A mismatch
   has no error; the embed just polls a screen it will never be shown.
+- **Top-level `principal`, `actAs`, and `oauth` are deprecated aliases.** They
+  still work and will keep working through this major, but they are one seam
+  each with nowhere to grow — `auth` is the key that holds all six. Mixing the
+  two shapes throws at composition.
 - **The `vendo:` namespace is reserved.** A resolver that returns one of those
   subjects is refused at the wire — `vendo:webhook:<source>` and
   `vendo:org:<orgId>` are minted by Vendo itself.

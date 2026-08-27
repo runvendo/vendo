@@ -167,20 +167,36 @@ export interface CreateVendoConfig {
       deployment that sets nothing at all still fills every seat, and fails
       honestly with instructions when no credential exists. */
   models?: ModelsConfig;
-  /** 09-vendo §2.1 — ONE host-identity preset filling the principal, actAs, and
-      oauth seams from one config key. Mutually exclusive with all three:
-      mixing throws VendoError("validation") at compose time. */
+  /** 09-vendo §2.1 — the ONE DOOR for everything identity-shaped. It takes
+      either spelling of the same value:
+
+      ```ts
+      createVendo({ auth: authJs() });               // a preset's result
+      createVendo({ auth: {                          // an object you write
+        principal: async (req) => resolveSession(req),
+        facts: async (req) => ({ plan: "pro" }),
+      } });
+      ```
+
+      A preset is just a function returning one of these, so nothing here is
+      reserved to the preset path — `facts`, `pools`, `memberships`, `actAs` and
+      `oauth` are all hand-writable ({@link HostAuthPreset}).
+
+      Mutually exclusive with the deprecated per-seam `principal`/`actAs`/`oauth`
+      trio: mixing throws VendoError("validation") at compose time. */
   auth?: HostAuthPreset;
-  /** Per-seam escape hatch: host session → principal. REQUIRED unless an
-      `auth` preset fills the same seam — Vendo mints no principals of its own,
-      so a deployment with neither refuses to compose (09 §2). Returning null
-      says this visitor has no identity, and the request is refused with
-      `forbidden`; give logged-out visitors a principal of your own choosing if
-      you want them served. */
+  /** Host session → principal.
+      @deprecated Use the one door: `auth: { principal }`. Same function, same
+      seam, and `auth` is also where `facts`, `pools`, `memberships`, `actAs`
+      and `oauth` live — this key can only ever fill one of them. Still works;
+      it just cannot grow. */
   principal?: (req: Request) => Promise<Principal | null>;
   /** Per-seam escape hatch: the caller's orgs and teams, the twin of
-      `auth.memberships` for a host on the `principal` trio. Same seam, same
-      precedence as `actAs` and `oauth` — set it and it wins outright.
+      `auth.memberships` for a host on the deprecated `principal` trio. Same
+      seam, same precedence as `actAs` and `oauth` — set it and it wins outright.
+
+      Read ONLY when `auth` is unset: `auth` carries its own `memberships`, so a
+      config with both silently keeps the one inside `auth`. Put it there.
 
       This is also how a keyed deployment DECLINES the Cloud tenant directory:
       with `VENDO_API_KEY` set and this seam unset, Vendo resolves memberships
@@ -286,6 +302,8 @@ export interface CreateVendoConfig {
   /** 04-actions §3 — an explicit connections adapter; always wins over the
       defaults (precedence: selectConnections). */
   connections?: ConnectionsService;
+  /** Scoped auth material for away host-API execution.
+      @deprecated Use the one door: `auth: { principal, actAs }`. */
   actAs?: ActAs;
   /** 04-actions §1 (ENG-248): the server-action registration map emitted by the
       generated wiring file, keyed `"<module>#<exportName>"`. Server-action tools
@@ -430,9 +448,10 @@ export interface CreateVendoConfig {
     federation?: { secret: string };
     serviceAuth?: { keys: readonly string[] };
   };
-  /** 10-mcp §3 plus its additive prebuilt flow — the host's session + identity seam. Threaded top-level like
-      `actAs`/`principal` (the door is agnostic; the umbrella owns the shape).
-      REQUIRED when `mcp` is true: the door cannot mint principals without it. */
+  /** 10-mcp §3 plus its additive prebuilt flow — the host's session + identity
+      seam. REQUIRED when `mcp` is true: the door cannot mint principals
+      without it.
+      @deprecated Use the one door: `auth: { principal, oauth }`. */
   oauth?: HostOAuthAdapter;
   /** A whole agent built by `agent()` from `@vendoai/agents` — the seam the
       agents-v0 spec names ("Vendo's embed consumes it across a real seam").

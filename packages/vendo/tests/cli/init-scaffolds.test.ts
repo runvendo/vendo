@@ -105,16 +105,28 @@ describe("the split Next composition", () => {
     expect(service).not.toContain("./vendo-actions");
   });
 
-  it("keeps the anonymous principal when no preset is wired", () => {
-    expect(compositionModuleSource({ serverActions: false, auth: null }))
-      .toContain(`principal: async () => ({ kind: "user" as const, subject: "demo-user" })`);
+  /** No preset still writes the ONE DOOR — the demo principal goes INSIDE
+   *  `auth: { … }`, which is where facts, orgs, actAs and the door's oauth half
+   *  also live. The host who outgrows the stand-in adds a member to an object
+   *  that already exists rather than learning a second config shape. */
+  it("keeps the anonymous principal when no preset is wired, under `auth:`", () => {
+    const anonymous = compositionModuleSource({ serverActions: false, auth: null });
+    expect(anonymous).toContain(`  auth: {\n    principal: async () => ({ kind: "user" as const, subject: "demo-user" }),\n  },\n`);
+    // …and no preset was invented to get there: the object is the host's own.
+    expect(anonymous).not.toMatch(/auth: \w+\(\)/);
+    expect(anonymous).not.toContain("@vendoai/vendo/auth/");
   });
 
   /** The agent-loop arm's host resolves the caller in its OWN loop, so the
    *  module exports a resolver over the same identity the wire composed — the
    *  one line every agent-loop host used to hand-add to a file init had just
    *  written. Both shapes hoist, because a second `clerk()` (or a second demo
-   *  principal) in the chat route is a second subject the wire never sees. */
+   *  principal) in the chat route is a second subject the wire never sees.
+   *
+   *  Since the one door, the two shapes differ in ONE line — what `auth` is
+   *  bound to. Binding name, config key and resolver are identical, which is
+   *  the point: a host swapping the demo object for `clerk()` changes that
+   *  line and nothing else. */
   it("exports the caller resolver on the agent-loop arm, over the identity the wire shares", () => {
     const preset = compositionModuleSource({ serverActions: false, auth: clerk, agentLoop: true });
     expect(preset).toContain("const auth = clerk();\n");
@@ -123,9 +135,12 @@ describe("the split Next composition", () => {
     expect(preset).toContain("export const resolvePrincipal = (req: Request) => auth.principal(req);\n");
 
     const anonymous = compositionModuleSource({ serverActions: false, auth: null, agentLoop: true });
-    expect(anonymous).toContain(`const principal = async () => ({ kind: "user" as const, subject: "demo-user" });\n`);
-    expect(anonymous).toContain("\n  principal,\n");
-    expect(anonymous).toContain("export const resolvePrincipal = (_req: Request) => principal();\n");
+    expect(anonymous).toContain(`const auth = {\n  principal: async () => ({ kind: "user" as const, subject: "demo-user" }),\n};\n`);
+    expect(anonymous).toContain("\n  auth,\n");
+    // The stand-in ignores the request, so the resolver may not hand it one: a
+    // zero-parameter literal takes no argument, and `auth.principal(req)` would
+    // not compile in the host's own file.
+    expect(anonymous).toContain("export const resolvePrincipal = (_req: Request) => auth.principal();\n");
   });
 
   /** The seam: a LATER `--use-case mcp` run over a composition it did not

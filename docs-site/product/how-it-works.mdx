@@ -84,9 +84,11 @@ import { vendo } from "@/lib/vendo";
 export const { GET, POST, PUT, PATCH, DELETE } = nextVendoHandler(vendo);
 ```
 
-Init detects Auth.js, Clerk, Supabase, or Auth0 and writes the matching preset,
-or a `principal` function to fill in when it finds no library. Vendo mints no
-identity of its own, so a visitor your resolver cannot place is refused the turn.
+`auth` is the one key everything identity-shaped hangs off. Init detects Auth.js,
+Clerk, Supabase, or Auth0 and writes the matching preset there, or the same
+object with a `principal` for you to fill in when it finds no library. Vendo
+mints no identity of its own, so a visitor your resolver cannot place is refused
+the turn.
 
 </Step>
 

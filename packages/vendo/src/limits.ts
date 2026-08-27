@@ -110,7 +110,7 @@ export function createLimiter({ callback, ops }: {
             "validation",
             `The limits policy counted the \`${window.pool}\` pool, which this user is not in `
             + `(their pools: ${poolNames.map((name) => `\`${name}\``).join(", ") || "none"}). `
-            + "Pools come from the auth preset's `pools` seam, or an org the host asserted in `memberships` "
+            + "Pools come from `auth.pools`, or an org the host asserted in `memberships` "
             + "(each one is the pool `org:<orgId>`) — assert the pool there, or count a pool the user is in.",
           );
         }

@@ -7,6 +7,16 @@ icon: "/images/logos/mastra.svg"
 
 Keep your agent. Vendo adds the guarded tools and renders what they return.
 
+<Note>
+  This page picks up inside an app you already have: a Next.js App Router
+  project with a Mastra `Agent`, a chat route that invokes it, a React chat that
+  renders the parts, and your own sign-in. On that path init writes
+  `lib/vendo.ts` — the composition the steps below import. A project init reads
+  as a custom runtime gets `vendo/server.mjs` instead, and these imports will not
+  resolve. No app yet? [Vendo's full-stack agent](/product/quickstart) scaffolds
+  the whole surface.
+</Note>
+
 <Steps>
 
 <Step title="Install and run init">
@@ -14,18 +24,20 @@ Keep your agent. Vendo adds the guarded tools and renders what they return.
 <CodeGroup>
 
 ```bash npm
-npm install @vendoai/vendo
+npm install @vendoai/vendo @mastra/core
 npx vendo init
 ```
 
 ```bash pnpm
-pnpm add @vendoai/vendo
+pnpm add @vendoai/vendo @mastra/core
 pnpm exec vendo init
 ```
 
 </CodeGroup>
 
-Answer the first question with **Through my own agent loop (AI SDK / Mastra)**, and take **Vendo Cloud** on the model one.
+`@mastra/core` is an optional peer, so it is not pulled in for you — step 2 imports `Agent` from it.
+
+Answer the first question with **Through my own agent loop (AI SDK / Mastra)**, and take **Vendo Cloud** on the model one. Init asks four things in all and takes a few minutes; [`vendo init`](/reference/vendo-init) covers them. Two matter here: the URL your app serves in dev, which becomes `VENDO_BASE_URL`, and whether a coding agent may read your source to draft tool descriptions and your product brief — **Skip — keep extractor defaults** if you would rather send nothing. Extraction also needs `typescript` 4.9 or newer in the project; without it init finds zero tools.
 
 </Step>
 
@@ -45,6 +57,17 @@ export const yourAgent = new Agent({
   model: "openai/gpt-4.1-mini", // your model, unchanged
   tools: async () => ({ ...yourTools, ...(await vendoMastraTools(vendo)) }),
 });
+```
+
+Your agent keeps thinking on your own model. The **Vendo Cloud** key you took in step 1 pays for *Vendo's* turns — app generation, `vendo_delegate` — not your loop's. With no model key of your own, point Mastra at the Cloud gateway instead:
+
+```ts
+import { createAnthropic } from "@ai-sdk/anthropic";
+
+const model = createAnthropic({
+  apiKey: process.env.VENDO_API_KEY,
+  baseURL: `${process.env.VENDO_CLOUD_URL ?? "https://console.vendo.run"}/api/v1`,
+})("vendo");
 ```
 
 </Step>
@@ -85,6 +108,16 @@ export function VendoPart({ part }: { part: UIMessage["parts"][number] }) {
 ```
 
 Nothing to wrap: the embed finds the wire at `/api/vendo` and rides your host session cookie. The guard narrows the part, so `state` and `output` typecheck. One component covers data, apps, and approvals — [Embeds in your chat](/existing-agent/embeds) has the full contract.
+
+</Step>
+
+<Step title="See it live">
+
+Start your app and ask your agent for something behind your API. The tool call runs under the guard and the answer comes back as a working card inside your own chat bubble.
+
+Init wrote `VENDO_BASE_URL` into `.env.local`; deployments set the same variable to their public origin, path prefix included — see [environment variables](/reference/environment-variables). Outside dev it has to be `https`: Vendo Cloud refuses to enrol an `http` origin, and scheduled automations will not fire.
+
+A complete working version of this page is [`examples/mastra-agent`](https://github.com/runvendo/vendo/tree/main/examples/mastra-agent).
 
 </Step>
 

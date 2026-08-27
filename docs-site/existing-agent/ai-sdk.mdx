@@ -25,7 +25,11 @@ pnpm exec vendo init
 
 </CodeGroup>
 
-Answer the first question with **Through my own agent loop (AI SDK / Mastra)**, and take **Vendo Cloud** on the model one.
+This page picks up from a Next.js App Router app that already runs an AI SDK `streamText` loop. If you don't have one yet, the [AI SDK chatbot quickstart](https://ai-sdk.dev/docs/getting-started/nextjs-app-router) gets you there first; run init from that app's root.
+
+Init asks four things and takes a few minutes — [`vendo init`](/reference/vendo-init) covers all of them. Answer the first with **Through my own agent loop (AI SDK / Mastra)**, and take **Vendo Cloud** on the model one.
+
+There are two model budgets on this path. The Cloud key pays for the screens and apps Vendo generates; your own loop keeps its own key — `model: yourModel` below is untouched — so set `ANTHROPIC_API_KEY` or your provider's equivalent too. No browser to approve the Cloud key in? Pass `--cloud-key <key>`, or `--byo` to skip Cloud entirely.
 
 </Step>
 
@@ -56,16 +60,30 @@ The pack is built per request, inside the handler, so every tool runs as the cal
 
 <Step title="Render the embeds">
 
-```tsx app/page.tsx focus={3-5}
+```tsx app/page.tsx focus={3-7}
 import { isVendoToolPart, VendoToolResult } from "@vendoai/vendo/react";
 
 if (isVendoToolPart(part)) {
-  return <VendoToolResult key={key} output={part.output} />;
+  return part.state === "output-available"
+    ? <VendoToolResult key={key} output={part.output} />
+    : <div key={key}>Building…</div>;
 }
 // your own parts fall through to your own rendering
 ```
 
-Nothing to wrap: the embed finds the wire at `/api/vendo` and rides your host session cookie. `isVendoToolPart` owns the whole "is this ours" question and narrows the part, so `part.output` typechecks. One component covers data, apps, and approvals — [Embeds in your chat](/existing-agent/embeds) has the full contract.
+Nothing to wrap: the embed finds the wire at `/api/vendo` and rides your host session cookie. `isVendoToolPart` owns the whole "is this ours" question and narrows the part, so `part.state` and `part.output` typecheck. Wait for `output-available` before you render — a generated app streams for a few seconds first, and an embed handed nothing renders nothing. One component covers data, apps, and approvals — [Embeds in your chat](/existing-agent/embeds) has the full contract.
+
+</Step>
+
+<Step title="Run it">
+
+```bash
+npm run dev
+```
+
+Ask for something the agent has to build: *"Make me a Recent Activity view listing my three most recent transactions."* You'll see a `vendo_make` call stream for a few seconds, then the generated app render inline in your own chat.
+
+Fresh out of init, that app has no data to show — the only route init found was your chat route, and it excludes that one because it runs a model loop. Its empty state will say so. [Add tools](/howto/tools) is where you point Vendo at your real API and the agent gets hands.
 
 </Step>
 

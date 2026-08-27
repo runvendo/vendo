@@ -27,8 +27,9 @@ pnpm exec vendo init
 
 <Step title="Mount the provider">
 
-Paste what init printed into your client layout. Your paths and theme are
-already filled in.
+Wrap your app in the provider. On Next.js App Router this is your root layout —
+if you don't have one yet (Next 16 no longer scaffolds `app/layout.tsx`), create
+it. Your paths and theme are already filled in.
 
 ```tsx app/layout.tsx focus={6}
 import { VendoProvider } from "@vendoai/vendo/react";
@@ -71,7 +72,7 @@ import { VendoOverlay, VendoProvider } from "@vendoai/vendo/react";
 Put a slot where a card would go. A screen the agent builds can live there
 instead of in the panel.
 
-```tsx app/overview/page.tsx focus={3,9}
+```tsx app/overview/page.tsx focus={3,10}
 "use client";
 
 import { VendoSlot } from "@vendoai/vendo/react";
@@ -79,6 +80,7 @@ import { VendoSlot } from "@vendoai/vendo/react";
 export default function Overview() {
   return (
     <section className="cards">
+      {/* your own components */}
       <BalanceTiles />
       <VendoSlot id="spend-breakdown" />
       <RecentActivity />

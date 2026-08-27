@@ -39,9 +39,11 @@ same guard your own UI answers to.
 An agent that turns up with nothing gets a `401`, and the challenge on it points
 at your broker. Vendo Cloud runs that broker for you: the person signs in there
 with your app's own login, and the agent leaves with a short-lived bearer. The
-door itself serves no `/authorize` or `/token`, which is why the exchange in
-[Service keys & broker](/outside-agents/service-keys-and-broker) posts to the
-broker instead.
+door itself serves no `/authorize` or `/token` on that posture, which is why the
+exchange in [Service keys & broker](/outside-agents/service-keys-and-broker)
+posts to the broker instead. A door init wired for local dev is its own
+authorization server and does advertise both, at `/api/vendo/mcp/authorize` and
+`/api/vendo/mcp/token`.
 
 The bearer names one of your own user ids, in your own spelling. The door
 verifies its signature, then asks your auth code to turn that id into a live

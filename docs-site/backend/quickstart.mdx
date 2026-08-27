@@ -11,8 +11,9 @@ CLI, no `init`, no files moved around. The UI stays yours.
 
 <Step title="Compose the agent">
 
-Install one package and write one `agent()` call at module scope. Only `name`
-is required.
+Install one package and write one `agent()` call at module scope. `name` is the
+only field you write here — the model comes from a credential in step 2, and
+everything else has a default.
 
 <CodeGroup>
 
@@ -26,9 +27,24 @@ pnpm add @vendoai/agents ai zod
 
 </CodeGroup>
 
-```ts lib/agent.ts focus={4-16}
+`@vendoai/agents` is ESM, so an empty project needs one line in its
+`package.json`:
+
+```json package.json
+{ "type": "module" }
+```
+
+```ts lib/agent.ts focus={12-24}
 import { agent, tool } from "@vendoai/agents";
 import { z } from "zod";
+
+/** Stand-in for your own database or API call. */
+const ORDERS: Record<string, { status: string; eta: string }> = {
+  "A-1001": { status: "shipped", eta: "2026-08-21" },
+};
+
+const lookupOrder = (orderId: string) =>
+  ORDERS[orderId] ?? { error: `no order ${orderId}` };
 
 export const support = agent({
   name: "support",
@@ -80,7 +96,9 @@ threads and audit rows are persisted automatically, with zero setup.
 
 `chat()` is one turn and the answer, with no route and no stream in the way.
 
-```ts
+```ts chat.ts
+import { support } from "./lib/agent.ts";
+
 const turn = await support.chat("Where is order A-1001?");
 
 console.log(turn.text);
@@ -94,8 +112,10 @@ shortest way to give it one is `npx vendoai@latest login`, which mints a
 A plain Node backend — which this page is — has to be handed the variable:
 
 ```bash
-node --env-file=.env.local ./dist/chat.js   # or: export VENDO_API_KEY=…
+node --env-file=.env.local chat.ts   # or: export VENDO_API_KEY=…
 ```
+
+Node 22.18 and newer run TypeScript directly, so there is no build step.
 
 To bring your own model instead, install `@ai-sdk/anthropic` — the major that
 pairs with your `ai`, 4 with `ai@7` and 3 with `ai@6` — and pass it beside
@@ -141,6 +161,30 @@ const handle = support.handler({
 
 export { handle as GET, handle as POST, handle as DELETE };
 ```
+
+`handle` is a fetch handler, so it mounts on any server that can hand it a
+`Request` — including a plain Node one, which is what this page has been
+building. That one needs a server: `npm install hono @hono/node-server`.
+
+```ts server.ts
+import { serve } from "@hono/node-server";
+import { Hono } from "hono";
+import { support } from "./lib/agent.ts";
+
+const handle = support.handler({
+  basePath: "/api/agent",
+  resolveUser: async (request) => ({ subject: request.headers.get("x-user") ?? "demo-user" }),
+});
+
+const app = new Hono();
+app.all("/api/agent/*", (c) => handle(c.req.raw));
+
+serve({ fetch: app.fetch, port: 3000 });
+```
+
+The browser talks to it at `POST /api/agent/threads` with `{ message }`; the
+thread's id comes back on the `x-vendo-thread-id` header, and sending it back as
+`threadId` keeps the same thread. `GET /api/agent/threads` lists them.
 
 In the browser, `useVendoChat` from `@vendoai/ui` speaks to that mount and
 keeps nothing of its own:
@@ -212,8 +256,12 @@ export async function POST(req: Request) {
 
 Away, the menu is already narrower: destructive and ungraded tools are never
 offered, and a read or write call still needs authority a person captured while
-they were present — a grant. [Run](/backend/run) covers what an unattended run
-may touch.
+they were present — a *grant*. Without one this route is honest but unhelpful:
+every call comes back `outcome: "pending-approval"` and the run ends
+`interrupted`, carrying the approval cards. Either answer them —
+`await result.resume({ [result.interruptions[0].id]: "approve" })`, see
+[Run](/backend/run) — or capture a grant while the person is present, see
+[Automate](/backend/automate).
 
 </Step>
 
@@ -224,7 +272,7 @@ may touch.
 ## One run, seen from your own UI
 
 Events leave your server on the left. Your own progress screen fills on the
-right.
+right. The run pictured holds its grants, so nothing stops to ask.
 
 <div style={{ border: "1px solid #e9e6f1", borderRadius: 14, overflow: "hidden", background: "#fff", boxShadow: "0 18px 40px -22px rgba(24,18,54,.3)", margin: "1.25rem 0 0.5rem" }}>
   <div style={{ display: "flex", flexWrap: "wrap" }}>

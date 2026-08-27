@@ -12,6 +12,14 @@ as the rest of your product. Claude, ChatGPT and Cursor connect to the same door
 
 <Step title="Run init">
 
+<Warning>
+  The MCP door mints its own principals through an OAuth adapter, so your app
+  needs one of `authJs()`, `clerk()`, `supabase()` or `auth0()` already wired.
+  `jwt()` and an anonymous composition do not carry the OAuth half — with those,
+  init writes everything *except* the door, and re-running it later will not add
+  one. [Wire auth](/howto/auth) first if you have not.
+</Warning>
+
 <CodeGroup>
 
 ```bash npm
@@ -36,7 +44,9 @@ origin your dev server prints. Init writes the door — `mcp: true` — into
 <Step title="Wire your agent">
 
 `vendo.agentTools` opens the door for one conversation. Pass the incoming
-request and the agent acts as whoever is signed in.
+request and the agent acts as whoever is signed in. This route drives Anthropic
+directly, so it needs its own `ANTHROPIC_API_KEY` in `.env.local` — a Vendo
+Cloud key covers Vendo's own inference, not your loop.
 
 ```ts app/api/agent/route.ts focus={2,8,15,20-21}
 import Anthropic from "@anthropic-ai/sdk";
@@ -137,10 +147,11 @@ and it is the whole setup for your token broker —
 
 ## Claude, ChatGPT and Cursor
 
-Your users' setup page ships with the door. Open it in a browser:
+Your users' setup page ships with the door. Open it in a browser, at the dev
+origin you gave init:
 
 ```
-http://localhost:3000/api/vendo/mcp/connect
+<your dev origin>/api/vendo/mcp/connect
 ```
 
 It carries the copy-paste config for each client, and they sign in with your

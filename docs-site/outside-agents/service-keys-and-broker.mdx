@@ -37,9 +37,11 @@ that lasts ten minutes. This page is what happens behind that one call.
 
 ## Where the key lives
 
-You never create this key or paste it anywhere. The first time anything reaches
-your door, Vendo Cloud mints one for your tenant — which is why init never asks.
-The console is where you see it, rotate it, or revoke it.
+You never create this key or paste it anywhere. On Vendo Cloud, the first time
+anything reaches your door, Cloud mints one for your tenant — which is why init
+never asks. For a local dev door, init generates one itself and writes
+`VENDO_SERVICE_KEY` into `.env.local`. The console is where you see the Cloud
+one, rotate it, or revoke it.
 
 Your agent only ever gets the ten-minute token, never the key, and `tokenFor` is
 the only line of your own code that touches either one.
@@ -87,3 +89,15 @@ run it — `VENDO_API_KEY` is the whole setup. It asks one thing of you:
 `VENDO_BASE_URL` has to be an `https://` origin. Only the sign-in page needs to
 be reachable from a browser — `tokenFor` dials out from your backend, so nothing
 has to reach in.
+
+Handing your own agent a bearer is one call:
+
+```ts app/api/agent-token/route.ts
+import { vendo } from "@/lib/vendo";
+
+export async function POST(request: Request) {
+  // Pass the incoming request to act as whoever is signed in,
+  // or a user id to act as a named user.
+  return Response.json({ token: await vendo.tokenFor(request) });
+}
+```

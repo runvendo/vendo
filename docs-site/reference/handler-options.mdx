@@ -4,7 +4,7 @@ sidebarTitle: "Handler options"
 description: "Every createVendo option and what it does, plus the nested blocks: models, auth, guard, mcp, apps, profile, and sweep."
 ---
 
-Exactly one key is required: an identity, as either an `auth` preset or your own `principal`. `oauth` joins it when `mcp` is on.
+Exactly one key is required: an identity, as `auth`.
 
 `createVendo({ auth })` is day one. `createVendo()` is a type error, and `createVendo({})` throws `VendoError("validation")` naming the identity it is missing.
 
@@ -13,9 +13,9 @@ Exactly one key is required: an identity, as either an `auth` preset or your own
 | Option | Behavior |
 | --- | --- |
 | `models` | The model seats, keyed by job. See [below](#models) |
-| `auth` | One host-identity preset filling `principal`, `actAs`, and `oauth`. Mutually exclusive with all three |
-| `principal` | `(req) => Promise<Principal \| null>`. Required unless `auth` fills the seam. `null` refuses the request with `forbidden` |
-| `memberships` | `(principal) => Promise<Membership[]>`, the twin of `auth.memberships` for the `principal` trio. Set it and it wins outright. With `VENDO_API_KEY` and this seam unset, memberships come from Vendo Cloud, so `async () => []` is how a deployment with no orgs declines the tenant directory |
+| `auth` | The one door for identity — a preset's result (`authJs()`) or an object you write. Holds `principal`, `facts`, `pools`, `memberships`, `actAs`, and `oauth`. See [below](#identity) |
+| `principal` | **Deprecated alias** for `auth.principal`. Still works; mutually exclusive with `auth` |
+| `memberships` | `(principal) => Promise<Membership[]>`, the twin of `auth.memberships` for a host on the deprecated aliases. Set it and it wins outright. With `VENDO_API_KEY` and this seam unset, memberships come from Vendo Cloud, so `async () => []` is how a deployment with no orgs declines the tenant directory. Ignored when `auth` is set — put it in `auth` instead |
 | `tools` | Host tool declarations in memory, the same `ExtractedTool[]` sync writes to `.vendo/tools.json`, and executable tools. The two shapes are told apart by `execute` |
 | `skills` | `Skill[]` mounted at `/host/skills` for the harness to list cheaply and load on demand. A name collision fails at boot naming both |
 | `catalog` | Host components exposed to the generation prompt, merged with `.vendo/catalog.json` with explicit entries winning by name |
@@ -29,7 +29,7 @@ Exactly one key is required: an identity, as either an `auth` preset or your own
 | `knowledge` | Composes the `vendo_knowledge_search` tool. Unset, that tool does not exist |
 | `connectors` | One mixed list. A string names a Vendo Cloud toolkit and scopes discovery to it; a `Connector` object is used verbatim. `[]` means no connectors |
 | `connections` | Explicit connected-accounts adapter. Always wins over the composed default |
-| `actAs` | Escape hatch supplying scoped auth material for away host API execution. Mutually exclusive with `auth` |
+| `actAs` | **Deprecated alias** for `auth.actAs` — scoped auth material for away host API execution. Still works; mutually exclusive with `auth` |
 | `serverActions` | The map `vendo sync` emits, keyed `"<module>#<exportName>"`. A missing key fails closed at execution |
 | `remixWiring` | The wiring `vendo sync` generates for your `<Remixable>` components, keyed by slot. Its tools join the one registry, guarded and audited like any host tool. Pass the same object to `<VendoProvider remixWiring={remixWiring}>` too — the provider renders the ported components' holes, and the ✦ appears only on slots it declares |
 | `guard` | The deployment's choke point as one value. See [below](#guard) |
@@ -42,7 +42,7 @@ Exactly one key is required: an identity, as either an `auth` preset or your own
 | `fetch` | The fetch host route and OpenAPI bindings execute through. An explicit function always wins |
 | `profile` | The `.vendo/` pieces as in-memory compose-time inputs. See [below](#profile) |
 | `mcp` | Opens the MCP door. Off by default. See [below](#mcp) |
-| `oauth` | `HostOAuthAdapter` used by the door for session lookup and principal resolution. Required when `mcp` is on and `auth` supplies no oauth half |
+| `oauth` | **Deprecated alias** for `auth.oauth` — the `HostOAuthAdapter` the door uses for session lookup and principal resolution. Still works; mutually exclusive with `auth`. One of the two is required when `mcp` is on |
 | `agent` | A whole agent built by `agent()`. This deployment adopts its harness, store, files adapter, sandbox, and instructions |
 | `agents` | More agents built by `agent()`, registered by name so an automation they declared with `.on()` fires through them. Registration only; two agents sharing a name refuse to compose |
 | `sweep` | TTL-sweep cadence for expired parked calls and stranded approvals. See [below](#sweep) |
@@ -220,20 +220,34 @@ The server's base path is the fixed constant `/api/vendo`. It is not configurabl
 
 ## Identity
 
-Every wire request resolves a principal, through an `auth` preset's resolver or a hand-wired `principal(req)`. Vendo mints no principals of its own, so a config with neither refuses to compose.
+`auth` is one door with two spellings — a preset's result, or an object you write. A preset is a function returning that object, so nothing is reserved to the preset path:
 
-The returned `Principal.subject` scopes threads, apps, approvals, grants, activity, and runs.
+```ts
+interface HostAuthPreset {
+  principal: (req: Request) => Promise<Principal | null>;
+  facts?: (req: Request) => Promise<Record<string, Json> | undefined>;
+  pools?: (req: Request) => Promise<Record<string, string> | undefined>;
+  memberships?: (principal: Principal) => Promise<Membership[]>;
+  actAs?: ActAs;
+  oauth?: HostOAuthAdapter;
+  name?: string; // shipped presets only — the boot summary reads it
+}
+```
+
+`principal` is the only required member; each other one absent means the documented "not asserted" behavior, never an error. Vendo mints no principals of its own, so a config with no `principal` at all refuses to compose.
 
 A hard-wired subject is a development stand-in, never a deployment:
 
 ```ts
-createVendo({ principal: async () => ({ kind: "user", subject: "dev" }) });
+createVendo({ auth: { principal: async () => ({ kind: "user", subject: "dev" }) } });
 ```
 
-`principal(req)` must return `kind: "user"` or `null`. Returning `kind: "org"`, or a subject starting with `vendo:`, is rejected at the wire because those identities are Vendo-owned.
+`principal(req)` must return `kind: "user"` or `null`. Returning `kind: "org"`, or a subject starting with `vendo:`, is rejected at the wire because those identities are Vendo-owned. `null` refuses the request with `forbidden`.
 
 If you want logged-out visitors served, resolve them to a principal of your own choosing. Marking it `ephemeral: true` keeps it out of org membership and blocks it from connecting external accounts.
 
-The identity seams `facts`, `pools`, and `memberships` run once per context resolution. `facts` becomes the prompt's `[User]` block, `pools` feeds the limits policy, and `memberships` answers `can()`. Every asserted membership is already a pool named `org:<orgId>`, so an org cap needs no `pools` seam of its own.
+The seams `facts`, `pools`, and `memberships` run once per context resolution. `facts` becomes the prompt's `[User]` block, `pools` feeds the limits policy, and `memberships` answers `can()`. Every asserted membership is already a pool named `org:<orgId>`, so an org cap needs no `pools` seam of its own.
+
+The top-level `principal`, `actAs`, and `oauth` keys are deprecated aliases for the members of the same name. They keep working for this whole major, but each is one seam with nowhere to grow — `facts` and `pools` never had a top-level twin, which is the reason the door consolidated. Passing `auth` beside any of the three throws `VendoError("validation")` naming the mixed keys.
 
 See [Your users](/users-orgs/your-users) for `facts` and [Orgs & memberships](/users-orgs/orgs-and-memberships) for `memberships`.

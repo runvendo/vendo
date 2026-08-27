@@ -40,7 +40,8 @@ session decode, and away runs. This page is only about what rides on top of it.
 ## Telling Vendo about them
 
 `facts` is the profile you assert. It is not part of the principal; it is a
-second seam, resolved from the same request, and it is a flat bag of JSON.
+second seam under the same [`auth`](/howto/auth) key, resolved from the same
+request, and it is a flat bag of JSON.
 
 ```ts app/api/vendo/[...vendo]/route.ts highlight={6,7,8,9,10}
 export const vendo = createVendo({
@@ -60,10 +61,23 @@ export const vendo = createVendo({
 Re-asserted on every request, so a plan change binds on the user's next turn.
 There is nothing to invalidate.
 
-<Note>
-  `facts` is a preset seam. A hand-wired `principal(request)` has no facts
-  channel — pass an `auth` preset if you want one.
-</Note>
+No preset? `auth` takes an object you write, and `facts` is a sibling of
+`principal` in it — same seam, same freshness, no vendor required.
+
+```ts app/api/vendo/[...vendo]/route.ts highlight={7,8,9,10}
+export const vendo = createVendo({
+  auth: {
+    principal: async (request) => {
+      const user = await getSession(request);
+      return user ? { kind: "user", subject: user.id } : null;
+    },
+    facts: async (request) => {
+      const user = await getSession(request);
+      return user ? { plan: user.plan, role: user.role } : undefined;
+    },
+  },
+});
+```
 
 ---
 
