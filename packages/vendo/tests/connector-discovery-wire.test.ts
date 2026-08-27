@@ -12,7 +12,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Connector, ConnectorAccount, ServiceToolMatch } from "@vendoai/actions";
+import type { Connector, ConnectorAccount, OverridesFile, ServiceToolMatch } from "@vendoai/actions";
 import type { Principal, RiskLabel, RunContext } from "@vendoai/core";
 import { auditStore, createStore, type VendoStore } from "@vendoai/store";
 import type { PolicyRule } from "@vendoai/guard";
@@ -128,7 +128,7 @@ beforeAll(async () => {
 async function compose(
   connectors: Connector[],
   rules?: PolicyRule[],
-  overrides: { toolOutputCap?: number } = {},
+  overrides: { toolOutputCap?: number; profile?: { overrides?: OverridesFile } } = {},
 ): Promise<Vendo> {
   return createVendo({
     models: { default: {} as LanguageModel },
@@ -357,6 +357,40 @@ describe("use_service_tool goes through the guard, like every other tool", () =>
     expect(destructive.status).toBe("pending-approval");
     // Parked, not run: the approval card exists precisely so this has not happened.
     expect(spy.dispatched.map((entry) => entry.slug)).toEqual(["SLACK_LIST_CHANNELS"]);
+  });
+
+  it("lets a grade pinned in .vendo/overrides.json beat the broker's own tag", async () => {
+    // `.vendo/overrides.json` is the human layer and the last word — for a
+    // LISTED tool through `mergeOverride` at registry load, and here for a slug
+    // the dispatcher grades live, which is the same person correcting the same
+    // tool. Pinned BOTH ways, so this cannot pass by ignoring the broker.
+    const spy: BrokerSpy = { dispatched: [] };
+    const vendo = await compose([broker(spy)], [{ match: { risk: "destructive" }, action: "ask" }], {
+      profile: {
+        overrides: {
+          format: "vendo/overrides@3",
+          tools: {
+            SLACK_LIST_CHANNELS: { risk: "destructive" },
+            GMAIL_DELETE_THREAD: { risk: "read" },
+          },
+        },
+      },
+    });
+
+    // The broker grades this one `read`, so unpinned it would just run.
+    const pinnedUp = await vendo.guardedTools.execute(
+      { id: "d10", tool: "use_service_tool", args: { slug: "SLACK_LIST_CHANNELS" } },
+      ctx,
+    );
+    expect(pinnedUp.status).toBe("pending-approval");
+
+    // And `destructive`, so unpinned this one would park a card.
+    const pinnedDown = await vendo.guardedTools.execute(
+      { id: "d11", tool: "use_service_tool", args: { slug: "GMAIL_DELETE_THREAD" } },
+      ctx,
+    );
+    expect(pinnedDown.status).toBe("ok");
+    expect(spy.dispatched.map((entry) => entry.slug)).toEqual(["GMAIL_DELETE_THREAD"]);
   });
 
   it("refuses an unknown slug cleanly, without an approval card for a call that cannot run", async () => {

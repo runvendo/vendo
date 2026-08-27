@@ -126,12 +126,20 @@ const serviceCatalogLookups = (composition: VendoComposition): Pick<VendoComposi
    * without touching anything, and leaving it `ungraded` would park an approval
    * card for a call that CANNOT run — the approval spam the pre-guard connect
    * gate exists to stop. That is safe only because ownership and grading are the
-   * same lookup above: unowned means unrunnable, not merely ungraded. */
+   * same lookup above: unowned means unrunnable, not merely ungraded.
+   *
+   * `.vendo/overrides.json` wins over BOTH, off the registry's own loaded copy
+   * of the file (never a second read) — a grade a person pinned by name is the
+   * last word for a slug exactly as `mergeOverride` makes it for a listed tool.
+   * Without this the human layer stopped at the tool listing, and the one tool
+   * whose grade is decided live was the one tool nobody could correct. */
   async function serviceToolRisk(call: ToolCall): Promise<RiskLabel | undefined> {
     if (call.tool !== USE_SERVICE_TOOL) return undefined;
     const slug = (call.args as { slug?: unknown } | undefined)?.slug;
     if (typeof slug !== "string") return undefined;
-    return (await serviceToolOwner(slug))?.risk ?? "read";
+    return (await composition.actions.toolOverride(slug))?.risk
+      ?? (await serviceToolOwner(slug))?.risk
+      ?? "read";
   }
   return { serviceToolOwner, serviceToolRisk };
 };

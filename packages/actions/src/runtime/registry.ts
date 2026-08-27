@@ -71,6 +71,12 @@ export interface ActionsRegistry extends ToolRegistry {
    * the lookup behind the pre-guard connect check (discovery discipline,
    * spec 2026-07-25). */
   connectorToolkit(tool: string): Promise<{ connector: string; toolkit: string } | undefined>;
+  /** The human's override for one tool NAME, from `.vendo/overrides.json` —
+   * answered for names this registry never LISTED too. The long-tail tools
+   * behind `use_service_tool` are reachable only by the broker's own slug, so
+   * the dispatcher grades a slug through here and the authored file is the
+   * last word there exactly as `mergeOverride` makes it for a listed tool. */
+  toolOverride(tool: string): Promise<ToolOverride | undefined>;
 }
 
 /** CORE-2 (wave 5): `grant` and `mcpConsent` are first-class optional fields
@@ -823,8 +829,18 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
         }
       }
       if (orphans.length > 0) {
+        // A connector that dispatches by SLUG gives an unmatched name a second,
+        // legitimate reading: a grade pinned on a broker slug, which
+        // `use_service_tool` reads off this file and no listing can ever hold.
+        // Calling that a typo would send a host to delete an override that works.
+        const bySlug = connectors.some((connector) => connector.toolRisk !== undefined && connector.executeSlug !== undefined);
         console.warn(
-          `[vendo] orphaned tool references in .vendo/overrides.json — these name no extracted, connector, or compound tool: ${orphans.join(", ")}. Check for typos or re-run \`vendo sync\`.`,
+          "[vendo] orphaned tool references in .vendo/overrides.json — these name no extracted, connector, or compound "
+          + `tool: ${orphans.join(", ")}. `
+          + (bySlug
+            ? "An outside-service slug is expected here — use_service_tool grades one off this file — so check the rest "
+              + "for typos or re-run `vendo sync`."
+            : "Check for typos or re-run `vendo sync`."),
         );
       }
 
@@ -862,6 +878,10 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
       if (!entry || entry.kind !== "connector") return undefined;
       const toolkit = entry.connector.toolkitOf?.(tool);
       return toolkit === undefined ? undefined : { connector: entry.connector.name, toolkit };
+    },
+
+    async toolOverride(tool: string): Promise<ToolOverride | undefined> {
+      return (await loadHost()).overrides.tools[tool];
     },
 
     async loadoutSeed(): Promise<string[]> {
