@@ -12,13 +12,15 @@ as the rest of your product. Claude, ChatGPT and Cursor connect to the same door
 
 <Step title="Run init">
 
-<Warning>
-  The MCP door mints its own principals through an OAuth adapter, so your app
-  needs one of `authJs()`, `clerk()`, `supabase()` or `auth0()` already wired.
-  `jwt()` and an anonymous composition do not carry the OAuth half — with those,
-  init writes everything *except* the door, and re-running it later will not add
-  one. [Wire auth](/howto/auth) first if you have not.
-</Warning>
+<Note>
+  The MCP door mints its own principals through an OAuth adapter, so it needs an
+  identity to open. Init asks **How do your users sign in?** on every run, and
+  every answer but **None yet** carries that adapter: `authJs()`, `clerk()`,
+  `supabase()`, `auth0()` and `jwt()` all do, and **Write my own** scaffolds a
+  working one for you. Answer **None yet** on this path and init writes nothing
+  at all and exits `1`, naming what to answer instead — so the next run is the
+  whole fix. [Auth](/howto/auth).
+</Note>
 
 <CodeGroup>
 

@@ -15,12 +15,12 @@ import { ENV_KEY_VARS, resolveDevCredential, describeDevCredential, type DevCred
 import { NEXT_SERVER_EXTERNALS, NEXT_SERVER_EXTERNALS_LINE, SERVER_EXTERNALS_ARRAY, blankComments, detectAgentLoopRoute, detectFramework, detectVendoWiring, missingServerExternals, nextConfigPath, transpiledServerExternals, workspaceHostCandidates, type HostFramework } from "./framework.js";
 import {
   AUTH_FAMILY_INFO,
+  JWT_SECRET_ENV,
   composedAuthPreset,
   detectAuthPreset,
   resolveScaffoldAuth,
-  type AuthMatch,
-  type AuthPresetName,
-  type ConfirmAuth,
+  type AuthAnswer,
+  type AuthWire,
   type SelectAuth,
 } from "./init-auth.js";
 import { aiBelowPeerFloor, ensureGeneratedImports, ensureProviderDeps, ensureVendoPackage, ensureZodFloor, type InstallRunner } from "./provider-deps.js";
@@ -54,7 +54,6 @@ import {
 } from "./theme/extract-theme.js";
 import {
   appDirectory,
-  askYesNo,
   cloudProjectProps,
   consoleOutput,
   detectPackageManager,
@@ -186,7 +185,7 @@ export interface InitOptions {
   /** Agent-install-dx value flags: each one answers exactly one wizard
       question, so a non-interactive run never needs the prompt it replaces. */
   /** --auth: the auth answer — wires like the equivalent interactive pick. */
-  auth?: AuthPresetName | "jwt" | "none";
+  auth?: AuthAnswer;
   /** --framework: detection override; required non-interactively when
       detection comes back "unknown" (there is no safe default to guess).
       "unknown" is excluded: an override that answers nothing would silently
@@ -244,16 +243,12 @@ export interface InitOptions {
   cloud?: Partial<Omit<CloudStepOptions, "root" | "output" | "yes" | "credential">>;
   /** Test seam: judgment step overrides (harnesses, consent). */
   extract?: InitPolishSeam;
-  /** Test seam: the detect+confirm auth question, asked only in interactive
-      runs when exactly one auth family is detected and init is creating the
-      composition — and the MCP service-key confirm, which has the same shape.
-      Mirrors the AI-polish consent's confirm shape. */
-  confirmAuth?: (question: string, defaultYes: boolean) => Promise<boolean>;
-  /** Test seam: the auth picker shown when the confirm is declined or when
-      several families are detected. Receives the choice list (value/label/
-      hint) and resolves the chosen value. */
-  selectAuth?: (question: string, options: SelectOption[]) => Promise<string>;
-  /** Test seam: interactivity override for the auth confirm (default: TTY),
+  /** Test seam: "How do your users sign in?" — asked on every interactive run
+      that creates the composition. Receives the choice list (value/label/hint)
+      and the index the package.json scan pre-selects, and resolves the chosen
+      value. */
+  selectAuth?: (question: string, options: SelectOption[], defaultIndex?: number) => Promise<string>;
+  /** Test seam: interactivity override for the auth question (default: TTY),
       mirroring the judgment step's `interactive`. */
   interactive?: boolean;
   /** Test seam: the use-case question, and the MCP sign-in select that hangs
@@ -708,7 +703,7 @@ async function planMcpScaffold(input: {
   interactive: boolean;
   changes: PlannedChange[];
   framework: Exclude<HostFramework, "unknown"> | "custom";
-  authWired: AuthMatch | null;
+  authWired: AuthWire | null;
   cloudKey: boolean;
   models: ScaffoldModel | null;
   /** The dev origin captured with the other up-front questions. The broker
@@ -789,8 +784,12 @@ async function planMcpScaffold(input: {
     models,
   });
   if (mcp.blocked !== undefined) {
-    // Nothing MCP was written and the reason says what to do about it. The
-    // rest of the install stands — this is an advisory, not a failure.
+    // A FATAL refusal stops the run here, before a single file is written: the
+    // MCP use case got no door, and an install that exits 0 over that is the
+    // false "Wired" this branch exists to stop telling.
+    if (mcp.blockedFatal === true) throw new VendoError("validation", mcp.blocked);
+    // Otherwise: nothing MCP was written and the reason says what to do about
+    // it. The rest of the install stands — this is an advisory, not a failure.
     output.error(`warning: ${mcp.blocked}`);
     return null;
   }
@@ -848,7 +847,7 @@ async function planMcpScaffold(input: {
 interface ScaffoldPlan {
   changes: PlannedChange[];
   authAdvice: string | null;
-  authWired: AuthMatch | null;
+  authWired: AuthWire | null;
   compositionPath: string | null;
   /** The provider and file of the `models` line this run wrote — the migration
       path off the removed ambient-key behaviour, and what the closing summary
@@ -874,7 +873,6 @@ const emptyScaffold = (): ScaffoldPlan => ({
 async function planCustomComposition(
   root: string,
   options: InitOptions,
-  confirmAuth?: ConfirmAuth,
   selectAuth?: SelectAuth,
 ): Promise<ScaffoldPlan> {
   const scaffold = emptyScaffold();
@@ -888,7 +886,7 @@ async function planCustomComposition(
     const scaffolding = serverBefore === null && !wiring.server;
     if (scaffolding) {
       const path = relative(root, server);
-      const auth = await resolveScaffoldAuth(root, path, options.auth, confirmAuth, selectAuth);
+      const auth = await resolveScaffoldAuth(root, path, options.auth, selectAuth);
       const serverAfter = customServerSource(typescript, auth.wired);
       scaffold.changes.push({ absolute: server, path, before: null, after: serverAfter, diff: diff(path, null, serverAfter) });
       scaffold.authAdvice = auth.advice;
@@ -902,7 +900,6 @@ async function planCustomComposition(
 async function planExpressComposition(
   root: string,
   options: InitOptions,
-  confirmAuth?: ConfirmAuth,
   selectAuth?: SelectAuth,
 ): Promise<ScaffoldPlan> {
   const scaffold = emptyScaffold();
@@ -922,7 +919,7 @@ async function planExpressComposition(
       // Detect + confirm happens only here — fresh composition creation —
       // so a re-run before the manual <VendoProvider> paste neither asks nor
       // re-fires the advisory after "Already wired".
-      const auth = await resolveScaffoldAuth(root, path, options.auth, confirmAuth, selectAuth);
+      const auth = await resolveScaffoldAuth(root, path, options.auth, selectAuth);
       const serverAfter = expressServerSource(typescript, auth.wired);
       scaffold.changes.push({ absolute: server, path, before: null, after: serverAfter, diff: diff(path, null, serverAfter) });
       scaffold.authAdvice = auth.advice;
@@ -960,7 +957,6 @@ async function planNextComposition(
   root: string,
   options: InitOptions,
   useCase: InitUseCase,
-  confirmAuth?: ConfirmAuth,
   selectAuth?: SelectAuth,
 ): Promise<ScaffoldPlan> {
   const scaffold = emptyScaffold();
@@ -998,7 +994,7 @@ async function planNextComposition(
   if (compositionBefore === null) {
     const path = relative(root, composition);
     // Detect + confirm happens only on fresh composition creation.
-    const auth = await resolveScaffoldAuth(root, path, options.auth, confirmAuth, selectAuth);
+    const auth = await resolveScaffoldAuth(root, path, options.auth, selectAuth);
     const render = (model: ScaffoldModel | null): string =>
       compositionModuleSource({
         serverActions: registrations.length > 0,
@@ -1022,13 +1018,13 @@ async function planNextComposition(
   return scaffold;
 }
 
-async function buildPlan(options: InitOptions, useCase: InitUseCase, confirmAuth?: ConfirmAuth, selectAuth?: SelectAuth): Promise<{
+async function buildPlan(options: InitOptions, useCase: InitUseCase, selectAuth?: SelectAuth): Promise<{
   plan: InitPlan;
   changes: PlannedChange[];
   authAdvice: string | null;
   /** What the fresh composition wired; null when no composition was created
       this run OR it stayed anonymous. */
-  authWired: AuthMatch | null;
+  authWired: AuthWire | null;
   /** Relative path of the composition created THIS run; null otherwise. */
   compositionPath: string | null;
   /** See ScaffoldPlan.rewriteModels — the models answer arrives after this plan. */
@@ -1039,10 +1035,10 @@ async function buildPlan(options: InitOptions, useCase: InitUseCase, confirmAuth
   // agents never inherit resolveFramework's custom fall-through silently.
   const framework = await resolveFramework(root, options);
   const scaffold = framework === "custom"
-    ? await planCustomComposition(root, options, confirmAuth, selectAuth)
+    ? await planCustomComposition(root, options, selectAuth)
     : framework === "express"
-      ? await planExpressComposition(root, options, confirmAuth, selectAuth)
-      : await planNextComposition(root, options, useCase, confirmAuth, selectAuth);
+      ? await planExpressComposition(root, options, selectAuth)
+      : await planNextComposition(root, options, useCase, selectAuth);
   const { changes, authAdvice, authWired, compositionPath, rewriteModels } = scaffold;
 
   const packageJson = join(root, "package.json");
@@ -1271,8 +1267,8 @@ async function unattendedDefaultLines(input: {
     } else if (question.id === "auth") {
       const wired = (await detectAuthPreset(root)).wired;
       lines.push(wired === null
-        ? "auth: none — every session stays anonymous — --auth clerk | authJs | supabase | auth0 | jwt | none"
-        : `auth: ${wired.preset}() (detected ${wired.dependency}) — --auth <preset>, or --auth none`);
+        ? "auth: none — every session stays anonymous — --auth clerk | authJs | supabase | auth0 | jwt | custom | none"
+        : `auth: ${wired.preset}() (detected ${wired.dependency}) — --auth <answer>, or --auth none`);
     } else if (question.id === "models") {
       lines.push("model key: only what is already in the environment — no login offer, so a keyless host cannot answer one turn — --byo, or --cloud-key <key>");
     } else if (question.id === "dev-url") {
@@ -1905,17 +1901,14 @@ export async function runInit(input: InitOptions): Promise<number> {
   await printStack({ root, options, output, pretty });
   const useCase = await resolveUseCase({ root, options, pretty, interactive });
 
-  // (No stdin-TTY guard on these defaults: an unshown auth confirm resolving
-  // its default just wires the detected preset — the very accept the
-  // non-interactive path performs silently anyway.)
-  const confirmAuth = options.yes === true || !interactive
-    ? undefined
-    : (options.confirmAuth ?? (pretty === null ? askYesNo : pretty.confirm));
+  // (No stdin-TTY guard on this default: both prompt implementations already
+  // return the pre-selected answer when there is no keypress source — the very
+  // answer the non-interactive path below takes silently.)
   const selectAuth = options.yes === true || !interactive
     ? undefined
     : (options.selectAuth ?? (pretty === null ? plainSelect : pretty.select));
   const detectStarted = Date.now();
-  const built = await buildPlanOrExplained(options, useCase, confirmAuth, selectAuth);
+  const built = await buildPlanOrExplained(options, useCase, selectAuth);
   if (built === null) return 1;
   const { plan, changes, authAdvice, authWired, compositionPath, rewriteModels } = built;
   const detectMs = Date.now() - detectStarted;
@@ -1978,6 +1971,19 @@ export async function runInit(input: InitOptions): Promise<number> {
       cloudKeyValid: cloud.keyValid || mcp?.cloudKey === true,
       authoredComposition: compositionPath !== null,
     });
+
+    // The one env entry the JWT answer owes. The composition reads this
+    // variable and jwt() fails loud while it resolves empty, so the NAME lands
+    // in .env.local now and the developer pastes the secret their API already
+    // signs session tokens with. Init never invents the value: a random secret
+    // verifies nothing the host signs, and would read as configured while every
+    // session silently resolved anonymous. An entry already carrying a value is
+    // left exactly as it is.
+    if (authWired?.kind === "jwt" && envFileValueSync(root, JWT_SECRET_ENV) === null) {
+      await upsertEnvLocal(root, JWT_SECRET_ENV, "");
+      output.log(`Added ${JWT_SECRET_ENV}= to .env.local — paste the secret your API signs its session JWTs with.`);
+      await ensureEnvLocalIgnored(root, output);
+    }
 
     pretty?.spin("Wiring your app…");
     const wiringMs = await wireAndScaffold({ root, changes, force: options.force === true, useCase, modelKey });

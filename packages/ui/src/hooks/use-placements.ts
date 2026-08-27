@@ -28,7 +28,7 @@ import { developmentMode } from "../chrome/dev-mode.js";
 import type { VendoClient } from "../client.js";
 // `useVendoProvider`, NOT `useVendoContext`: #852 renamed the provider-reading
 // hook and gave the old name to the host-facing `useVendoContext(data)` in
-// hooks/use-vendo-context.ts, which publishes into the agent's [Situation]
+// hooks/use-vendo-context.ts, which publishes into the agent's [Context]
 // channel and returns void.
 import { useVendoProvider } from "../context.js";
 import { identityState } from "./identity-state.js";

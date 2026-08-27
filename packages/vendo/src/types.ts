@@ -182,8 +182,9 @@ export interface CreateVendoConfig {
       reserved to the preset path — `facts`, `pools`, `memberships`, `actAs` and
       `oauth` are all hand-writable ({@link HostAuthPreset}).
 
-      Mutually exclusive with the deprecated per-seam `principal`/`actAs`/`oauth`
-      trio: mixing throws VendoError("validation") at compose time. */
+      Mutually exclusive with the per-seam `principal`/`actAs`/`oauth`/
+      `memberships` keys: mixing throws VendoError("validation") at compose
+      time. */
   auth?: HostAuthPreset;
   /** Host session → principal.
       @deprecated Use the one door: `auth: { principal }`. Same function, same
@@ -195,8 +196,10 @@ export interface CreateVendoConfig {
       `auth.memberships` for a host on the deprecated `principal` trio. Same
       seam, same precedence as `actAs` and `oauth` — set it and it wins outright.
 
-      Read ONLY when `auth` is unset: `auth` carries its own `memberships`, so a
-      config with both silently keeps the one inside `auth`. Put it there.
+      Read ONLY when `auth` is unset, and mutually exclusive with it: `auth`
+      carries its own `memberships`, so a config with both throws
+      VendoError("validation") at compose time rather than quietly keeping the
+      one inside `auth`. Put it there.
 
       This is also how a keyed deployment DECLINES the Cloud tenant directory:
       with `VENDO_API_KEY` set and this seam unset, Vendo resolves memberships

@@ -8,25 +8,77 @@ import {
 // Relative (not the #dev-creds condition): the CLI is Node-only and the edge
 // condition would resolve the browser-safe half here.
 import type { EnvKeyProvider } from "../dev-creds/resolve.js";
-import { AUTH_FAMILY_INFO, AUTH_PRESET_SPECIFIER, type AuthMatch } from "./init-auth.js";
+import { AUTH_FAMILY_INFO, AUTH_PRESET_SPECIFIER, JWT_SECRET_ENV, type AuthWire } from "./init-auth.js";
 import { appDirectory, readOptional } from "./shared.js";
 
 /** The wired preset line plus its escape-hatch comment. The lead-in stays
     honest about how the preset got here: detection cites the found
-    dependency, a picker pick says "Selected".
+    dependency, a chosen one says "Selected".
 
     `hoisted` binds the preset to a module-scope `const auth` instead of writing
     the config key inline — what the agent-loop arm needs, where the resolver
-    this module exports has to reach the SAME instance the wire composed. */
-export function authConfigLines(auth: AuthMatch, hoisted = false): string {
-  const origin = auth.source === "picked"
-    ? `Selected ${AUTH_FAMILY_INFO[auth.preset].name}`
-    : `Detected ${auth.dependency}`;
+    this module exports has to reach the SAME instance the wire composed.
+
+    The hand-written seam ("write my own") is not a call, so it takes the same
+    road the anonymous composition does: `authOwnSeamLines`, through the one
+    `auth:` door. */
+export function authConfigLines(auth: Exclude<AuthWire, { kind: "custom" }>, hoisted = false): string {
+  const name = auth.kind === "jwt" ? "jwt" : auth.preset;
+  const origin = auth.kind === "jwt"
+    ? "Selected your own JWT scheme"
+    : auth.dependency === undefined
+      ? `Selected ${AUTH_FAMILY_INFO[auth.preset].name}`
+      : `Detected ${auth.dependency}`;
+  const call = auth.kind === "jwt"
+    ? `jwt({ secret: () => process.env.${JWT_SECRET_ENV} })`
+    : `${name}()`;
   const pad = hoisted ? "" : "  ";
-  return `${pad}// ${origin} — ${auth.preset}() fills the identity seams\n` +
+  return `${pad}// ${origin} — ${name}() fills the identity seams\n` +
     `${pad}// (request→user, actAs, door OAuth); options and the per-seam escape\n` +
     `${pad}// hatch: https://docs.vendo.run/howto/auth.\n` +
-    (hoisted ? `const auth = ${auth.preset}();\n` : `  auth: ${auth.preset}(),\n`);
+    (hoisted ? `const auth = ${call};\n` : `  auth: ${call},\n`);
+}
+
+/**
+ * The "write my own" seam: the smallest identity object that actually BOOTS and
+ * opens the MCP door — a fixed dev subject for `principal`, and a pass-through
+ * `oauth` that hands the door back whatever subject it is given (the two-seam
+ * shape tests/theme-seam.test.ts drives a real MCP client through). Everything
+ * else on the `auth` object is optional.
+ *
+ * Written through the SAME one door `anonymousPrincipalLines` uses — it is that
+ * block plus the `oauth` half — so a host that later adds `facts`, `memberships`
+ * or `actAs` adds a member here rather than learning a second config shape.
+ *
+ * A fixed subject means every caller is the SAME person, so the marker rides in
+ * the file itself and not in a summary line nobody re-reads.
+ */
+export function authOwnSeamLines(typescript: boolean, hoisted = false): string {
+  // Same rule as anonymousPrincipalLines: `as const` narrows kind to the
+  // Principal literal in TypeScript and is a SyntaxError in a .mjs file.
+  const kind = typescript ? `"user" as const` : `"user"`;
+  const subject = typescript ? "subject: string" : "subject";
+  const pad = hoisted ? "" : "  ";
+  const body = `${pad}  principal: async () => ({ kind: ${kind}, subject: "dev-user" }),\n` +
+    `${pad}  oauth: {\n` +
+    `${pad}    session: async () => ({ subject: "dev-user" }),\n` +
+    `${pad}    principal: async (${subject}) => ({ kind: ${kind}, subject }),\n` +
+    `${pad}  },\n`;
+  return `${pad}// Your own sign-in, as the two seams Vendo reads: who a request acts as,\n` +
+    `${pad}// and who the MCP door resolves a subject to. Both answer the same fixed\n` +
+    `${pad}// dev subject today, so EVERY caller is the same person.\n` +
+    `${pad}// replace before production — swap both bodies for your real session\n` +
+    `${pad}// lookup. Facts, orgs and actAs live here too:\n` +
+    `${pad}// https://docs.vendo.run/howto/auth.\n` +
+    (hoisted ? `const auth = {\n${body}};\n` : `${pad}auth: {\n${body}${pad}},\n`);
+}
+
+/** The identity block for whatever this run wired, through the one `auth:`
+    door: a preset call, the hand-written seam, or the anonymous demo
+    principal. */
+function identityLines(auth: AuthWire | null, typescript: boolean, hoisted = false): string {
+  if (auth === null) return anonymousPrincipalLines(typescript);
+  return auth.kind === "custom" ? authOwnSeamLines(typescript, hoisted) : authConfigLines(auth, hoisted);
 }
 
 /** The anonymous-composition identity block (no auth preset wired), written
@@ -58,9 +110,12 @@ export function anonymousPrincipalLines(typescript: boolean): string {
 /** The preset's own import line (its own subpath, never "@vendoai/vendo/server"
     — corpus-triage Task 9: a shared barrel meant any host importing the
     server entry statically re-resolved every preset's optional peer dep,
-    even unused ones), or empty when no preset was wired. */
-function authImportLine(auth: AuthMatch | null): string {
-  return auth === null ? "" : `import { ${auth.preset} } from ${JSON.stringify(AUTH_PRESET_SPECIFIER[auth.preset])};\n`;
+    even unused ones). Empty for the anonymous composition and for the
+    hand-written seam, which imports nothing. */
+function authImportLine(auth: AuthWire | null): string {
+  if (auth === null || auth.kind === "custom") return "";
+  const name = auth.kind === "jwt" ? "jwt" : auth.preset;
+  return `import { ${name} } from ${JSON.stringify(AUTH_PRESET_SPECIFIER[name])};\n`;
 }
 
 /** What each env-key provider's `models.default` line names: the AI SDK's
@@ -120,14 +175,20 @@ export function routeSource(composition: string): string {
  * without it — every agent-loop host was hand-adding this one line to a file
  * init had just written.
  */
-function sharedIdentity(auth: AuthMatch | null): { binding: string; key: string; resolver: string } {
+function sharedIdentity(auth: AuthWire | null): { binding: string; key: string; resolver: string } {
   if (auth !== null) {
     return {
-      binding: authConfigLines(auth, true),
+      binding: identityLines(auth, true, true),
       key: `  auth,\n`,
-      resolver: `// Your own agent loop resolves its caller through the SAME preset the wire\n` +
-        `// does — import this beside \`vendo\`.\n` +
-        `export const resolvePrincipal = (req: Request) => auth.principal(req);\n`,
+      // The hand-written seam takes no Request — it answers one fixed subject —
+      // so its resolver reads like the anonymous one, not like a preset's.
+      resolver: auth.kind === "custom"
+        ? `// Your own agent loop resolves its caller through the SAME seam the wire\n` +
+          `// does — import this beside \`vendo\`.\n` +
+          `export const resolvePrincipal = (_req: Request) => auth.principal();\n`
+        : `// Your own agent loop resolves its caller through the SAME preset the wire\n` +
+          `// does — import this beside \`vendo\`.\n` +
+          `export const resolvePrincipal = (req: Request) => auth.principal(req);\n`,
     };
   }
   // No preset — the host writes the SAME `auth` object a preset would have
@@ -164,7 +225,7 @@ function sharedIdentity(auth: AuthMatch | null): { binding: string; key: string;
  */
 export function compositionModuleSource(options: {
   serverActions: boolean;
-  auth: AuthMatch | null;
+  auth: AuthWire | null;
   /** The provider key init found, written as the explicit `models` selection. */
   models?: ScaffoldModel | null;
   /** The MCP door (10-mcp), and whether first-party service auth is wired off
@@ -190,7 +251,7 @@ export function compositionModuleSource(options: {
     (shared === null ? "" : `\n${shared.binding}`) +
     `\nexport const vendo = createVendo({\n` +
     // The composition module is always TypeScript (it feeds a Next route).
-    (shared?.key ?? (options.auth === null ? anonymousPrincipalLines(true) : authConfigLines(options.auth))) +
+    (shared?.key ?? identityLines(options.auth, true)) +
     modelConfigLine(options.models ?? null) +
     (options.serverActions ? `  serverActions,\n` : "") +
     `  guard: guard({ policy: {} }), // .vendo/policy.json: destructive asks, reads run\n` +
@@ -395,11 +456,11 @@ export function serverActionsModuleSource(root: string, wiringDir: string, regis
  *  infrastructure seams wire the Cloud adapters explicitly per the adapter
  *  rule (reference shape: the vendo-on-Workers field integration,
  *  2026-07-21). */
-export function customServerSource(typescript: boolean, auth: AuthMatch | null = null): string {
+export function customServerSource(typescript: boolean, auth: AuthWire | null = null): string {
   const envType = typescript
     ? `\nexport interface VendoEnv {\n` +
       `  VENDO_API_KEY?: string;\n` +
-      `  VENDO_CLOUD_URL?: string;\n` +
+      `  VENDO_CONSOLE_URL?: string;\n` +
       `  VENDO_BASE_URL?: string;\n` +
       `}\n`
     : "";
@@ -444,10 +505,11 @@ export function customServerSource(typescript: boolean, auth: AuthMatch | null =
     `  if (vendo === null) {\n` +
     `    const processEnv = globalThis.process?.env ?? {};\n` +
     `    const apiKey = env.VENDO_API_KEY ?? processEnv.VENDO_API_KEY;\n` +
-    `    const baseUrl = (env.VENDO_CLOUD_URL ?? processEnv.VENDO_CLOUD_URL ?? "https://console.vendo.run").replace(/\\/+$/, "");\n` +
-    `    const cloud = apiKey === undefined || apiKey === "" ? undefined : { apiKey, baseUrl };\n` +
+    `    // The VENDO CONSOLE's origin — not your app's. Your app's public URL is VENDO_BASE_URL.\n` +
+    `    const consoleUrl = (env.VENDO_CONSOLE_URL ?? processEnv.VENDO_CONSOLE_URL ?? "https://console.vendo.run").replace(/\\/+$/, "");\n` +
+    `    const cloud = apiKey === undefined || apiKey === "" ? undefined : { apiKey, baseUrl: consoleUrl };\n` +
     `    vendo = createVendo({\n` +
-    (auth === null ? anonymousPrincipalLines(typescript) : authConfigLines(auth))
+    identityLines(auth, typescript)
       .split("\n").map((line) => (line === "" ? line : `    ${line}`)).join("\n") +
     `      guard: guard({ policy: {} }), // .vendo/policy.json: destructive asks, reads run\n` +
     `      // With a Vendo Cloud key the infrastructure seams wire the Cloud\n` +
@@ -470,7 +532,7 @@ export function customServerSource(typescript: boolean, auth: AuthMatch | null =
     `}\n`;
 }
 
-export function expressServerSource(typescript: boolean, auth: AuthMatch | null = null): string {
+export function expressServerSource(typescript: boolean, auth: AuthWire | null = null): string {
   const imports = typescript
     ? `import { once } from "node:events";\n` +
       `import type { IncomingHttpHeaders, IncomingMessage, ServerResponse } from "node:http";\n` +
@@ -522,7 +584,7 @@ export function expressServerSource(typescript: boolean, auth: AuthMatch | null 
     `import { createVendo, guard } from "@vendoai/vendo/server";\n` +
     types +
     `\nconst vendo = createVendo({\n` +
-    (auth === null ? anonymousPrincipalLines(typescript) : authConfigLines(auth)) +
+    identityLines(auth, typescript) +
     `  guard: guard({ policy: {} }), // .vendo/policy.json: destructive asks, reads run\n` +
     `});\n\n` +
     `function requestHeaders${signatures.requestHeaders} {\n` +

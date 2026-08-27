@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -228,28 +228,43 @@ describe("the use-case recommendation reads the loop detection", () => {
 });
 
 describe("the --agent auth question carries the detection", () => {
-  it("recommends `none` when nothing is detected, and says why", async () => {
+  const ALL_ANSWERS = [
+    "--auth authJs", "--auth clerk", "--auth supabase", "--auth auth0",
+    "--auth jwt", "--auth custom", "--auth none",
+  ];
+
+  it("asks the same question with the same seven answers, and recommends nothing when nothing is detected", async () => {
     const root = await fixture();
     const sink = output();
     expect(await run(root, sink, { agent: true })).toBe(0);
     const auth = questionsOf(sink.logs).questions.find((question) => question.id === "auth");
-    expect(auth?.options[0]).toMatchObject({ flag: "--auth none", recommended: true });
-    expect(auth?.options[0]?.note).toContain("no auth dependency in package.json");
+    expect(auth?.prompt).toContain("How do your users sign in?");
     expect(auth?.prompt).toContain("Nothing was detected");
-    // Every family is still offered — the recommendation is not a shortlist.
-    const flags = auth?.options.map((option) => option.flag);
-    expect(flags).toContain("--auth clerk");
-    expect(flags).toContain("--auth jwt");
+    expect(auth?.options.map((option) => option.flag)).toEqual(ALL_ANSWERS);
+    // Init used to recommend `none` here and then write an anonymous
+    // composition nobody chose. An unread scan recommends nothing.
+    expect(auth?.options.some((option) => option.recommended === true)).toBe(false);
   });
 
-  it("recommends the DETECTED family when there is one", async () => {
+  it("recommends the DETECTED family when there is one, with its dependency as evidence", async () => {
     const root = await fixture({ dependencies: { next: "16.0.0", "@clerk/nextjs": "7.0.0" } });
     const sink = output();
     expect(await run(root, sink, { agent: true })).toBe(0);
     const questions = questionsOf(sink.logs);
     expect(questions.detected.auth).toBe("clerk");
     const auth = questions.questions.find((question) => question.id === "auth");
-    expect(auth?.options[0]).toMatchObject({ flag: "--auth clerk", recommended: true });
+    expect(auth?.options.map((option) => option.flag)).toEqual(ALL_ANSWERS);
+    expect(auth?.options.find((option) => option.flag === "--auth clerk"))
+      .toMatchObject({ recommended: true, note: "detected @clerk/nextjs" });
+  });
+
+  it("recommends nothing when the scan is ambiguous — naming one would hide the other", async () => {
+    const root = await fixture({ dependencies: { next: "16.0.0", "@clerk/nextjs": "7.0.0", "next-auth": "5.0.0" } });
+    const sink = output();
+    expect(await run(root, sink, { agent: true })).toBe(0);
+    const auth = questionsOf(sink.logs).questions.find((question) => question.id === "auth");
+    expect(auth?.prompt).toContain("Several auth dependencies");
+    expect(auth?.options.some((option) => option.recommended === true)).toBe(false);
   });
 });
 
@@ -278,14 +293,49 @@ describe("the MCP re-run false alarm", () => {
     expect(again.logs.join("\n")).toContain("Continue: https://docs.vendo.run/outside-agents/quickstart");
   });
 
-  it("still refuses an anonymous composition — the door genuinely cannot open", async () => {
+  /**
+   * "none yet" on the MCP path is the use case failing whole, so it is an
+   * EXPECTED FAILURE: exit 1, nothing written, and the answer stated. Init used
+   * to print a warning, write the anonymous composition anyway and exit 0 —
+   * which then made the "re-run" it advised useless, because init never
+   * rewrites a composition it already wrote. Nothing lands now, so answering
+   * the question again is the entire fix.
+   */
+  it("fails the run on an anonymous composition instead of exiting 0 over a doorless install", async () => {
     const root = await fixture({}, "vendo-install-dx-mcp-anon-");
     const first = output();
-    expect(await run(root, first, { useCase: "mcp", auth: "none", yes: true })).toBe(0);
-    expect(first.errors.join("\n")).toContain("nothing MCP was written");
+    expect(await run(root, first, { useCase: "mcp", auth: "none", yes: true })).toBe(1);
+    const errors = first.errors.join("\n");
+    // What / why / how, plus the recipe.
+    expect(errors).toContain("wired no door, so nothing was written at all");
+    expect(errors).toContain("mints its own principals through an OAuth adapter");
+    expect(errors).toContain("How do your users sign in?");
+    expect(errors).toContain("write my own");
+    expect(errors).toContain('session: async () => ({ subject: "dev-user" })');
+    expect(errors).toContain("https://docs.vendo.run/outside-agents/quickstart");
+    // The false claim is gone: jwt() carries the oauth half like every preset.
+    expect(errors).not.toContain("do not carry the oauth half");
+    expect(first.logs.join("\n")).not.toContain("Wired");
+    // NOTHING was written, so the next answer is not blocked by this run.
+    expect(await readdir(root)).not.toContain("lib");
+    expect(await readdir(root)).not.toContain(".vendo");
+
+    // …and answering the question opens the door on the very next run.
     const again = output();
-    expect(await run(root, again, { useCase: "mcp", yes: true })).toBe(0);
-    expect(again.errors.join("\n")).toContain("nothing MCP was written");
+    expect(await run(root, again, { useCase: "mcp", auth: "custom", yes: true, baseUrl: "http://localhost:3000" })).toBe(0);
+    expect(await readFile(join(root, "app", ".well-known", "[...vendo]", "route.ts"), "utf8"))
+      .toContain("wellKnownVendoHandler");
+  });
+
+  it("opens the door for jwt and for the hand-written seam — both carry the oauth half", async () => {
+    for (const auth of ["jwt", "custom"] as const) {
+      const root = await fixture({}, `vendo-install-dx-mcp-${auth}-`);
+      const sink = output();
+      expect(await run(root, sink, { useCase: "mcp", auth, yes: true, baseUrl: "http://localhost:3000" })).toBe(0);
+      expect(await readFile(join(root, "lib", "vendo.ts"), "utf8")).toContain("mcp:");
+      expect(await readFile(join(root, "app", ".well-known", "[...vendo]", "route.ts"), "utf8"))
+        .toContain("wellKnownVendoHandler");
+    }
   });
 });
 

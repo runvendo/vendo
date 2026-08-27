@@ -310,24 +310,37 @@ describe("vendo init (zero-question)", () => {
     expect(sink.logs.join("\n")).not.toContain("Auth:");
   });
 
-  it("interactive runs confirm the detected preset with one [Y/n]-style question — accept wires it", async () => {
+  /**
+   * The one auth question, asked on EVERY interactive run. The package.json
+   * scan pre-selects — it no longer decides — so a one-family host still
+   * answers with Enter, and the hosts the scan cannot read (several
+   * dependencies, or none) get the SAME question instead of an anonymous
+   * composition nobody chose.
+   */
+  it("asks how users sign in and pre-selects the detected family — Enter wires it", async () => {
     const root = await fixture();
     await writeFile(join(root, "package.json"), JSON.stringify({
       name: "host",
       dependencies: { next: "16.0.0", "next-auth": "5.0.0" },
     }));
-    const asked: Array<{ question: string; defaultYes: boolean }> = [];
+    const asked: Array<{ question: string; values: string[]; defaultValue: string }> = [];
     const sink = output();
     expect(await run(root, sink, {
       interactive: true,
-      confirmAuth: async (question, defaultYes) => {
-        asked.push({ question, defaultYes });
-        return true; // Enter/Y
+      selectAuth: async (question, options, defaultIndex) => {
+        asked.push({
+          question,
+          values: options.map((option) => option.value),
+          defaultValue: options[defaultIndex ?? 0]!.value,
+        });
+        return options[defaultIndex ?? 0]!.value; // Enter
       },
     })).toBe(0);
-    // The question says what is being DECIDED — whether the agent acts as the
-    // person at the keyboard — not the mechanism it wires.
-    expect(asked).toEqual([{ question: "Should the agent act as your signed-in Auth.js user?", defaultYes: true }]);
+    expect(asked).toEqual([{
+      question: "How do your users sign in?",
+      values: ["authJs", "clerk", "supabase", "auth0", "jwt", "custom", "none"],
+      defaultValue: "authJs",
+    }]);
     const route = await readFile(join(root, "lib", "vendo.ts"), "utf8");
     expect(route).toContain("auth: authJs(),");
     expect(sink.logs.join("\n")).not.toContain("Auth:");
@@ -348,7 +361,7 @@ describe("vendo init (zero-question)", () => {
     expect(await run(root, sink, {
       interactive: true,
       selectUseCase: async () => (readBack = sink.logs.join("\n"), "embedded"),
-      confirmAuth: async () => true,
+      selectAuth: async (_question, options, defaultIndex) => options[defaultIndex ?? 0]!.value,
     })).toBe(0);
     expect(readBack).toContain("Next.js · App Router · JavaScript · npm");
     expect(readBack).toContain("Clerk auth (@clerk/nextjs)");
@@ -360,18 +373,14 @@ describe("vendo init (zero-question)", () => {
     expect(sink.logs.join("\n")).toContain("Next.js · App Router · JavaScript · npm");
   });
 
-  it("interactive decline + picking none keeps the composition anonymous and names the exact line to add later", async () => {
+  it("answering 'none yet' over a detected family keeps the composition anonymous and names the exact line", async () => {
     const root = await fixture();
     await writeFile(join(root, "package.json"), JSON.stringify({
       name: "host",
       dependencies: { next: "16.0.0", "@clerk/nextjs": "6.0.0" },
     }));
     const sink = output();
-    expect(await run(root, sink, {
-      interactive: true,
-      confirmAuth: async () => false,
-      selectAuth: async () => "none",
-    })).toBe(0);
+    expect(await run(root, sink, { interactive: true, selectAuth: async () => "none" })).toBe(0);
     const route = await readFile(join(root, "lib", "vendo.ts"), "utf8");
     // Anonymous still writes `auth:` — the one door — but as the host's OWN
     // object: no preset call, no preset import, nothing to uninstall.
@@ -386,59 +395,37 @@ describe("vendo init (zero-question)", () => {
     expect(advisories[0]).toContain(join("lib", "vendo.ts"));
   });
 
-  it("--yes never asks even in an interactive run: the detected default is accepted, no picker either", async () => {
+  it("--yes never asks even in an interactive run: the scanned default is taken silently", async () => {
     const root = await fixture();
     await writeFile(join(root, "package.json"), JSON.stringify({
       name: "host",
       dependencies: { next: "16.0.0", "next-auth": "5.0.0" },
     }));
-    let askedCount = 0;
     let pickedCount = 0;
     expect(await run(root, output(), {
       yes: true,
       interactive: true,
-      confirmAuth: async () => {
-        askedCount += 1;
-        return false;
-      },
       selectAuth: async () => {
         pickedCount += 1;
         return "clerk";
       },
     })).toBe(0);
-    expect(askedCount).toBe(0);
     expect(pickedCount).toBe(0);
     const route = await readFile(join(root, "lib", "vendo.ts"), "utf8");
     expect(route).toContain("auth: authJs(),");
   });
 
-  it("decline → picker → clerk wires clerk() and hints the missing SDK install", async () => {
+  it("choosing a family the host has no SDK for wires it anyway, with the install hint", async () => {
     const root = await fixture();
     await writeFile(join(root, "package.json"), JSON.stringify({
       name: "host",
       dependencies: { next: "16.0.0", "next-auth": "5.0.0" },
     }));
-    const askedSelects: Array<{ question: string; options: Array<{ value: string; label: string; hint?: string }> }> = [];
     const sink = output();
-    expect(await run(root, sink, {
-      interactive: true,
-      confirmAuth: async () => false,
-      selectAuth: async (question, options) => {
-        askedSelects.push({ question, options });
-        return "clerk";
-      },
-    })).toBe(0);
-
-    // One picker: none first (the default), detected authJs named, jwt last.
-    expect(askedSelects).toHaveLength(1);
-    expect(askedSelects[0]!.question).toBe("Which auth should Vendo wire?");
-    const values = askedSelects[0]!.options.map((option) => option.value);
-    expect(values[0]).toBe("none");
-    expect(values[values.length - 1]).toBe("jwt");
-    expect(askedSelects[0]!.options[1]).toMatchObject({ value: "authJs", hint: "detected next-auth" });
+    expect(await run(root, sink, { interactive: true, selectAuth: async () => "clerk" })).toBe(0);
 
     // clerk() is wired exactly like a detection-accept, with an honest
-    // lead-in: it was picked, not detected.
+    // lead-in: it was chosen, not detected.
     const route = await readFile(join(root, "lib", "vendo.ts"), "utf8");
     expect(route).toContain("auth: clerk(),");
     expect(route).toContain("// Selected Clerk — clerk() fills the identity seams");
@@ -452,68 +439,93 @@ describe("vendo init (zero-question)", () => {
     expect(advisories[0]).toContain("npm install @clerk/backend");
   });
 
-  it("decline → picker → jwt wires nothing and prints the jwt recipe", async () => {
+  /** JWT stopped being a printed recipe. It already satisfies the runtime —
+      jwt() composes through the same composeHostAuthPreset the vendor presets
+      do, oauth half included — and the only thing standing in its way was that
+      it cannot be zero-arg. Init supplies the argument: one env variable, named
+      in the composition and created in .env.local. */
+  it("JWT wires jwt() off HOST_API_JWT_SECRET and writes the .env.local entry", async () => {
     const root = await fixture();
-    await writeFile(join(root, "package.json"), JSON.stringify({
-      name: "host",
-      dependencies: { next: "16.0.0", "next-auth": "5.0.0" },
-    }));
     const sink = output();
-    expect(await run(root, sink, {
-      interactive: true,
-      confirmAuth: async () => false,
-      selectAuth: async () => "jwt",
-    })).toBe(0);
+    expect(await run(root, sink, { interactive: true, selectAuth: async () => "jwt" })).toBe(0);
+
     const route = await readFile(join(root, "lib", "vendo.ts"), "utf8");
-    // Anonymous still writes `auth:` — the one door — but as the host's OWN
-    // object: no preset call, no preset import, nothing to uninstall.
-    expect(route).not.toMatch(/auth: \w+\(/);
-    expect(route).not.toContain("@vendoai/vendo/auth/");
-    expect(route).toContain(`  auth: {\n    principal: async () => ({ kind: "user" as const, subject: "demo-user" }),\n  },\n`);
-    const advisories = sink.logs.filter((line) => line.includes("Auth:"));
-    expect(advisories).toHaveLength(1);
-    expect(advisories[0]).toContain("auth: jwt({ secret:");
-    expect(advisories[0]).toContain("https://docs.vendo.run/howto/auth");
+    expect(route).toContain('import { jwt } from "@vendoai/vendo/auth/jwt";');
+    expect(route).toContain("auth: jwt({ secret: () => process.env.HOST_API_JWT_SECRET }),");
+    expect(route).not.toContain('subject: "demo-user"');
+    expect(await readFile(join(root, ".env.local"), "utf8")).toContain("HOST_API_JWT_SECRET=");
+    const logs = sink.logs.join("\n");
+    expect(logs).toContain("Added HOST_API_JWT_SECRET= to .env.local");
+    expect(logs).toContain("Auth: jwt() wired");
   });
 
-  it("ambiguous detection offers the picker with detected families first (after none)", async () => {
+  /** A secret already on disk is the host's, and init must not rotate it out
+      from under an API that is already signing tokens with it. */
+  it("leaves an existing HOST_API_JWT_SECRET exactly as it is", async () => {
+    const root = await fixture();
+    await writeFile(join(root, ".env.local"), "HOST_API_JWT_SECRET=already-mine\n");
+    expect(await run(root, output(), { interactive: true, selectAuth: async () => "jwt" })).toBe(0);
+    expect(await readFile(join(root, ".env.local"), "utf8")).toContain("HOST_API_JWT_SECRET=already-mine");
+  });
+
+  /** "Write my own" scaffolds a seam that BOOTS: a fixed dev subject and a
+      pass-through door principal. Marked for replacement in the file itself,
+      because a fixed subject means every caller is the same person. */
+  it("'write my own' scaffolds a working seam, marked for replacement", async () => {
+    const root = await fixture();
+    const sink = output();
+    expect(await run(root, sink, { interactive: true, selectAuth: async () => "custom" })).toBe(0);
+
+    const route = await readFile(join(root, "lib", "vendo.ts"), "utf8");
+    // The same one `auth:` door the anonymous composition uses, plus the oauth
+    // half that opens the MCP door.
+    expect(route).toMatch(/^  auth: \{$/m);
+    expect(route).toContain('principal: async () => ({ kind: "user" as const, subject: "dev-user" }),');
+    expect(route).toContain('session: async () => ({ subject: "dev-user" }),');
+    expect(route).toContain('principal: async (subject: string) => ({ kind: "user" as const, subject }),');
+    expect(route).toContain("// replace before production");
+    expect(route).toContain("https://docs.vendo.run/howto/auth");
+    // It imports no preset — the seam is the host's own object.
+    expect(route).not.toContain("@vendoai/vendo/auth/");
+    expect(sink.logs.join("\n")).toContain("Auth: your own seam scaffolded");
+  });
+
+  it("an ambiguous scan still asks, with both detections named on their own rows", async () => {
     const root = await fixture();
     await writeFile(join(root, "package.json"), JSON.stringify({
       name: "host",
       dependencies: { next: "16.0.0", "@supabase/supabase-js": "2.0.0", "@auth0/nextjs-auth0": "3.0.0" },
     }));
-    // ENG-422: satisfied env keeps the supabase pick advisory-free here.
+    // ENG-422: satisfied env keeps the supabase answer advisory-free here.
     await writeFile(join(root, ".env.local"), "SUPABASE_URL=http://127.0.0.1:54321\n");
-    const askedSelects: Array<Array<{ value: string; hint?: string }>> = [];
-    let confirmCount = 0;
+    const asked: Array<{ options: Array<{ value: string; hint?: string }>; defaultValue: string }> = [];
     const sink = output();
     expect(await run(root, sink, {
       interactive: true,
-      confirmAuth: async () => {
-        confirmCount += 1;
-        return true;
-      },
-      selectAuth: async (_question, options) => {
-        askedSelects.push(options);
+      selectAuth: async (_question, options, defaultIndex) => {
+        asked.push({ options, defaultValue: options[defaultIndex ?? 0]!.value });
         return "supabase";
       },
     })).toBe(0);
 
-    // Ambiguity never gets the single-family confirm — straight to the picker.
-    expect(confirmCount).toBe(0);
-    expect(askedSelects).toHaveLength(1);
-    expect(askedSelects[0]!.map((option) => option.value))
-      .toEqual(["none", "supabase", "auth0", "authJs", "clerk", "jwt"]);
-    expect(askedSelects[0]![1]).toMatchObject({ hint: "detected @supabase/supabase-js" });
-    expect(askedSelects[0]![2]).toMatchObject({ hint: "detected @auth0/nextjs-auth0" });
+    expect(asked).toHaveLength(1);
+    // The list never reshuffles; the evidence rides the rows it belongs to, and
+    // ambiguity pre-selects nothing but the honest "none yet".
+    expect(asked[0]!.options.map((option) => option.value))
+      .toEqual(["authJs", "clerk", "supabase", "auth0", "jwt", "custom", "none"]);
+    expect(asked[0]!.defaultValue).toBe("none");
+    expect(asked[0]!.options.find((option) => option.value === "supabase"))
+      .toMatchObject({ hint: "detected @supabase/supabase-js" });
+    expect(asked[0]!.options.find((option) => option.value === "auth0"))
+      .toMatchObject({ hint: "detected @auth0/nextjs-auth0" });
 
-    // The detected pick wires like a detection-accept: no advisory at all.
+    // The chosen detected family wires like a detection-accept: no advisory.
     const route = await readFile(join(root, "lib", "vendo.ts"), "utf8");
     expect(route).toContain("auth: supabase(),");
     expect(sink.logs.join("\n")).not.toContain("Auth:");
   });
 
-  it("stays anonymous and advises once when several auth providers are present", async () => {
+  it("stays anonymous and advises once when several auth providers are present and nobody is asked", async () => {
     const root = await fixture();
     await writeFile(join(root, "package.json"), JSON.stringify({
       name: "host",
@@ -533,8 +545,8 @@ describe("vendo init (zero-question)", () => {
     expect(advisories[0]).toContain("auth: authJs() or auth: clerk()");
   });
 
-  // Agent-install-dx: --auth answers the confirm AND the picker in one flag,
-  // wiring exactly like the equivalent interactive pick — no prompt ever.
+  // Agent-install-dx: --auth answers the question in one flag, wiring exactly
+  // like the equivalent interactive answer — no prompt ever.
   it("--auth wires the named preset without any prompt, install hint included when the SDK is absent", async () => {
     const root = await fixture();
     await writeFile(join(root, "package.json"), JSON.stringify({
@@ -545,7 +557,6 @@ describe("vendo init (zero-question)", () => {
     expect(await run(root, sink, {
       auth: "clerk",
       interactive: true,
-      confirmAuth: async () => { throw new Error("prompted"); },
       selectAuth: async () => { throw new Error("prompted"); },
     })).toBe(0);
     const route = await readFile(join(root, "lib", "vendo.ts"), "utf8");
@@ -556,7 +567,7 @@ describe("vendo init (zero-question)", () => {
     expect(advisories[0]).toContain("npm install @clerk/backend");
   });
 
-  it("--auth on the detected family wires like a detection-accept; none and jwt mirror their picks", async () => {
+  it("--auth on the detected family wires like a detection-accept; none, jwt and custom mirror their answers", async () => {
     const detected = await fixture();
     await writeFile(join(detected, "package.json"), JSON.stringify({
       name: "host",
@@ -583,13 +594,19 @@ describe("vendo init (zero-question)", () => {
     expect(declinedRoute).toContain('subject: "demo-user"');
     expect(declinedSink.logs.join("\n")).toContain("left anonymous");
 
-    // --auth jwt: nothing wired, the recipe is the answer.
+    // --auth jwt: the preset is wired and the env entry exists.
     const jwt = await fixture();
-    const jwtSink = output();
-    expect(await run(jwt, jwtSink, { yes: true, auth: "jwt" })).toBe(0);
-    const jwtRoute = await readFile(join(jwt, "lib", "vendo.ts"), "utf8");
-    expect(jwtRoute).toContain('subject: "demo-user"');
-    expect(jwtSink.logs.join("\n")).toContain("auth: jwt({ secret:");
+    expect(await run(jwt, output(), { yes: true, auth: "jwt" })).toBe(0);
+    expect(await readFile(join(jwt, "lib", "vendo.ts"), "utf8"))
+      .toContain("auth: jwt({ secret: () => process.env.HOST_API_JWT_SECRET }),");
+    expect(await readFile(join(jwt, ".env.local"), "utf8")).toContain("HOST_API_JWT_SECRET=");
+
+    // --auth custom: the hand-written seam, same as the interactive answer.
+    const own = await fixture();
+    expect(await run(own, output(), { yes: true, auth: "custom" })).toBe(0);
+    const ownRoute = await readFile(join(own, "lib", "vendo.ts"), "utf8");
+    expect(ownRoute).toContain("// replace before production");
+    expect(ownRoute).toContain('session: async () => ({ subject: "dev-user" }),');
   });
 
   // Agent-install-dx: a non-interactive scaffold run is agent-driven — the
@@ -1789,9 +1806,12 @@ describe("vendo init --agent (ask first, then write)", () => {
     const asked = questionsOf(sink.logs);
     expect(asked.detected.auth).toBeUndefined();
     const auth = asked.questions.find((question) => question.id === "auth");
-    expect(auth?.prompt).toBe("Which auth should Vendo wire?");
+    expect(auth?.prompt).toContain("How do your users sign in?");
+    expect(auth?.prompt).toContain("Several auth dependencies");
     expect(auth?.options.map((option) => option.flag)).toContain("--auth clerk");
     expect(auth?.options.map((option) => option.flag)).toContain("--auth authJs");
+    // Naming one would name a provider the host may not use and hide the other.
+    expect(auth?.options.some((option) => option.recommended === true)).toBe(false);
   });
 
   /** The login loop's REAL seam: `vendo login` lands VENDO_API_KEY in
@@ -1917,15 +1937,17 @@ describe("vendo init --agent (ask first, then write)", () => {
     expect(asked.detected.auth).toBe("clerk");
     expect(asked.questions.map((question) => question.id)).toEqual(["use-case", "auth", "dev-url"]);
     expect(asked.questions[1]?.prompt)
-      .toBe("It detected Clerk. Should the assistant act as your signed-in Clerk user?");
+      .toBe("How do your users sign in? package.json says Clerk (@clerk/nextjs).");
+    // The same seven answers an interactive run offers, in the same order —
+    // the scan moves the RECOMMENDATION and nothing else.
     expect(asked.questions[1]?.options).toEqual([
-      { label: "Yes", flag: "--auth clerk", recommended: true },
-      {
-        label: "A different auth",
-        flag: "--auth <authJs|supabase|auth0|jwt>",
-        note: "replace the placeholder with one of those four names",
-      },
-      { label: "No signed-in user", flag: "--auth none" },
+      { label: "Auth.js", flag: "--auth authJs" },
+      { label: "Clerk", flag: "--auth clerk", recommended: true, note: "detected @clerk/nextjs" },
+      { label: "Supabase Auth", flag: "--auth supabase" },
+      { label: "Auth0", flag: "--auth auth0" },
+      { label: "JWT", flag: "--auth jwt", note: "your API's own signed tokens" },
+      { label: "Write my own", flag: "--auth custom", note: "init scaffolds a working seam you replace" },
+      { label: "None yet", flag: "--auth none", note: "the agent acts with no signed-in user" },
     ]);
   });
 });
@@ -2341,8 +2363,7 @@ describe("the five questions", () => {
       ai: false,
       cloud: { ...NO_CLOUD, models: "later" },
       selectUseCase: async (question) => { asked.push(question); return "embedded"; },
-      confirmAuth: async () => false,
-      selectAuth: async () => "none",
+      selectAuth: async (_question, options) => options.at(-1)!.value,
       askText: async () => "",
     }).finally(() => {
       process.stdin.isTTY = tty.in;
@@ -2449,7 +2470,6 @@ describe("the five questions", () => {
       auth: "clerk",
       interactive: true,
       askText: async (_question, _hint, prefill) => prefill ?? "",
-      confirmAuth: async () => false,
       selectUseCase: async () => "byo",
     })).toBe(0);
 
@@ -2489,7 +2509,6 @@ describe("the five questions", () => {
       posture: "broker",
       cloud: { cloudProbe: async () => ({ present: true, ok: true, unlocks: [] as readonly string[] }) },
       askText: async (_question, _hint, prefill) => prefill ?? "",
-      confirmAuth: async () => false,
     })).toBe(1);
 
     const errors = sink.errors.join("\n");
@@ -2511,7 +2530,6 @@ describe("the five questions", () => {
       posture: "broker",
       cloud: { cloudProbe: async () => ({ present: true, ok: true, unlocks: [] as readonly string[] }) },
       askText: async (_question, _hint, prefill) => prefill ?? "",
-      confirmAuth: async () => false,
     })).toBe(0);
     expect(await readdir(cloudOnly)).toContain("lib");
   });
@@ -2533,7 +2551,6 @@ describe("the five questions", () => {
       posture: "broker",
       cloud: { cloudProbe: async () => ({ present: true, ok: true, unlocks: [] as readonly string[] }) },
       askText: async (_question, _hint, prefill) => prefill ?? "",
-      confirmAuth: async () => false,
     })).toBe(1);
 
     const errors = sink.errors.join("\n");
@@ -2589,7 +2606,7 @@ describe("the MCP arm asks about Cloud once, and never about sign-in", () => {
     baseUrl: "http://localhost:3000",
     interactive: true,
     askText: async (): Promise<string> => "",
-    confirmAuth: refuse("confirmed"),
+    selectAuth: refuse("asked about auth"),
     selectUseCase: refuse("selected"),
   };
 

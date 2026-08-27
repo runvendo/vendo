@@ -20,12 +20,44 @@ import {
   type VendoGuard,
 } from "@vendoai/guard";
 import type { VendoComposition } from "./compose-context.js";
+import { readFileSyncOrUndefined } from "./dot-vendo.js";
 import { orgPolicyPath, orgPolicyResolver, workspacePolicySource } from "./org-policy.js";
+
+/** The file the guard reads when a policy config names none of its own
+ *  (guard/src/policy.ts's DEFAULT_POLICY_FILE) — relative to the process cwd,
+ *  exactly as it reads it, so the two can never name different documents. */
+const DEFAULT_POLICY_FILE = ".vendo/policy.json";
+
+/**
+ * The policy file this deployment is waiting on and does not have.
+ *
+ * A judgment made HERE and carried on the composition, for the same reason the
+ * store's ephemeral-disk one is (boot-summary.ts): the boot block may only read
+ * composed facts, and this one needs to look at a disk.
+ *
+ * The fallback it reports STAYS — a missing file on the default path is
+ * swallowed (guard/src/policy.ts:115) so a deployment boots on the built-in
+ * posture rather than refusing, which is the right call for a file that is not
+ * required. What was missing is anyone saying it happened. And it is never the
+ * never-configured case: `vendo init` always writes a starter policy.json
+ * (cli/init.ts's `wireAndScaffold`), so file-based policy with no file means
+ * rules that went away.
+ *
+ * Silent for every config that is not waiting on that file: no policy at all
+ * (the guard reports `unconfigured`, and the chrome already says so), inline
+ * rules or a preset name (both replace the file with no merge, ibid. :141),
+ * and an explicitly named `file` (a missing one already throws, ibid. :115).
+ */
+const missingPolicyFile = (policy: PolicyConfig | undefined): string | undefined =>
+  typeof policy === "object" && policy.file === undefined && policy.rules === undefined
+    && readFileSyncOrUndefined(DEFAULT_POLICY_FILE) === undefined
+    ? DEFAULT_POLICY_FILE
+    : undefined;
 
 /** ADAPTER RULE, guard seam: a built VendoGuard is this deployment's choke
  *  point verbatim; a spec is completed here. ONE constructor either way. */
 export const composeGuard = (composition: VendoComposition): Pick<VendoComposition,
-  "guard" | "resolveRisk" | "warnPresentCredentialsNotForwarded"> => {
+  "guard" | "resolveRisk" | "warnPresentCredentialsNotForwarded" | "policyFileMissing"> => {
   const { config, store, ops } = composition;
   // profile.policy is the parsed policy.json document held in memory, for a
   // deployment with no filesystem — `vendo init` writes the file instead
@@ -136,6 +168,7 @@ export const composeGuard = (composition: VendoComposition): Pick<VendoCompositi
     guard,
     resolveRisk,
     warnPresentCredentialsNotForwarded: presentCredentialsWarning(guard),
+    policyFileMissing: missingPolicyFile(configPolicy),
   };
 };
 

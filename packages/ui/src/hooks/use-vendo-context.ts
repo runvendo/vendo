@@ -1,4 +1,4 @@
-/** Spec 2026-08-05 §3 — merge structured host data into the [Situation]
+/** Spec 2026-08-05 §3 — merge structured host data into the [Context]
  *  channel for every message sent while mounted; removed on unmount. Rides the
  *  same `context` POST field the screen snapshot does, so the agent sees one
  *  merged situation. */

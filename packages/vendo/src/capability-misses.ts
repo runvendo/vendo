@@ -28,7 +28,7 @@ type AppendMiss = (event: CapabilityMissEvent) => Promise<void>;
 interface CaptureOptions {
   dataDir?: string;
   /** Telemetry-config + opt-out inputs ONLY (loadConfig/envOptOut); this
-   *  module never reads VENDO_API_KEY or VENDO_CLOUD_URL from it. */
+   *  module never reads VENDO_API_KEY or VENDO_CONSOLE_URL from it. */
   env?: Record<string, string | undefined>;
   telemetryHome?: string;
   telemetryConfig?: Pick<TelemetryConfig, "anonymousId" | "optedOut">;

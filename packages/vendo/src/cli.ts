@@ -32,7 +32,7 @@ Options:
   --agent                    Init only: ask first. Prints the open questions as JSON and writes nothing; re-run with the answers as flags and it writes, ending in a JSON receipt
   --yes                      Init: accept the detected auth preset, skip the cloud offer + AI polish + theme review, end with the agent tail
   --force                    Init/server-json: overwrite owned or generated files
-  --auth <preset>            Init only: wire this auth preset without asking (authJs, clerk, supabase, auth0, jwt, none)
+  --auth <preset>            Init only: answer "how do your users sign in?" without asking (authJs, clerk, supabase, auth0, jwt, custom, none)
   --framework <name>         Init only: override framework detection (next, express, custom) — required non-interactively when detection fails
   --cloud-key <key>          Init only: write this Vendo Cloud key to .env.local instead of the login offer
   --wait <seconds>           Login only: bound this call's polling to N seconds (agents loop re-runs; each resumes the same request), then exit resumably
@@ -55,7 +55,7 @@ Options:
   --json                     Sync/doctor: print one machine-readable report object
   --report                   Sync only: push the report to Vendo Cloud
   --key <key>                Sync/cloud: override VENDO_API_KEY
-  --api-url <url>            Sync/cloud/login: override VENDO_CLOUD_URL
+  --api-url <url>            Sync/cloud/login: override VENDO_CONSOLE_URL
   --version                  Print the version
 `;
 
@@ -84,7 +84,7 @@ const INIT_FLAGS = new Set([
 const INIT_VALUE_OPTIONS = ["--auth", "--framework", "--cloud-key", "--theme", "--engine", "--use-case", "--base-url", "--posture"];
 /** Agent-install-dx: every init wizard question has a value-flag answer; a
     bad value fails as loudly as an unknown flag, with the valid choices. */
-const INIT_AUTH_VALUES = ["authJs", "clerk", "supabase", "auth0", "jwt", "none"];
+const INIT_AUTH_VALUES = ["authJs", "clerk", "supabase", "auth0", "jwt", "custom", "none"];
 const INIT_FRAMEWORK_VALUES = ["next", "express", "custom"];
 const INIT_USE_CASE_VALUES = ["embedded", "agent-loop", "mcp"];
 const INIT_POSTURE_VALUES = ["local", "broker"];

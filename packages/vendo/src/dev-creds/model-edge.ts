@@ -23,7 +23,7 @@ export type { VendoModelOptions, VendoModelSlot };
 const EDGE_MESSAGE =
   "the vendo model ladder needs Node (it resolves the host's provider install and dev credentials from disk); "
   + "on this runtime pass `models: { default: … }` to createVendo explicitly — with a Vendo Cloud key that is the stock Anthropic "
-  + "provider pointed at the console gateway: createAnthropic({ apiKey: VENDO_API_KEY, baseURL: `${VENDO_CLOUD_URL ?? \"https://console.vendo.run\"}/api/v1` })(\"vendo\")";
+  + "provider pointed at the console gateway: createAnthropic({ apiKey: VENDO_API_KEY, baseURL: `${VENDO_CONSOLE_URL ?? \"https://console.vendo.run\"}/api/v1` })(\"vendo\")";
 
 interface LanguageModelV3Like {
   specificationVersion: "v3";

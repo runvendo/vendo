@@ -32,6 +32,7 @@
  * `@vendoai/vendo`, which this package may not import. Unset, rung 2 simply
  * does not light — a build with no Cloud adapter has no Cloud sandbox.
  */
+import { consoleUrlFromEnv } from "@vendoai/core";
 import type { SandboxAdapter } from "./sandbox.js";
 
 /** Which rung answered — reported verbatim on the umbrella's /status. `"e2b"`
@@ -63,7 +64,7 @@ export function selectSandbox(
 
   const apiKey = environment("VENDO_API_KEY");
   if (apiKey !== undefined && cloud !== undefined) {
-    const baseUrl = environment("VENDO_CLOUD_URL");
+    const baseUrl = consoleUrlFromEnv();
     return {
       adapter: cloud({ apiKey, ...(baseUrl === undefined ? {} : { baseUrl }) }),
       venue: "cloud",

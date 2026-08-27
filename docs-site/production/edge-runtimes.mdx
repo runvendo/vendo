@@ -16,7 +16,7 @@ the host is neither Next.js nor Express.
 It generates `vendo/server.ts`: a lazy composition that takes `Request` in,
 returns `Response`, and reads the environment per call.
 
-```ts vendo/server.ts highlight={12,13,14,15,16}
+```ts vendo/server.ts highlight={13,14,15,16,17}
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { cloudConnections, cloudSandbox, cloudTools, createVendo, guard, hostedStore } from "@vendoai/vendo/server";
 
@@ -25,8 +25,9 @@ let vendo: Vendo | null = null;
 function getVendo(env: VendoEnv) {
   if (vendo === null) {
     const apiKey = env.VENDO_API_KEY;
-    const baseUrl = (env.VENDO_CLOUD_URL ?? "https://console.vendo.run").replace(/\/+$/, "");
-    const cloud = { apiKey, baseUrl };
+    // The VENDO CONSOLE's origin — not your app's. Your app's public URL is VENDO_BASE_URL.
+    const consoleUrl = (env.VENDO_CONSOLE_URL ?? "https://console.vendo.run").replace(/\/+$/, "");
+    const cloud = { apiKey, baseUrl: consoleUrl };
     vendo = createVendo({
       models: { default: createAnthropic({ apiKey: cloud.apiKey, baseURL: `${cloud.baseUrl}/api/v1` })("vendo") },
       store: hostedStore(cloud),
@@ -89,7 +90,7 @@ On the edge the Cloud gateway is spelled out by hand — the stock Anthropic
 provider pointed at the console:
 
 ```ts highlight={1}
-createAnthropic({ apiKey: VENDO_API_KEY, baseURL: `${VENDO_CLOUD_URL}/api/v1` })("vendo")
+createAnthropic({ apiKey: VENDO_API_KEY, baseURL: `${VENDO_CONSOLE_URL}/api/v1` })("vendo")
 ```
 
 Call `vendoModel()` on a Worker and it throws that same sentence back at you.

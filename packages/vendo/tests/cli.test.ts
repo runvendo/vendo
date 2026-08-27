@@ -136,7 +136,7 @@ describe("vendo CLI commands", () => {
     cleanup.push(root);
 
     expect(await main(["init", root, "--auth", "okta"])).toBe(1);
-    expect(error.mock.calls.flat().join("\n")).toContain("--auth must be one of authJs, clerk, supabase, auth0, jwt, none");
+    expect(error.mock.calls.flat().join("\n")).toContain("--auth must be one of authJs, clerk, supabase, auth0, jwt, custom, none");
 
     expect(await main(["init", root, "--framework", "rails"])).toBe(1);
     expect(error.mock.calls.flat().join("\n")).toContain("--framework must be next, express, or custom");

@@ -326,7 +326,7 @@ interface SyncEngine {
       2. a Cloud key means Vendo Cloud, so `sync` pushes over the same
          `vendo/knowledge-wire@1` /upsert + /remove the server would read
          from — the key is read exactly the way the server reads it
-         (cloudKeyOptions: VENDO_API_KEY, repointed by VENDO_CLOUD_URL);
+         (cloudKeyOptions: VENDO_API_KEY, repointed by VENDO_CONSOLE_URL);
       3. no key: the local lexical engine over the project store
          (`.vendo/data`, the same createStore default the server falls back
          to — ENG-351 single-writer discipline applies, so a running dev

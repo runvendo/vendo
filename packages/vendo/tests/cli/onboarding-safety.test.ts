@@ -193,7 +193,7 @@ describe("an init at a monorepo root names the workspace host", () => {
   }
 
   function hintFor(root: string, sink: { output: Output }): Promise<number> {
-    return run(root, sink, { interactive: true, confirmAuth: async () => false, selectAuth: async () => "none" });
+    return run(root, sink, { interactive: true, selectAuth: async () => "none" });
   }
 
   it("lists only the workspace packages that look like hosts", async () => {

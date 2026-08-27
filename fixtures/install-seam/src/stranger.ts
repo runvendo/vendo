@@ -80,7 +80,7 @@ async function copyApp(destination: string): Promise<void> {
 /**
  * A stand-in for the Vendo console that answers nothing and remembers
  * everything. Init's cloud paths all resolve their base from
- * `VENDO_CLOUD_URL`, so a request recorded here is a key-mint attempt — which
+ * `VENDO_CONSOLE_URL`, so a request recorded here is a key-mint attempt — which
  * is how "asks before accounts" is asserted as an absence rather than as the
  * lack of a string in some output.
  */
@@ -109,7 +109,8 @@ function strangerEnv(home: string, overrides: Record<string, string | undefined>
   const env: NodeJS.ProcessEnv = { ...process.env };
   for (const name of [
     "VENDO_API_KEY",
-    "VENDO_CLOUD_URL",
+    "VENDO_CONSOLE_URL",
+    "VENDO_CLOUD_URL", // the retired spelling: scrub BOTH, or a set one leaks in
     "VENDO_DEV_CREDENTIAL",
     "VENDO_MODEL",
     "VENDO_MODEL_APPS",
@@ -200,7 +201,7 @@ export async function bootStranger(artifactsDir: string): Promise<{ stranger: St
   const baseUrl = `http://127.0.0.1:${port}`;
   const env = strangerEnv(home, {
     ANTHROPIC_API_KEY: FAKE_PROVIDER_KEY,
-    VENDO_CLOUD_URL: cloud.url,
+    VENDO_CONSOLE_URL: cloud.url,
   });
 
   let dev: ChildProcess | null = null;

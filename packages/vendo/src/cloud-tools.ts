@@ -15,7 +15,7 @@ import { keepAliveFetch } from "./keep-alive-fetch.js";
  * from the UI's point of view. */
 export interface CloudToolsOptions {
   apiKey: string;
-  /** Defaults to the Vendo console; the composition seam passes VENDO_CLOUD_URL. */
+  /** Defaults to the Vendo console; the composition seam passes VENDO_CONSOLE_URL. */
   baseUrl?: string;
   /** Toolkit scoping, same meaning as composioConnector's `apps`. Unset = this
    * connector registers NO tools at all: the console's catalog is far too large

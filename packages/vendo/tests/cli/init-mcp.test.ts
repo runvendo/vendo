@@ -4,7 +4,7 @@ import { pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { doorWellKnownPaths } from "../../src/door-paths.js";
 import { compositionSpecifier, routeSource } from "../../src/cli/init-scaffolds.js";
-import { generateServiceKey, planMcp, wellKnownRouteSource, type McpPlan, type McpPlanInput } from "../../src/cli/init-mcp.js";
+import { OWN_SEAM_RECIPE, generateServiceKey, planMcp, wellKnownRouteSource, type McpPlan, type McpPlanInput } from "../../src/cli/init-mcp.js";
 
 const cleanup: string[] = [];
 afterEach(async () => {
@@ -12,7 +12,7 @@ afterEach(async () => {
   await Promise.all(cleanup.splice(0).map((path) => rm(path, { recursive: true, force: true })));
 });
 
-const clerk = { preset: "clerk", dependency: "@clerk/nextjs" } as const;
+const clerk = { kind: "preset", preset: "clerk", dependency: "@clerk/nextjs" } as const;
 
 /** How the discovery route reaches the composition module. Assembled rather
     than written literally: an escaping relative specifier spelled inline reads
@@ -64,18 +64,39 @@ describe("planMcp — the files", () => {
 });
 
 describe("planMcp — what it refuses to write", () => {
-  it("writes nothing without an oauth seam: mcp: true would throw at composition", () => {
+  /** "None yet" is the only answer that reaches here, and it is FATAL: the run
+      asked for MCP, there is no door, and an install that exits 0 over that is
+      a false "Wired". The refusal states what / why / how and carries the seam
+      the "write my own" answer would have scaffolded. */
+  it("refuses FATALLY without an oauth seam: mcp: true would throw at composition", () => {
     const blocked = plan({ authWired: null });
-    expect(blocked.blocked).toMatch(/cannot open without one/);
+    expect(blocked.blockedFatal).toBe(true);
+    expect(blocked.blocked).toMatch(/wired no door, so nothing was written at all/);
+    expect(blocked.blocked).toMatch(/mints its own principals through an OAuth adapter/);
+    expect(blocked.blocked).toMatch(/How do your users sign in\?/);
+    expect(blocked.blocked).toContain(OWN_SEAM_RECIPE);
+    // The false claim is dead: jwt() carries the oauth half like every preset.
+    expect(blocked.blocked).not.toMatch(/do not carry the oauth half/);
     expect(blocked.changes).toEqual([]);
     expect(blocked.compositionSource).toBeNull();
   });
 
+  /** Not fatal: this host's whole install still lands, and only the door is
+      hand-work — there is no file-routed app directory to claim origin-root. */
   it("writes nothing off the Next.js app router — the discovery paths are origin-root", () => {
     for (const framework of ["express", "custom"] as const) {
       const blocked = plan({ framework });
       expect(blocked.blocked).toMatch(/Next\.js-only/);
+      expect(blocked.blockedFatal).toBeUndefined();
       expect(blocked.changes).toEqual([]);
+    }
+  });
+
+  it("opens the door for jwt and for the hand-written seam", () => {
+    for (const authWired of [{ kind: "jwt" }, { kind: "custom" }] as const) {
+      const opened = plan({ authWired });
+      expect(opened.blocked).toBeUndefined();
+      expect(opened.compositionSource).toContain("mcp: true,");
     }
   });
 });

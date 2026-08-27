@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import { installedVersion } from "./dep-versions.js";
-import { CLERK_PRESET_IMPORT, composesOwnStore, detectFramework, detectVendoWiring, SUPABASE_PRESET_IMPORT, wiresClerkAuth, wiresSupabaseAuth, wiresTenantConnectors, type VendoWiring } from "./framework.js";
+import { CLERK_PRESET_IMPORT, composesOwnStore, detectFramework, detectVendoWiring, SUPABASE_PRESET_IMPORT, wiresClerkAuth, wiresPolicyFile, wiresSupabaseAuth, wiresTenantConnectors, type VendoWiring } from "./framework.js";
 import { vendoPackageInvocation } from "./provider-deps.js";
 import { compositionModulePath, importsGeneratedMap, importsSplitComposition, missingRegistrations, registrationKey, requiredServerActions, serverActionsWiring } from "./init-scaffolds.js";
 import { readUseCase } from "./install-record.js";
@@ -290,6 +290,34 @@ async function checkTenantConnectorVault(run: DoctorRun): Promise<void> {
       : " VENDO_API_KEY does not cover it here: this host passes its own createStore(), and an explicitly passed store wins."));
 }
 
+/** The static twin of the boot block's ⚠ guard row (boot-summary.ts): a host
+ *  whose guard reads its rules from a file, and no file. The guard swallows a
+ *  missing default path (guard/src/policy.ts:115) and keeps serving on its
+ *  built-in posture, so nothing at runtime refuses and nothing in the product
+ *  says the host's own rules stopped applying.
+ *
+ *  Distinct from `config/policy.json`, which answers the inventory question
+ *  ("is the file there?") for all five surfaces alike: this one answers whether
+ *  the file's absence COSTS this deployment anything, which only its wiring can
+ *  say. A host that passes its rules inline is correctly configured with no
+ *  file, and must not be told its rules are not in force.
+ *
+ *  A warning, not a failure: the deployment serves, and Yousef's call is that a
+ *  missing policy file may never stop a boot. */
+async function checkPolicyFile(run: DoctorRun): Promise<void> {
+  const { root } = run;
+  if (!await wiresPolicyFile(root)) return;
+  if (await exists(join(root, ".vendo", "policy.json"))) {
+    run.pass("wiring/policy-file", "the guard's rules are where its wiring reads them (.vendo/policy.json)");
+    return;
+  }
+  run.warn("wiring/policy-file", "E-CFG-001",
+    "this host wires guard({ policy: {} }), which reads .vendo/policy.json, and that file is missing — "
+    + "the guard boots anyway on its built-in posture (destructive and ungraded actions ask, everything "
+    + "else runs), so YOUR rules are not in force and nothing at runtime refuses. Restore the file (`vendo "
+    + "init` writes a starter one), or pass the rules inline: guard({ policy: { rules: [ … ] } }).");
+}
+
 /** The static half of doctor: is this host wired at all, does anything visible
  *  reach the agent, and is the dependency declared. No network. */
 export async function checkWiring(run: DoctorRun): Promise<void> {
@@ -326,6 +354,7 @@ export async function checkWiring(run: DoctorRun): Promise<void> {
   await checkMcpSignInKeys(run);
   await checkPresetEnv(run);
   await checkTenantConnectorVault(run);
+  await checkPolicyFile(run);
 
   if (await hasDependency(root)) run.pass("wiring/dependency", "@vendoai/vendo dependency is declared");
   else run.fail("wiring/dependency", "E-WIRE-005", "@vendoai/vendo (or vendoai alias) is not declared");

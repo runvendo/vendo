@@ -155,7 +155,7 @@ describe("session", () => {
     expect(system).toContain("Answer as the Acme desk.");
     expect(system).toContain("[User]");
     expect(system).toContain("name: Dana");
-    expect(system).toContain("[Situation]");
+    expect(system).toContain("[Context]");
     expect(system).toContain("page: /billing");
   });
 

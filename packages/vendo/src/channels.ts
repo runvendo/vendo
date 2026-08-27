@@ -129,7 +129,7 @@ export async function channelInboundSecret(apiKey: string): Promise<string> {
 
 export interface CloudTextChannelOptions {
   apiKey: string;
-  /** Defaults to the Vendo console; the composition seam passes VENDO_CLOUD_URL. */
+  /** Defaults to the Vendo console; the composition seam passes VENDO_CONSOLE_URL. */
   baseUrl?: string;
   fetch?: typeof fetch;
   /** Per-request abort budget (default 30s, the other Cloud adapters') — a hung
@@ -202,7 +202,7 @@ export function cloudTextChannel(options: CloudTextChannelOptions): ChannelsServ
       // successful registration with no number.
       throw new VendoError(
         "validation",
-        `Vendo Cloud channels returned a non-JSON ${response.status} response — check VENDO_CLOUD_URL`,
+        `Vendo Cloud channels returned a non-JSON ${response.status} response — check VENDO_CONSOLE_URL`,
       );
     }
   }

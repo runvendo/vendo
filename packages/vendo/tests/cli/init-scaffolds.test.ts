@@ -6,7 +6,9 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 import { composedAuthPreset } from "../../src/cli/init-auth.js";
-import { compositionModulePath, compositionModuleSource, compositionSpecifier, customServerSource, devScriptPort, expressServerSource, routeSource, vendoEnvExample } from "../../src/cli/init-scaffolds.js";
+import { authOwnSeamLines, compositionModulePath, compositionModuleSource, compositionSpecifier, customServerSource, devScriptPort, expressServerSource, routeSource, vendoEnvExample } from "../../src/cli/init-scaffolds.js";
+import { createVendo, guard } from "../../src/server.js";
+import type { HostAuthPreset } from "../../src/auth-presets/index.js";
 
 const run = promisify(execFile);
 
@@ -54,6 +56,108 @@ describe("JS-emitted scaffolds are valid JavaScript", () => {
   });
 });
 
+/**
+ * "Write my own": the seam init scaffolds for a host with no auth provider. It
+ * has to BOOT — a stub that only compiles is a dead feature — so the proof runs
+ * the scaffold's own text through the real `createVendo`, with the door on. No
+ * stub on either side: the producer is the scaffold, the consumer is the
+ * runtime that would reject a seam it cannot use.
+ */
+describe("the hand-written auth seam", () => {
+  /** The seam object as the scaffold writes it — the hoisted spelling, which
+      is a `const auth = { … };` statement. The JS variant is plain JavaScript by
+      construction, so evaluating it needs no transpiler, and it is
+      character-for-character the TS one minus the annotations. */
+  const seamObject = (): HostAuthPreset =>
+    // eslint-disable-next-line @typescript-eslint/no-implied-eval, no-new-func
+    (new Function(`${authOwnSeamLines(false, true)}return auth;`) as () => HostAuthPreset)();
+
+  it("composes — createVendo accepts it, and `mcp: true` opens over its oauth half", () => {
+    expect(() => createVendo({
+      auth: seamObject(),
+      guard: guard({ policy: {} }),
+      mcp: true,
+    })).not.toThrow();
+  });
+
+  it("resolves the fixed dev subject on both seams", async () => {
+    const auth = seamObject();
+    await expect(auth.principal(new Request("https://host.example/api/vendo")))
+      .resolves.toEqual({ kind: "user", subject: "dev-user" });
+    await expect(auth.oauth?.principal("someone-else"))
+      .resolves.toEqual({ kind: "user", subject: "someone-else" });
+    await expect(auth.oauth?.session?.(new Request("https://host.example/"), { returnTo: "/" } as never))
+      .resolves.toEqual({ subject: "dev-user" });
+  });
+
+  it("says in the file itself that a fixed subject is not shippable", () => {
+    expect(authOwnSeamLines(true)).toContain("// replace before production");
+    expect(authOwnSeamLines(true)).toContain("https://docs.vendo.run/howto/auth");
+    expect(authOwnSeamLines(true)).toContain("EVERY caller is the same person");
+  });
+
+  /** It rides the SAME one `auth:` door the anonymous composition does — the
+      host who later adds facts or actAs adds a member, not a second shape. */
+  it("goes through the one auth door, inline everywhere and hoisted on the agent-loop arm", () => {
+    for (const source of [
+      compositionModuleSource({ serverActions: false, auth: { kind: "custom" } }),
+      expressServerSource(true, { kind: "custom" }),
+      customServerSource(true, { kind: "custom" }),
+    ]) {
+      expect(source).toMatch(/^\s+auth: \{$/m);
+      expect(source).toContain("oauth: {");
+      // Nothing is imported for it — the seam is the host's own object.
+      expect(source).not.toContain("@vendoai/vendo/auth/");
+    }
+    const loop = compositionModuleSource({ serverActions: false, auth: { kind: "custom" }, agentLoop: true });
+    expect(loop).toContain("const auth = {\n");
+    expect(loop).toMatch(/^  auth,$/m);
+    expect(loop).toContain("export const resolvePrincipal = (_req: Request) => auth.principal();\n");
+  });
+
+  it("keeps the JS spelling free of TypeScript syntax", async () => {
+    await parses(expressServerSource(false, { kind: "custom" }));
+    await parses(customServerSource(false, { kind: "custom" }));
+    expect(authOwnSeamLines(false)).not.toContain(" as const");
+    expect(authOwnSeamLines(false)).not.toContain("subject: string");
+  });
+});
+
+/** JWT is a wired answer now, not a printed recipe: it satisfies the runtime
+    already (jwt() composes through the same composeHostAuthPreset the vendor
+    presets do) and the only thing in its way was that it cannot be zero-arg.
+    The scaffold supplies the argument. */
+describe("the JWT answer", () => {
+  it("imports jwt from its own subpath and reads the secret from the env variable", () => {
+    const source = compositionModuleSource({ serverActions: false, auth: { kind: "jwt" } });
+    expect(source).toContain(`import { jwt } from "@vendoai/vendo/auth/jwt";`);
+    expect(source).toContain("auth: jwt({ secret: () => process.env.HOST_API_JWT_SECRET }),");
+    expect(source).not.toContain("demo-user");
+  });
+
+  it("hoists onto the agent-loop arm like any other preset", () => {
+    const source = compositionModuleSource({ serverActions: false, auth: { kind: "jwt" }, agentLoop: true });
+    expect(source).toContain("const auth = jwt({ secret: () => process.env.HOST_API_JWT_SECRET });\n");
+    expect(source).toContain("export const resolvePrincipal = (req: Request) => auth.principal(req);\n");
+  });
+
+  it("reads back as wired, so a later MCP run is not refused", async () => {
+    const root = await mkdtemp(join(tmpdir(), "vendo-composed-jwt-"));
+    cleanup.push(root);
+    const composition = join(root, "vendo.ts");
+    await writeFile(composition, compositionModuleSource({ serverActions: false, auth: { kind: "jwt" } }));
+    expect(await composedAuthPreset(composition)).toBe("jwt");
+  });
+
+  it("so does the hand-written seam — `oauth` in the composition IS the wiring", async () => {
+    const root = await mkdtemp(join(tmpdir(), "vendo-composed-own-"));
+    cleanup.push(root);
+    const composition = join(root, "vendo.ts");
+    await writeFile(composition, compositionModuleSource({ serverActions: false, auth: { kind: "custom" } }));
+    expect(await composedAuthPreset(composition)).toBe("custom");
+  });
+});
+
 describe("the scaffolds init writes", () => {
   it("does not import or pass a registry — the host writes its own client file", () => {
     const source = compositionModuleSource({ serverActions: false, auth: null });
@@ -74,7 +178,7 @@ describe("the scaffolds init writes", () => {
     the SAME instance. A route module may export only handlers, so createVendo
     can never live in one. */
 describe("the split Next composition", () => {
-  const clerk = { preset: "clerk", dependency: "@clerk/nextjs" } as const;
+  const clerk = { kind: "preset", preset: "clerk", dependency: "@clerk/nextjs" } as const;
 
   it("makes route.ts thin — a route module may export only handlers", () => {
     const thin = routeSource("@/lib/vendo");
@@ -226,7 +330,7 @@ describe("the .env.example base URL", () => {
     ANTHROPIC_API_KEY no longer picks one. The scaffold is the migration path —
     init writes the explicit selection into the composition it authors, ONCE. */
 describe("the models line a detected provider key writes", () => {
-  const clerk = { preset: "clerk", dependency: "@clerk/nextjs" } as const;
+  const clerk = { kind: "preset", preset: "clerk", dependency: "@clerk/nextjs" } as const;
   const anthropicKey = { provider: "anthropic", envVar: "ANTHROPIC_API_KEY" } as const;
 
   it("writes the import and the config line exactly once into the composition", () => {

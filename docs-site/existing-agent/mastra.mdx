@@ -66,7 +66,7 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 
 const model = createAnthropic({
   apiKey: process.env.VENDO_API_KEY,
-  baseURL: `${process.env.VENDO_CLOUD_URL ?? "https://console.vendo.run"}/api/v1`,
+  baseURL: `${process.env.VENDO_CONSOLE_URL ?? "https://console.vendo.run"}/api/v1`,
 })("vendo");
 ```
 
