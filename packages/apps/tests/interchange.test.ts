@@ -37,12 +37,11 @@ const context = (subject: string): RunContext => ({
 const document = (overrides: Partial<AppDocument> = {}): AppDocument =>
   screenDocument("app_artifact_id_is_untrusted", {
     name: "Invoice Chaser",
-    storage: { invoices: { about: "Invoices being chased", refs: { invoice: "host.invoice" } } },
     ...overrides,
   });
 
 describe(".vendoapp interchange through createApps", () => {
-  it("round-trips a copy with fresh ownership and empty data", async () => {
+  it("round-trips a copy with fresh ownership", async () => {
     const store = memoryStore();
     const guard = guardFixture({ grants: [{
       id: "grt_source",
@@ -60,7 +59,6 @@ describe(".vendoapp interchange through createApps", () => {
     const grace = context("user_grace");
     const source = await runtime.importApp(document({ forkedFrom: "app_template" }), ada);
     guard.grants[0] = { ...guard.grants[0]!, appId: source.id };
-    await store.records(`app:${source.id}:invoices`).put({ id: "invoice_1", data: { total: 42 } });
 
     const bytes = await runtime.exportApp(source.id, ada);
     const copy = await runtime.importApp(bytes, grace);
@@ -68,11 +66,9 @@ describe(".vendoapp interchange through createApps", () => {
     expect(copy.id).not.toBe(source.id);
     expect(copy.id).toMatch(/^app_/);
     expect(copy.forkedFrom).toBeUndefined();
-    expect(copy.storage).toEqual(source.storage);
     expect(await runtime.get(copy.id, grace)).toEqual(copy);
     expect(await runtime.get(copy.id, ada)).toBeNull();
     expect(await runtime.get(source.id, ada)).toEqual(source);
-    expect(await store.records(`app:${copy.id}:invoices`).list()).toEqual({ records: [] });
     expect(guard.grants).toHaveLength(1);
     expect(guard.grants.some((grant) => grant.appId === copy.id)).toBe(false);
     const operationOf = (event: { detail?: unknown }) => (event.detail as { operation?: string } | undefined)?.operation;
@@ -97,7 +93,7 @@ describe(".vendoapp interchange through createApps", () => {
     const exported = JSON.parse(decoder.decode(archive["app.json"])) as Record<string, unknown>;
     expect(exported).not.toHaveProperty("id");
     expect(exported).not.toHaveProperty("forkedFrom");
-    expect(exported.storage).toEqual(legacy.storage);
+    expect(exported.name).toBe(legacy.name);
   });
 
   it("drops unknown authority and data fields on both import and export", async () => {

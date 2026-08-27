@@ -59,7 +59,7 @@ const refIn = (outcome: ToolOutcome): Record<string, unknown> => {
 
 describe("vendo_automate", () => {
   it("is offered to the model, with a title and a write grade", () => {
-    const descriptor = agentToolDescriptors.find(({ name }) => name === VENDO_AUTOMATE_TOOL);
+    const descriptor = agentToolDescriptors().find(({ name }) => name === VENDO_AUTOMATE_TOOL);
     expect(descriptor).toMatchObject({ risk: "write", title: "Set this to run on its own" });
   });
 

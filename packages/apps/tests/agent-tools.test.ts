@@ -12,6 +12,7 @@ import {
 } from "../src/contract/index.js";
 import { describe, expect, it } from "vitest";
 import { agentToolDescriptors } from "../src/server/doors/agent-tools.js";
+import { VENDO_APPS_SQL_TOOL } from "../src/server/doors/sql-tool.js";
 import { createApps, type AppsRuntime, type PlacementEntry } from "../src/server/index.js";
 import { authoringAssembler, scriptedAssembler } from "../src/server/testing/screen-assembler.js";
 import { bindTools, guardFixture } from "../src/server/testing/guard-fixture.js";
@@ -57,6 +58,8 @@ describe("apps agent tools", () => {
 
     const descriptors = await runtime.agentTools().descriptors();
 
+    // Exactly these, and no `vendo_apps_sql`: this deployment composed no app
+    // database, and no adapter means no tool.
     expect(descriptors.map((descriptor) => descriptor.name)).toEqual([
       "vendo_make",
       "vendo_automate",
@@ -65,9 +68,6 @@ describe("apps agent tools", () => {
       "vendo_slots_list",
       "vendo_apps_pin",
       "vendo_apps_unpin",
-      "vendo_apps_data_list",
-      "vendo_apps_data_put",
-      "vendo_apps_data_delete",
     ]);
     for (const descriptor of descriptors) {
       expect(TOOL_NAME_PATTERN.test(descriptor.name)).toBe(true);
@@ -85,7 +85,7 @@ describe("apps agent tools", () => {
     // rearranging your own view is not an act on the world, and the history is
     // the safety net.
     expect(descriptors.map((descriptor) => descriptor.risk)).toEqual([
-      "read", "write", "write", "read", "read", "write", "write", "read", "write", "write",
+      "read", "write", "write", "read", "read", "write", "write",
     ]);
     // The one-narrower-retry instruction survived the merge onto `vendo_make`:
     // without it the model's answer to a rejected change was to rebuild the app
@@ -146,11 +146,20 @@ describe("apps agent tools", () => {
       args: { request: "Build a dashboard" },
     }, ctx)).resolves.toBeUndefined();
 
-    // The ceremony still belongs on what an app DOES: writing and deleting the
-    // app's own stored rows stay write-class on their own descriptors, untouched.
-    const descriptors = await runtime.agentTools().descriptors();
-    expect(descriptors.find(({ name }) => name === "vendo_apps_data_put")?.risk).toBe("write");
-    expect(descriptors.find(({ name }) => name === "vendo_apps_data_delete")?.risk).toBe("write");
+    // The ceremony still belongs on what an app DOES: a statement against the
+    // app's own database is authored write-class, and only regraded DOWN, per
+    // call, by the statement it actually carries.
+    expect(agentToolDescriptors("postgres").find(({ name }) => name === VENDO_APPS_SQL_TOOL)?.risk).toBe("write");
+    await expect(runtime.agentToolRisk({
+      id: "call_sql_select",
+      tool: VENDO_APPS_SQL_TOOL,
+      args: { appId: created.id, sql: "SELECT * FROM mine.notes" },
+    }, ctx)).resolves.toBe("read");
+    await expect(runtime.agentToolRisk({
+      id: "call_sql_insert",
+      tool: VENDO_APPS_SQL_TOOL,
+      args: { appId: created.id, sql: "INSERT INTO mine.notes (id) VALUES (?)" },
+    }, ctx)).resolves.toBe("write");
   });
 
   it("answers a rejected change with an honest failed receipt, never implying the app changed", async () => {
@@ -453,61 +462,6 @@ export default function ToolBuiltDashboard() {
     });
   });
 
-  it("ownership-checks and round-trips declared data collections", async () => {
-    const store = memoryStore();
-    let runtime: AppsRuntime;
-    runtime = createApps({
-      store,
-      guard: guardFixture(),
-      tools: hostTools,
-      catalog: [],
-      model: scriptedLanguageModel(generated),
-      screen: authoringAssembler(() => runtime, generated),
-    });
-    const created = await runtime.create({ prompt: "Data tools" }, ctx);
-    await seedAppRow(engineOverAdapter(store), {
-      ...created,
-      storage: { notes: { about: "Invoice notes", refs: { invoice_id: "host.invoice" } } },
-    }, ctx.principal.subject);
-    const registry = runtime.agentTools();
-
-    await expect(registry.execute({
-      id: "call_data_put",
-      tool: "vendo_apps_data_put",
-      args: {
-        appId: created.id,
-        collection: "notes",
-        id: "note_1",
-        data: { body: "hello" },
-        refs: { invoice_id: "inv_1" },
-      },
-    }, ctx)).resolves.toMatchObject({ status: "ok", output: { id: "note_1" } });
-    await expect(registry.execute({
-      id: "call_data_list",
-      tool: "vendo_apps_data_list",
-      args: { appId: created.id, collection: "notes", refs: { invoice_id: "inv_1" } },
-    }, ctx)).resolves.toMatchObject({
-      status: "ok",
-      output: { records: [{ id: "note_1", data: { body: "hello" } }] },
-    });
-    await expect(registry.execute({
-      id: "call_data_delete",
-      tool: "vendo_apps_data_delete",
-      args: { appId: created.id, collection: "notes", id: "note_1" },
-    }, ctx)).resolves.toEqual({ status: "ok", output: { status: "ok" } });
-
-    await expect(registry.execute({
-      id: "call_intruder_data_list",
-      tool: "vendo_apps_data_list",
-      args: { appId: created.id, collection: "notes" },
-    }, {
-      ...ctx,
-      principal: { kind: "user", subject: "user_intruder" },
-    })).resolves.toEqual({
-      status: "error",
-      error: { code: "not-found", message: `app not found: ${created.id}` },
-    });
-  });
 });
 
 describe("§9.4 — a refused EDIT hands the model the FACTS, not the raw code", () => {
@@ -581,7 +535,8 @@ describe("§3 consumer voice — every apps tool carries a title", () => {
   // the model then says `vendo_apps_edit` to a person. Four of Vendo's twelve
   // projected tools had titles; these were the ones that did not.
   it("titles each descriptor from the shared table, in the consumer voice", () => {
-    for (const descriptor of agentToolDescriptors) {
+    // With a dialect, so `vendo_apps_sql` is in the list this walks.
+    for (const descriptor of agentToolDescriptors("postgres")) {
       expect(descriptor.title, descriptor.name).toBe(VENDO_TOOL_TITLES[descriptor.name]);
       expect(descriptor.title, descriptor.name).toBeTruthy();
       // The title is what a person reads; it must not be the identifier again.

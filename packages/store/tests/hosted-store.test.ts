@@ -8,14 +8,6 @@ import {
   VendoError,
   engineAppHistory,
   parseStoreWireError,
-  storeWireAppDataDeleteFileRequestSchema,
-  storeWireAppDataDeleteRequestSchema,
-  storeWireAppDataGetFileRequestSchema,
-  storeWireAppDataGetRequestSchema,
-  storeWireAppDataListFilesRequestSchema,
-  storeWireAppDataListRequestSchema,
-  storeWireAppDataPutFileRequestSchema,
-  storeWireAppDataPutRequestSchema,
   storeWireAuditListRequestSchema,
   storeWireAuditTallyRequestSchema,
   storeWireBlobsDeleteRequestSchema,
@@ -45,7 +37,7 @@ import {
 import { storeAdapterConformance } from "@vendoai/core/conformance";
 import { createStore, secretStore, storeSecrets, type VendoStore } from "../src/index.js";
 import { hostedStore, hostedStoreOps, type HostedStore } from "../src/hosted-store.js";
-import { fakeConsole, type RecordedRequest } from "../src/hosted-store.test-util.js";
+import { fakeConsole } from "../src/hosted-store.test-util.js";
 
 const encoder = new TextEncoder();
 
@@ -61,8 +53,8 @@ describe("hostedStore conformance", () => {
   //
   // The suite's own collection names are host-flavoured ("conformance_put"),
   // and since the generic records family left the wire there is no door on the
-  // hosted mount that takes a name like that: every non-app-scoped collection
-  // now rides the engine family, whose allowlist the console enforces. So each
+  // hosted mount that takes a name like that: every collection now rides the
+  // engine family, whose allowlist the console enforces. So each
   // case gets its own drawer under the ONE dynamic engine name
   // (`vendo:app-history:<id>`) — the suite's assertions are untouched, the
   // adapter under test is the real façade, and the allowlist stays a real gate
@@ -80,7 +72,7 @@ describe("hostedStore conformance", () => {
   for (const c of suite.cases) it(c.name, c.run);
 });
 
-describe("hostedStore façade routing — the two homes a collection can have", () => {
+describe("hostedStore façade routing — the one home a collection has", () => {
   it("an engine collection rides the engine door, over the collection-addressed body", async () => {
     const console_ = fakeConsole();
     const store = hosted(console_);
@@ -98,43 +90,6 @@ describe("hostedStore façade routing — the two homes a collection can have", 
       url: "https://cloud.test/api/v1/store/engine/get",
       json: { collection: "vendo_apps", id: "app_1" },
     });
-  });
-
-  it("an app-scoped collection rides the appData door, with the owner stamped on", async () => {
-    const console_ = fakeConsole();
-    const store = hostedStore({
-      apiKey: "vnd_secret",
-      baseUrl: "https://cloud.test",
-      owner: "user_1",
-      fetch: console_.handler as unknown as typeof fetch,
-    });
-    const notes = store.records("app:x:notes");
-
-    const put = await notes.put({ id: "n_1", data: { text: "hi" } });
-    expect(console_.requests[0]).toMatchObject({
-      method: "POST",
-      url: "https://cloud.test/api/v1/store/app-data/put",
-      json: { target: { appId: "x", collection: "notes", owner: "user_1" }, record: { id: "n_1" } },
-    });
-    // The owner is the RUNTIME's stamp, not something the caller named.
-    expect(put.refs).toMatchObject({ subject: "user_1" });
-    expect((await notes.get("n_1"))?.data).toEqual({ text: "hi" });
-    expect((await notes.list()).records.map((record) => record.id)).toEqual(["n_1"]);
-
-    // Another owner's façade cannot see the row — the appData scoping the
-    // generic records door never had.
-    const other = hostedStore({
-      apiKey: "vnd_secret",
-      baseUrl: "https://cloud.test",
-      owner: "user_2",
-      fetch: console_.handler as unknown as typeof fetch,
-    });
-    expect(await other.records("app:x:notes").get("n_1")).toBeNull();
-
-    // appData has no compare-and-set verbs on the wire, so the façade does not
-    // pretend to offer them.
-    expect(notes.claim).toBeUndefined();
-    expect(notes.atomic).toBeUndefined();
   });
 
   it("a retired /records/* path answers an enveloped 501 naming the op", async () => {
@@ -247,45 +202,6 @@ describe("hostedStore wire", () => {
     const store = hosted(fakeConsole());
     await expect(store.records("host_invoices").put({ id: "inv_1", data: {} }))
       .rejects.toMatchObject({ code: "blocked" });
-  });
-
-  it("speaks the appData file wire for an app-scoped namespace: base64 JSON, owner-prefixed keys", async () => {
-    const console_ = fakeConsole();
-    const blobs = hosted(console_).blobs("app:app_x:uploads");
-
-    const bytes = new Uint8Array([0, 1, 2, 255]);
-    await blobs.put("images/a b.png", bytes, { contentType: "image/png" });
-    expect(console_.requests[0]).toMatchObject({
-      method: "POST",
-      url: "https://cloud.test/api/v1/store/app-data/putFile",
-      contentType: "application/json",
-      json: {
-        target: { appId: "app_x", collection: "uploads", owner: "user_local" },
-        key: "images/a b.png",
-        contentType: "image/png",
-      },
-    });
-
-    const got = await blobs.get("images/a b.png");
-    expect(got).not.toBeNull();
-    expect(got!.bytes).toEqual(bytes);
-    expect(got!.contentType).toBe("image/png");
-    expect(await blobs.get("missing.bin")).toBeNull();
-
-    await blobs.put("docs/readme.txt", encoder.encode("hi"));
-    // Keys come back the caller's own — the `<owner>/` leg is the seam's.
-    expect(await blobs.list("images/")).toEqual(["images/a b.png"]);
-    expect(console_.requests.at(-1)).toMatchObject({
-      url: "https://cloud.test/api/v1/store/app-data/listFiles",
-      json: { target: { appId: "app_x", collection: "uploads", owner: "user_local" }, prefix: "images/" },
-    });
-
-    await blobs.delete("docs/readme.txt");
-    expect(console_.requests.at(-1)).toMatchObject({
-      url: "https://cloud.test/api/v1/store/app-data/deleteFile",
-      json: { key: "docs/readme.txt" },
-    });
-    expect(await blobs.list("")).toEqual(["images/a b.png"]);
   });
 
   it("a plain blob namespace rides the blobs door, bytes base64 on the body", async () => {
@@ -444,122 +360,6 @@ describe("hostedStore error mapping", () => {
 });
 
 describe("store schema handshake", () => {
-  /** The two surfaces over the one wire, both driven against the SAME fake
-   *  console: the StoreAdapter façade (the console's error reading) and the op
-   *  client (the protocol's). They read a refusal differently, so a proposal
-   *  that only one of them recognized would heal on one surface and erase
-   *  itself on the other — which is exactly how this shipped broken. */
-  const surfaces = (console_: ReturnType<typeof fakeConsole>) => ({
-    facade: hostedStore({
-      apiKey: "vnd_secret",
-      baseUrl: "https://cloud.test",
-      owner: "user_1",
-      fetch: console_.handler as unknown as typeof fetch,
-    }),
-    ops: hostedStoreOps({
-      apiKey: "vnd_secret",
-      baseUrl: "https://cloud.test",
-      fetch: console_.handler as unknown as typeof fetch,
-    }),
-  });
-
-  const routeOf = (request: RecordedRequest): string => new URL(request.url).pathname;
-
-  it("declares what it can read on every store request, mutations included", async () => {
-    const console_ = fakeConsole();
-    const store = surfaces(console_).facade;
-    await store.records("app:x:notes").put({ id: "n_1", data: { text: "hi" } });
-    await store.records("app:x:notes").get("n_1");
-    await store.erase.bySubject("user_1");
-
-    // The write (with its two schema confirmations), the read, and the erase
-    // door that sits outside the op families — all of them.
-    expect(console_.requests.length).toBeGreaterThan(3);
-    for (const request of console_.requests) {
-      expect(request.capabilities).toBe("schema-proposal");
-    }
-  });
-
-  it("confirms the proposal and lands the write, on both surfaces", async () => {
-    const console_ = fakeConsole();
-    const { facade, ops } = surfaces(console_);
-
-    // A brand-new table: the mount proposes create_table, then — since a new
-    // table carries no data columns — add_column for the field this row has.
-    const put = await facade.records("app:x:notes").put({ id: "n_1", data: { text: "hi" } });
-    expect(put.id).toBe("n_1");
-    expect(console_.requests.map(routeOf)).toEqual([
-      "/api/v1/store/app-data/put",
-      "/api/v1/store/schema/x",
-      "/api/v1/store/app-data/put",
-      "/api/v1/store/schema/x",
-      "/api/v1/store/app-data/put",
-    ]);
-    expect(console_.requests[1]!.json).toEqual({
-      operations: [{ op: "create_table", table: "notes", scope: "private", columns: [] }],
-    });
-    expect(console_.requests[3]!.json).toEqual({
-      operations: [{ op: "add_column", table: "notes", scope: "private", columns: [{ name: "text", type: "text" }] }],
-    });
-    // Read back through the REAL read path — the row landed once, not twice.
-    expect((await facade.records("app:x:notes").get("n_1"))?.data).toEqual({ text: "hi" });
-    expect((await facade.records("app:x:notes").list()).records).toHaveLength(1);
-
-    // The declared table needs no second handshake, and the op surface — which
-    // reads a refusal through parseStoreWireError rather than the console's
-    // mapping — heals identically on a table of its own.
-    const before = console_.requests.length;
-    await facade.records("app:x:notes").put({ id: "n_2", data: { text: "again" } });
-    expect(console_.requests.slice(before).map(routeOf)).toEqual(["/api/v1/store/app-data/put"]);
-
-    const target = { appId: "x", collection: "invoices", owner: "user_1" };
-    await ops.appData!.put(target, { id: "inv_1", data: { total: 5 } });
-    expect((await ops.appData!.get(target, "inv_1"))?.data).toEqual({ total: 5 });
-  });
-
-  it("replays the SAME idempotency key across the handshake — one logical mutation", async () => {
-    const console_ = fakeConsole();
-    const keys: (string | null)[] = [];
-    const handler = (async (input: string, init: RequestInit = {}) => {
-      keys.push(new Headers(init.headers).get("idempotency-key"));
-      return console_.handler(input, init);
-    }) as unknown as typeof fetch;
-    await hostedStore({ apiKey: "vnd_secret", baseUrl: "https://cloud.test", owner: "user_1", fetch: handler })
-      .records("app:x:notes").put({ id: "n_1", data: { text: "hi" } });
-
-    // Three writes, one key: the server can still tell "do it again" from
-    // "you already did it". The schema confirmations carry none — they are a
-    // precondition, not the mutation.
-    const written = keys.filter((key) => key !== null);
-    expect(written).toHaveLength(3);
-    expect(new Set(written).size).toBe(1);
-  });
-
-  it("gives up after three proposals and surfaces the last one, proposal intact", async () => {
-    // A mount that proposes forever — a broken typed plane, which is the only
-    // thing the cap defends against.
-    let attempts = 0;
-    const proposal = { op: "create_table", table: "notes", scope: "private", columns: [] };
-    const looping = hostedStoreOps({
-      apiKey: "vnd_secret",
-      baseUrl: "https://cloud.test",
-      fetch: (async (url: string) => {
-        if (new URL(url).pathname.startsWith("/api/v1/store/schema/")) return Response.json({ tables: ["notes"] });
-        attempts += 1;
-        return Response.json({ error: "schema-proposal", proposal }, { status: 409 });
-      }) as unknown as typeof fetch,
-    });
-
-    const failure = await looping.appData!
-      .put({ appId: "x", collection: "notes", owner: "user_1" }, { id: "n_1", data: {} })
-      .then(() => undefined, (error: unknown) => error);
-    expect(failure).toBeInstanceOf(VendoError);
-    expect(failure).toMatchObject({ code: "schema-proposal", detail: proposal });
-    expect((failure as VendoError).message).toContain("create_table notes");
-    // The first send plus three confirmed retries, and then it stops.
-    expect(attempts).toBe(4);
-  });
-
   it("never guesses an app: a proposal on an op that names none surfaces as itself", async () => {
     let attempts = 0;
     const ops = hostedStoreOps({
@@ -577,22 +377,6 @@ describe("store schema handshake", () => {
       .rejects.toMatchObject({ code: "schema-proposal" });
     // No appId on an engine write, so nothing was confirmed against a guess.
     expect(attempts).toBe(1);
-  });
-
-  it("a client that declares nothing is refused, not proposed to", async () => {
-    // The header is the whole reason the mount may answer a proposal at all; a
-    // client that cannot read one must still get an honest refusal.
-    const console_ = fakeConsole();
-    const response = await console_.handler("https://cloud.test/api/v1/store/app-data/put", {
-      method: "POST",
-      headers: { authorization: "Bearer vnd_secret", "content-type": "application/json" },
-      body: JSON.stringify({
-        target: { appId: "x", collection: "notes", owner: "user_1" },
-        record: { id: "n_1", data: { text: "hi" } },
-      }),
-    });
-    expect(response.status).toBe(400);
-    expect(parseStoreWireError(response.status, await response.json())).toMatchObject({ code: "validation" });
   });
 
   it("says what it could not read, instead of erasing the body", async () => {
@@ -790,10 +574,10 @@ describe("demo-host journey through the store seam", () => {
 });
 
 // ---------------------------------------------------------------------------
-// hostedStoreOps — the 45-op client over `vendo/store-wire@1`.
+// hostedStoreOps — the 42-op client over `vendo/store-wire@1`.
 //
 // Unit tests over an injected fake fetch: they pin the route, the request body
-// and the response decoding for every op — engine, appData and blobs against the
+// and the response decoding for every op — engine and blobs against the
 // EXPORTED store-wire v1 contract, the rest against the console's doors
 // (vendo-web apps/console/lib/api/store-handlers.ts + store-doors.ts). A fake
 // fetch proves only that the client talks to ITSELF — the real proof is this
@@ -821,10 +605,12 @@ const wireRecord = {
  * `lifecycle.erase` came to declare a route no mount has ever served. `keyed`
  * marks the mutations that carry an Idempotency-Key.
  *
- * 44 of STORE_WIRE_PATHS' 45: `transcripts.appendMessages` is the one op a
- * client feature-detects before sending (STORE_WIRE_APPEND_MESSAGES_OPS), so it
- * is driven where that detection is — thread-messages.batch.test.ts — rather
- * than blind through this walker. */
+ * 39 of STORE_WIRE_PATHS' 42 LIVE ops (the table's other 8 entries are the
+ * retired appData slots, which nothing implements): `transcripts.appendMessages`
+ * is the one op a client feature-detects before sending
+ * (STORE_WIRE_APPEND_MESSAGES_OPS), so it is driven where that detection is —
+ * thread-messages.batch.test.ts — rather than blind through this walker, and
+ * `turn.load`/`turn.commit` feature-detect through /status in the test below. */
 const DOORS: Record<string, { method: string; path: string; keyed?: true }> = {
   "engine.get": { method: "POST", path: P["engine.get"] },
   "engine.put": { method: "POST", path: P["engine.put"], keyed: true },
@@ -837,14 +623,6 @@ const DOORS: Record<string, { method: string; path: string; keyed?: true }> = {
   "blobs.get": { method: "POST", path: P["blobs.get"] },
   "blobs.delete": { method: "POST", path: P["blobs.delete"], keyed: true },
   "blobs.list": { method: "POST", path: P["blobs.list"] },
-  "appData.put": { method: "POST", path: P["appData.put"], keyed: true },
-  "appData.get": { method: "POST", path: P["appData.get"] },
-  "appData.list": { method: "POST", path: P["appData.list"] },
-  "appData.delete": { method: "POST", path: P["appData.delete"], keyed: true },
-  "appData.putFile": { method: "POST", path: P["appData.putFile"], keyed: true },
-  "appData.getFile": { method: "POST", path: P["appData.getFile"] },
-  "appData.listFiles": { method: "POST", path: P["appData.listFiles"] },
-  "appData.deleteFile": { method: "POST", path: P["appData.deleteFile"], keyed: true },
   "transcripts.putThread": { method: "POST", path: P["transcripts.putThread"], keyed: true },
   "transcripts.getThread": { method: "POST", path: P["transcripts.getThread"] },
   "transcripts.listThreads": { method: "POST", path: P["transcripts.listThreads"] },
@@ -926,14 +704,6 @@ const ALL_BODIES: Record<string, unknown> = {
   [door("blobs.get")]: { blob: { bytes: btoa("blob bytes"), contentType: "text/plain" } },
   [door("blobs.delete")]: { ok: true },
   [door("blobs.list")]: { keys: ["images/a.png"] },
-  [door("appData.put")]: { record: wireRecord },
-  [door("appData.get")]: { record: wireRecord },
-  [door("appData.list")]: { records: [wireRecord], cursor: "cur_app_data" },
-  [door("appData.delete")]: { ok: true },
-  [door("appData.putFile")]: { ok: true },
-  [door("appData.getFile")]: { blob: { bytes: btoa("file bytes"), contentType: "text/plain" } },
-  [door("appData.listFiles")]: { keys: ["receipts/a.pdf"] },
-  [door("appData.deleteFile")]: { ok: true },
   [door("transcripts.putThread")]: { record: wireRecord },
   [door("transcripts.getThread")]: { record: wireRecord },
   [door("transcripts.listThreads")]: { records: [wireRecord], cursor: "cur_threads" },
@@ -966,10 +736,6 @@ const ALL_BODIES: Record<string, unknown> = {
   [door("usage.tally")]: { rows: [{ subject: "sub_1", action: "message", count: 7 }] },
 };
 
-/** Where an appData op lands: the app, the collection it invented, and the
- * owner the runtime stamped — never a subject the caller names. */
-const APP_DATA_TARGET = { appId: "app_1", collection: "invoices", owner: "sub_1" };
-
 /** A real name from the engine allowlist (core's ENGINE_COLLECTIONS) — the gate
  * is server-side, but a made-up name would read as if any name were allowed. */
 const ENGINE_COLLECTION = "vendo_workspace_commits";
@@ -986,14 +752,6 @@ const driveEveryOp = async (ops: ReturnType<typeof wireFake>["ops"]): Promise<vo
   await ops.blobs.get("uploads", "a.png");
   await ops.blobs.delete("uploads", "a.png");
   await ops.blobs.list("uploads");
-  await ops.appData.put(APP_DATA_TARGET, { id: "inv_1", data: { total: 5 } });
-  await ops.appData.get(APP_DATA_TARGET, "inv_1");
-  await ops.appData.list(APP_DATA_TARGET);
-  await ops.appData.delete(APP_DATA_TARGET, "inv_1");
-  await ops.appData.putFile(APP_DATA_TARGET, "receipts/a.pdf", new Uint8Array([1]));
-  await ops.appData.getFile(APP_DATA_TARGET, "receipts/a.pdf");
-  await ops.appData.listFiles(APP_DATA_TARGET);
-  await ops.appData.deleteFile(APP_DATA_TARGET, "receipts/a.pdf");
   await ops.transcripts.putThread({ id: "thr_1", subject: "sub_1", messages: [] });
   await ops.transcripts.getThread("thr_1");
   await ops.transcripts.listThreads();
@@ -1030,26 +788,26 @@ const driveEveryOp = async (ops: ReturnType<typeof wireFake>["ops"]): Promise<vo
   await ops.usage!.tally({ since: metered.since });
 };
 
-describe("hostedStoreOps — the 48-op wire client", () => {
-  it("routes 47 of the 48 ops to the console's real door, with a key on exactly the mutations", async () => {
+describe("hostedStoreOps — the 42-op wire client", () => {
+  it("routes 39 of the 42 live ops to the console's real door, with a key on exactly the mutations", async () => {
     const { calls, ops } = wireFake(ALL_BODIES);
     await driveEveryOp(ops);
 
     const expected = Object.values(DOORS);
-    expect(calls).toHaveLength(47);
+    expect(calls).toHaveLength(39);
     expect(calls.map((call) => `${call.method} ${call.path}`))
       .toEqual(expected.map((route) => `${route.method} ${route.path}`));
     expect(calls.map((call) => call.idempotencyKey === null ? "read" : "keyed"))
       .toEqual(expected.map((route) => route.keyed === true ? "keyed" : "read"));
-    // 25 mutations, 22 reads — and the /status handshake is the one GET with
+    // 21 mutations, 18 reads — and the /status handshake is the one GET with
     // no body at all.
-    expect(expected.filter((route) => route.keyed === true)).toHaveLength(25);
+    expect(expected.filter((route) => route.keyed === true)).toHaveLength(21);
     expect(calls.filter((call) => call.method === "GET")).toEqual([
       expect.objectContaining({ path: P.status, method: "GET", body: undefined }),
     ]);
     // Distinct keys across distinct operations (one per logical mutation).
     const keys = calls.map((call) => call.idempotencyKey).filter((key) => key !== null);
-    expect(new Set(keys).size).toBe(25);
+    expect(new Set(keys).size).toBe(21);
   });
 
   it("asks the mount's /status ONCE, however many capability checks read it", async () => {
@@ -1170,39 +928,6 @@ describe("hostedStoreOps — the 48-op wire client", () => {
       const call = calls[index]!;
       expect(`${call.method} ${call.path}`).toBe(`POST ${P[op]}`);
       expect(schema.safeParse(call.body).success).toBe(true);
-    }
-  });
-
-  it("appData requests validate against the EXPORTED store-wire v1 request schemas", async () => {
-    const { calls, ops } = wireFake(ALL_BODIES);
-    await ops.appData.put(APP_DATA_TARGET, { id: "inv_1", data: { total: 5 } });
-    await ops.appData.get(APP_DATA_TARGET, "inv_1");
-    await ops.appData.list(APP_DATA_TARGET, { limit: 10 });
-    await ops.appData.delete(APP_DATA_TARGET, "inv_1");
-    await ops.appData.putFile(APP_DATA_TARGET, "receipts/a.pdf", new Uint8Array([7]), {
-      contentType: "application/pdf",
-    });
-    await ops.appData.getFile(APP_DATA_TARGET, "receipts/a.pdf");
-    await ops.appData.listFiles(APP_DATA_TARGET, "receipts/");
-    await ops.appData.deleteFile(APP_DATA_TARGET, "receipts/a.pdf");
-
-    const CONTRACT: [keyof typeof P, { safeParse(value: unknown): { success: boolean } }][] = [
-      ["appData.put", storeWireAppDataPutRequestSchema],
-      ["appData.get", storeWireAppDataGetRequestSchema],
-      ["appData.list", storeWireAppDataListRequestSchema],
-      ["appData.delete", storeWireAppDataDeleteRequestSchema],
-      ["appData.putFile", storeWireAppDataPutFileRequestSchema],
-      ["appData.getFile", storeWireAppDataGetFileRequestSchema],
-      ["appData.listFiles", storeWireAppDataListFilesRequestSchema],
-      ["appData.deleteFile", storeWireAppDataDeleteFileRequestSchema],
-    ];
-    expect(calls).toHaveLength(CONTRACT.length);
-    for (const [index, [op, schema]] of CONTRACT.entries()) {
-      const call = calls[index]!;
-      expect(`${call.method} ${call.path}`).toBe(`POST ${P[op]}`);
-      expect(schema.safeParse(call.body).success, op).toBe(true);
-      // The whole address rides ONE target — the owner is the runtime's stamp.
-      expect(call.body).toMatchObject({ target: APP_DATA_TARGET });
     }
   });
 
@@ -1697,12 +1422,12 @@ describe("hostedStore keeps its StoreAdapter surface and gains the op surface", 
     expect(typeof store.records).toBe("function");
     expect(typeof store.blobs).toBe("function");
     expect(typeof store.erase.bySubject).toBe("function");
-    // Twelve families plus the two bare verbs (`footprint`, `status`) — the
-    // generic records family is gone from the op surface, and `retention` and
-    // `turn` are present because the CLIENT serves the whole protocol, whatever
-    // a given mount has (`turn` asks the mount before it sends).
+    // Eleven families plus the two bare verbs (`footprint`, `status`) — the
+    // generic records and appData families are gone from the op surface, and
+    // `retention` and `turn` are present because the CLIENT serves the whole
+    // protocol, whatever a given mount has (`turn` asks the mount before it sends).
     expect(Object.keys(store.ops).sort()).toEqual([
-      "appData", "audit", "blobs", "engine", "footprint", "harness", "lifecycle",
+      "audit", "blobs", "engine", "footprint", "harness", "lifecycle",
       "retention", "secrets", "status", "transcripts", "turn", "usage", "workspace",
     ]);
 
@@ -1799,7 +1524,7 @@ describe("hostedStore keeps its StoreAdapter surface and gains the op surface", 
     expect(footprint.every((entry) => entry.kind === "storage" && entry.bytes > 0)).toBe(true);
   });
 
-  // 17 of the 43 ops have no door in the fake: all 6 transcripts, all 3
+  // 17 of the 42 live ops have no door in the fake: all 6 transcripts, all 3
   // harness, all 4 workspace, both retention verbs, lifecycle.promote and
   // /status. It used to answer them with a `not-found` envelope — the SAME
   // answer a live console sends when it refuses — so a test exercising one of

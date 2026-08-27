@@ -24,7 +24,7 @@ const RUNTIME_EXPORTS = [
   "toolDescriptorSchema", "toolCallSchema", "toolOutcomeSchema",
   "grantScopeSchema", "grantDurationSchema", "permissionGrantSchema", "approvalRequestSchema",
   "approvalDecisionSchema", "guardDecisionSchema", "auditEventSchema", "uiPayloadSchema",
-  "treeNodeSchema", "appDocumentSchema", "storageDeclSchema",
+  "treeNodeSchema", "appDocumentSchema",
   "appSeedSchema", "triggerSourceSchema", "stepSchema",
   "budgetSchema", "automationTaskSchema", "automationRecordSchema",
   "vendoRecordSchema", "recordQuerySchema", "authMaterialSchema", "agentRunReportSchema",

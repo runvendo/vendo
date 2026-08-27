@@ -46,7 +46,7 @@ describe("PGlite stale-lock self-heal (ENG-350)", () => {
     pgliteCreate.mockRejectedValueOnce(aborted()).mockResolvedValueOnce(fakePglite());
 
     const db = createDb({ dataDir: dir });
-    await expect(db.query("select 1")).resolves.toEqual({ rows: [{ ok: 1 }] });
+    await expect(db.query("select 1")).resolves.toEqual({ rows: [{ ok: 1 }], rowCount: 1 });
 
     expect(pgliteCreate).toHaveBeenCalledTimes(2);
     expect(existsSync(join(dir, "postmaster.pid"))).toBe(false);

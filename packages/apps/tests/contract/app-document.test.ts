@@ -19,14 +19,6 @@ const invoiceChaser = () => ({
   description: "Follows up on overdue invoices every Monday.",
   ui: "tree" as const,
   components: { InvoiceSummary: "export default function InvoiceSummary(){ return null; }" },
-  storage: {
-    invoices: {
-      about: "Invoices being chased",
-      kind: "records" as const,
-      refs: { invoiceId: "host.invoice.id", customer: "host.customer_id" },
-    },
-    attachments: { about: "Supporting documents", kind: "files" as const },
-  },
   automations: ["atm_chase"],
   egress: ["api.stripe.com", "api.resend.com"],
   secrets: ["RESEND_API_KEY"],
@@ -85,21 +77,12 @@ describe("appDocumentSchema and validateAppDocument", () => {
     }
   });
 
-  it("rejects the reserved state storage collection", () => {
-    expectValidation({ ...minimal(), storage: { state: { about: "Reserved" } } });
-  });
-
-  it("rejects bad pin bases and host refs", () => {
+  it("rejects bad pin bases", () => {
     expectValidation({ ...minimal(), seed: { component: "card", baseline: "md5:abc", wishes: ["make it mine"] } });
-    expectValidation({
-      ...minimal(),
-      storage: { invoices: { about: "Invoices", refs: { invoice: "stripe.invoice" } } },
-    });
   });
 
-  it("rejects empty names, storage descriptions, and pin slots", () => {
+  it("rejects empty names and pin slots", () => {
     expectValidation({ ...minimal(), name: "" });
-    expectValidation({ ...minimal(), storage: { invoices: { about: "" } } });
     expectValidation({ ...minimal(), seed: { component: "", baseline: "sha256:abc", wishes: ["make it mine"] } });
   });
 

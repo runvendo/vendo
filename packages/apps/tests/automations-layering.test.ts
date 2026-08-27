@@ -32,6 +32,7 @@ import {
   engineOverAdapter,
   VENDO_APP_FORMAT,
   VENDO_AUTOMATE_TOOL,
+  type AppDatabase,
   type AppDocument,
   type RunContext,
   type ToolOutcome,
@@ -68,16 +69,29 @@ const tools: ToolRegistry = {
   },
 };
 
-/** A plain screen app with one declared data collection, so the app-data tools
- *  below have somewhere real to write. */
+/** A plain screen app. */
 const seedDoc = (automations?: string[]): AppDocument => ({
   format: VENDO_APP_FORMAT,
   id: APP_ID,
   name: "Invoice board",
   ui: "tree",
-  storage: { results: { about: "Latest automation result.", kind: "records" } },
   ...(automations === undefined ? {} : { automations }),
 });
+
+/** The app-database ADAPTER, recording. Everything that decides anything —
+ *  the guard, the per-person physical table name, the ownership gate — runs
+ *  above this seam, so what an app database owes the case below is that the
+ *  statement reached it. */
+const ran: string[] = [];
+const appDatabase: AppDatabase = {
+  dialect: "sqlite",
+  async run(_appId, statements) {
+    ran.push(...statements.map(({ sql }) => sql));
+    return statements.map(() => ({ columns: [], rows: [], rowCount: 0 }));
+  },
+  async tables() { return []; },
+  async drop() {},
+};
 
 /** The planner's answer for whatever it is asked — agentic, so no results
  *  collection is declared and no board rewire is dragged into these tests. */
@@ -95,6 +109,7 @@ const hostWith = async (engine: ReturnType<typeof fakeAutomations>, automations?
     tools,
     catalog: [],
     automations: engine.seam,
+    appDatabase,
     model: scriptedLanguageModel(() => PLAN),
   });
   await seedAppRow(engineOverAdapter(store), seedDoc(automations), ctx.principal.subject);
@@ -152,7 +167,7 @@ describe("an automation has no app reference", () => {
     await registry.execute({
       id: "call_linked",
       tool: VENDO_AUTOMATE_TOOL,
-      args: { when: "0 9 * * 1", task: `write this week's figures into ${APP_ID} with vendo_apps_data_put` } as never,
+      args: { when: "0 9 * * 1", task: `write this week's figures into ${APP_ID} with vendo_apps_sql` } as never,
     }, ctx);
     await registry.execute({
       id: "call_free",
@@ -204,12 +219,19 @@ describe("a deleted app makes its automation fail loudly", () => {
     const registry = runtime.agentTools();
     const publish = {
       id: "call_publish",
-      tool: "vendo_apps_data_put",
-      args: { appId: APP_ID, collection: "results", id: "latest", data: { nudged: 3 } } as never,
+      tool: "vendo_apps_sql",
+      args: {
+        appId: APP_ID,
+        sql: "INSERT INTO mine.results (id, data) VALUES (?, ?)",
+        params: ["latest", '{"nudged":3}'],
+      } as never,
     };
 
-    // While the app stands, the automation's own step lands.
+    // While the app stands, the automation's own step lands — fenced to this
+    // person's own copy of the table, which is the only address it has.
+    ran.length = 0;
     expect((await registry.execute(publish, ctx)).status).toBe("ok");
+    expect(ran.some((sql) => sql.startsWith('INSERT INTO "m:'))).toBe(true);
 
     await runtime.delete(APP_ID, ctx);
 

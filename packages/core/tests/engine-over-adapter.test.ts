@@ -126,7 +126,6 @@ describe("engineOverAdapter — the engine family over a bare StoreAdapter", () 
 
   it("gates the collection name on every verb, refusing with `blocked`", async () => {
     const engine = engineOverAdapter(fakeAdapter({ claim: true, atomic: true }).store);
-    // App data belongs to the appData family; the allowlist is what says so.
     const refusal = await caught(engine.put("host_invoices", { id: "inv_1", data: {} }));
     expect(refusal.code).toBe("blocked");
     expect(refusal.message).toContain("host_invoices");

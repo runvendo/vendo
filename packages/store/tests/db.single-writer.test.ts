@@ -58,13 +58,13 @@ describe("PGlite single-writer discipline (ENG-351)", () => {
     const first = createDb({ dataDir: dir });
     const second = createDb({ dataDir: dir });
 
-    await expect(first.query("select 1")).resolves.toEqual({ rows: [{ ok: 1 }] });
-    await expect(second.query("select 1")).resolves.toEqual({ rows: [{ ok: 1 }] });
+    await expect(first.query("select 1")).resolves.toEqual({ rows: [{ ok: 1 }], rowCount: 1 });
+    await expect(second.query("select 1")).resolves.toEqual({ rows: [{ ok: 1 }], rowCount: 1 });
     expect(pgliteCreate).toHaveBeenCalledTimes(1);
 
     // Closing one handle must not tear down the driver under the other.
     await first.close();
-    await expect(second.query("select 1")).resolves.toEqual({ rows: [{ ok: 1 }] });
+    await expect(second.query("select 1")).resolves.toEqual({ rows: [{ ok: 1 }], rowCount: 1 });
     await second.close();
   });
 
@@ -92,7 +92,7 @@ describe("PGlite single-writer discipline (ENG-351)", () => {
     expect(pgliteCreate).not.toHaveBeenCalled();
 
     sleeper.kill("SIGKILL");
-    await expect(query).resolves.toEqual({ rows: [{ ok: 1 }] });
+    await expect(query).resolves.toEqual({ rows: [{ ok: 1 }], rowCount: 1 });
     expect(pgliteCreate).toHaveBeenCalledTimes(1);
     // The lock now records this process.
     expect(readFileSync(lockPathFor(dir), "utf8")).toContain(String(process.pid));
@@ -107,7 +107,7 @@ describe("PGlite single-writer discipline (ENG-351)", () => {
     pgliteCreate.mockResolvedValue(fakePglite());
 
     const db = createDb({ dataDir: dir });
-    await expect(db.query("select 1")).resolves.toEqual({ rows: [{ ok: 1 }] });
+    await expect(db.query("select 1")).resolves.toEqual({ rows: [{ ok: 1 }], rowCount: 1 });
     expect(readFileSync(lockPathFor(dir), "utf8")).toContain(String(process.pid));
     await db.close();
   });
@@ -117,7 +117,7 @@ describe("PGlite single-writer discipline (ENG-351)", () => {
     pgliteCreate.mockResolvedValue(fakePglite());
 
     const db = createDb({ dataDir: dir });
-    await expect(db.query("select 1")).resolves.toEqual({ rows: [{ ok: 1 }] });
+    await expect(db.query("select 1")).resolves.toEqual({ rows: [{ ok: 1 }], rowCount: 1 });
     await db.close();
   });
 
@@ -126,7 +126,7 @@ describe("PGlite single-writer discipline (ENG-351)", () => {
 
     const db = createDb({ dataDir: dir });
     await expect(db.query("select 1")).rejects.toThrow("boot blip");
-    await expect(db.query("select 1")).resolves.toEqual({ rows: [{ ok: 1 }] });
+    await expect(db.query("select 1")).resolves.toEqual({ rows: [{ ok: 1 }], rowCount: 1 });
     // The failed attempt must not leave a lock behind for the retry to fight.
     await db.close();
     expect(existsSync(lockPathFor(dir))).toBe(false);

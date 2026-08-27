@@ -10,7 +10,8 @@ import {
   type RunContext,
   type ToolRegistry,
 } from "@vendoai/core";
-import { appAccess, createStore, createStoreOps, workspaceStore, type VendoStore } from "@vendoai/store";
+import { appAccess, createStore, postgresAppDatabase, workspaceStore, type VendoStore } from "@vendoai/store";
+import { createAppSql } from "@vendoai/apps";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createVendo, type Vendo } from "../src/server.js";
 
@@ -238,19 +239,21 @@ describe("two principals, one org, over the real composition", () => {
     await seedApp(store, seeded("app_data", "Shared with private state"), ORG);
     await share(store, dana, "app_data", "user:kim", "editor");
 
-    // The owner rides in the appData target — sharing the app changes nothing
+    // `mine.` is per-person by construction — sharing the app changes nothing
     // about that, which is exactly why per-user data needs no new machinery.
-    const rows = createStoreOps(store).appData;
-    const drawer = (owner: string) => ({ appId: "app_data", collection: "drafts", owner });
-    await rows.put(drawer("dana"), { id: "draft_dana", data: { draft: "dana's numbers" } });
-    await rows.put(drawer("kim"), { id: "draft_kim", data: { draft: "kim's numbers" } });
+    const sql = createAppSql(postgresAppDatabase(store)!);
+    const run = (owner: string, statement: string) => sql.run("app_data", owner, statement);
+    await run("dana", "CREATE TABLE mine.drafts (id TEXT PRIMARY KEY, draft TEXT)");
+    await run("dana", "INSERT INTO mine.drafts (id, draft) VALUES ('d1', 'dana''s numbers')");
+    await run("kim", "INSERT INTO mine.drafts (id, draft) VALUES ('d1', 'kim''s numbers')");
 
-    expect((await rows.get(drawer("dana"), "draft_dana"))?.data).toEqual({ draft: "dana's numbers" });
-    expect((await rows.get(drawer("kim"), "draft_kim"))?.data).toEqual({ draft: "kim's numbers" });
-    // Kim is an editor on the shared app and still cannot reach Dana's row.
-    expect(await rows.get(drawer("kim"), "draft_dana")).toBeNull();
-    expect((await rows.list(drawer("dana"))).records.map((row) => row.id)).toEqual(["draft_dana"]);
-    expect((await rows.list(drawer("kim"))).records.map((row) => row.id)).toEqual(["draft_kim"]);
+    // Kim is an EDITOR on the shared app and still sees only her own rows.
+    expect((await run("dana", "SELECT draft FROM mine.drafts")).rows).toEqual([{ draft: "dana's numbers" }]);
+    expect((await run("kim", "SELECT draft FROM mine.drafts")).rows).toEqual([{ draft: "kim's numbers" }]);
+    // And `shared.` is the other half of the same model: one table, both people.
+    await run("dana", "CREATE TABLE shared.notes (id TEXT PRIMARY KEY, body TEXT)");
+    await run("dana", "INSERT INTO shared.notes (id, body) VALUES ('n1', 'for the team')");
+    expect((await run("kim", "SELECT body FROM shared.notes")).rows).toEqual([{ body: "for the team" }]);
   });
 
   it("two concurrent /orgs commits to one file: one ok, one conflict (E3's org slice)", async () => {

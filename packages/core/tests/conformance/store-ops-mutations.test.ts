@@ -3,7 +3,7 @@ import { memoryStoreOps, storeOpsConformance } from "../../src/conformance/index
 import { engineAppHistory } from "../../src/engine-collections.js";
 import { VendoError } from "../../src/errors.js";
 import type { IsoDateTime } from "../../src/ids.js";
-import type { StoreOps, VendoRecord } from "../../src/store.js";
+import type { StoreOps } from "../../src/store.js";
 
 /**
  * Every case in the StoreOps kit is a claim that some specific mistake would be
@@ -35,8 +35,6 @@ type Flaw =
   | "refsMatchOnKeyAlone"
   | "listingForgetsItsNamespace"
   | "emptyBytesAreAbsence"
-  | "appsShareOneDrawer"
-  | "pageTwoForgetsTheOwner"
   | "eraseByAppIsAReceipt"
   | "appendSortsTheBatch"
   | "appendNeverEdits"
@@ -113,27 +111,6 @@ function broken(flaw: Flaw): StoreOps {
       return { ...ops, blobs: { ...ops.blobs, async put(namespace, key, bytes, meta) {
         if (bytes.length === 0) return; // a successful put that stored nothing
         await ops.blobs.put(namespace, key, bytes, meta);
-      } } };
-
-    // ---- appData --------------------------------------------------------
-    case "appsShareOneDrawer": {
-      const flatten = <T>(target: { appId: string }, run: (t: never) => Promise<T>): Promise<T> =>
-        run({ ...target, appId: "one_drawer" } as never);
-      return { ...ops, appData: {
-        ...ops.appData,
-        put: (target, record) => flatten(target, (t) => ops.appData.put(t, record)),
-        get: (target, id) => flatten(target, (t) => ops.appData.get(t, id)),
-        list: (target, query) => flatten(target, (t) => ops.appData.list(t, query)),
-        delete: (target, id) => flatten(target, (t) => ops.appData.delete(t, id)),
-        putFile: (target, key, bytes, meta) => flatten(target, (t) => ops.appData.putFile(t, key, bytes, meta)),
-        getFile: (target, key) => flatten(target, (t) => ops.appData.getFile(t, key)),
-        deleteFile: (target, key) => flatten(target, (t) => ops.appData.deleteFile(t, key)),
-      } } as StoreOps;
-    }
-    case "pageTwoForgetsTheOwner":
-      return { ...ops, appData: { ...ops.appData, async list(target, query) {
-        if (query?.cursor === undefined) return await ops.appData.list(target, query);
-        return await ops.appData.list({ ...target, owner: "own_b" }, query);
       } } };
 
     // ---- lifecycle ------------------------------------------------------
@@ -245,9 +222,7 @@ const proofs: Array<{ flaw: Flaw; case: string; red: RegExp }> = [
   { flaw: "refsMatchOnKeyAlone", case: "engine.list narrows by refs, exactly and ANDed", red: /a one-key ref filter returned the wrong rows/ },
   { flaw: "listingForgetsItsNamespace", case: "blobs keep two namespaces apart on every verb", red: /a namespace listed a neighbour's keys/ },
   { flaw: "emptyBytesAreAbsence", case: "blobs round-trip a zero-byte payload as content, not absence", red: /a stored zero-byte blob read back as absent/ },
-  { flaw: "appsShareOneDrawer", case: "appData keeps two apps' drawers apart", red: /one app read another app's row/ },
-  { flaw: "pageTwoForgetsTheOwner", case: "appData.list paginates one owner's drawer without loss, duplicates, or a neighbour's rows", red: /appData\.list: pagination (omitted or added entries|.* appeared on more than one page)/ },
-  { flaw: "eraseByAppIsAReceipt", case: "lifecycle.erase removes one app's data, and only that app's", red: /erase left the app's rows behind/ },
+  { flaw: "eraseByAppIsAReceipt", case: "lifecycle.erase removes one app's data, and only that app's", red: /erase left the app's history behind/ },
   { flaw: "appendSortsTheBatch", case: "transcripts.appendMessages lands a batch after the tail, in the caller's order", red: /did not land after the tail in the order they were written/ },
   { flaw: "appendNeverEdits", case: "transcripts.appendMessages edits an id the thread already holds, without moving it", red: /appended again, or moved, instead of edited in place/ },
   { flaw: "appendAcceptsAnEmptyBatch", case: "transcripts.appendMessages refuses an empty batch and two messages under one id", red: /an empty batch did not throw/ },
@@ -323,7 +298,6 @@ describe("the tenancy case", () => {
     const shared: StoreOps = {
       ...theirs,
       transcripts: mine.transcripts,
-      appData: mine.appData as StoreOps["appData"],
     };
     const one = caseNamed(NAME, {
       makeOps: async () => ({ ops: mine }),
@@ -347,15 +321,6 @@ describe("the omission bucket is a bucket, not a pass", () => {
       makeOps: async () => ({ ops: memoryStoreOps() }),
     });
     await expect(one.run()).resolves.toBeUndefined();
-  });
-
-  /** The appData family reads the same way: a mount that omits it reports every
-      case over it as omitted, rather than crashing on the first verb. */
-  it("a case over an absent appData family answers omitted, not a TypeError", async () => {
-    const one = caseNamed("appData.put stamps the target owner as refs.subject", {
-      makeOps: async () => ({ ops: { ...memoryStoreOps(), appData: undefined } }),
-    });
-    await expect(one.run()).resolves.toEqual({ omitted: expect.stringContaining("omits the appData family") });
   });
 });
 
@@ -398,20 +363,5 @@ describe("the memory reference serves what the proofs assume", () => {
     await lift(byApp, history);
     await byApp.lifecycle.erase({ appId: "app_lifted" });
     expect((await byApp.retention!.purge(history, far())).purged).toBe(0);
-  });
-
-  it("cascades an app-scoped erase past harness state", async () => {
-    const ops = memoryStoreOps();
-    await ops.engine.put("vendo_apps", {
-      id: "app_x",
-      data: { subject: "u", enabled: true, doc: { format: "vendo/app@1", id: "app_x", name: "x" } },
-      refs: { subject: "u" },
-    });
-    const target = { appId: "app_x", collection: "notes", owner: "u" };
-    const row: VendoRecord = await ops.appData.put(target, { id: "r", data: {} });
-    expect(row.id).toBe("r");
-    await ops.lifecycle.erase({ appId: "app_x" });
-    expect(await ops.appData.get(target, "r")).toBeNull();
-    expect(await ops.engine.get("vendo_apps", "app_x")).toBeNull();
   });
 });

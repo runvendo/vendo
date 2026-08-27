@@ -56,8 +56,6 @@ for (const backend of backends()) {
       // Seed the target subject in every table the subject axis reaches.
       const doc = appFixture("app_erase_target");
       await store.records("vendo_apps").put({ id: doc.id, data: { subject: erased, enabled: true, doc } });
-      await store.records(`app:${doc.id}:notes`).put({ id: "note_target", data: { body: "mine" } });
-      await store.blobs(`app:${doc.id}:files`).put("report.txt", new Uint8Array([1, 2, 3]));
       await store.records("vendo_threads").put({
         id: "thr_erase_target",
         data: { subject: erased, messages: [] },
@@ -114,7 +112,6 @@ for (const backend of backends()) {
         id: bystanderDoc.id,
         data: { subject: bystander, enabled: true, doc: bystanderDoc },
       });
-      await store.records(`app:${bystanderDoc.id}:notes`).put({ id: "note_bystander", data: { body: "theirs" } });
       await store.records("vendo_threads").put({
         id: "thr_erase_bystander",
         data: { subject: bystander, messages: [] },
@@ -126,8 +123,8 @@ for (const backend of backends()) {
       expect(report).toEqual({
         vendo_meta: 0,
         vendo_apps: 1,
-        vendo_records: 2, // the app's collection row + the subject-ref'd generic row
-        vendo_blobs: 1,
+        vendo_records: 1, // the subject-ref'd generic row
+        vendo_blobs: 0, // an app's own data is its SQL database, not a blob namespace
         vendo_threads: 1,
         // The seeded thread carries an empty transcript, so it owns no message
         // rows; the cascade is proven on a populated thread in thread-messages.test.ts.
@@ -164,8 +161,6 @@ for (const backend of backends()) {
 
       // Gone through the doors...
       expect(await store.records("vendo_apps").get(doc.id)).toBeNull();
-      expect(await store.records(`app:${doc.id}:notes`).get("note_target")).toBeNull();
-      expect(await store.blobs(`app:${doc.id}:files`).get("report.txt")).toBeNull();
       expect(await store.records("vendo_threads").get("thr_erase_target")).toBeNull();
       expect(await store.records("vendo_audit").get(event.id)).toBeNull();
       // ...and gone from the host's own tables.
@@ -177,7 +172,6 @@ for (const backend of backends()) {
 
       // The bystander is untouched.
       expect(await store.records("vendo_apps").get(bystanderDoc.id)).not.toBeNull();
-      expect(await store.records(`app:${bystanderDoc.id}:notes`).get("note_bystander")).not.toBeNull();
       expect(await store.records("vendo_threads").get("thr_erase_bystander")).not.toBeNull();
       expect(await store.records("vendo_audit").get(bystanderEvent.id)).not.toBeNull();
     });
@@ -234,8 +228,6 @@ for (const backend of backends()) {
       const seedApp = async (id: string): Promise<void> => {
         const doc = appFixture(id);
         await store.records("vendo_apps").put({ id, data: { subject, enabled: true, doc } });
-        await store.records(`app:${id}:notes`).put({ id: `note_${id}`, data: { body: id } });
-        await store.blobs(`app:${id}:files`).put("f.txt", new Uint8Array([7]));
         const grant = grantFixture(`grt_${id}`, { subject, appId: id });
         await store.records("vendo_grants").put({ id: grant.id, data: grant });
         const event = auditFixture(`aud_${id}`, { principal: { kind: "user", subject }, appId: id });
@@ -258,8 +250,6 @@ for (const backend of backends()) {
 
       const report = await eraseStore(store, { files: storeFiles(store) }).byApp("app_erase_drop");
       expect(report.vendo_apps).toBe(1);
-      expect(report.vendo_records).toBe(1);
-      expect(report.vendo_blobs).toBe(1);
       expect(report.vendo_runs).toBe(0); // no app axis since v11 — runs are an automation's
       expect(report.vendo_grants).toBe(1);
       expect(report.vendo_audit).toBe(1);
@@ -267,10 +257,8 @@ for (const backend of backends()) {
       expect(report.vendo_threads).toBe(0); // no app axis (§2) — subject/age cover threads
 
       expect(await store.records("vendo_apps").get("app_erase_drop")).toBeNull();
-      expect(await store.records("app:app_erase_drop:notes").get("note_app_erase_drop")).toBeNull();
       // The sibling app and the subject's thread survive.
       expect(await store.records("vendo_apps").get("app_erase_keep")).not.toBeNull();
-      expect(await store.records("app:app_erase_keep:notes").get("note_app_erase_keep")).not.toBeNull();
       expect(await store.records("vendo_runs").get("run_atm_erase_by_app")).not.toBeNull();
       expect(await store.records("vendo_grants").get("grt_app_erase_keep")).not.toBeNull();
       expect(await store.records("vendo_audit").get("aud_app_erase_keep")).not.toBeNull();

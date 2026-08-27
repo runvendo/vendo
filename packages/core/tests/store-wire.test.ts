@@ -20,14 +20,6 @@ import {
   storeWireBlobsGetRequestSchema,
   storeWireBlobsDeleteRequestSchema,
   storeWireBlobsListRequestSchema,
-  storeWireAppDataPutRequestSchema,
-  storeWireAppDataGetRequestSchema,
-  storeWireAppDataListRequestSchema,
-  storeWireAppDataDeleteRequestSchema,
-  storeWireAppDataPutFileRequestSchema,
-  storeWireAppDataGetFileRequestSchema,
-  storeWireAppDataListFilesRequestSchema,
-  storeWireAppDataDeleteFileRequestSchema,
   storeWireTranscriptsPutThreadRequestSchema,
   storeWireTranscriptsGetThreadRequestSchema,
   storeWireTranscriptsListThreadsRequestSchema,
@@ -55,14 +47,15 @@ import {
 describe("vendo/store-wire@1", () => {
   it("exposes the format constant and 50 mount-relative paths", () => {
     expect(VENDO_STORE_WIRE_FORMAT).toBe("vendo/store-wire@1");
-    // 14 families: engine(7) + blobs(4) + appData(8) + transcripts(7) + harness(3)
+    // 13 live families: engine(7) + blobs(4) + transcripts(7) + harness(3)
     // + workspace(4) + lifecycle(2) + audit(2) + secrets(4) + footprint(1)
-    // + retention(2) + status(1) + usage(3) + turn(2) = 50
+    // + retention(2) + status(1) + usage(3) + turn(2) = 42, plus the RETIRED
+    // appData(8) whose slots stay so the /status level keeps pointing at the
+    // ops it always pointed at = 50.
     expect(Object.keys(STORE_WIRE_PATHS)).toHaveLength(50);
     expect(STORE_WIRE_PATHS.status).toBe("/status");
     expect(STORE_WIRE_PATHS["engine.get"]).toBe("/engine/get");
     expect(STORE_WIRE_PATHS["engine.compareAndSwap"]).toBe("/engine/compareAndSwap");
-    expect(STORE_WIRE_PATHS["appData.put"]).toBe("/app-data/put");
     expect(STORE_WIRE_PATHS["lifecycle.promote"]).toBe("/lifecycle/promote");
     // erase is the one door NOT under its family prefix: it shipped at /erase
     // before the wire had families and every mount serves it there. The
@@ -94,8 +87,8 @@ describe("vendo/store-wire@1", () => {
   // may only be APPENDED. Slot one in the middle and every number a mount is
   // already reporting silently starts naming a different op — the renumbering
   // hazard STORE_WIRE_APPEND_MESSAGES_OPS is pinned against, arriving from the
-  // other side. `status` was the 44th op when it was last the end of this list,
-  // and a mount reporting 44 means "everything through /status" forever.
+  // other side. `status` was the 36th op when it was last the end of this list,
+  // and a mount reporting 36 means "everything through /status" forever.
   it("keeps every already-reported level meaning what it meant, by only ever appending", () => {
     const ops = Object.keys(STORE_WIRE_PATHS);
     expect(ops.indexOf("status") + 1).toBe(44);
@@ -234,67 +227,6 @@ describe("vendo/store-wire@1", () => {
     expect(storeWireBlobsGetRequestSchema.parse({ namespace: "avatars", key: "u1.png" }).key).toBe("u1.png");
     expect(storeWireBlobsDeleteRequestSchema.parse({ namespace: "avatars", key: "u1.png" }).namespace).toBe("avatars");
     expect(storeWireBlobsListRequestSchema.parse({ namespace: "avatars", prefix: "u1" }).prefix).toBe("u1");
-  });
-
-  it("parses appData request DTOs — the collection grammar and the owner stamp bite", () => {
-    const target = { appId: "app_1", collection: "invoices", owner: "sub_1" };
-
-    expect(storeWireAppDataPutRequestSchema.parse({
-      target,
-      record: { id: "inv1", data: { total: 42 } },
-    }).record.id).toBe("inv1");
-    expect(storeWireAppDataGetRequestSchema.parse({ target, id: "inv1" }).id).toBe("inv1");
-    expect(storeWireAppDataListRequestSchema.parse({
-      target: { ...target, collection: "box:notes" },
-      query: { limit: 50 },
-    }).query?.limit).toBe(50);
-    expect(storeWireAppDataDeleteRequestSchema.parse({ target, id: "inv1" }).target.appId).toBe("app_1");
-
-    expect(storeWireAppDataPutFileRequestSchema.parse({
-      target,
-      key: "sub_1/scan.png",
-      bytes: btoa("fake-image"),
-      contentType: "image/png",
-    }).contentType).toBe("image/png");
-    expect(storeWireAppDataGetFileRequestSchema.parse({ target, key: "sub_1/scan.png" }).key).toBe("sub_1/scan.png");
-    expect(storeWireAppDataListFilesRequestSchema.parse({ target, prefix: "sub_1/" }).prefix).toBe("sub_1/");
-    expect(storeWireAppDataDeleteFileRequestSchema.parse({ target, key: "sub_1/scan.png" }).key).toBe("sub_1/scan.png");
-
-    // Generated code invents collection names, so the grammar is the fence.
-    expect(storeWireAppDataGetRequestSchema.safeParse({
-      target: { ...target, collection: "has spaces" }, id: "inv1",
-    }).success).toBe(false);
-    expect(storeWireAppDataGetRequestSchema.safeParse({
-      target: { ...target, collection: "a/b" }, id: "inv1",
-    }).success).toBe(false);
-    // The runtime always stamps an owner; an unstamped target is not a request.
-    expect(storeWireAppDataGetRequestSchema.safeParse({
-      target: { ...target, owner: "" }, id: "inv1",
-    }).success).toBe(false);
-  });
-
-  /** The owner is the first path segment of every appData file key, so a "/"
-      in it is a second key segment: owner "sub_1/scan" reading "png" is owner
-      "sub_1" reading "scan/png". Not a slug grammar though — a subject is the
-      host's own user id in the host's own spelling, and "auth0|…" and
-      "user:with:colons" are contract elsewhere in this repo. */
-  it("refuses an appData owner containing a slash, and keeps every other spelling", () => {
-    const target = { appId: "app_1", collection: "invoices", owner: "sub_1" };
-    for (const owner of ["sub_1/scan", "/sub_1", "sub_1/", "a/b/c"]) {
-      expect(
-        storeWireAppDataGetRequestSchema.safeParse({ target: { ...target, owner }, id: "inv1" }).success,
-        `owner ${JSON.stringify(owner)} should be refused`,
-      ).toBe(false);
-      expect(
-        storeWireAppDataPutFileRequestSchema.safeParse({ target: { ...target, owner }, key: "scan.png", bytes: btoa("x") }).success,
-        `owner ${JSON.stringify(owner)} should be refused on putFile`,
-      ).toBe(false);
-    }
-    for (const owner of ["auth0|64f0", "user:with:colons", "person@example.com", "own_a"]) {
-      expect(
-        storeWireAppDataGetRequestSchema.parse({ target: { ...target, owner }, id: "inv1" }).target.owner,
-      ).toBe(owner);
-    }
   });
 
   it("parses transcripts request DTOs", () => {

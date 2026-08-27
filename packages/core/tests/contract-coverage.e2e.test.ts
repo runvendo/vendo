@@ -44,7 +44,6 @@ import {
   auditEventSchema,
   uiPayloadSchema,
   treeNodeSchema,
-  storageDeclSchema,
   appSeedSchema,
   triggerSourceSchema,
   automationTaskSchema,
@@ -328,9 +327,7 @@ describe("§8 — UIPayload is the format-tag dispatch surface; unknown tags are
 
 
 describe("§9 — app document plane values and sub-schemas", () => {
-  it("storageDecl defaults kind to records and pin base must be a hash ref", () => {
-    expect(storageDeclSchema.safeParse({ about: "x" }).success).toBe(true);
-    expect(storageDeclSchema.safeParse({ about: "x", kind: "blobs" }).success).toBe(false);
+  it("pin base must be a hash ref", () => {
     expect(appSeedSchema.parse({ component: "card", baseline: "sha256:abc", wishes: ["make it blue"] }))
       .toEqual({ component: "card", baseline: "sha256:abc", wishes: ["make it blue"] });
     // A seed written before the wish list carries one `instruction`; it reads as
@@ -452,7 +449,7 @@ describe("public export surface — every contracted camelCaseName schema is pre
       "toolDescriptorSchema", "toolCallSchema", "toolOutcomeSchema",
       "grantScopeSchema", "grantDurationSchema", "permissionGrantSchema", "approvalRequestSchema",
       "approvalDecisionSchema", "guardDecisionSchema", "auditEventSchema", "uiPayloadSchema",
-      "treeNodeSchema", "appDocumentSchema", "storageDeclSchema",
+      "treeNodeSchema", "appDocumentSchema",
       "appSeedSchema", "triggerSourceSchema", "stepSchema",
       "budgetSchema", "automationTaskSchema", "automationRecordSchema",
       "vendoRecordSchema", "recordQuerySchema", "authMaterialSchema", "agentRunReportSchema",

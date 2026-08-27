@@ -75,7 +75,7 @@ describe("engine allowlist", () => {
     // (conformance/store-ops.ts:241): the point is that the refusal names THIS
     // build's list, so a bump does not turn into a test edit every time.
     expect(message).toContain(`v${ENGINE_ALLOWLIST_VERSION}`);
-    expect(message).toContain("appData");
+    expect(message).toContain("vendo_apps_sql");
     // "users" is not a typo of anything here, so it collects no guess.
     expect(message).not.toContain("did you mean");
   });
@@ -106,7 +106,7 @@ describe("collection kind", () => {
 
   // `knowledge` is what Cloud meters as index cost, so a collection nobody
   // registered must never fall into it by default — the app-history pattern and
-  // any appData collection a footprint runs across are storage.
+  // any app-scoped collection a footprint runs across are storage.
   it("defaults an unregistered collection to storage, never knowledge", () => {
     expect(collectionKind(engineAppHistory("app_1"))).toBe("storage");
     expect(collectionKind("app:app_1:notes")).toBe("storage");

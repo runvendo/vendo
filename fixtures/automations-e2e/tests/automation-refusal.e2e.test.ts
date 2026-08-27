@@ -27,6 +27,12 @@ import { UNATTENDED_DESTRUCTIVE_REASON } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
 
 const SEND_TOOL = "host_invoices_send";
+/** The publish step's tool and the one statement it runs — spelled here exactly
+ *  as `plan.ts` spells it, because that string IS the contract the planner
+ *  validates a plan's publish step against. */
+const RESULTS_TOOL = "vendo_apps_sql";
+const RESULTS_SQL = "INSERT INTO mine.chased (id, data) VALUES (?, ?) "
+  + "ON CONFLICT (id) DO UPDATE SET data = excluded.data";
 
 /** The prompt the planner was asked with, flattened. */
 const promptText = (call: ScriptedModelCall): string => call.prompt
@@ -39,7 +45,7 @@ const tools: HostToolInfo[] = [
   { name: "host_invoices_list", description: "List invoices", risk: "read" },
   // Graded destructive by whoever owns the catalog — the one signal the law reads.
   { name: SEND_TOOL, description: "Send invoice", risk: "destructive" },
-  { name: "vendo_apps_data_put", description: "Publish app records", risk: "write" },
+  { name: RESULTS_TOOL, description: "Run one SQL statement against this app's own database", risk: "write" },
 ];
 
 const stepsInput: AutomationPlanInput = {
@@ -52,12 +58,11 @@ const stepsInput: AutomationPlanInput = {
 
 const publishStep = {
   id: "publish",
-  tool: "vendo_apps_data_put",
+  tool: RESULTS_TOOL,
   args: {
     appId: "'app_chaser'",
-    collection: "'chased'",
-    id: "'latest'",
-    data: "steps.rows",
+    sql: `'${RESULTS_SQL}'`,
+    params: "['latest', $string(steps.rows)]",
   },
 };
 
@@ -110,7 +115,7 @@ describe("automation authoring refuses irreversible work", () => {
 
     const contract = offered[0] ?? "";
     expect(contract).toContain("host_invoices_list");
-    expect(contract).toContain("vendo_apps_data_put");
+    expect(contract).toContain(RESULTS_TOOL);
     expect(contract).not.toContain(SEND_TOOL);
   });
 

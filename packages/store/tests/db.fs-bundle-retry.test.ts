@@ -39,7 +39,7 @@ describe("PGlite transient boot retry", () => {
     pgliteCreate.mockRejectedValueOnce(truncatedBundle()).mockResolvedValueOnce(fakePglite());
 
     const db = createDb({ dataDir: "memory://fs-bundle-heals" });
-    await expect(db.query("select 1")).resolves.toEqual({ rows: [{ ok: 1 }] });
+    await expect(db.query("select 1")).resolves.toEqual({ rows: [{ ok: 1 }], rowCount: 1 });
 
     expect(pgliteCreate).toHaveBeenCalledTimes(2);
     await db.close();
@@ -67,7 +67,7 @@ describe("PGlite transient boot retry", () => {
     pgliteCreate.mockRejectedValueOnce(initFailure()).mockResolvedValueOnce(fakePglite());
 
     const db = createDb({ dataDir: "memory://boot-init-heals" });
-    await expect(db.query("select 1")).resolves.toEqual({ rows: [{ ok: 1 }] });
+    await expect(db.query("select 1")).resolves.toEqual({ rows: [{ ok: 1 }], rowCount: 1 });
 
     expect(pgliteCreate).toHaveBeenCalledTimes(2);
     await db.close();
@@ -94,7 +94,7 @@ describe("PGlite transient boot retry", () => {
     pgliteCreate.mockRejectedValueOnce(unloadableLibrary()).mockResolvedValueOnce(fakePglite());
 
     const db = createDb({ dataDir: "memory://boot-library-heals" });
-    await expect(db.query("select 1")).resolves.toEqual({ rows: [{ ok: 1 }] });
+    await expect(db.query("select 1")).resolves.toEqual({ rows: [{ ok: 1 }], rowCount: 1 });
 
     expect(pgliteCreate).toHaveBeenCalledTimes(2);
     await db.close();
@@ -104,7 +104,7 @@ describe("PGlite transient boot retry", () => {
     pgliteCreate.mockRejectedValueOnce(mixedVersionBundle()).mockResolvedValueOnce(fakePglite());
 
     const db = createDb({ dataDir: "memory://boot-bki-heals" });
-    await expect(db.query("select 1")).resolves.toEqual({ rows: [{ ok: 1 }] });
+    await expect(db.query("select 1")).resolves.toEqual({ rows: [{ ok: 1 }], rowCount: 1 });
 
     expect(pgliteCreate).toHaveBeenCalledTimes(2);
     await db.close();

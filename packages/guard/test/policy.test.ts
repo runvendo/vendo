@@ -389,7 +389,7 @@ describe("policy files, rules, directions, and code", () => {
     // A write-class app tool, because the fallback is only visible on one: a
     // resolver that throws must leave the static risk standing, which for a
     // write means the call still asks.
-    const edit = descriptor("write", { name: "vendo_apps_data_put" });
+    const edit = descriptor("write", { name: "vendo_apps_sql" });
     const policy = { rules: [
       { match: { risk: "write" as const }, action: "ask" as const },
       { match: { risk: "read" as const }, action: "run" as const },
