@@ -319,12 +319,19 @@ const attributeValueFinding = (
   if (attribute === undefined || !ts.isJsxAttribute(attribute) || attribute.initializer === undefined) return undefined;
   const value = ts.isJsxExpression(attribute.initializer) ? attribute.initializer.expression : attribute.initializer;
   if (value === undefined) return undefined;
-  const wanted = checker.getContextualType(value);
+  const wanted = briefType(ts, checker, checker.getContextualType(value));
+  const written = briefType(ts, checker, checker.getTypeAtLocation(value));
+  // The other way the sentence contradicts itself: the two types really do
+  // differ, but {@link briefType} SUMMARIZED both to the same words — a hoisted
+  // `columns` array whose `align: "end"` widened to `string` differs from the
+  // prop in one nested field, and both sides print as `a list of rows`. The
+  // compiler's own nested sentence names the field that disagrees.
+  if (wanted === written) return undefined;
   return {
     severity: "block",
     where,
-    message: `prop "${locus.prop}" on <${locus.element.tagName.getText(file)}> takes ${briefType(ts, checker, wanted)},`
-      + ` but this value is ${briefType(ts, checker, checker.getTypeAtLocation(value))}`
+    message: `prop "${locus.prop}" on <${locus.element.tagName.getText(file)}> takes ${wanted},`
+      + ` but this value is ${written}`
       + " — bind a value whose type matches the prop",
   };
 };
