@@ -30,6 +30,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   VENDO_APP_BUILD_TOOL,
+  VENDO_TOOL_NOTES,
   VENDO_MAKE_TOOL,
   vendoApprovalPartSchema,
   type AppId,
@@ -360,10 +361,15 @@ describe("the ask reaches the person on the ONE approval card", () => {
     expect(card.getAttribute("data-vendo-tool")).toBe(VENDO_APP_BUILD_TOOL);
     expect(card.getAttribute("data-risk")).toBe("write");
 
-    // THE WORDS, off the shared ladder (`consentAsk`) reading the descriptor the
-    // door authored — never a second sentence written for this surface.
+    // THE WORDS, off the shared ladder (`consentAsk`) reading the copy the door
+    // authored — never a second sentence written for this surface. Asserted
+    // against the table itself, so the card and `BUILD_CONSENT_ASK` cannot drift
+    // apart again without this failing.
     expect(card.textContent).toContain("Build this app for real?");
-    expect(card.textContent).toContain("This changes something in your account, and it runs as you.");
+    expect(card.textContent).toContain(VENDO_TOOL_NOTES[VENDO_APP_BUILD_TOOL]);
+    // The generic consequence class is what a person read while the authored
+    // sentence had no rung to arrive on — it says nothing about a machine.
+    expect(card.textContent).not.toContain("This changes something in your account");
     // What it said before the descriptor travelled: ungraded, so the note could
     // only say nobody had checked what spending a build machine does.
     expect(card.textContent).not.toContain("This hasn’t been checked");
