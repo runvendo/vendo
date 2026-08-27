@@ -356,7 +356,8 @@ export function agent(config: AgentConfig): VendoAgent {
     if ((await resolveDevCredential()).rung !== "none") return;
     throw new VendoError(
       "validation",
-      "agent({ model }) is required — vendo(), the default brain, thinks with it. Pass one — "
+      "agent({ model }) is required — vendo(), the default brain, thinks with it. The shortest "
+      + "way is `npx vendoai@latest login`, which mints a VENDO_API_KEY. Or pass your own — "
       + "`model: anthropic(\"claude-sonnet-4-6\")`, importing `anthropic` from `@ai-sdk/anthropic` "
       + "— or name a harness that brings its own, e.g. `harness: claudeCode()`, importing "
       + "`claudeCode` from `@vendoai/harnesses/claude-code`.",
