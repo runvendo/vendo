@@ -1,4 +1,13 @@
-import type { VendoAppRef, VendoApprovalRef } from "@vendoai/core";
+import { VENDO_TOOL_PREFIX, type VendoAppRef, type VendoApprovalRef } from "@vendoai/core";
+import {
+  getToolName,
+  isToolUIPart,
+  type DynamicToolUIPart,
+  type ToolUIPart,
+  type UIDataTypes,
+  type UIMessagePart,
+  type UITools,
+} from "ai";
 
 /**
  * Existing-agents contract — prop shapes for the three embeds a BYO chat
@@ -29,4 +38,29 @@ export interface VendoApprovalEmbedProps {
  *  embed by `parseVendoToolEnvelope`, or nothing for plain data. */
 export interface VendoToolResultProps {
   output: unknown;
+}
+
+/**
+ * Is this message part Vendo's? True for a tool part — `dynamic-tool` and
+ * `tool-<name>` alike — whose tool name carries the prefix every pack tool is
+ * namespaced under. It narrows, so `part.output` and `part.state` read after it
+ * with no cast.
+ *
+ * ```tsx
+ * if (isVendoToolPart(part)) return <VendoToolResult output={part.output} />;
+ * // your own parts fall through to your own rendering
+ * ```
+ *
+ * It answers "is this Vendo's", never "is it finished": a part still streaming
+ * carries no output and `<VendoToolResult>` renders nothing for it, so
+ * `part.state === "output-available"` stays your own visible check, for
+ * wherever you want to show a running one.
+ *
+ * Order it against your own tools however you like — it matches on the tool
+ * NAME, so a host's own `dynamic-tool` part is never mistaken for one of ours.
+ */
+export function isVendoToolPart<TOOLS extends UITools>(
+  part: UIMessagePart<UIDataTypes, TOOLS>,
+): part is ToolUIPart<TOOLS> | DynamicToolUIPart {
+  return isToolUIPart(part) && getToolName(part).startsWith(VENDO_TOOL_PREFIX);
 }

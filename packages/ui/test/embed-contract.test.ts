@@ -1,10 +1,12 @@
 import { parseVendoToolEnvelope, type VendoAppRef, type VendoApprovalRef } from "@vendoai/core";
+import type { UIMessage } from "ai";
 import { describe, expect, it } from "vitest";
-import type {
-  VendoAppEmbedProps,
-  VendoApprovalEmbedProps,
-  VendoApprovalEmbedState,
-  VendoToolResultProps,
+import {
+  isVendoToolPart,
+  type VendoAppEmbedProps,
+  type VendoApprovalEmbedProps,
+  type VendoApprovalEmbedState,
+  type VendoToolResultProps,
 } from "../src/index.js";
 
 // Wave 0 contract freeze — the embed prop shapes Lane B builds the three
@@ -48,5 +50,86 @@ describe("embed prop contracts", () => {
       output: { kind: "vendo/app-ref@1", appId: "app_x", title: "Dashboard", status: "building" },
     };
     expect(parseVendoToolEnvelope(appProps.output)?.kind).toBe("vendo/app-ref@1");
+  });
+});
+
+/** The branch a host's own message-part renderer takes before it reaches
+ *  <VendoToolResult>: it owns the whole "is this Vendo's" question, so nobody
+ *  outside this package has to know the `vendo_` prefix is the contract. */
+describe("isVendoToolPart", () => {
+  type Part = UIMessage["parts"][number];
+
+  const vendoPart: Part = {
+    type: "dynamic-tool",
+    toolName: "vendo_make",
+    toolCallId: "call_1",
+    state: "output-available",
+    input: {},
+    output: { kind: "vendo/app-ref@1", appId: "app_x", title: "Dashboard", status: "building" },
+  };
+
+  it("claims a vendo_-prefixed dynamic tool", () => {
+    expect(isVendoToolPart(vendoPart)).toBe(true);
+  });
+
+  it("claims a vendo_-prefixed tool-<name> part — both streamed shapes, one branch", () => {
+    const part: Part = {
+      type: "tool-vendo_make",
+      toolCallId: "call_2",
+      state: "output-available",
+      input: {},
+      output: { kind: "vendo/app-ref@1", appId: "app_y", title: "Invoices", status: "building" },
+    };
+    expect(isVendoToolPart(part)).toBe(true);
+  });
+
+  it("leaves the host's own tools alone, in either shape", () => {
+    const hostDynamic: Part = {
+      type: "dynamic-tool",
+      toolName: "send_invoice",
+      toolCallId: "call_3",
+      state: "output-available",
+      input: {},
+      output: { delivered: true },
+    };
+    const hostStatic: Part = {
+      type: "tool-send_invoice",
+      toolCallId: "call_4",
+      state: "output-available",
+      input: {},
+      output: { delivered: true },
+    };
+    expect([isVendoToolPart(hostDynamic), isVendoToolPart(hostStatic)]).toEqual([false, false]);
+  });
+
+  it("leaves parts that are not tool calls alone", () => {
+    const text: Part = { type: "text", text: "vendo_make" };
+    expect(isVendoToolPart(text)).toBe(false);
+  });
+
+  /** The deliberate contract: it answers "is this Vendo's", never "is it
+   *  finished". A predicate that also meant finished would leave a host no way
+   *  to tell an unfinished Vendo part from one of its own — which is exactly
+   *  what the Mastra page's "Running…" branch needs. */
+  it("claims an unfinished vendo_ part too — state stays the host's own check", () => {
+    const streaming: Part = {
+      type: "dynamic-tool",
+      toolName: "vendo_make",
+      toolCallId: "call_5",
+      state: "input-streaming",
+      input: undefined,
+    };
+    expect(isVendoToolPart(streaming)).toBe(true);
+  });
+
+  it("narrows, so output and state read with no cast", () => {
+    const part: Part = vendoPart;
+    if (!isVendoToolPart(part)) throw new Error("expected a Vendo tool part");
+    // Nothing below is asserted or cast — that these two lines COMPILE is the
+    // test. Without the type predicate, both are errors on a UIMessagePart.
+    const output: unknown = part.output;
+    const state: string = part.state;
+    expect(parseVendoToolEnvelope(output)?.kind).toBe("vendo/app-ref@1");
+    expect(state).toBe("output-available");
   });
 });

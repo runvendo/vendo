@@ -10,8 +10,9 @@ import type { AgentRunReport, Principal, VendoToolEnvelope } from "@vendoai/core
 
 /** Every pack tool is namespaced under this prefix to avoid collisions with
  *  the host loop's own tools: a registered host tool `host_x` ships as
- *  `vendo_host_x`; the built-ins below are already prefixed. */
-export const VENDO_TOOL_PACK_PREFIX = "vendo_" as const;
+ *  `vendo_host_x`; the built-ins below are already prefixed. The same string
+ *  `isVendoToolPart` reads on the chat surface, so it is named once in core. */
+export { VENDO_TOOL_PREFIX as VENDO_TOOL_PACK_PREFIX } from "@vendoai/core";
 
 /** Generate UI. The pack's app door is Vendo's OWN make tool, under its own
  *  name — one contract in-process and over the MCP door, never a BYO-only

@@ -10,6 +10,13 @@ const requiredJsonValueSchema = z.unknown().refine(
 /** 01-core §4 */
 export const TOOL_NAME_PATTERN = /^[a-zA-Z0-9_-]{1,64}$/;
 
+/** Every tool Vendo puts in an agent's hands is namespaced under this prefix,
+ *  so it never collides with the host loop's own tools and a renderer can tell
+ *  the two apart by name alone. Named here, in the layer everything shares,
+ *  because both the pack that WRITES the names (`VENDO_TOOL_PACK_PREFIX`) and
+ *  the chat surface that READS them (`isVendoToolPart`) hold this string. */
+export const VENDO_TOOL_PREFIX = "vendo_";
+
 /** 01-core §4/§16 — the app runtime's reserved agent-tool namespace. Tools
  *  under this prefix are the only ones whose ok-outcome may carry an
  *  OpenSurface onto the view channel; the agent bridge and the apps runtime

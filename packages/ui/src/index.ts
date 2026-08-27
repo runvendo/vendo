@@ -20,6 +20,8 @@ export { useVendoChat, type UseVendoChatOptions } from "./use-vendo-chat.js";
 export { defaultVendoGreeting, type VendoDiscoverability, type VendoGreeting } from "./chrome/discoverability.js";
 export type { ToolMeta, ToolMetaMap } from "./chrome/humanize.js";
 export type { VendoAppEmbedProps, VendoApprovalEmbedProps, VendoApprovalEmbedState, VendoToolResultProps } from "./embeds.js";
+/** The one branch a BYO message-part renderer needs: is this part Vendo's? */
+export { isVendoToolPart } from "./embeds.js";
 // The components behind the frozen prop contracts, exported from the root so
 // a BYO chat page needs only `@vendoai/ui`.
 export { VendoAppEmbed, VendoApprovalEmbed, VendoToolResult } from "./chrome/embeds.js";
