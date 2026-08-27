@@ -54,6 +54,18 @@ describe("the memberships seam's Cloud default", () => {
     expect(composed.directory).toBeUndefined();
     vi.unstubAllEnvs();
   });
+
+  // …and mixing the twin with the one door is refused rather than resolved. The
+  // top-level key used to lose silently to `auth.memberships`, so a host who
+  // wrote `memberships: async () => []` beside an `auth` preset believed they
+  // had declined the Cloud directory and got it anyway — the seam that decides
+  // whether a deployment has orgs is the last one allowed to fail quietly.
+  it("refuses `memberships` beside `auth` instead of quietly dropping it", () => {
+    expect(() => composeConfig({
+      auth: { principal: async () => ({ kind: "user", subject: "dev" }) },
+      memberships: async () => [],
+    } as CreateVendoConfig)).toThrow(/memberships[\s\S]*never mixed/);
+  });
 });
 
 import { composeLimits } from "../src/limits.js";
