@@ -663,6 +663,13 @@ export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions>
 
       /** The turn's single retry, spent. */
       let retried = false;
+      /** Whether the model closed a text block that nothing has followed yet. The
+       *  wire's `TextChannel` starts a fresh part only when a tool call is
+       *  mirrored, so two ADJACENT blocks — what interleaved thinking produces —
+       *  ran together mid-sentence ("…exposed here.No matching tool exists…" in a
+       *  TaxDome answer). A block boundary is a paragraph boundary; carrying it as
+       *  markdown keeps `HarnessEvent` closed (§1.5). */
+      let blockEnded = false;
       for (;;) {
         /** Set when THIS attempt died on a prompt that did not fit. */
         let overflowed = false;
@@ -670,7 +677,11 @@ export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions>
           for await (const part of loop.result.fullStream) {
             switch (part.type) {
               case "text-delta":
-                yield { type: "text", delta: part.text };
+                yield { type: "text", delta: blockEnded ? `\n\n${part.text}` : part.text };
+                blockEnded = false;
+                break;
+              case "text-end":
+                blockEnded = true;
                 break;
               case "finish-step":
                 // Which model actually served it, which a lazy seat cannot say

@@ -200,16 +200,22 @@ export function humanizeToolName(raw: string): string {
  * identifier stays the CALL name; this is the one place the human label enters
  * the model's vocabulary.
  *
- * A title equal to the name adds nothing (`ToolListing.title` falls back to the
- * name) and would teach exactly the wrong vocabulary, so it is dropped.
+ * A title equal to the name is no title at all (`ToolListing.title` falls back to
+ * the name), and neither is a missing one — so the label falls back down the SAME
+ * ladder the render layer walks (`toolTitle`, ui/humanize.ts): our own table, then
+ * the prettified id. Dropping the label instead is what leaked
+ * `host_getClient` into a TaxDome answer — the screen's beat said "Get client"
+ * while the model, told to say the title and given none, had only the identifier.
+ * Both sides now read one ladder, so they cannot say different words.
  */
 export function modelToolDescription(
   tool: { name: string; title?: string; description: string },
 ): string {
-  const title = tool.title?.trim();
-  return title === undefined || title === "" || title === tool.name
-    ? tool.description
-    : `${title} — ${tool.description}`;
+  const authored = tool.title?.trim();
+  const title = authored === undefined || authored === "" || authored === tool.name
+    ? VENDO_TOOL_TITLES[tool.name] ?? humanizeToolName(tool.name)
+    : authored;
+  return `${title} — ${tool.description}`;
 }
 
 /** The message prefix the apps runtime stamps on a terminally failed BUILD's

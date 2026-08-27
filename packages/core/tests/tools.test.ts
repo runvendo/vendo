@@ -70,12 +70,25 @@ describe("modelToolDescription — the model can only speak a title it was told"
     })).toBe("Send money — Send money to a person from the user's checking account.");
   });
 
-  it("leaves the description alone when there is no title to add", () => {
-    expect(modelToolDescription({ name: "host_x", description: "Does a thing." })).toBe("Does a thing.");
-    expect(modelToolDescription({ name: "host_x", title: "  ", description: "Does a thing." })).toBe("Does a thing.");
-    // `ToolListing.title` falls back to the NAME; repeating the identifier as a
-    // label would teach the model exactly the wrong vocabulary.
-    expect(modelToolDescription({ name: "host_x", title: "host_x", description: "Does a thing." })).toBe("Does a thing.");
+  // This case used to assert that an untitled tool kept its bare description,
+  // which is the DEFECT: a TaxDome host whose `.vendo/tools.json` authored no
+  // titles left the model with identifiers as the only names it had, and it
+  // printed `host_getClient` in an answer. Falling back is not inventing a
+  // label — it is reading the SAME ladder the render layer already walks, so
+  // the beat on screen and the model's vocabulary cannot say different words.
+  it("falls back to the prettified id when the host authored no title", () => {
+    expect(modelToolDescription({ name: "host_getClient", description: "Does a thing." }))
+      .toBe("Get client — Does a thing.");
+    expect(modelToolDescription({ name: "host_getClient", title: "  ", description: "Does a thing." }))
+      .toBe("Get client — Does a thing.");
+    // `ToolListing.title` falls back to the NAME, which is no title at all.
+    expect(modelToolDescription({ name: "host_getClient", title: "host_getClient", description: "Does a thing." }))
+      .toBe("Get client — Does a thing.");
+  });
+
+  it("prefers Vendo's own table for Vendo's own tools", () => {
+    expect(modelToolDescription({ name: "vendo_apps_open", description: "Opens it." }))
+      .toBe("Open the app — Opens it.");
   });
 });
 
