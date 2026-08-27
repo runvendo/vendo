@@ -38,6 +38,32 @@ A missing `tools.json` alone can also be regenerated on its own with
 `npx vendo sync`. Run `npx vendo config status` to see which surfaces are on
 disk and which are unset before you decide.
 
+## The policy-file warning
+
+`policy.json` gets a second check of its own, because its absence costs more
+than an inventory gap. A composition wired `guard({ policy: {} })` — what
+`vendo init` writes — reads its rules from `.vendo/policy.json`, and the guard
+reads fail-soft: with the file gone it boots anyway on its built-in posture.
+Destructive and ungraded actions ask, everything else runs, and your own rules
+are not in force.
+
+Doctor names that cost separately:
+
+```text wiring/policy-file
+warning: this host wires guard({ policy: {} }), which reads .vendo/policy.json, and that file is missing
+```
+
+`check: wiring/policy-file` · `error_code: E-CFG-001` · a warning, not a
+failure — doctor still exits `0` when nothing else is broken.
+
+The boot summary prints the same fact at runtime as a `guard` warning, so a
+deployment running on defaults says so on every boot.
+
+The fix is the same `npx vendo init`, or pass the rules inline —
+`guard({ policy: { rules: [ … ] } })` — if you'd rather not depend on the
+file. A host with inline rules or a preset is correctly configured with no
+file and gets no warning.
+
 ## Related errors
 
 - [E-CFG-002](/production/troubleshooting/e-cfg-002): a missing file in the same `.vendo/` directory, `data/.gitignore`

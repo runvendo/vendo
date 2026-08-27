@@ -179,10 +179,11 @@ every thread, app, and grant the turn creates.
 
 - **Your loop and your wire route have to resolve the same subject.** A mismatch
   has no error; the embed just polls a screen it will never be shown.
-- **Top-level `principal`, `actAs`, and `oauth` are deprecated aliases.** They
-  still work and will keep working through this major, but they are one seam
-  each with nowhere to grow — `auth` is the key that holds all six. Mixing the
-  two shapes throws at composition.
+- **Top-level `principal`, `actAs`, and `oauth` are deprecated aliases**, and
+  `memberships` has a top-level spelling too. Each still works alone and will
+  keep working through this major, but they are one seam each with nowhere to
+  grow — `auth` is the key that holds all six. Pass any of the four beside
+  `auth` and `createVendo` throws at composition, naming the mixed keys.
 - **The `vendo:` namespace is reserved.** A resolver that returns one of those
   subjects is refused at the wire — `vendo:webhook:<source>` and
   `vendo:org:<orgId>` are minted by Vendo itself.
