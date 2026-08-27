@@ -3,6 +3,7 @@ import {
   type Json,
   type JsonSchema,
   USE_SERVICE_TOOL,
+  VENDO_TOOL_NOTES,
 } from "@vendoai/core";
 import type { DynamicToolUIPart, ToolUIPart } from "ai";
 import { useEffect, useRef, useState } from "react";
@@ -71,6 +72,10 @@ export interface ToolPresentation {
   /** When approving takes effect and whose authority it runs on ("Sends now,
       as you"), in the ask's own verb — the promise under the question. */
   agency: string;
+  /** Vendo's own hand-written sentence for a tool VENDO ships
+      ({@link VENDO_TOOL_NOTES}), when there is one. Ranks below the host's
+      `ToolMeta.description` and above the consequence class. */
+  note?: string;
 }
 
 const agencyLine = (verb: string, trigger?: string): string => `${verb} ${trigger ?? "now"}, as you`;
@@ -134,8 +139,9 @@ const GRADE_NOTE: Record<string, string[]> = {
  * across the pair). Precedence, most local authority first:
  *   1. the question synthesized from the REAL inputs (names the actual money and
  *      counterparty), else the ask's own humanized label as a question;
- *   2. the HOST's own sentence for this tool (in-code `ToolMeta.description`) —
- *      the only human-authored copy in the system;
+ *   2. the HOST's own sentence for this tool (in-code `ToolMeta.description`),
+ *      else Vendo's own for a tool Vendo ships (`VENDO_TOOL_NOTES`) — the
+ *      human-authored copy in the system;
  *   3. the agency phrase — when it happens, and that it happens as the person
  *      approving;
  *   4. the consequence CLASS (`consentClassLine`) when neither 1 nor 2 spoke —
@@ -156,7 +162,7 @@ export function consentAsk(
   rows: readonly CardFieldRow[],
   meta?: ToolMeta,
 ): ConsentAsk {
-  const host = meta?.description?.trim();
+  const host = (meta?.description ?? presentation.note)?.trim();
   const authored = host !== undefined && host.length > 0 && host !== presentation.title ? host : undefined;
   const question = presentation.question ?? `${presentation.title}?`;
   const does = authored === undefined && presentation.question === undefined
@@ -363,7 +369,10 @@ export function toolPresentation(
         : `Sends ${money.shown} to ${to} as you`;
     }
   }
-  return { title, description, sub, toolkit, logoUrl, question, questionKeys, agency };
+  // Keyed on the PRESENTED name so a connector dispatch is read by its slug,
+  // exactly like the title above.
+  const note = VENDO_TOOL_NOTES[presented];
+  return { title, description, sub, toolkit, logoUrl, question, questionKeys, agency, note };
 }
 
 /** Live elapsed clock for an in-flight line; 0 (never ticking) under

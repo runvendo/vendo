@@ -11,6 +11,7 @@
 import {
   VENDO_APP_BUILD_TOOL,
   VENDO_APP_FORMAT,
+  VENDO_TOOL_NOTES,
   VENDO_TOOL_TITLES,
   VendoError,
   type AppBuildProposal,
@@ -46,22 +47,20 @@ const BUILD_TOOL = VENDO_APP_BUILD_TOOL;
 // §3 consumer voice — the shared table, like every other Vendo descriptor.
 // Without it the card asked the person to authorize "Vendo app build".
 const BUILD_TITLE = VENDO_TOOL_TITLES[BUILD_TOOL]!;
-const BUILD_DESCRIPTION = "Build this app for real: a sandbox installs the packages it needs, writes and tests the code,"
-  + " and the result is sealed. It spends a build machine, so it needs the person's yes.";
+const BUILD_DESCRIPTION = VENDO_TOOL_NOTES[BUILD_TOOL]!;
 
-/** This ask in words, for the surfaces that render no card. `consentAsk`'s own
- *  ladder (ui/chrome/build-beat.tsx) read off the descriptor below — its title as
- *  the question, its authored sentence as the note — so what an outside caller is
- *  handed and what the person in the thread is shown come from one source. */
+/** This ask in words, for the surfaces that render no card. Both halves come
+ *  from the shared core tables, which is what makes this the SAME ask the card
+ *  shows: `consentAsk` (ui/chrome/build-beat.tsx) reads them too, because
+ *  ruling 14 keeps the descriptor's own sentence off the consent ladder. */
 export const BUILD_CONSENT_ASK: Omit<PendingApproval, "id"> = {
   question: `${BUILD_TITLE}?`,
   notes: [BUILD_DESCRIPTION],
 };
 
-/** THE authored ask, and the source both surfaces read: the CARD derives its
- *  words from this descriptor (`consentAsk` off the `data-vendo-approval` part's
- *  copy of it), and {@link BUILD_CONSENT_ASK} above is the same ask already in
- *  words for the surfaces that render no card. One author, two renderings. */
+/** The descriptor the guard parks the ask on. Its `description` is the MODEL's
+ *  copy of the same sentence; the words a person reads reach the card through
+ *  `VENDO_TOOL_NOTES`, never through here. */
 export const buildDescriptor = (): ToolDescriptor => ({
   name: BUILD_TOOL,
   title: BUILD_TITLE,

@@ -162,6 +162,25 @@ export const VENDO_TOOL_TITLES: Readonly<Record<string, string>> = {
   vendo_report_capability_miss: "Note what I can't do",
 };
 
+/**
+ * The consumer-voice SENTENCE for the tools Vendo itself projects — {@link
+ * VENDO_TOOL_TITLES}' other half, here for the same reason: the consent card
+ * and the words-only surfaces must say one thing, and neither can read the
+ * other's copy.
+ *
+ * Ruling 14 keeps a DESCRIPTOR's `description` off the consent ladder at every
+ * rung, and this table does not reopen that door: a descriptor's sentence is
+ * authored for the MODEL or minted by extraction, while nothing can reach this
+ * table except copy Vendo wrote by hand for a person to read. Host tools are
+ * not here — a host's own sentence is its `ToolMeta.description`, and that
+ * still outranks this.
+ */
+export const VENDO_TOOL_NOTES: Readonly<Record<string, string>> = {
+  [VENDO_APP_BUILD_TOOL]: "Build this app for real: a sandbox installs the packages it needs,"
+    + " writes and tests the code, and the result is sealed. It spends a build machine,"
+    + " so it needs the person's yes.",
+};
+
 /** Prettify a raw tool id / slug into a human label:
     `host_email_send` → "Email send", `fn:listInvoices` → "List invoices",
     `gmail_GMAIL_CREATE_EMAIL_DRAFT` → "Gmail create email draft".
