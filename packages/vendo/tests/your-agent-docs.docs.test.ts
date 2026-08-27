@@ -390,14 +390,24 @@ describe("every component the docs tell a reader to import is exported", () => {
   it.each([
     // VendoProvider left both walkthroughs when embeds learned to find the
     // wire bare (#1583) — the provider is settings now, taught on the embeds page.
-    ["VendoSlot", "@vendoai/ui/chrome", "packages/ui/src/chrome/index.ts", SURFACE_PAGE],
+    //
+    // VendoSlot is `@vendoai/vendo/react` here, not `@vendoai/ui/chrome`: it is
+    // exported from both, and the page teaches the one that needs no direct
+    // `@vendoai/ui` dependency ("It ships in @vendoai/vendo — nothing extra to
+    // install"), the same rule reference/hooks.mdx states for every hook.
+    ["VendoSlot", "@vendoai/vendo/react", "packages/vendo/src/react.tsx", SURFACE_PAGE],
     ["VendoToolResult", "@vendoai/vendo/react", "packages/vendo/src/react.tsx", AI_SDK_PAGE],
     ["VendoToolResult", "@vendoai/vendo/react", "packages/vendo/src/react.tsx", MASTRA_PAGE],
   ])("%s is exported from %s", async (component, specifier, entry, page) => {
-    const text = await read(page);
-    expect(text, `${page} must name ${component}`).toContain(component);
-    expect(text, `${page} must name ${specifier}`).toContain(specifier);
-    expect(await read(entry)).toMatch(new RegExp(`\\b${component}\\b`));
+    // ONE import statement, not two independent `contains` checks. This row read
+    // `VendoSlot` + `@vendoai/ui/chrome` and passed for as long as SOME OTHER
+    // code block on the page happened to import from ui/chrome — the deleted
+    // VendoPalette example. The page had always taught VendoSlot from
+    // `@vendoai/vendo/react`, so the gate was green while checking two unrelated
+    // strings, and only went red when the unrelated one was removed.
+    expect(await read(page), `${page} must tell a reader to import ${component} from ${specifier}`)
+      .toMatch(new RegExp(`import\\s*\\{[^}]*\\b${component}\\b[^}]*\\}\\s*from\\s*"${specifier}"`));
+    expect(await read(entry), `${entry} must export ${component}`).toMatch(new RegExp(`\\b${component}\\b`));
   });
 
   it("wellKnownVendoHandler, the door's discovery route, is a server export", async () => {
