@@ -31,13 +31,15 @@ Most routes resolve a principal through `principal(req)`. Three surfaces never c
 | Route | Method | Body → Response |
 | --- | --- | --- |
 | `/approvals` | GET | pending `ApprovalRequest[]` |
-| `/approvals/:id` | GET | one parked call's state as a tagged envelope: `{state:"pending", request?}`, `{state:"executed", outcome}`, `{state:"declined"}`, or `{state:"expired"}`. Owner-scoped, and unknown and foreign ids both answer `not-found` |
+| `/approvals/:id` | GET | one parked call's state as a tagged envelope: `{state:"pending", request?}`, `{state:"executed", outcome?}`, `{state:"declined"}`, or `{state:"expired"}`. Owner-scoped, and unknown and foreign ids both answer `not-found` |
 | `/approvals/:id` | DELETE | revoke a denial → `{}` |
 | `/approvals/decide` | POST | `{ ids, decision }` → `{}`. A multi-id batch is atomic: every id lands or none does |
 | `/grants` | GET | `PermissionGrant[]` |
 | `/grants/:id` | DELETE | revoke → `{}` |
 
 During the resume window a pending answer may omit `request`. That still means working, so a poller should keep polling rather than treat it as expired.
+
+A call parked at the [MCP door](/outside-agents/how-the-door-works) resolves here too, even though nothing server-side recorded it. Approving grants the call, and the outside agent's own retry is what runs it, so the envelope reads the decision itself: `pending` until the retry spends a yes, `executed` once it has, `declined` for a person's no, and `expired` when the TTL sweep took it. An `executed` door approval omits `outcome`, because nothing ran server-side to produce one.
 
 Denying an automation's standing-grant ask also disarms that automation inside the same decision.
 
