@@ -108,6 +108,16 @@ const checkoutOf = (source: Record<string, AppSourceFile> | undefined, directory
 
 /** `directory` is the DISK spelling — this text is read by a shell.
  *
+ *  The test step NAMES the box's egress, because an agent told to verify against
+ *  reality will otherwise go looking for the reality it knows. Measured live
+ *  2026-08-27: four escalated builds died at 15.2–15.4 min against the 15-minute
+ *  message budget — on asks as small as "show a QR code" — every one of them
+ *  trying to install a browser for Playwright and then a native canvas, both
+ *  unreachable past `BUILD_ALLOWED_DOMAINS`, and re-architecting the app between
+ *  attempts. Ask weight was not the variable; the cul-de-sac costs the same
+ *  whatever was asked for. The allowlist is the security boundary and does not
+ *  move, so the brief tells the truth about it instead.
+ *
  *  `briefing` is the rendered pack, appended as its own SECTION on the same join
  *  the screen agent's brief uses: the instructions above it are this rung's own,
  *  the product knowledge below it is the bytes the other rung read. */
@@ -132,7 +142,11 @@ HOW IT SHIPS
 - Bundle it with esbuild to ${directory}/${ENTRY}: ONE self-contained file, no
   imports left at runtime and no network calls at all — the sealed bundle renders
   in an iframe where every request is blocked.
-- Test what you built against reality, and fix what fails.
+- Test what you built against reality, and fix what fails. Reality here is Node:
+  this machine reaches the npm registry and nothing else, so no browser can be
+  fetched or driven and nothing with a native binary will build. Render the
+  bundle under a pure-JS DOM (jsdom) and assert what it produces; hunting for a
+  real browser only spends the clock you need for the build.
 - If your own test does not pass, DELETE ${directory}/${ENTRY} and stop. Its
   absence is how this host is told the build did not work; a broken one left
   behind is shipped to the person as if it worked.`, briefing]
