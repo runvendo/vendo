@@ -6,7 +6,6 @@ const chromeScenarios = [
   "thread",
   "thread-citations",
   "overlay",
-  "palette",
   "approval",
   "notice",
   "stage",
@@ -34,7 +33,6 @@ for (const scenario of chromeScenarios) {
       await expect(page.locator(".fl-cite-pop--open")).toBeVisible();
     }
     if (scenario === "overlay") await expect(page.getByRole("dialog", { name: "Vendo assistant" })).toBeVisible();
-    if (scenario === "palette") await expect(page.getByRole("dialog", { name: "Vendo assistant" })).toBeVisible();
     if (scenario === "notice") await expect(page.getByRole("region", { name: "Vendo is running without a policy" })).toBeVisible();
     if (scenario === "stage") await expect(page.getByText("Revenue is ready")).toBeVisible();
     if (scenario === "slot") await expect(page.getByText("Invoices app surface")).toBeVisible();

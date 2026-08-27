@@ -418,7 +418,7 @@ export function customServerSource(typescript: boolean, auth: AuthMatch | null =
   // the JSON import assigns with no cast and TypeScript pastes what JavaScript
   // pastes.
   const clientHint = ` *   // in the client entry — theme.json adopts the host brand (08 §4);\n` +
-    ` *   // <VendoOverlay /> is the conversation panel (opens from a trigger, the palette, or a slot):\n` +
+    ` *   // <VendoOverlay /> is the conversation panel (opens from a trigger or a slot):\n` +
     ` *   import { VendoOverlay, VendoProvider } from "@vendoai/vendo/react";\n` +
     ` *   import theme from "<path-to>/.vendo/theme.json";\n` +
     ` *   root.render(<VendoProvider baseUrl="/api/vendo" theme={theme}><App /><VendoOverlay /></VendoProvider>);\n`;
@@ -508,7 +508,7 @@ export function expressServerSource(typescript: boolean, auth: AuthMatch | null 
   // the JSON import assigns with no cast and TypeScript pastes what JavaScript
   // pastes.
   const clientHint = ` *   // in the client entry — theme.json adopts the host brand (08 §4);\n` +
-    ` *   // <VendoOverlay /> is the conversation panel (opens from a trigger, the palette, or a slot):\n` +
+    ` *   // <VendoOverlay /> is the conversation panel (opens from a trigger or a slot):\n` +
     ` *   import { VendoOverlay, VendoProvider } from "@vendoai/vendo/react";\n` +
     ` *   import theme from "<path-to>/.vendo/theme.json";\n` +
     ` *   root.render(<VendoProvider baseUrl="/api/vendo" theme={theme}><App /><VendoOverlay /></VendoProvider>);\n`;

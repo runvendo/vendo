@@ -4,7 +4,6 @@ import { openScenario, screenshotPath } from "./helpers.js";
 const shots = [
   { scenario: "thread", file: "thread-dark", ready: 'article[aria-label="Approval for Email send"]' },
   { scenario: "overlay", file: "overlay", ready: '[role="dialog"][aria-label="Vendo assistant"]' },
-  { scenario: "palette", file: "palette", ready: '[role="dialog"][aria-label="Vendo assistant"]' },
   { scenario: "approval", file: "approval", ready: 'article[aria-label="Approval for Delete invoice"]' },
   { scenario: "thread-humanized", file: "thread-humanized", ready: 'article[aria-label="Approval for Transfer funds"]' },
   { scenario: "thread-citations", file: "thread-citations", ready: "[data-vendo-citations]" },

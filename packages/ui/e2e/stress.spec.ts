@@ -53,14 +53,8 @@ test("rapid overlay open/close never dumps focus to the body or leaves a ghost d
   }
 });
 
-test("concurrent surfaces coexist: the palette keybinding stays a singleton", async ({ page }) => {
+test("concurrent surfaces coexist: a filled slot, a live thread, and an overlay on one page", async ({ page }) => {
   await openScenario(page, "concurrent");
   // A filled slot and a live thread render together with no collision.
   await expect(page.getByText("Outstanding this week")).toBeVisible();
-  // One ⌘K opens exactly ONE conversation surface even with several providers
-  // on the page (one-surface ⌘K: the palette dialog no longer exists).
-  await page.keyboard.press("Meta+k");
-  await expect(page.getByRole("dialog", { name: "Vendo assistant" })).toHaveCount(1);
-  await page.keyboard.press("Escape");
-  await expect(page.getByRole("dialog", { name: "Vendo assistant" })).toBeHidden();
 });

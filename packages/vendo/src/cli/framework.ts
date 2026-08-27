@@ -29,7 +29,6 @@ export const SURFACE_MARKERS: readonly string[] = [
   "<VendoOverlay",
   "<VendoThread",
   "<VendoTrigger",
-  "<VendoPalette",
   "<VendoSlot",
   "<VendoAppEmbed",
   "<VendoApprovalEmbed",

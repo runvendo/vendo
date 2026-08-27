@@ -1,6 +1,6 @@
 ---
 title: "Mount the surface"
-description: "The provider, the overlay, the command palette, and slots: what each one renders and the props that move it."
+description: "The provider, the overlay, and slots: what each one renders and the props that move it."
 sidebarTitle: "Mount the surface"
 ---
 
@@ -68,9 +68,8 @@ screens use your brand font where your own stylesheet does not reach.
 ## The overlay
 
 The conversation panel. A bare `<VendoOverlay />` puts nothing on the page: it
-renders once something opens it — `useVendoOverlay`, a `VendoTrigger`, the
-command palette, or a slot. Below 768px the panel becomes a full-bleed
-takeover.
+renders once something opens it — `useVendoOverlay`, a `VendoTrigger`, or a
+slot. Below 768px the panel becomes a full-bleed takeover.
 
 The `launcher` prop adds the built-in pill in a corner of the viewport. The
 pill is white-label. It reads "AI agent" until you give it your own label and
@@ -146,31 +145,10 @@ const overlay = useVendoOverlay();
 The `thread` prop swaps in your own thread component. The overlay stays the
 shell: portal, scrim, focus, and the mobile sheet.
 
-## The command palette
+Vendo binds no keyboard shortcut of its own — your app keeps every chord it
+already owns. For a `⌘K`, hand your own listener `overlay.toggle`.
 
-`⌘K` on macOS, `Ctrl+K` elsewhere, toggles the same conversation panel. With
-no conversation yet, it opens compact.
-
-```tsx
-import { VendoPalette } from "@vendoai/ui/chrome";
-
-<VendoPalette />
-```
-
-Mount it beside the overlay, which is the surface it opens. Typed text that
-matches no command is just the message.
-
-It also publishes a command set: a new conversation, each of the user's own
-apps, and their activity. Nothing renders that list for you. Pass `onCommand`
-and every command routes through you, to place wherever you like. Without one,
-only **New conversation** goes anywhere.
-
-The binding is a singleton no matter how many palettes mount, and it never
-steals a keystroke from a focused input of yours. Pass a chord
-(`hotkey={{ key: "j", meta: true }}`), a matcher function, or `false` to wire
-your own.
-
-<Frame>
+<Frame caption="With no conversation yet, the panel opens compact.">
   <img
     src="/images/maple/panel-compact.png"
     alt="The compact panel open over Maple, showing the greeting, five suggestion cards, and the composer"

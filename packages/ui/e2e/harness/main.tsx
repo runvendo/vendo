@@ -25,13 +25,11 @@ import {
   NoPolicyNotice,
   Remixable,
   VendoOverlay,
-  VendoPalette,
   VendoSlot,
   VendoThread,
   VendoToasts,
   VendoToolResult,
   vendoToast,
-  type VendoCommand,
   type VendoThreadProps,
 } from "../../src/chrome/index.js";
 import { DataTable } from "../../src/kit/index.js";
@@ -602,37 +600,6 @@ function AutoOpen({ selector, children }: { selector: string; children: ReactNod
   return children;
 }
 
-function OpenPalette() {
-  const [command, setCommand] = useState<VendoCommand>();
-  const open = () => globalThis.dispatchEvent(new KeyboardEvent("keydown", { key: "k", ctrlKey: true, bubbles: true }));
-  useEffect(() => {
-    queueMicrotask(() => {
-      document.querySelector<HTMLElement>("[data-testid=palette-opener]")?.focus();
-      open();
-    });
-  }, []);
-  // One-surface ⌘K (ui-lane-entry): the palette is headless — the keybinding
-  // opens the conversation overlay, whose chip strip carries the commands.
-  return <><button type="button" data-testid="palette-opener" onClick={open}>Open command palette</button><VendoPalette onCommand={setCommand} /><VendoOverlay launcher="none" /><output className="recorder" data-testid="command-recorder">{command ? JSON.stringify(command) : "No command selected"}</output></>;
-}
-
-/** ENG-222 — host-collision safety: a host input the host wires its own ⌘K to.
- *  The spec focuses it and presses ⌘K; the palette must NOT hijack the keystroke. */
-function PaletteHostInputScenario() {
-  return (
-    <div style={{ display: "grid", gap: 12, padding: 20, maxWidth: 520 }}>
-      <label style={{ display: "grid", gap: 6, fontSize: 14 }}>
-        Host search field (owns ⌘K)
-        <input data-testid="host-input" aria-label="Host search" placeholder="Focus me, then press ⌘K" style={{ padding: "9px 11px", borderRadius: 8, border: "1px solid #cad3e0" }} />
-      </label>
-      <p style={{ fontSize: 13, color: "#5b5c63" }}>
-        With focus in the host field, ⌘K stays the host&rsquo;s own shortcut — the Vendo palette does not open.
-      </p>
-      <VendoPalette />
-    </div>
-  );
-}
-
 function ApprovalScenario() {
   const [decision, setDecision] = useState<ApprovalDecision>();
   const decide = async (next: ApprovalDecision) => setDecision(next);
@@ -964,9 +931,9 @@ const MAPLE_SUGGESTIONS = [
   "Put me on blast in Slack when I order late-night delivery",
 ];
 
-/** ENG-231 — several shipped surfaces mounted on ONE page at once: the palette
- *  keybinding must stay a singleton (never double-fire), the overlay must open,
- *  and a filled slot + thread must coexist without style/DOM collisions. */
+/** ENG-231 — several shipped surfaces mounted on ONE page at once: a filled
+ *  slot, a live thread, and an overlay must coexist without style/DOM
+ *  collisions. */
 function ConcurrentScenario() {
   return (
     <VendoProvider client={baseClient} components={components} theme={mapleTheme}>
@@ -977,7 +944,6 @@ function ConcurrentScenario() {
         <div style={{ height: 320, display: "flex", flexDirection: "column", border: "1px solid #cad3e0", borderRadius: 12, overflow: "hidden" }}>
           <VendoThread threadId="thr_1" />
         </div>
-        <VendoPalette />
         <VendoOverlay />
       </div>
     </VendoProvider>
@@ -1926,8 +1892,8 @@ function SlotPickerScenario() {
   );
 }
 
-/** The empty-press fallback with NO conversation overlay and NO palette on the
- *  page: the first slot's press has nowhere to go, the second has onAuthor. */
+/** The empty-press fallback with NO conversation surface on the page: the
+ *  first slot's press has nowhere to go, the second has onAuthor. */
 function SlotHintScenario() {
   const [authored, setAuthored] = useState<string>();
   return (
@@ -1994,8 +1960,6 @@ function scenario(pathname: string): { title: string; theme?: Partial<VendoTheme
     case "/overlay-manual": return { title: "Overlay — manual launcher", content: <VendoOverlay launcher={{}} /> };
     case "/arrival-dot": return { title: "Arrival — the dot for an app nobody has seen", content: <ArrivalDotScenario />, ownProvider: true };
     case "/concurrent": return { title: "Concurrent surfaces", content: <ConcurrentScenario />, ownProvider: true };
-    case "/palette": return { title: "Command palette", content: <OpenPalette /> };
-    case "/palette-host": return { title: "Palette — host input collision", content: <PaletteHostInputScenario /> };
     case "/approval": return { title: "Destructive approval", content: <ApprovalScenario /> };
     case "/approval-descriptor": return { title: "Approval — model-instruction descriptor", content: <DescriptorHoleScenario />, ownProvider: true };
     case "/approval-two-money": return { title: "Approval — a fee beside the amount (C5)", content: <TwoMoneyScenario />, ownProvider: true };
@@ -2017,9 +1981,9 @@ function scenario(pathname: string): { title: string; theme?: Partial<VendoTheme
     case "/thread-forming": return { title: "Thread — the build's first seconds", content: <FormingScenario />, ownProvider: true };
     case "/consent-marks": return { title: "Consent surfaces — no shield", content: <ConsentMarksScenario />, ownProvider: true };
     case "/slot": return { title: "Inline app slot", content: <VendoSlot id="hero" appId="app_1"><section aria-label="Original host component"><h2>Original host hero</h2></section></VendoSlot> };
-    case "/slot-empty": return { title: "Inline slot — empty CTA (Maple)", theme: mapleTheme, content: <><VendoSlot id="hero" /><VendoPalette /><VendoOverlay launcher="none" /></> };
+    case "/slot-empty": return { title: "Inline slot — empty CTA (Maple)", theme: mapleTheme, content: <><VendoSlot id="hero" /><VendoOverlay launcher="none" /></> };
     case "/slot-hint": return { title: "Inline slot — no chat surface", theme: mapleTheme, content: <SlotHintScenario /> };
-    case "/slot-empty-dark": return { title: "Inline slot — empty CTA (dark)", theme: darkTheme, content: <><VendoSlot id="hero" /><VendoPalette /><VendoOverlay launcher="none" /></> };
+    case "/slot-empty-dark": return { title: "Inline slot — empty CTA (dark)", theme: darkTheme, content: <><VendoSlot id="hero" /><VendoOverlay launcher="none" /></> };
     case "/slot-pinned": return { title: "Inline slot — pinned component", theme: mapleTheme, content: <VendoSlot id="hero" pin={{ payload: pinnedViewTree }}><section aria-label="Original host component"><h2>Original host hero</h2></section></VendoSlot> };
     case "/slot-fallback": return { title: "Slot pin fallback", content: <SlotFallbackScenario />, ownProvider: true };
     case "/slot-building": return { title: "Inline slot — a build landing in place", content: <SlotBuildingScenario /> };

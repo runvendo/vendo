@@ -804,10 +804,6 @@ export function VendoOverlay({
   // name (cubic PR#391 finding).
   const configuredLabel = launcherConfig.label === undefined ? "AI agent" : launcherConfig.label;
   const launcherLabel = configuredLabel !== null && configuredLabel.trim() === "" ? null : configuredLabel;
-  // Demo-refresh 2026-07-23: the palette's chip strip above the composer is
-  // gone (it read as clutter and duplicated app entry points). The command
-  // registry seam stays — the palette hotkey still opens this overlay and a
-  // host `onCommand` still routes — there is just no built-in strip UI.
   // ui-usage-dx §6 — the whisper: the first time a user actually faces the
   // pill, it pulses once and a small caption says the app can be reshaped,
   // then never again (fire-once store). Arming is REACTIVE, not mount-frozen

@@ -85,9 +85,9 @@ import theme from "../.vendo/theme.json";
 </VendoProvider>
 ```
 
-Save and reload. The overlay, the palette, slots, generated screens, approval
-modals, and toasts each stamp these tokens on their own root and move
-together. Nothing in the chrome hardcodes a Vendo brand.
+Save and reload. The overlay, slots, generated screens, approval modals, and
+toasts each stamp these tokens on their own root and move together. Nothing in
+the chrome hardcodes a Vendo brand.
 
 </Step>
 
@@ -234,12 +234,11 @@ ancestor cannot confine it. It pads all four edges with the iOS safe-area
 insets.
 
 Touch ergonomics are keyed to small viewports **or** coarse pointers, so a
-tablet in a wide orientation still gets honest targets. The composer and the
-palette search render at 16px to stop iOS auto-zoom, and icon buttons and the
-overlay close control expand to 44px.
+tablet in a wide orientation still gets honest targets. The composer renders
+at 16px to stop iOS auto-zoom, and icon buttons and the overlay close control
+expand to 44px.
 
-Desktop chrome is unchanged, and the palette keeps its own presentation at
-every width.
+Desktop chrome is unchanged.
 
 While the takeover is open, the panel stamps a `--fl-kb-inset` variable
 derived from `visualViewport` so the composer lifts above the on-screen

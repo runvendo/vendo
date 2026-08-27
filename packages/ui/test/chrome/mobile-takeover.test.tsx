@@ -1,14 +1,14 @@
 // @vitest-environment jsdom
 // ENG-228 — the mobile takeover: the designed-but-dead `.fl-takeover` mode
 // comes alive. useMobileTakeover (matchMedia <768px) stamps the class on the
-// overlay panel and the palette; visualViewport drives a
+// overlay panel; visualViewport drives a
 // --fl-kb-inset var so the composer rides above the virtual keyboard; the
 // stylesheet gains the iOS-zoom (>=16px inputs) and 44px touch-target floor
 // plus a min-width floor on thread surfaces.
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { VendoProvider, createVendoClient, type VendoClient } from "../../src/index.js";
-import { VendoOverlay, VendoPalette, VendoToasts, dismissAllVendoToasts, vendoToast } from "../../src/chrome/index.js";
+import { VendoOverlay, VendoToasts, dismissAllVendoToasts, openVendoConversation, vendoToast } from "../../src/chrome/index.js";
 import { CHROME_CSS } from "../../src/chrome/chrome-css.js";
 import { inertBehind } from "../../src/chrome/inert-behind.js";
 import { createWireServer } from "../wire-server.js";
@@ -120,26 +120,24 @@ describe("mobile takeover (ENG-228)", () => {
     expect(panel().classList.contains("fl-takeover")).toBe(false);
   });
 
-  // One-surface ⌘K (ui-lane-entry pick P-C): the palette no longer renders a
-  // dialog — the keybinding opens the conversation overlay itself.
-  it("routes ⌘K to the overlay, takeover-stamped and portaled on mobile", async () => {
+  it("opens takeover-stamped and portaled on mobile", async () => {
     installMatchMedia(true);
     const { container } = render(
-      <VendoProvider client={client}><VendoPalette /><VendoOverlay launcher="none" /></VendoProvider>,
+      <VendoProvider client={client}><VendoOverlay launcher="none" /></VendoProvider>,
     );
-    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    act(() => { openVendoConversation(); });
     const dialog = await screen.findByRole("dialog", { name: "Vendo assistant" });
     expect(dialog.classList.contains("fl-takeover")).toBe(true);
     expect(container.contains(dialog)).toBe(false);
     expect(dialog.closest(".fl-overlay-portal")!.parentElement).toBe(document.body);
   });
 
-  it("routes desktop ⌘K to the overlay without the takeover stamp", async () => {
+  it("opens on desktop without the takeover stamp", async () => {
     installMatchMedia(false);
     render(
-      <VendoProvider client={client}><VendoPalette /><VendoOverlay launcher="none" /></VendoProvider>,
+      <VendoProvider client={client}><VendoOverlay launcher="none" /></VendoProvider>,
     );
-    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    act(() => { openVendoConversation(); });
     const dialog = await screen.findByRole("dialog", { name: "Vendo assistant" });
     expect(dialog.classList.contains("fl-takeover")).toBe(false);
   });
@@ -173,20 +171,13 @@ describe("mobile takeover (ENG-228)", () => {
     late.remove();
   });
 
-  it("⌘K toggles an already-open overlay closed (one surface, no second modal)", async () => {
+  it("toggle closes an already-open overlay, and reopens it (one surface, no second modal)", async () => {
     installMatchMedia(true);
-    render(
-      <VendoProvider client={client}>
-        <VendoOverlay defaultOpen />
-        <VendoPalette />
-      </VendoProvider>,
-    );
+    render(<VendoProvider client={client}><VendoOverlay defaultOpen /></VendoProvider>);
     expect(panel()).toBeTruthy();
-    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    act(() => { openVendoConversation({ toggle: true }); });
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Vendo assistant" })).toBeNull());
-    // No palette dialog ever mounts — the keybinding owns ONE surface.
-    expect(screen.queryByRole("dialog", { name: "Vendo command palette" })).toBeNull();
-    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    act(() => { openVendoConversation({ toggle: true }); });
     expect(await screen.findByRole("dialog", { name: "Vendo assistant" })).toBeTruthy();
   });
 

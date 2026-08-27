@@ -11,7 +11,7 @@ test("the empty-press fallback, in a real browser", async ({ page }) => {
   await expect(slot.getByRole("button", { name: "Design a view" })).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/1-empty-slot.png`, fullPage: true, animations: "disabled" });
 
-  // 2 — the hint, because this page mounts no overlay and no palette.
+  // 2 — the hint, because this page mounts no conversation surface.
   await slot.getByRole("button", { name: "Design a view" }).click();
   await expect(slot.getByRole("status"))
     .toHaveText("Ask your assistant to build something for this spot. Net worth card");

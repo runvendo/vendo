@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { withBasePath } from "@/lib/base-path";
 import { useVendoOverlay } from "@vendoai/ui";
-import { VendoOverlay, VendoPalette, VendoThread, VendoToasts, type VendoCommand, type VendoThreadProps } from "@vendoai/ui/chrome";
+import { VendoOverlay, VendoThread, VendoToasts, type VendoThreadProps } from "@vendoai/ui/chrome";
 import { MapleMark } from "@/components/ui/maple-mark";
 import { VendoWorkbench } from "@/components/vendo/workbench/VendoWorkbench";
 import { mapleScenarios } from "@/vendo/scenarios";
@@ -30,12 +30,7 @@ export function VendoLayer() {
   // stays as the power path. demo-refresh Part 4: the branded launcher pill
   // ("Ask Maple" + the Maple mark) is the visible front door.
   const overlay = useVendoOverlay();
-  const { toggle, open } = overlay;
-
-  // Every ⌘K palette command opens the overlay. "Show activity" used to route
-  // to the full-page workspace; that surface is gone, and Maple mounts no
-  // replacement, so the command falls back to the overlay like the rest.
-  const onCommand = (_command: VendoCommand) => open();
+  const { toggle } = overlay;
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -64,12 +59,6 @@ export function VendoLayer() {
           icon: <MapleMark className="h-3.5 w-3.5" />,
         }}
         thread={MapleThread}
-      />
-      {/* ENG-230: the command palette surface, mounted app-wide. Distinct
-          chord (Cmd/Ctrl+J) so it never fights the overlay's own ⌘K toggle. */}
-      <VendoPalette
-        hotkey={(event) => (event.metaKey || event.ctrlKey) && !event.shiftKey && event.key.toLowerCase() === "j"}
-        onCommand={onCommand}
       />
       {/* An approval that parks outside a live turn — a standing build ask —
           has no in-thread card to land on, so this is the surface that shows

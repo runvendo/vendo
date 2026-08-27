@@ -9,7 +9,6 @@ import {
   ChromeRoot,
   NoPolicyNotice,
   VendoOverlay,
-  VendoPalette,
   VendoSlot,
   VendoThread,
 } from "../../src/chrome/index.js";
@@ -193,7 +192,6 @@ describe("ApprovalCard and NoPolicyNotice exports", () => {
       <VendoProvider client={client}>
         <NoPolicyNotice />
         <VendoThread threadId="thr_1" />
-        <VendoPalette />
       </VendoProvider>,
     );
     await waitFor(() => expect(wire.requests.some(request => request.path === "/status")).toBe(true));

@@ -51,19 +51,10 @@ test("overlay focus trap and Escape are keyboard-complete", async ({ page }) => 
   await expect(page.getByRole("dialog", { name: "Vendo assistant" })).toBeVisible();
 });
 
-test("⌘K toggles the one conversation surface by keyboard alone", async ({ page }) => {
-  // One-surface ⌘K: the keybinding opens the conversation overlay and focus
-  // lands in the composer. The command CHIP STRIP this spec used to tab into
-  // was deleted on 2026-07-23 (clutter), so the keyboard contract that remains
-  // is the toggle: ⌘K from inside closes it again.
-  await openScenario(page, "palette");
-  const dialog = page.getByRole("dialog", { name: "Vendo assistant" });
-  await expect(dialog).toBeVisible();
+test("opening the conversation surface lands focus in the composer", async ({ page }) => {
+  await openScenario(page, "overlay");
+  await expect(page.getByRole("dialog", { name: "Vendo assistant" })).toBeVisible();
   await expect(page.getByRole("textbox", { name: "Message" })).toBeFocused();
-  await page.keyboard.press("Control+K");
-  await expect(dialog).toBeHidden();
-  await page.keyboard.press("Control+K");
-  await expect(dialog).toBeVisible();
 });
 
 test("a destructive approval can be denied entirely by keyboard", async ({ page }) => {

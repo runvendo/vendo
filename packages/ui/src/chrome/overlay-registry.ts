@@ -1,11 +1,9 @@
-/** The conversation-opening registry — `openVendoPalette`'s pattern
- * generalized to the conversation surface (ui-usage-dx §2/§4).
+/** The conversation-opening registry (ui-usage-dx §2/§4).
  *
  * A mounted VendoOverlay registers an opener; any affordance that wants to
- * open the chat preloaded with a prompt (a Trigger button, palette default
- * commands, the ✦ remix popover) calls `openVendoConversation` without
- * needing a ref to the overlay. LIFO like the palette registries: the most
- * recently mounted overlay owns the call.
+ * open the chat preloaded with a prompt (a Trigger button, a slot's empty-state
+ * CTA, the ✦ remix popover) calls `openVendoConversation` without needing a ref
+ * to the overlay. LIFO: the most recently mounted overlay owns the call.
  *
  * Prompt hand-off is race-free and overlay-scoped by design: each overlay
  * provides a scope through PrefillScopeContext, its thread's composer
@@ -41,12 +39,12 @@ export interface OpenConversationOptions {
   send?: boolean;
   /** Start a fresh conversation instead of resuming the current one. */
   newConversation?: boolean;
-  /** Close the overlay when it is already open instead of no-opping — the
-   *  one-surface ⌘K behavior (the keybinding toggles, everything else opens). */
+  /** Close the overlay when it is already open instead of no-opping — what a
+   *  keyboard shortcut wants (a chord toggles, everything else opens). */
   toggle?: boolean;
   /** Close the overlay (a no-op when it is closed) without opening anything —
-   *  used before handing a command to the host router, mirroring the old
-   *  palette dialog's close-on-select. */
+   *  for a host command menu, so its own navigation never lands behind the
+   *  open modal. */
   close?: boolean;
 }
 
@@ -69,39 +67,6 @@ export function openVendoConversation(options?: OpenConversationOptions): boolea
   if (!top) return false;
   top(options);
   return true;
-}
-
-/** One palette command — the shape hosts route in `VendoPalette.onCommand`.
- *  The palette re-exports it. */
-export interface VendoCommand {
-  id: string;
-  label: string;
-  kind: "new-conversation" | "open-app" | "show-activity";
-  appId?: string;
-}
-
-/** The command set a (headless) VendoPalette publishes: the commands plus the
- *  palette's own routing (which folds in the host `onCommand` when supplied).
- *  LIFO like every registry here — the most recently mounted palette wins. */
-export interface ConversationCommandSet {
-  commands: VendoCommand[];
-  select(command: VendoCommand): void;
-}
-
-const commandSets: ConversationCommandSet[] = [];
-
-/** Publish a command set for the conversation surface; returns an unsubscribe. */
-export function registerConversationCommands(set: ConversationCommandSet): () => void {
-  commandSets.push(set);
-  return () => {
-    const index = commandSets.lastIndexOf(set);
-    if (index >= 0) commandSets.splice(index, 1);
-  };
-}
-
-/** The active (most recently published) command set, or null. */
-export function getConversationCommands(): ConversationCommandSet | null {
-  return commandSets[commandSets.length - 1] ?? null;
 }
 
 interface Prefill {

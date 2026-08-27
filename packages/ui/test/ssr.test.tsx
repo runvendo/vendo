@@ -9,7 +9,6 @@ import {
   NoPolicyNotice,
   Remixable,
   VendoOverlay,
-  VendoPalette,
   VendoSlot,
   VendoThread,
 } from "../src/chrome/index.js";
@@ -93,7 +92,6 @@ describe("every chrome surface server-renders without a DOM", () => {
     ["VendoOverlay", <VendoOverlay />],
     ["VendoSlot", <VendoSlot id="hero" appId="app_ssr"><span>original</span></VendoSlot>],
     ["Remixable", <Remixable><SsrCard /></Remixable>],
-    ["VendoPalette", <VendoPalette />],
     ["ApprovalCard", <ApprovalCard approval={approval} onDecide={() => undefined} />],
     ["NoPolicyNotice", <NoPolicyNotice />],
     ["TreeView", <TreeView tree={tree} components={{}} onAction={noop} />],

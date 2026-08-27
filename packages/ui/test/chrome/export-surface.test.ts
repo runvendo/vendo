@@ -29,7 +29,6 @@ const VALUE_EXPORTS = [
   "encodeGrantPrincipal",
   "NoPolicyNotice",
   "VendoOverlay",
-  "VendoPalette",
   "VendoSlot",
   // Existing-agents Lane B — the three BYO-chat embeds.
   "VendoAppEmbed",
@@ -39,8 +38,9 @@ const VALUE_EXPORTS = [
   "VendoToasts",
   "vendoToast",
   "dismissAllVendoToasts",
-  // Shelf Task 4 — the conversation-opening registry seam (slot remix,
-  // triggers, palette defaults all route through it).
+  // Shelf Task 4 — the conversation-opening registry seam (slot remix and
+  // triggers both route through it, and it is how a host wires its own
+  // keyboard shortcut).
   "openVendoConversation",
   // Keystone graduates B8 — the pin ceremony. `usePinAction` is what every pin
   // affordance calls; `playPinCeremony` is the same sequence for a host running
@@ -81,9 +81,6 @@ const TYPE_EXPORTS = [
   "GrantSetPermission",
   "ForkOfferProps",
   "VendoOverlayProps",
-  "VendoCommand",
-  "HotkeyChord",
-  "PaletteHotkey",
   "VendoToastsProps",
   "VendoToastInput",
   "VendoToastAction",

@@ -18,7 +18,6 @@ import { defaultSlotSuggestions } from "./discoverability.js";
 import { developmentMode } from "./dev-mode.js";
 import { openVendoConversation } from "./overlay-registry.js";
 import { PinChrome } from "./pin-chrome.js";
-import { openVendoPalette } from "./palette-hotkey.js";
 import { buildFailureNotice } from "./thread/message-data.js";
 
 /** A slot id is a code identifier ("net-worth-card"); the person choosing a
@@ -257,8 +256,8 @@ export function VendoSlot({ id, label, description, appId: appIdProp, pin, onAut
   description?: string;
   appId?: string;
   pin?: VendoSlotPin;
-  /** Invoked when the empty-state CTA is activated — the seam to open a thread
-   *  or palette to author the view. Defaults to opening a mounted VendoPalette. */
+  /** Invoked when the empty-state CTA is activated — the seam to open your own
+   *  authoring surface. Defaults to opening a mounted VendoOverlay. */
   onAuthor?(slotId: string): void;
   /** Invoked when a press inside the mounted view is parked on an approval. The
    *  view settles itself when the decision lands (tree/parked-approvals.ts);
@@ -361,15 +360,13 @@ export function VendoSlot({ id, label, description, appId: appIdProp, pin, onAut
       return;
     }
     // One-surface model (pick P-C): authoring opens the conversation overlay
-    // with the composer focused. The palette-opener fallback keeps hosts that
-    // mounted only a VendoPalette (custom onCommand routing) working.
-    if (!openVendoConversation() && !openVendoPalette()) setHint(true);
+    // with the composer focused.
+    if (!openVendoConversation()) setHint(true);
   };
 
   // Suggestion chips prefill the composer — never send (safe on any prompt).
-  // No palette-opener fallback here: it cannot carry the prompt, so it would
-  // open an empty surface and silently drop the chip's text (cubic PR#391
-  // finding). Without an overlay the chip is a dev-warned no-op instead.
+  // Without an overlay the chip is a dev-warned no-op rather than a surface
+  // that opens empty and silently drops the chip's text (cubic PR#391 finding).
   const suggest = (prompt: string) => {
     const opened = openVendoConversation({ prompt, send: false });
     if (!opened && developmentMode()) {
