@@ -322,10 +322,14 @@ describe("the composed facts", () => {
         process.chdir(before);
       }
     };
+    // Only the guard's own warnings are this suite's claim — the store adds an
+    // ephemeral-disk warning of its own on CI runners, which is not under test.
+    const guardWarnings = (warnings: readonly { label: string }[]) =>
+      warnings.filter((warning) => warning.label === "guard");
 
     it("warns, naming the path and the posture now deciding instead", () => {
       const empty = fs.mkdtempSync(join(tmpdir(), "vendo-policy-absent-"));
-      expect(inside(empty, () => summaryFor(filePolicy)).warnings).toEqual([{
+      expect(guardWarnings(inside(empty, () => summaryFor(filePolicy)).warnings)).toEqual([{
         label: "guard",
         lines: [
           ".vendo/policy.json is missing — this deployment's rules are NOT in force.",
@@ -339,7 +343,7 @@ describe("the composed facts", () => {
       const project = fs.mkdtempSync(join(tmpdir(), "vendo-policy-present-"));
       fs.mkdirSync(join(project, ".vendo"), { recursive: true });
       fs.writeFileSync(join(project, ".vendo", "policy.json"), '{"format":"vendo/policy@1","rules":[]}');
-      expect(inside(project, () => summaryFor(filePolicy)).warnings).toEqual([]);
+      expect(guardWarnings(inside(project, () => summaryFor(filePolicy)).warnings)).toEqual([]);
     });
 
     // The opt-out the config honestly supports: rules passed in code replace the
@@ -348,9 +352,9 @@ describe("the composed facts", () => {
     // `unconfigured`, earns no row, and this warning would be about nothing.
     it("says nothing for rules passed inline, or for no policy at all", () => {
       const empty = fs.mkdtempSync(join(tmpdir(), "vendo-policy-inline-"));
-      expect(inside(empty, () => summaryFor({ ...base, guard: { policy: { rules: [] } } })).warnings)
+      expect(guardWarnings(inside(empty, () => summaryFor({ ...base, guard: { policy: { rules: [] } } })).warnings))
         .toEqual([]);
-      expect(inside(empty, () => summaryFor(base)).warnings).toEqual([]);
+      expect(guardWarnings(inside(empty, () => summaryFor(base)).warnings)).toEqual([]);
     });
   });
 
