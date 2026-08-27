@@ -60,7 +60,7 @@ Import all three from `@vendoai/vendo/react`, which re-exports them so you need 
 | `<VendoAppEmbed refValue>` | the build beat while the build streams, then the live app | a mounted app, or the build's own failure with a retry |
 | `<VendoApprovalEmbed refValue>` | the approve or deny card, resolving in place | `"pending"`, `"executed"`, `"declined"`, `"expired"` |
 
-None of the three takes config props beyond the one shown. Wire, auth and theme are settings they read from around them, and a failure speaks the failed or expired vocabulary rather than a silent blank.
+Beyond the prop shown, each takes only an optional `theme` (`Partial<VendoTheme>`), this embed's own brand tokens merged over the provider's resolved theme. It styles Vendo's chrome only, and a generated view inside keeps the provider theme. See [One surface, a different theme](/customize/theming#one-surface-a-different-theme). Wire, auth and the base theme are settings they read from around them, and a failure speaks the failed or expired vocabulary rather than a silent blank.
 
 Default to `<VendoToolResult>` wherever you render a finished tool part. Reach for the other two only when you hold a ref that did not come from a live tool call, such as one you stored and want to re-render later.
 
