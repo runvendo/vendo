@@ -54,7 +54,6 @@ import {
 } from "./theme/extract-theme.js";
 import {
   appDirectory,
-  askYesNo,
   cloudProjectProps,
   consoleOutput,
   detectPackageManager,
