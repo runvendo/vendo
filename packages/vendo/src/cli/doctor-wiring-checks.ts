@@ -316,7 +316,7 @@ export async function checkWiring(run: DoctorRun): Promise<void> {
   // way for a user to reach the agent. Green must mean visible.
   if (mountedUi) {
     if (wiring.surface) run.pass("wiring/surface", "a visible agent surface is mounted (<VendoOverlay /> or an equivalent)");
-    else run.fail("wiring/surface", "E-WIRE-006", "no visible agent surface is mounted — <VendoProvider> renders nothing by itself; add <VendoOverlay /> (the launcher pill + panel) or render your own surface (<VendoThread />, <VendoToolResult>, the BYO embeds)");
+    else run.fail("wiring/surface", "E-WIRE-006", "no visible agent surface is mounted — <VendoProvider> renders nothing by itself; add <VendoOverlay /> (the conversation panel) or render your own surface (<VendoThread />, <VendoToolResult>, the BYO embeds)");
   }
 
   await checkLegacyRoot(run, wiring.legacyRoot);

@@ -25,7 +25,7 @@ export function authConfigLines(auth: AuthMatch, hoisted = false): string {
   const pad = hoisted ? "" : "  ";
   return `${pad}// ${origin} — ${auth.preset}() fills the identity seams\n` +
     `${pad}// (request→user, actAs, door OAuth); options and the per-seam escape\n` +
-    `${pad}// hatch: https://docs.vendo.run/production/auth.\n` +
+    `${pad}// hatch: https://docs.vendo.run/howto/auth.\n` +
     (hoisted ? `const auth = ${auth.preset}();\n` : `  auth: ${auth.preset}(),\n`);
 }
 
@@ -400,19 +400,14 @@ export function customServerSource(typescript: boolean, auth: AuthMatch | null =
         getVendo: `(env = {})`,
         handle: `(request, env = {})`,
       };
-  const clientHint = typescript
-    ? ` *   // in the client entry — theme.json adopts the host brand (08 §4);\n` +
-      ` *   // the cast narrows TypeScript's widened JSON-module string literals;\n` +
-      ` *   // <VendoOverlay /> is the visible surface (launcher pill + panel):\n` +
-      ` *   import { VendoOverlay, VendoProvider } from "@vendoai/vendo/react";\n` +
-      ` *   import theme from "<path-to>/.vendo/theme.json";\n` +
-      ` *   import type { VendoTheme } from "@vendoai/vendo";\n` +
-      ` *   root.render(<VendoProvider baseUrl="/api/vendo" theme={theme as VendoTheme}><App /><VendoOverlay /></VendoProvider>);\n`
-    : ` *   // in the client entry — theme.json adopts the host brand (08 §4);\n` +
-      ` *   // <VendoOverlay /> is the visible surface (launcher pill + panel):\n` +
-      ` *   import { VendoOverlay, VendoProvider } from "@vendoai/vendo/react";\n` +
-      ` *   import theme from "<path-to>/.vendo/theme.json";\n` +
-      ` *   root.render(<VendoProvider baseUrl="/api/vendo" theme={theme}><App /><VendoOverlay /></VendoProvider>);\n`;
+  // One hint for both languages: `VendoTheme` widens its adjective fields, so
+  // the JSON import assigns with no cast and TypeScript pastes what JavaScript
+  // pastes.
+  const clientHint = ` *   // in the client entry — theme.json adopts the host brand (08 §4);\n` +
+    ` *   // <VendoOverlay /> is the conversation panel (opens from a trigger, the palette, or a slot):\n` +
+    ` *   import { VendoOverlay, VendoProvider } from "@vendoai/vendo/react";\n` +
+    ` *   import theme from "<path-to>/.vendo/theme.json";\n` +
+    ` *   root.render(<VendoProvider baseUrl="/api/vendo" theme={theme}><App /><VendoOverlay /></VendoProvider>);\n`;
   return `/**\n` +
     ` * Route your runtime's requests through this module:\n` +
     ` *   // Cloudflare Workers:\n` +
@@ -495,22 +490,14 @@ export function expressServerSource(typescript: boolean, auth: AuthMatch | null 
     ? `    init.body = Readable.toWeb(request) as ReadableStream<Uint8Array>;\n`
     : `    init.body = Readable.toWeb(request);\n`;
 
-  // The client-entry hint mirrors the host's language: the TS variant needs the
-  // VendoTheme cast (JSON-module literals widen to string), the JS variant must
-  // not show type-only syntax a JavaScript host cannot paste.
-  const clientHint = typescript
-    ? ` *   // in the client entry — theme.json adopts the host brand (08 §4);\n` +
-      ` *   // the cast narrows TypeScript's widened JSON-module string literals;\n` +
-      ` *   // <VendoOverlay /> is the visible surface (launcher pill + panel):\n` +
-      ` *   import { VendoOverlay, VendoProvider } from "@vendoai/vendo/react";\n` +
-      ` *   import theme from "<path-to>/.vendo/theme.json";\n` +
-      ` *   import type { VendoTheme } from "@vendoai/vendo";\n` +
-      ` *   root.render(<VendoProvider baseUrl="/api/vendo" theme={theme as VendoTheme}><App /><VendoOverlay /></VendoProvider>);\n`
-    : ` *   // in the client entry — theme.json adopts the host brand (08 §4);\n` +
-      ` *   // <VendoOverlay /> is the visible surface (launcher pill + panel):\n` +
-      ` *   import { VendoOverlay, VendoProvider } from "@vendoai/vendo/react";\n` +
-      ` *   import theme from "<path-to>/.vendo/theme.json";\n` +
-      ` *   root.render(<VendoProvider baseUrl="/api/vendo" theme={theme}><App /><VendoOverlay /></VendoProvider>);\n`;
+  // One hint for both languages: `VendoTheme` widens its adjective fields, so
+  // the JSON import assigns with no cast and TypeScript pastes what JavaScript
+  // pastes.
+  const clientHint = ` *   // in the client entry — theme.json adopts the host brand (08 §4);\n` +
+    ` *   // <VendoOverlay /> is the conversation panel (opens from a trigger, the palette, or a slot):\n` +
+    ` *   import { VendoOverlay, VendoProvider } from "@vendoai/vendo/react";\n` +
+    ` *   import theme from "<path-to>/.vendo/theme.json";\n` +
+    ` *   root.render(<VendoProvider baseUrl="/api/vendo" theme={theme}><App /><VendoOverlay /></VendoProvider>);\n`;
   return `/**\n` +
     ` * Add these wiring lines in your host:\n` +
     ` *   app.use("/api/vendo", mountVendo());\n` +

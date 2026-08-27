@@ -37,6 +37,8 @@ const DOOR_PAGE = "docs-site/outside-agents/how-the-door-works.mdx";
 
 interface NavGroup {
   group: string;
+  /** A group's own landing page: a nav entry that never appears in `pages`. */
+  root?: string;
   pages: (string | NavGroup)[];
 }
 interface DocsJson {
@@ -55,11 +57,12 @@ const navGroups = (docs: DocsJson): NavGroup[] => {
   return groups;
 };
 
-/** Every page id the nav lists. */
+/** Every page id the nav lists, group roots included. */
 const navPages = (docs: DocsJson): string[] =>
-  navGroups(docs).flatMap((group) =>
-    group.pages.filter((page): page is string => typeof page === "string"),
-  );
+  navGroups(docs).flatMap((group) => [
+    ...(group.root === undefined ? [] : [group.root]),
+    ...group.pages.filter((page): page is string => typeof page === "string"),
+  ]);
 
 /** A docs.json page id resolves as `<id>.mdx` or `<id>/index.mdx`. */
 const pageExists = (id: string): boolean =>
@@ -79,7 +82,11 @@ describe("the BYO-over-MCP pages are published", () => {
     const docs = await readJson<DocsJson>("docs-site/docs.json");
     const group = navGroups(docs).find((entry) => entry.group === "From outside agents");
     expect(group, "the 'From outside agents' group must exist").toBeDefined();
-    expect(group?.pages).toContain(NAV_ENTRY);
+    // It sits in the group as the nested quickstart group's own landing page.
+    const entries = group!.pages.flatMap((page) =>
+      typeof page === "string" ? [page] : [...(page.root === undefined ? [] : [page.root]), ...page.pages],
+    );
+    expect(entries).toContain(NAV_ENTRY);
   });
 
   it("leaves no nav entry pointing at a file that does not exist", async () => {
@@ -101,12 +108,23 @@ describe("the setup page opens the door", () => {
     expect(await read(SETUP_PAGE)).toMatch(needle);
   });
 
-  /** Moved off the setup page with the Cloud-first rewrite: a broker a host
-      runs itself and the exchange behind `tokenFor` are operator facts, and the
-      setup page carries the happy path only. */
+  /** Moved off the setup page with the Cloud-first rewrite: the broker and the
+      exchange behind `tokenFor` are operator facts, and the setup page carries
+      the happy path only.
+
+      What the keys page teaches about both is Cloud-shaped now. `tokenFor` is
+      still an RFC 8693 exchange and a self-hosted broker is still declared with
+      `VENDO_MCP_BROKER_URL` (packages/vendo/src/compose-mcp.ts, guarded by
+      server.test.ts and mcp-service-auth.e2e.test.ts), but neither is on any
+      published page: they belong to the run-it-yourself broker section the OSS
+      track still owes, and this gate moves back to naming them the day that
+      section ships. Until then it holds the Cloud answer the page does give —
+      the one variable that is the whole setup, the origin it insists on, and
+      the exchange named by the refusals a reader will actually hit. */
   it.each([
-    ["the broker the door trusts", "VENDO_MCP_BROKER_URL"],
-    ["the token exchange the backend runs", "RFC 8693"],
+    ["the one variable that is the whole broker setup", "VENDO_API_KEY"],
+    ["the origin the broker insists on", "VENDO_BASE_URL"],
+    ["the exchange, by what it refuses with", /`invalid_client`[\s\S]*`invalid_target`/],
   ])("the keys page names %s", async (_label, needle) => {
     expect(await read(KEYS_PAGE)).toMatch(needle);
   });

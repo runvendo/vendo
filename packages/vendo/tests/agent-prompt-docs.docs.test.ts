@@ -13,19 +13,21 @@ import { compositionModuleSource } from "../src/cli/init-scaffolds.js";
  *     markup as well as a string the copy button can reach) and once in the
  *     README. `buildAgentPrompt` is the original; these are copies, and copies
  *     rot one at a time;
- *  2. the `serverExternalPackages` list. Three pages restate it, and the entry
- *     that matters (`@vendoai/apps`) is invisible when it is missing: the app
- *     still boots and every generated screen fails its checks. The AI SDK
- *     walkthrough was a fourth copy and a step of its own until init started
- *     writing the property itself, so that page is pinned the other way round:
- *     no list, and the sentence that says who writes it;
+ *  2. the `serverExternalPackages` list. Two pages restate it — the machine-read
+ *     playbook and the troubleshooting page a reader lands on when the list is
+ *     wrong — and the entry that matters (`@vendoai/apps`) is invisible when it
+ *     is missing: the app still boots and every generated screen fails its
+ *     checks. The quickstart and the AI SDK walkthrough were copies of their own
+ *     until init started writing the property itself, so those two are pinned
+ *     the other way round: no list on either, and init still writes it;
  *  3. what init's composition module actually exports. Both existing-agent
  *     walkthroughs import from that one file, and a name a page assumed init
  *     writes is a TS2305 on the reader's first build — the `resolvePrincipal`
- *     class. Init writes that resolver itself now, on the agent-loop arm the
- *     two walkthroughs send their readers down, so the pages DESCRIBE the file
- *     rather than adding to it: every export they print has to be one the
- *     scaffold really emits.
+ *     class. Init writes that resolver itself now, on the agent-loop arm those
+ *     walkthroughs send their readers down, so the docs DESCRIBE the file rather
+ *     than adding to it: the how-to page that owns the resolver prints it, and
+ *     every export in that print — and every name either walkthrough imports —
+ *     has to be one the scaffold really emits.
  *
  * It reads sources, so it is a plain test against the repo, not a build check.
  */
@@ -43,11 +45,11 @@ const WALKTHROUGHS = [AI_SDK, MASTRA];
 /** Every page that restates the Next externals list rather than linking to it —
  *  including the troubleshooting page a reader lands on when the list is wrong,
  *  which is the worst place of all for it to be wrong. */
-const EXTERNALS_PAGES = [
-  "docs-site/index.mdx",
-  "docs-site/agents/index.mdx",
-  "docs-site/production/troubleshooting/e-cfg-004.mdx",
-];
+const EXTERNALS_PAGES = ["docs-site/agents/index.mdx", "docs-site/production/troubleshooting/e-cfg-004.mdx"];
+/** And every page pinned the other way: the human quickstart and the AI SDK
+ *  walkthrough both handed the list to init, so a copy reappearing on either is
+ *  a manual step the reader no longer has. */
+const NO_LIST_PAGES = ["docs-site/index.mdx", AI_SDK];
 
 /** Line breaks are the one difference a published copy may carry: the README
  *  hard-wraps its fence for readability, and JSX collapses a wrapped text child
@@ -89,17 +91,15 @@ describe("the Next externals list the docs print is the one init writes", () => 
     for (const names of listed) expect(names).toEqual([...NEXT_SERVER_EXTERNALS]);
   });
 
-  /** The AI SDK walkthrough had a step of its own for this list until init's
-   *  `framework === "next"` branch started writing the property. Both halves are
-   *  pinned: the step is GONE — a page that prints the list again is a manual
-   *  step the reader no longer has and a copy that rots — and the sentence that
-   *  replaced it is true of init's source. */
-  it("the AI SDK walkthrough hands the list to init instead of printing it", async () => {
-    const page = await read(AI_SDK);
-    expect(SERVER_EXTERNALS_ARRAY.test(page), `${AI_SDK} must not restate the list`).toBe(false);
-    expect(page, `${AI_SDK} must still say who writes it`).toContain(
-      "adds Vendo's `serverExternalPackages` entries to your Next config",
-    );
+  /** The AI SDK walkthrough had a step of its own for this list, and the
+   *  quickstart a config block, until init's `framework === "next"` branch
+   *  started writing the property. Both pages dropped the sentence that named
+   *  init in the restructure — nothing on either says the word `externals` now —
+   *  so what stays pinned is the pair that still bites: no page on the setup
+   *  path prints the list again (a copy is a manual step the reader no longer
+   *  has, and one more thing to rot), and init really does write it. */
+  it.each(NO_LIST_PAGES)("%s hands the list to init instead of printing it", async (page) => {
+    expect(SERVER_EXTERNALS_ARRAY.test(await read(page)), `${page} must not restate the list`).toBe(false);
     expect(
       await read("packages/vendo/src/cli/init.ts"),
       "init must still write the externals itself",
@@ -135,6 +135,12 @@ const composedImports = (page: string): string[] =>
     names!.split(",").map((name) => name.trim()),
   );
 
+/** The one page that still PRINTS that file. The restructure gave the two
+ *  walkthroughs a single job each — spread the tools, render the embeds — and
+ *  moved the composition module to the how-to page that owns the resolver, so
+ *  the print is pinned there and the imports stay pinned on the walkthroughs. */
+const AUTH_PAGE = "docs-site/howto/auth.mdx";
+
 describe("the existing-agent track imports only what lib/vendo.ts really holds", () => {
   it("every name the walkthroughs print and import is one init's scaffold really writes", async () => {
     const written = scaffoldExports();
@@ -149,19 +155,19 @@ describe("the existing-agent track imports only what lib/vendo.ts really holds",
       "init must still write the resolver — the walkthroughs describe it rather than add it",
     ).toContain("resolvePrincipal");
 
+    // One page prints the file; every export in that print has to be one the
+    // scaffold emits.
+    const shown = shownExports(await read(AUTH_PAGE));
+    expect([...shown], `${AUTH_PAGE} must still print init's composition module`).toContain(
+      "resolvePrincipal",
+    );
+    expect(
+      [...shown].filter((name) => !written.has(name)),
+      `${AUTH_PAGE} prints a lib/vendo.ts export init does not write`,
+    ).toEqual([]);
+
     const pages = new Map<string, string>();
     for (const file of WALKTHROUGHS) pages.set(file, await read(file));
-
-    // Each page stands alone, printing the file for itself; every export in
-    // that print has to be one the scaffold emits.
-    for (const [file, text] of pages) {
-      const own = shownExports(text);
-      expect([...own], `${file} must still print init's composition module`).toContain("resolvePrincipal");
-      expect(
-        [...own].filter((name) => !written.has(name)),
-        `${file} prints a lib/vendo.ts export init does not write`,
-      ).toEqual([]);
-    }
 
     const missing: string[] = [];
     for (const [file, text] of pages) {

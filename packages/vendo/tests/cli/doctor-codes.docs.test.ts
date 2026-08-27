@@ -23,14 +23,27 @@ const TROUBLESHOOTING_DIR = new URL("../../../../docs-site/production/troublesho
 /** `title: "E-AREA-NNN"` in a page's Mintlify frontmatter. */
 const TITLE = /^title: "(E-[A-Z]+-\d{3})"$/m;
 
-/** Every code page in the directory. `index.mdx` is the group's own landing
- *  page — it lists all the codes rather than documenting one, so it carries no
- *  code title. It exists because doctor's `fix_ref` puts the code in a URL
- *  FRAGMENT, which never reaches the server: every already-installed CLI links
- *  at `/agents/verify#E-WIRE-003`, so the redirect has to land on a page that
- *  lists all of them. The 1:1 contract below is unchanged. */
+/** The pages in this directory that document something other than one doctor
+ *  code, named one by one so a page whose code title merely ROTTED can never
+ *  slip out of the 1:1 contract by losing its title.
+ *
+ *  `index.mdx` is the group's own landing page — it lists all the codes rather
+ *  than documenting one. It exists because doctor's `fix_ref` puts the code in a
+ *  URL FRAGMENT, which never reaches the server: every already-installed CLI
+ *  links at `/agents/verify#E-WIRE-003`, so the redirect has to land on a page
+ *  that lists all of them.
+ *
+ *  `mcp-call-timeout.mdx` is a symptom page, not a code page: a stock MCP
+ *  client's own 60-second deadline is nothing doctor can see, so there is no
+ *  code to mirror. docs.json keeps `/production/mcp-call-timeout` redirecting
+ *  here. */
+const NON_CODE_PAGES = ["index.mdx", "mcp-call-timeout.mdx"];
+
+/** Every code page in the directory. */
 const pageFiles = (): string[] =>
-  readdirSync(TROUBLESHOOTING_DIR).filter((file) => file.endsWith(".mdx") && file !== "index.mdx");
+  readdirSync(TROUBLESHOOTING_DIR).filter(
+    (file) => file.endsWith(".mdx") && !NON_CODE_PAGES.includes(file),
+  );
 
 describe("the troubleshooting pages stay 1:1 with the doctor error-code registry", () => {
   it("gives every registered code a page and every page a registered code", async () => {

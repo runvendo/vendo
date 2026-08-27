@@ -45,9 +45,13 @@ const PACK_PAGES = [AI_SDK_PAGE, MASTRA_PAGE];
  *  links — but its slug is the one the world already published. */
 const CHOOSER_PAGE = "docs-site/existing-agent/quickstart.mdx";
 const NAV_ENTRY = "existing-agent/quickstart";
-/** The system-prompt block a bring-your-own-loop reader pastes into their own
- *  agent — the one text in the docs a reader's model actually reads. */
-const PROMPT_PAGE = "docs-site/generated/quickstart.mdx";
+/** The two "Make it yours" pages both walkthroughs route their readers to next.
+ *  The pasted system-prompt block is gone — init writes the brief now, and the
+ *  one line that tips a model toward a screen is taught on the screens page —
+ *  so what a reader's model ends up being told about screens and tools lives
+ *  here, and the facts that hung off that block are pinned on these. */
+const SCREENS_PAGE = "docs-site/howto/screens.mdx";
+const TOOLS_PAGE = "docs-site/howto/tools.mdx";
 /** The envelope a `vendo_*` tool answers with, and the embeds that render it. */
 const CONTRACT_PAGE = "docs-site/existing-agent/embeds.mdx";
 /** The MCP door's own behaviour: who calls, what lists, what comes back. */
@@ -63,6 +67,10 @@ const PACK = "packages/vendo/src/pack.ts";
 
 interface NavGroup {
   group: string;
+  /** A group's own landing page. Mintlify serves it when the group header is
+   *  clicked, so it is a nav entry that never appears in `pages` — miss it and
+   *  a published page reads as an orphan. */
+  root?: string;
   pages: (string | NavGroup)[];
 }
 interface DocsJson {
@@ -80,11 +88,19 @@ const navGroups = (docs: DocsJson): NavGroup[] => {
   return groups;
 };
 
-/** Every page id the nav lists, in nav order. */
+/** Every page id the nav lists, in nav order — group roots included. */
 const navPages = (docs: DocsJson): string[] =>
-  navGroups(docs).flatMap((group) =>
-    group.pages.filter((page): page is string => typeof page === "string"),
-  );
+  navGroups(docs).flatMap((group) => [
+    ...(group.root === undefined ? [] : [group.root]),
+    ...group.pages.filter((page): page is string => typeof page === "string"),
+  ]);
+
+/** The first entry a reader meets under a group: its first page, or — when the
+ *  group opens with a nested group — that group's own landing page. */
+const firstEntry = (group: NavGroup): string | undefined => {
+  const first = group.pages[0];
+  return typeof first === "string" ? first : first?.root;
+};
 
 /** A docs.json page id resolves as `<id>.mdx` or `<id>/index.mdx`. */
 const pageExists = (id: string): boolean => {
@@ -109,10 +125,39 @@ const everyPage = (): string[] => {
   return walk(root.replace(/\/$/, "")).sort();
 };
 
-/** Pages kept OUT of the nav on purpose. Mintlify still serves them by URL.
-    The agents playbook is machine-fetched (vendo.run/agents.md); humans get
-    give-it-to-your-agent instead, so the sidebar hides the raw playbook. */
-const HIDDEN_PAGES = ["agents/index.mdx"];
+/** Pages kept OUT of the nav on purpose. Mintlify still serves them by URL, and
+    docs.json's redirects still land on several of them, so they are published
+    pages with no sidebar row rather than dead files.
+
+    The agents playbook is machine-fetched (vendo.run/agents.md), so the sidebar
+    hides the raw playbook. The rest came off the sidebar in the Cloud-first
+    restructure: the sidebar now carries the three doors and the how-to track,
+    and the depth behind them — the backend SDK, orgs and tenancy, the product
+    surface, the app-lifecycle pages — is reached from the pages that need it. */
+const HIDDEN_PAGES = [
+  "agents/index.mdx",
+  "backend/automate.mdx",
+  "backend/converse.mdx",
+  "backend/quickstart.mdx",
+  "backend/run.mdx",
+  "backend/your-own-surface.mdx",
+  "capabilities/tenant-connectors.mdx",
+  "changelog/overview.mdx",
+  "existing-agent/embeds.mdx",
+  "generated/import-and-fork.mdx",
+  "generated/in-client-venue.mdx",
+  "outside-agents/your-own-agent.mdx",
+  "product/how-it-works.mdx",
+  "product/mount-the-surface.mdx",
+  "users-orgs/erasing-a-user.mdx",
+  "users-orgs/limits.mdx",
+  "users-orgs/org-policy.mdx",
+  "users-orgs/org-workspace.mdx",
+  "users-orgs/orgs-and-memberships.mdx",
+  "users-orgs/sharing.mdx",
+  "users-orgs/tenants.mdx",
+  "users-orgs/your-users.mdx",
+];
 
 /** Root-relative page links in an .mdx body. Assets are not pages. */
 const pageLinks = (text: string): string[] =>
@@ -122,7 +167,7 @@ const pageLinks = (text: string): string[] =>
 
 describe("the BYO on-ramp pages are published", () => {
   it.each([
-    [CHOOSER_PAGE, "Overview"],
+    [CHOOSER_PAGE, "Quickstart: in your agent"],
     [AI_SDK_PAGE, "Quickstart: AI SDK"],
     [MASTRA_PAGE, "Quickstart: Mastra"],
   ])("%s exists with Mintlify frontmatter and the sidebar title %s", async (page, sidebarTitle) => {
@@ -140,7 +185,8 @@ describe("the BYO on-ramp pages are published", () => {
     expect(group, "the 'In your existing agent' group must exist").toBeDefined();
     // Every inbound link — the landing page's door card, the README, init's
     // Continue receipts — names this slug, so it stays the group's first entry.
-    expect(group?.pages[0]).toBe(NAV_ENTRY);
+    // It leads as the nested quickstart group's own landing page.
+    expect(firstEntry(group!)).toBe(NAV_ENTRY);
   });
 
   it("the chooser routes to both walkthroughs", async () => {
@@ -170,22 +216,19 @@ describe("the BYO on-ramp pages are published", () => {
     ).toEqual([]);
   });
 
-  it.each([CHOOSER_PAGE, ...PACK_PAGES, PROMPT_PAGE, CONTRACT_PAGE])(
+  it.each([CHOOSER_PAGE, ...PACK_PAGES, SCREENS_PAGE, TOOLS_PAGE, CONTRACT_PAGE])(
     "%s links only to pages that exist",
     async (page) => {
       expect(pageLinks(await read(page)).filter((target) => !pageExists(target))).toEqual([]);
     },
   );
 
-  /** The prompt block lives in a `<Step>` on the act-two quickstart, and
-   *  Mintlify mints NO anchor for a Step title — so the old
-   *  `#teach-your-model-when-to-build-ui` fragment is retired, and any link
-   *  still carrying it scrolls to the top of some page with no error anywhere,
-   *  the one failure `pageLinks` cannot see because it drops fragments. */
-  it("the prompt block's step is on the act-two page and its retired anchor is linked nowhere", async () => {
-    expect(await read(PROMPT_PAGE), `${PROMPT_PAGE} must carry the block's step`).toContain(
-      '<Step title="Teach your model when to build UI">',
-    );
+  /** The pasted system-prompt block is gone with the act-two quickstart, and
+   *  the `#teach-your-model-when-to-build-ui` fragment it lived under is
+   *  retired for good. A link still carrying it scrolls to the top of some page
+   *  with no error anywhere — the one failure `pageLinks` cannot see, because
+   *  it drops fragments. */
+  it("the retired teach-your-model anchor is linked nowhere", async () => {
     const stale: string[] = [];
     for (const file of everyPage()) {
       if ((await read(`docs-site/${file}`)).includes("#teach-your-model-when-to-build-ui)")) {
@@ -214,9 +257,11 @@ describe("every tool the docs name really exists", () => {
   /** These pages put a tool name in front of a reader's model. A name that
    *  drifted here teaches their agent to call a tool that does not answer. */
   it.each([
-    ["vendo_make", AI_SDK_PAGE],
-    ["vendo_make", MASTRA_PAGE],
-    ["vendo_make", PROMPT_PAGE],
+    // The two walkthroughs stopped enumerating the pack in the restructure —
+    // they teach the prefix and the filters instead (pinned below). The pages
+    // that still put the NAME in front of a reader's model are these.
+    ["vendo_make", TOOLS_PAGE],
+    ["vendo_make", CONTRACT_PAGE],
     ["vendo_make", DOOR_PAGE],
     ["vendo_make", INSTALL_PAGE],
   ])("%s is named in %s and declared in the apps agent-tool registry", async (tool, page) => {
@@ -234,10 +279,6 @@ describe("every tool the docs name really exists", () => {
     expect(await read("packages/core/src/tools.ts")).toContain('export const VENDO_MAKE_TOOL = "vendo_make"');
   });
 
-  it.each(PACK_PAGES)("vendo_delegate, offered only on the in-process path, is the pack's (%s)", async (page) => {
-    expect(await read(page)).toContain("vendo_delegate");
-    expect(await read("packages/vendo/src/tool-pack.ts")).toContain('VENDO_DELEGATE_TOOL = "vendo_delegate"');
-  });
 });
 
 describe("the documented arguments match the real schemas", () => {
@@ -291,17 +332,31 @@ describe("the documented arguments match the real schemas", () => {
     );
   });
 
-  /** The pack the in-process reader gets is exactly the three kinds each
-   *  walkthrough's pack summary promises. */
+  /** The restructure cut the per-tool enumeration from both walkthroughs — the
+   *  names live on the pages that own them now, pinned above, and the code-side
+   *  guard that the pack really carries `vendo_make` and `vendo_delegate` is
+   *  ai-sdk.test.ts / mastra.test.ts against the built pack. What each
+   *  walkthrough promises instead is the SHAPE: one prefix, two filters. Both
+   *  halves are still a reader's-model fact — a tool arrives namespaced, and a
+   *  host who wants fewer of them passes these two option names. */
   it.each(PACK_PAGES)("%s summarises the pack the in-process reader gets", async (page) => {
     const text = await read(page);
-    expect(text).toContain("vendo_make");
-    expect(text).toContain("vendo_delegate");
+    expect(text, `${page} must name the prefix every pack tool arrives under`).toContain("`vendo_` prefix");
+    for (const option of ["include", "exclude"]) {
+      expect(text, `${page} must name \`${option}\``).toContain(`\`${option}\``);
+    }
+    expect(await read("packages/core/src/tools.ts")).toContain('export const VENDO_TOOL_PREFIX = "vendo_"');
+    const pack = await read("packages/vendo/src/tool-pack.ts");
+    for (const option of ["include", "exclude"]) {
+      expect(pack, `the pack filter must really take \`${option}\``).toMatch(
+        new RegExp(`^ {2}${option}\\?: string\\[\\];$`, "m"),
+      );
+    }
   });
 
-  /** And no `vendo_apps_*` among them — on the walkthroughs, and on the page
-   *  that now carries the system-prompt block a reader's model actually reads. */
-  it.each([...PACK_PAGES, PROMPT_PAGE])("%s names no vendo_apps_* tool", async (page) => {
+  /** And no `vendo_apps_*` among them — on the walkthroughs, and on the two
+   *  how-to pages an in-process reader is sent to next. */
+  it.each([...PACK_PAGES, SCREENS_PAGE, TOOLS_PAGE])("%s names no vendo_apps_* tool", async (page) => {
     expect(await read(page), "the in-process path must not teach a tool the pack strips").not.toMatch(
       /vendo_apps_[a-z]/,
     );
@@ -358,14 +413,21 @@ describe("every component the docs tell a reader to import is exported", () => {
   });
 
   /** The AI SDK walkthrough no longer prints a whole chat component — it prints
-   *  the ONE branch a reader adds to their own message loop, and `dynamic-tool`
-   *  is the right branch only while the shim keeps building every tool with
-   *  `dynamicTool`. A shim that declared them by name would leave that page's
-   *  only branch matching nothing, with no error anywhere. */
-  it("the branch the AI SDK page tells a reader to add is the part shape the shim produces", async () => {
-    expect(await read(AI_SDK_PAGE)).toContain('part.type === "dynamic-tool"');
-    expect(await read("packages/vendo/src/ai-sdk.ts")).toContain("dynamicTool(");
-  });
+   *  the ONE branch a reader adds to their own message loop, and that branch is
+   *  `isVendoToolPart`. It stays right only while the helper matches on the tool
+   *  NAME: the hand-written `part.type === "dynamic-tool"` it replaces was right
+   *  only while the shim kept building every tool with `dynamicTool`, and a shim
+   *  that declared them by name would have left the page's only branch matching
+   *  nothing, with no error anywhere. */
+  it.each([AI_SDK_PAGE, MASTRA_PAGE, CONTRACT_PAGE])(
+    "the branch %s tells a reader to add matches on the tool name, not the part shape",
+    async (page) => {
+      expect(await read(page)).toContain("isVendoToolPart(part)");
+      expect(await read("packages/ui/src/embeds.ts")).toContain(
+        "getToolName(part).startsWith(VENDO_TOOL_PREFIX)",
+      );
+    },
+  );
 
   it("mcp and oauth are real createVendo keys", async () => {
     expect(await read(DOOR_SETUP_PAGE)).toContain("mcp: true");

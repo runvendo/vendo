@@ -266,7 +266,7 @@ export async function pickScaffoldAuth(
     return {
       wired: null,
       advice: `Auth: your own JWT — add one line in ${compositionPath}: auth: jwt({ secret: <your signing secret> }). ` +
-        "Options and the claim mapping: https://docs.vendo.run/production/auth.",
+        "Options and the claim mapping: https://docs.vendo.run/howto/auth.",
     };
   }
   const detectedMatch = detected.find((match) => match.preset === picked);
