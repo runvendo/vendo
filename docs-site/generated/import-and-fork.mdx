@@ -95,27 +95,15 @@ The server leg registers each ported component's tools into the one registry. Th
 
 The file is regenerated whole on every sync and never hand-edited — you read it in the diff. Your own source imports it, so it has to exist before anything compiles: the demo host runs `vendo sync` in `predev` and `prebuild`.
 
-### Instant and reviewed
+### Every remix runs sandboxed
 
-Review never affects who can see a remix, because remixes are personal, always.
+A remix appears immediately and runs sandboxed, forever. The ✦ mark becomes its management handle: no queue, no approval ceremony.
 
-It decides one thing only: where the fork executes.
+Remixes are personal, always. Forking never affects who sees your original component.
 
-<Columns cols={2}>
-  <Card title="Instant" icon="zap">
-    The default. The remix appears immediately and runs sandboxed, forever, and the ✦ mark becomes its management handle.
-
-    No queue, no approval ceremony.
-  </Card>
-
-  <Card title="Reviewed" icon="shield-check">
-    `<Remixable review>`. Your original keeps rendering, untouched — never a half-trusted render — and the verdict is reported in the conversation that asked for the remix.
-
-    On approval the remix mounts natively in your page. On rejection it survives with the reviewer's note, so the user can edit and resubmit.
-  </Card>
-</Columns>
-
-The gate is the [in-client approval machinery](/generated/in-client-venue), and the review artifact is the ship-diff against your captured baseline.
+<Note>
+  Earlier releases had a `<Remixable review>` flag whose approved forks ran natively in the host page, gated by a reviewer approval. That flow was removed: generated and remixed source now always executes in the sandbox. Write `<Remixable review>` as plain `<Remixable>` and delete any `apps.review.reviewer` hook from your config.
+</Note>
 
 ### What crosses the fork boundary
 
@@ -126,7 +114,7 @@ Only props the captured baseline declares are admitted, and only serializable va
 Host functions do not cross. Callbacks, your router, and context-style hooks are dropped, and a fork's behavior is rewired through your API instead, exactly like any generated app.
 
 <Note>
-  Sync notices this for you. A component that reaches into host plumbing gets a warning suggesting `review`, because plumbing does not cross the boundary and an approved reviewed remix runs natively where it would have kept working.
+  Sync notices this for you. A component that reaches into host plumbing gets a warning naming each signal, because plumbing does not cross the fork boundary.
 </Note>
 
 ## The port
@@ -218,7 +206,6 @@ The slot name is the component's own exported identifier, so remixes survive cal
 | The ported half | `ported.source`, with the tool and hole names it binds. Absent when the component could not be split |
 | Its local import closure | No depth limit, bounded by the `node_modules` boundary and 256 KB |
 | Your app-root stylesheets | From `app/layout.*`, `app/root.*`, `pages/_app.*`, or their `src/` variants |
-| The kind | `review: true` for a reviewed wrapper |
 
 Two more files are generated rather than captured, and both are rewritten whole on every run: `.vendo/generated/remix-wiring.ts`, the const [both call sites take](#hook-the-wiring-up-in-both-places), and one `.vendo/generated/remix-holes/<Slot>.tsx` per slot the carver cut. A slot that stops needing a home module loses its file, so nothing lingers for the wiring to dangle on.
 
