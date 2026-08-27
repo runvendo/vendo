@@ -223,14 +223,16 @@ const capabilityAndCatalog = (composition: VendoComposition): Pick<VendoComposit
   if (toolCollision !== undefined) throw toolCollision;
   // Task 15a: an in-memory profile.catalog replaces the DISK leg of the merge
   // (it normalizes through the same validator-building path as the file
-  // read); explicit createVendo({ catalog }) registrations still win by name —
-  // the host has the last word about its own screens.
+  // read); explicit createVendo({ components }) registrations still win by name
+  // — the host has the last word about its own screens.
   const declared = config.profile?.catalog !== undefined
     ? runtimeCatalogFromFile(config.profile.catalog, "createVendo({ profile: { catalog } })")
     : runtimeCatalogFromJson(dotVendoFile("catalog.json", config.profileDir));
+  // `catalog` is `components` under its old name; composeConfig already refused
+  // a config that set both.
   const catalog = mergeRuntimeCatalog(
     mergeRuntimeCatalog(remixHoles(config.remixWiring), declared),
-    normalizeCatalogConfig(config.catalog),
+    normalizeCatalogConfig(config.components ?? config.catalog),
   );
   return { capability, catalog };
 };
@@ -247,7 +249,7 @@ const capabilityAndCatalog = (composition: VendoComposition): Pick<VendoComposit
  *
  * Weakest because it is DERIVED, not declared: a name is all a hole carries, so
  * anything the host wrote about the same component — on disk or in
- * `createVendo({ catalog })` — describes it better and keeps its props schema.
+ * `createVendo({ components })` — describes it better and keeps its props schema.
  * Normalized through the shared normalizer so a hole faces the same /host
  * projection grammar every other entry does.
  */

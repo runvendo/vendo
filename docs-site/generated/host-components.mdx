@@ -6,9 +6,9 @@ sidebarTitle: "Host components"
 
 Register a component and a generated screen can name it. What you register is a closed contract, so a name a screen renders is a name your product really has.
 
-## Register a catalog
+## Register your components
 
-One object, keyed by component name. The server takes it as `catalog`, and `<VendoProvider>` takes the same object as `components`.
+One object, keyed by component name, under one name at both ends: `createVendo({ components })` on the server and `<VendoProvider components>` in the browser take the same object.
 
 ```ts vendo.ts focus={9-14,18}
 import { createVendo } from "@vendoai/vendo/server";
@@ -28,7 +28,7 @@ const registry = {
   },
 } satisfies ComponentRegistry;
 
-const vendo = createVendo({ catalog: registry });
+const vendo = createVendo({ components: registry });
 ```
 
 * `description` is selection guidance. Say what the component shows and when to reach for it.

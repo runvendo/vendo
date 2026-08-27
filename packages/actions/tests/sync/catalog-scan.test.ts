@@ -184,7 +184,7 @@ describe("deterministic component catalog scan", () => {
     })]);
   });
 
-  it("follows a catalog registry imported from another module (the shared-registry main path)", async () => {
+  it("follows a `components` registry imported from another module (the shared-registry main path)", async () => {
     const root = await hostFiles({
       "registry.tsx": `
         function MetricCard({ value }: { value: number }) { return <strong>{value}</strong>; }
@@ -200,7 +200,7 @@ describe("deterministic component catalog scan", () => {
       `,
       "server.ts": `
         import { registry } from "./registry";
-        createVendo({ catalog: registry });
+        createVendo({ components: registry });
       `,
     });
 

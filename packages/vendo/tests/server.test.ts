@@ -2539,7 +2539,7 @@ export default function ${name}() {
 }
 `;
 
-  it("passes host-component catalog registrations to createApps", { timeout: 120_000 }, async () => {
+  it("passes createVendo({ components }) registrations through to createApps", { timeout: 120_000 }, async () => {
     const store = await tempStore("vendo-catalog-");
     const model = await screenModel([
       { tool: "save_app", input: { content: metricScreen("CatalogApp") } },
@@ -2554,7 +2554,7 @@ export default function ${name}() {
       models: { default: model },
       principal: async () => principal,
       store,
-      catalog,
+      components: catalog,
     });
     await store.ensureSchema();
 
@@ -2574,7 +2574,7 @@ export default function ${name}() {
     expect(paintedNode(views, "MetricCard")).toMatchObject({ props: { label: "Revenue" } });
   });
 
-  it("accepts the name-keyed registry catalog form and ignores component references", { timeout: 120_000 }, async () => {
+  it("accepts the name-keyed registry form under the deprecated `catalog` alias, and ignores component references", { timeout: 120_000 }, async () => {
     const store = await tempStore("vendo-registry-catalog-");
     const model = await screenModel([
       { tool: "save_app", input: { content: metricScreen("RegistryApp") } },

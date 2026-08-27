@@ -322,7 +322,9 @@ function registryEntryCandidate(context: CatalogContext, name: string, value: ts
   };
 }
 
-/** Every `catalog:` expression a `createVendo({…})` call in this module names. */
+/** Every component-registry expression a `createVendo({…})` call in this module
+ *  names — under `components:`, or its deprecated `catalog:` spelling. Both are
+ *  read, because a host mid-rename must never sync an empty catalog.json. */
 function catalogExpressionsIn(local: CatalogContext): tsTypes.Expression[] {
   const found: tsTypes.Expression[] = [];
   const visit = (node: tsTypes.Node): void => {
@@ -335,7 +337,7 @@ function catalogExpressionsIn(local: CatalogContext): tsTypes.Expression[] {
     }
     const config = resolvedLocalExpression(local.constants, node.arguments[0]);
     if (!ts.isObjectLiteralExpression(config)) return;
-    const catalogExpression = objectField(config, "catalog");
+    const catalogExpression = objectField(config, "components") ?? objectField(config, "catalog");
     if (catalogExpression !== undefined) found.push(catalogExpression);
   };
   visit(local.module.sf);

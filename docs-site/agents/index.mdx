@@ -366,7 +366,7 @@ import theme from "../.vendo/theme.json";
 under `/maple` passes `baseUrl="/maple/api/vendo"`.
 
 Host components take TWO registrations, and they are different halves. What the
-agent may build FROM is the server-side catalog — `createVendo({ catalog })`
+agent may build FROM is the server-side registry — `createVendo({ components })`
 merged over `.vendo/catalog.json` — because that is where the descriptions and
 prop schemas live. The provider's `components` prop is the browser half, which
 draws those names. Register in one only and you get either a component the agent

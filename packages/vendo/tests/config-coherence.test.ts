@@ -422,6 +422,30 @@ describe("connectors: one list, strings and objects", () => {
   });
 });
 
+describe("the component registry has one name", () => {
+  const registry = { MetricCard: { component: null, description: "One headline metric." } };
+
+  it("refuses a config that fills the slot twice, naming both spellings", () => {
+    expect(() => createVendo({
+      models: { default: {} as LanguageModel },
+      principal: async () => principal,
+      components: registry,
+      catalog: registry,
+    } as unknown as Parameters<typeof createVendo>[0]))
+      .toThrow(/`components`.*drop `catalog`/s);
+  });
+
+  it("composes on either spelling alone", () => {
+    const compose = (extra: Record<string, unknown>) => () => createVendo({
+      models: { default: {} as LanguageModel },
+      principal: async () => principal,
+      ...extra,
+    } as unknown as Parameters<typeof createVendo>[0]);
+    expect(compose({ components: registry })).not.toThrow();
+    expect(compose({ catalog: registry })).not.toThrow();
+  });
+});
+
 describe("removed keys refuse to compose, naming their replacement", () => {
   const cases: Array<[string, Record<string, unknown>, RegExp]> = [
     ["policy", { policy: "cautious" }, /guard\(\{ policy \}\)/],

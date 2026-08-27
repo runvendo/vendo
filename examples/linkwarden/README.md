@@ -49,7 +49,7 @@ const vendo = createVendo({
       return { kind: "user" as const, subject: `user_${token.sub}` };
     },
   },
-  catalog: registry,
+  components: registry,
   guard: guard({ policy: {} }), // .vendo/policy.json: destructive asks, reads run
 });
 

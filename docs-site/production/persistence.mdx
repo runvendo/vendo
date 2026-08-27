@@ -18,7 +18,7 @@ import { createVendo } from "@vendoai/vendo/server";
 export const vendo = createVendo({
   auth: authJs(),
   // no store: line, so VENDO_API_KEY fills the slot with Vendo Cloud
-  catalog: registry,
+  components: registry,
 });
 ```
 

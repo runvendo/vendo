@@ -230,9 +230,17 @@ export interface CreateVendoConfig {
       another contributor fails at boot naming both. */
   skills?: readonly Skill[];
   /** Host components available to generated apps: the name-keyed registry
-      object (01 §14 — the same object serves <VendoProvider>; the server ignores
-      each entry's `component` reference) or the array form. Entry names must
-      mirror the client-side components map 1:1. */
+      object (01 §14 — the server ignores each entry's `component` reference) or
+      the array form.
+
+      ONE registry, ONE name: this is the same object `<VendoProvider components>`
+      takes, and it is spelled `components` at both ends. Entry names mirror the
+      client-side map 1:1. */
+  components?: ComponentCatalog | ComponentRegistry;
+  /** The component registry under its old name.
+      @deprecated Use `components` — the same object, the same spelling the
+      client half already used. Still works; setting both throws
+      VendoError("validation") at compose time. */
   catalog?: ComponentCatalog | ComponentRegistry;
   /** The host's own pages a generated view may link to, keyed by the name a
       `<Link to>` reaches for. Each entry's `description` is what picks between
@@ -327,7 +335,7 @@ export interface CreateVendoConfig {
       `holes` binds the component names the port renders as holes to the
       host/npm components themselves, and ONE catalog governs both ends of that
       name: it joins the component catalog here, so the checks floor types the
-      ported screen against the same names the renderer paints by. A `catalog`
+      ported screen against the same names the renderer paints by. A `components`
       entry for the same name wins, because a hole carries nothing but a name.
       The component REFERENCE is the client's half, untouched here exactly as a
       catalog entry's `component` is (01 §14); it reaches the renderer through
@@ -404,7 +412,7 @@ export interface CreateVendoConfig {
       ACTIONS USE (`actions.descriptors()`/`execute()`, or the first turn
       that loads tools), not at `createVendo` itself — wrap that call);
       `theme`/`brief`/`catalog` are trusted typed config, the same
-      posture as the existing `catalog` key (zod parsing exists for untyped
+      posture as the top-level `components` key (zod parsing exists for untyped
       file bytes, not typed config). `policy` is the parsed `policy.json`
       document (the guard's `PolicyFile` shape — what the file read parses
       into today), for a deployment that holds its policy in memory instead of

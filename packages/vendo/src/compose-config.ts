@@ -144,6 +144,17 @@ export const composeConfig = (input: CreateVendoConfig): Pick<VendoComposition,
       );
     }
   }
+  // One registry, one name: `components` is what `<VendoProvider>` already
+  // called it, and `catalog` is the same slot under its old spelling. Setting
+  // both is a config that cannot be read two ways without picking a winner
+  // silently, so it refuses here beside the other slot-filled-twice checks.
+  if (config.components !== undefined && config.catalog !== undefined) {
+    throw new VendoError(
+      "validation",
+      "createVendo({ components }) and createVendo({ catalog }) are the same component registry; "
+      + "keep `components` (the name `<VendoProvider components>` already uses) and drop `catalog`.",
+    );
+  }
   // agents-v0 §Product — the embed's seam onto @vendoai/agents. Checked here,
   // beside the auth mixing check and for the same reason: a slot filled twice
   // is a wiring mistake the host hears about before anything is constructed.

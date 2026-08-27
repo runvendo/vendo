@@ -152,7 +152,7 @@ export const vendo = createVendo({
   ...(process.env.MAPLE_DEV_SEAMS === "1" ? { development: true } : {}),
   // The shared registry (01 §14): the server reads only the data fields;
   // <VendoRoot> takes the same object and reads only component references.
-  catalog: mapleRegistry,
+  components: mapleRegistry,
   // The ported slots' holes, so the checks floor types a ported screen against
   // the same names the renderer paints it by. Without this the floor refuses
   // every port with "@vendo/screen has no exported member 'AreaChart'".

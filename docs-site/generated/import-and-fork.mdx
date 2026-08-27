@@ -70,7 +70,7 @@ import { createVendo } from "@vendoai/vendo/server";
 import { remixWiring } from "../../.vendo/generated/remix-wiring";
 
 export const vendo = createVendo({
-  catalog: mapleRegistry,
+  components: mapleRegistry,
   remixWiring,
 });
 ```
