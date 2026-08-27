@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
 import { backends } from "../src/backends.test-util.js";
 import { createStore, grantStore, threadStore } from "../src/index.js";
@@ -46,7 +47,9 @@ for (const backend of backends()) {
       const dataDir = await mkdtemp(join(tmpdir(), "vendo-store-drill-"));
       dirs.push(dataDir);
       const fixture = new URL("../src/__fixtures__/drill-writer.mjs", import.meta.url);
-      const child = spawn(process.execPath, [fixture.pathname, dataDir], { stdio: ["ignore", "pipe", "pipe"] });
+      // fileURLToPath, not .pathname: on Windows the latter is "/C:/…", which
+      // node then resolves against cwd into "C:\C:\…" and cannot find.
+      const child = spawn(process.execPath, [fileURLToPath(fixture), dataDir], { stdio: ["ignore", "pipe", "pipe"] });
       await waitForMarker(child);
       const exited = new Promise<void>((resolve) => child.once("exit", () => resolve()));
       expect(child.kill("SIGKILL")).toBe(true);

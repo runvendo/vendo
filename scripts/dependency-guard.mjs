@@ -318,7 +318,10 @@ function workspacePackageDirs() {
   const list = /^packages:[^\S\n]*\n((?:[^\S\n]+-[^\n]*\n)+)/m.exec(yaml)?.[1];
   if (!list) throw new Error("dependency-guard: no `packages:` list in pnpm-workspace.yaml");
   const dirs = [];
-  for (const line of list.trimEnd().split("\n")) {
+  // `\r?\n`, not `\n`: a Windows checkout with core.autocrlf=true has CRLF in
+  // the working tree, and the trailing \r a plain split leaves behind defeats
+  // the `$` below — every entry reads as unparseable and the guard never runs.
+  for (const line of list.trimEnd().split(/\r?\n/)) {
     const pattern = /^\s*-\s*["']?([^"'\s]+)["']?$/.exec(line)?.[1];
     if (!pattern) throw new Error(`dependency-guard: unreadable workspace entry: ${line.trim()}`);
     if (!pattern.includes("*")) {
