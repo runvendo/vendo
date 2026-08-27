@@ -120,10 +120,14 @@ export interface IdempotencyRecord {
  * happened. This is why `createStore()` hands one out instead of the ledger
  * being an adapter a host wires up separately.
  *
- * The guarantee is REPLAY protection, not mutual exclusion: two concurrent
- * requests carrying one key can both find the key fresh and both execute. That
- * is what a check-then-do ledger can promise, and saying so here is cheaper
- * than a caller discovering it in production.
+ * The guarantee `check` alone can make is REPLAY protection, not mutual
+ * exclusion: two concurrent requests carrying one key can both find the key
+ * fresh and both execute. For an EQUAL body that is benign — one key, one body,
+ * one effect, and the caller is told the truth. For a DIFFERENT body it is not:
+ * both mutations commit, and the loser is then refused `conflict` by a verb that
+ * ran AFTER its write, so the error it receives and the state of the store
+ * disagree. {@link IdempotencyLedger.claim} is what closes that case, by putting
+ * the refusal in front of the mutation instead of behind it.
  */
 export interface IdempotencyLedger {
   /**
@@ -137,10 +141,43 @@ export interface IdempotencyLedger {
    * `conflict` here rather than quietly returning some other request's result.
    */
   check(scope: IdempotencyScope, requestHash: string): Promise<IdempotencyRecord | null>;
-  /** Record what this key answered. First writer wins; a later `record` for a
-      key already held is ignored, never an overwrite — the answer a replay
-      already received must not change under it. */
+  /** Record what this key answered. First ANSWER wins: a later `record` for a
+      key that already holds one is ignored, never an overwrite — the answer a
+      replay already received must not change under it. A reservation taken by
+      {@link IdempotencyLedger.claim} is not an answer; `record` is how that
+      reservation's OWNER settles it, and another request's reservation stands
+      untouched. */
   record(scope: IdempotencyScope, requestHash: string, answer: IdempotencyRecord): Promise<void>;
+  /**
+   * ATOMICALLY reserve (tenant, op, key) for this request hash BEFORE the
+   * mutation runs, so a request that is going to be refused never reaches it.
+   *
+   * The reservation and the test for an existing one MUST be one indivisible
+   * step — `INSERT ... ON CONFLICT DO NOTHING RETURNING` against the scope's own
+   * unique index, which is what makes the key itself the serialization point. An
+   * implementation that reads first and inserts second IS the check-then-do
+   * shape this verb exists to replace and races in exactly the same way.
+   *
+   * - `"claimed"` — the reservation is this caller's. Do the work, then `record`.
+   * - {@link IdempotencyRecord} — a prior owner already published its answer;
+   *   replay it rather than applying anything.
+   * - `null` — a prior owner holds the key for the SAME request hash and has not
+   *   answered yet. PROCEED, exactly as `check` returning null says to. One key
+   *   and one body means one effect, so a second execution is the benign case
+   *   the ledger has always permitted, and whichever request answers first is
+   *   the answer every later replay gets. Deliberately NOT a wait: a contender
+   *   that blocked here would hang behind an owner that died between `claim` and
+   *   `record` — the ordinary client-timeout retry — and no expiry can tell a
+   *   dead owner from a slow one without stealing a live one's key.
+   * - throws `conflict` — the key is held for a DIFFERENT request hash. This is
+   *   the case the verb exists for, and it throws HERE, before the mutation, so
+   *   a refused request leaves nothing behind.
+   *
+   * OPTIONAL, on `RecordStore.atomic`'s rule: an adapter that cannot reserve
+   * says so by omitting `claim`, and a caller that finds it absent falls back to
+   * `check` then `record` with the race that implies.
+   */
+  claim?(scope: IdempotencyScope, requestHash: string): Promise<IdempotencyRecord | null | "claimed">;
 }
 
 /** 01-core §12 */

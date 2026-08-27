@@ -367,6 +367,27 @@ export function memoryStoreAdapter(
   const ledger = new Map<string, { requestHash: string; answer: IdempotencyRecord }>();
   const ledgerKey = (scope: IdempotencyScope): string =>
     JSON.stringify([scope.tenant, scope.op, scope.key]);
+  /** A reservation `claim` took that nobody has answered yet. Mirrors the
+      Postgres ledger's sentinel (`store/src/idempotency.ts`): 0 is not a status
+      a mount can send, so a reservation can never be read back as an answer. */
+  const RESERVED = 0;
+  /** What a held entry answers THIS request — shared by `check` and `claim` so
+      the two cannot drift on what a reservation means, which is the divergence
+      that reopens the race `claim` closes. */
+  const ledgerAnswer = (
+    held: { requestHash: string; answer: IdempotencyRecord },
+    scope: IdempotencyScope,
+    requestHash: string,
+  ): IdempotencyRecord | null => {
+    if (held.requestHash !== requestHash) {
+      throw new VendoError(
+        "conflict",
+        `idempotency key ${scope.key} was already used with a different request body`,
+      );
+    }
+    if (held.answer.status === RESERVED) return null;
+    return { status: held.answer.status, result: jsonCopy(held.answer.result) };
+  };
 
   const blobMap = (namespace: string): Map<string, { bytes: Uint8Array; contentType?: string }> => {
     let blobs = namespaces.get(namespace);
@@ -510,22 +531,34 @@ export function memoryStoreAdapter(
     // so the ledger cannot commit while the mutation it gates rolls back. A
     // hosted mount earns the same guarantee by putting it in the same database.
     idempotency: {
+      async claim(scope, requestHash) {
+        const key = ledgerKey(scope);
+        const held = ledger.get(key);
+        // One process and no await between the read and the write, so this map
+        // IS the indivisible step the contract asks `claim` for — the Postgres
+        // ledger earns the same thing from the key's unique index.
+        if (held === undefined) {
+          ledger.set(key, { requestHash, answer: { status: RESERVED, result: null } });
+          return "claimed";
+        }
+        return ledgerAnswer(held, scope, requestHash);
+      },
       async check(scope, requestHash) {
         const held = ledger.get(ledgerKey(scope));
         if (held === undefined) return null;
-        if (held.requestHash !== requestHash) {
-          throw new VendoError(
-            "conflict",
-            `idempotency key ${scope.key} was already used with a different request body`,
-          );
-        }
-        return { status: held.answer.status, result: jsonCopy(held.answer.result) };
+        return ledgerAnswer(held, scope, requestHash);
       },
       async record(scope, requestHash, answer) {
         const key = ledgerKey(scope);
-        // First writer wins: the answer a replay has already been handed must
-        // not change under it.
-        if (ledger.has(key)) return;
+        const held = ledger.get(key);
+        // First ANSWER wins: the answer a replay has already been handed must
+        // not change under it. A reservation is not an answer, so its own owner
+        // settles it — and only its owner, so another request's reservation
+        // stands rather than taking this answer's stamp.
+        const settling = held !== undefined
+          && held.answer.status === RESERVED
+          && held.requestHash === requestHash;
+        if (held !== undefined && !settling) return;
         ledger.set(key, { requestHash, answer: { status: answer.status, result: jsonCopy(answer.result) } });
       },
     },
