@@ -4,7 +4,7 @@ sidebarTitle: "Persistence"
 description: "Where threads, apps, records, grants, approvals, and audit rows live on Vendo Cloud, and what the store refuses."
 ---
 
-Your Cloud key is your database. Threads, apps, records, blobs, state, grants,
+Your Cloud key is your database. Threads, apps, records, blobs, grants,
 approvals, audit, and runs persist in Vendo Cloud's Postgres.
 
 ## The store slot fills itself
@@ -43,6 +43,7 @@ Passing your own `store` adapter also works, and always wins.
 | What | Where it goes | Notes |
 | --- | --- | --- |
 | Threads and messages | `vendo_threads`, `vendo_thread_messages` | Scoped to the principal's subject; a thread never crosses subjects |
+| Harness state | `vendo_threads.harness_state` | One slot per thread, so a session-owning harness resumes across restarts. Writes never bump the thread's `revision` or `updated_at` — resuming is not an edit |
 | Generated apps | `vendo_apps` | Plus their workspace files and history |
 | App data | `app:<appId>:<name>` collections | 256 KB per record, 5 MB per file |
 | Grants and approvals | `vendo_grants`, `vendo_approvals` | What a user has standing consent for |

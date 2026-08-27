@@ -15,7 +15,7 @@ Exactly one key is required: an identity, as `auth`.
 | `models` | The model seats, keyed by job. See [below](#models) |
 | `auth` | The one door for identity — a preset's result (`authJs()`) or an object you write. Holds `principal`, `facts`, `pools`, `memberships`, `actAs`, and `oauth`. See [below](#identity) |
 | `principal` | **Deprecated alias** for `auth.principal`. Still works; mutually exclusive with `auth` |
-| `memberships` | `(principal) => Promise<Membership[]>`, the twin of `auth.memberships` for a host on the deprecated aliases. Set it and it wins outright. With `VENDO_API_KEY` and this seam unset, memberships come from Vendo Cloud, so `async () => []` is how a deployment with no orgs declines the tenant directory. Ignored when `auth` is set — put it in `auth` instead |
+| `memberships` | `(principal) => Promise<Membership[]>`, the twin of `auth.memberships` for a host on the deprecated aliases. Set it and it wins outright. With `VENDO_API_KEY` and this seam unset, memberships come from Vendo Cloud, so `async () => []` is how a deployment with no orgs declines the tenant directory. Mutually exclusive with `auth` — setting both throws, so put it in `auth` instead |
 | `tools` | Host tool declarations in memory, the same `ExtractedTool[]` sync writes to `.vendo/tools.json`, and executable tools. The two shapes are told apart by `execute` |
 | `skills` | `Skill[]` mounted at `/host/skills` for the harness to list cheaply and load on demand. A name collision fails at boot naming both |
 | `components` | Host components exposed to the generation prompt, merged with `.vendo/catalog.json` with explicit entries winning by name. The same object `<VendoProvider components>` takes |
@@ -90,7 +90,7 @@ Named presets: `"cautious"` lets reads run and asks before writes or destructive
 
 `"cautious"` makes one exception to that prompt: the agent's `bash` runs without asking. It is still graded `write`, so it takes an audit row per call and answers to your own rules and the kill switch — but an automation has nobody to answer an approval card, and a prompt here would mean the shell could never run unattended. Add your own rule for the `bash` tool to put the prompt back.
 
-`guard({ policy: {} })` reads the default `.vendo/policy.json`, which is what `vendo init` scaffolds. It reads fail-soft, so a missing file also auto-runs with no notice; keep the file in version control.
+`guard({ policy: {} })` reads the default `.vendo/policy.json`, which is what `vendo init` scaffolds. It reads fail-soft, so a missing file also auto-runs with no notice; keep the file in version control. `vendo doctor` is what tells you it is gone — `config/policy.json` fails with [E-CFG-001](/production/troubleshooting/e-cfg-001).
 
 Omitting the `guard` key entirely surfaces an unconfigured-policy notice in the shipped chrome. Past either breaker, a would-be auto-run parks for approval until the window clears.
 
@@ -253,6 +253,6 @@ If you want logged-out visitors served, resolve them to a principal of your own 
 
 The seams `facts`, `pools`, and `memberships` run once per context resolution. `facts` becomes the prompt's `[User]` block, `pools` feeds the limits policy, and `memberships` answers `can()`. Every asserted membership is already a pool named `org:<orgId>`, so an org cap needs no `pools` seam of its own.
 
-The top-level `principal`, `actAs`, and `oauth` keys are deprecated aliases for the members of the same name. They keep working for this whole major, but each is one seam with nowhere to grow — `facts` and `pools` never had a top-level twin, which is the reason the door consolidated. Passing `auth` beside any of the three throws `VendoError("validation")` naming the mixed keys.
+The top-level `principal`, `actAs`, and `oauth` keys are deprecated aliases for the members of the same name. They keep working for this whole major, but each is one seam with nowhere to grow — `facts` and `pools` never had a top-level twin, which is the reason the door consolidated. Passing `auth` beside any of the three — or beside the top-level `memberships` seam, which fills the same slot — throws `VendoError("validation")` naming the mixed keys.
 
 See [Your users](/users-orgs/your-users) for `facts` and [Orgs & memberships](/users-orgs/orgs-and-memberships) for `memberships`.

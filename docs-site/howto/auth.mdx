@@ -182,7 +182,8 @@ every thread, app, and grant the turn creates.
 - **Top-level `principal`, `actAs`, and `oauth` are deprecated aliases.** They
   still work and will keep working through this major, but they are one seam
   each with nowhere to grow — `auth` is the key that holds all six. Mixing the
-  two shapes throws at composition.
+  two shapes throws at composition, and so does `auth` beside the top-level
+  `memberships` seam.
 - **The `vendo:` namespace is reserved.** A resolver that returns one of those
   subjects is refused at the wire — `vendo:webhook:<source>` and
   `vendo:org:<orgId>` are minted by Vendo itself.

@@ -36,13 +36,16 @@ table; the ordinary store door refuses that.
 ## What it removes
 
 Apps the subject owns go first, to close the write gate, and each one takes its own
-data with it: records, the version history, blob namespaces, state, that app's
-grants, and quarantine rows.
+data with it: records, the version history, blob namespaces, that app's grants, and
+quarantine rows.
 
 Then everything keyed to the subject: threads and their messages, automations and
 the runs those fired, permission grants, effects, approvals, audit rows, records
 that reference them, usage, MCP clients and grants, knowledge docs and chunks, and
 their workspace files and history.
+
+A thread's harness state is a column on the thread row, so deleting the thread takes
+it with it. There is nothing separate to sweep.
 
 Workspace content is deleted **through the files adapter**, not just as rows — the
 cascade reads each row's blob reference before deleting it, because that reference
@@ -86,8 +89,11 @@ This is the part worth reading twice.
 const report = await erase.byApp(appId);
 ```
 
-The app's row, its record collections, blob namespaces, state, app-scoped grants,
-and audit rows. Useful for tearing down a test build.
+The app's row, its record collections, blob namespaces, app-scoped grants, and audit
+rows. Useful for tearing down a test build.
+
+`byApp` never touches `vendo_threads`, so a conversation that built the app — and the
+harness state on its row — survives. Only `bySubject` reaches those.
 
 ---
 

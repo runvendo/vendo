@@ -137,18 +137,32 @@ Each step still crosses the guard on its own descriptor, so approvals, grants,
 and audit apply per step. A compound-level grant never rides into a step's
 `actAs`.
 
-## Remix opt-outs and briefs
+## Remix scanning and briefs
 
-`remix.ignoreSlots` names the `<Remixable>` slots sync should leave alone. A
-slot listed here is never captured, so it gets no baseline and no ✦.
+`remix` has two keys, both read by `vendo sync`.
+
+| Field | Type | What it does |
+| --- | --- | --- |
+| `ignoreSlots` | string array | `<Remixable>` slots sync should leave alone. A slot listed here is never captured, so it gets no baseline and no ✦ |
+| `sources` | string array | Extra directories to scan for `<Remixable>` wrappers, on top of the directory sync runs in |
 
 ```json .vendo/overrides.json
 {
   "format": "vendo/overrides@3",
   "tools": {},
-  "remix": { "ignoreSlots": ["PricingTable"] }
+  "remix": {
+    "ignoreSlots": ["PricingTable"],
+    "sources": ["../demos"]
+  }
 }
 ```
+
+Each source resolves from your project root and may sit outside it, which is how
+an app in `host/` and its screens in `../demos/` land in one sync. Captured
+module ids stay relative to the project root, so a file under an extra source
+reads as `../demos/maple/NetWorth.tsx`. A path that is not a readable directory
+warns and names itself rather than quietly contributing no wrappers. See
+[Import & fork](/generated/import-and-fork#components-outside-your-project-root).
 
 `briefs` is the last top-level key: `{ name, text, tools? }` entries of reviewed
 prose attached to primitive tools. It parses and validates today, but nothing
