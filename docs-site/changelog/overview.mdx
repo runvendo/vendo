@@ -4,6 +4,40 @@ sidebarTitle: "Changelog"
 description: "Weekly release notes for the Vendo SDK and runtime: new features, updates, and fixes, newest first."
 ---
 
+<Update label="August 27, 2026" description="Week of August 24 – August 30">
+
+## Breaking changes
+
+**Harness state lives on the conversation, and `vendo_state` is gone.** The bookmark a session-owning harness resumes on (for example `claudeCode()`'s native session ref) used to ride the `vendo_state` table under a synthetic app id of `harness_state:<threadId>`. Store schema v12 moves it to a nullable `harness_state` jsonb column on `vendo_threads`. One slot per thread, on the row that already names the thread's owner. The `vendo_state` table is dropped.
+
+The migration copies every reachable slot onto its thread, then drops the table. It is idempotent and a no-op on a fresh database. Vendo Cloud runs it for you; a BYO Postgres store migrates on the next `ensureSchema()`.
+
+If you implement `StoreOps` or speak the store wire directly, the harness slot is now keyed by the thread it belongs to:
+
+```ts
+// Before: keyed by a synthetic app id
+await ops.harness.set(`harness_state:${threadId}`, subject, state);
+
+// After: keyed by the thread itself
+await ops.harness.set(threadId, subject, state);
+const state = await ops.harness.get(threadId, subject);
+await ops.harness.clear(threadId, subject);
+```
+
+The wire says the same: `/harness/get`, `/harness/set`, and `/harness/clear` take `{ threadId, subject }` bodies, and so does the `harness` part of the `turn.load` and `turn.commit` envelopes. Version skew fails closed in both directions with a validation error, because `threadId` is required and neither side can read the other's body. SDKs below 0.52 must upgrade to talk to a v12 mount, and Vendo Cloud no longer accepts the old `{ appId, subject }` shape.
+
+The semantics worth knowing:
+
+- `subject` is the thread's owner, and it is authority. A foreign subject reads an empty slot and writes nothing.
+- `set` on a thread that does not exist is refused, so no bookmark can outlive every erase path.
+- Harness writes never bump the thread's `revision` or `updated_at`. Resuming a session is not a message.
+- Thread deletion and subject erasure both take the slot with the row.
+- An app-scoped erase no longer clears harness state. The continuity belongs to the conversation, and uninstalling an app ends no conversation.
+
+**App per-user state is removed.** `vendo_state`'s other tenant went with the table: `AppDataAccess.getState`/`setState` and the `onStateChange` persistence bridge in `@vendoai/ui` are deleted. Neither had a production caller. The `$state` screen dialect is untouched and still resolves in-session; only the never-connected persistence half is gone, and the reserved-name guards refusing a collection or query named `state` stay.
+
+</Update>
+
 <Update label="July 17, 2026" description="Week of July 14 – July 20">
 
 ## New features
