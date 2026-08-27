@@ -27,12 +27,10 @@ const DEFAULT_TOOL_NAMES = [
   "ask_user",
   "schedule",
   "validate",
-  "vendo_apps_data_delete",
-  "vendo_apps_data_list",
-  "vendo_apps_data_put",
   "vendo_apps_open",
   "vendo_apps_pin",
   "vendo_apps_reseed",
+  "vendo_apps_sql",
   "vendo_apps_unpin",
   // The chat authoring door for an automation. A default composition mounts the
   // automations engine, so the apps block is handed the create seam and offers

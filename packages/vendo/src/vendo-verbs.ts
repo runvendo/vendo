@@ -5,11 +5,10 @@ import { log, VENDO_TOOL_TITLES, isVendoError, type Json, type RunContext, type 
  * registry — so the guard, the audit trail, and `find_tools` treat them exactly
  * like a host tool. There is no privileged side door.
  *
- * `records_list/put/delete` are deliberately NOT here: they already ship as
- * `vendo_apps_data_list/put/delete` (packages/apps/src/agent-tools.ts), already
- * guarded, and already referenced by name inside stored app documents and the
- * generation prompt. Renaming them would invalidate live documents for no
- * behavioural gain.
+ * `records_list/put/delete` are deliberately NOT here: an app's own data has
+ * ONE door, `vendo_apps_sql` (packages/apps/src/server/doors/sql-tool.ts), and a
+ * second spelling of it would be a second place for the mine./shared. fence to
+ * be got wrong.
  */
 export const VENDO_VERB_TOOLS = ["validate", "schedule"] as const;
 

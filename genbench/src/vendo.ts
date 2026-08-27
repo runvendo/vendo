@@ -322,8 +322,8 @@ async function run(request: RunRequest): Promise<RunOutcome> {
       // screen agent equips the read verbs it needs and offers everything else
       // it was listed as a tool a button may wire (`screen-agent.ts`'s
       // `callable`), so serving the runtime's write verbs put `vendo_apps_pin`,
-      // `vendo_apps_unpin`, `vendo_apps_reseed`, `vendo_apps_data_put` and
-      // `vendo_apps_data_delete` in this column's brief with full schemas — ~3KB
+      // `vendo_apps_unpin`, `vendo_apps_reseed` and `vendo_apps_sql`
+      // in this column's brief with full schemas — ~3KB
       // of platform surface no bench case can use, and no baseline is handed
       // (`diy.test.ts`). The world's tools are the only tools any contender may
       // wire. `validate` still routes: `execute` below is untouched, and the

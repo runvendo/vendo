@@ -271,7 +271,7 @@ export const composeApps = (composition: VendoComposition): Pick<VendoCompositio
   // Design §4's vendo verbs, projected onto the SAME registry as everything else
   // — guarded, audited, and searchable by `find_tools`, with no privileged side
   // door. `records_list/put/delete` are deliberately absent: they already ship as
-  // `vendo_apps_data_*` through the apps pack, and those names are written inside
+  // `vendo_apps_sql` through the apps pack, and those names are written inside
   // stored app documents (contract §8's lane-D ratification — renaming would
   // invalidate live apps for cosmetics).
   //

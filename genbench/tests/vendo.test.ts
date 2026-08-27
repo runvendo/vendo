@@ -109,7 +109,7 @@ const caseFor = (id: string): Case => ({ id, lane: "screen", prompt: "Show this 
  * the tools it may hand the person a button for, and that list is the registry's
  * write half — so every write verb the apps runtime happens to serve landed in
  * it with its full JSON Schema. `vendo_apps_pin`, `vendo_apps_unpin`,
- * `vendo_apps_reseed`, `vendo_apps_data_put` and `vendo_apps_data_delete` are
+ * `vendo_apps_reseed` and `vendo_apps_sql` are
  * not this world's tools, no case can use one, and no baseline is told they
  * exist — they were kilobytes of prompt only this column paid for.
  */

@@ -99,11 +99,8 @@ describe("the vendo verbs are on the one registry", () => {
     // The verbs lane D shipped...
     expect(names).toContain("validate");
     expect(names).toContain("schedule");
-    // ...and the records family under the names the shipped app documents use.
-    // Renaming them would invalidate live apps for cosmetics (contract §8).
-    expect(names).toContain("vendo_apps_data_list");
-    expect(names).toContain("vendo_apps_data_put");
-    expect(names).toContain("vendo_apps_data_delete");
+    // ...and the ONE door onto an app's own database.
+    expect(names).toContain("vendo_apps_sql");
   });
 
   it("carries the risk labels the law reads: schedule is a write, the rest are reads", async () => {

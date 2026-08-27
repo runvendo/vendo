@@ -1515,14 +1515,17 @@ describe("09 §2 composition", () => {
         args: { app: "app_wire", request: "Persist this to the database" },
       }, edit, venue)).resolves.toMatchObject({ action: "run" });
     }
-    // The ceremony stays where it belongs: writing the app's stored rows asks.
-    const dataPut = byName.get("vendo_apps_data_put")!;
-    expect(dataPut.risk).toBe("write");
+    // The ceremony stays where it belongs: writing the app's own rows asks. The
+    // AUTHORED grade is the pessimistic one — a SELECT is regraded `read` per
+    // call by `AppsRuntime.agentToolRisk`, which is what a running app's query
+    // rides in on.
+    const appSql = byName.get("vendo_apps_sql")!;
+    expect(appSql.risk).toBe("write");
     await expect(vendo.guard.check({
-      id: "call_data_put",
-      tool: dataPut.name,
-      args: { appId: "app_wire", collection: "notes", id: "n1", data: {} },
-    }, dataPut, chat)).resolves.toMatchObject({ action: "ask" });
+      id: "call_app_sql",
+      tool: appSql.name,
+      args: { appId: "app_wire", sql: "INSERT INTO mine.notes (id) VALUES (?)", params: ["n1"] },
+    }, appSql, chat)).resolves.toMatchObject({ action: "ask" });
   });
 
   // Vendo mints no principals: a resolver that answers null has said this

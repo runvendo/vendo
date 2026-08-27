@@ -145,11 +145,12 @@ const askUser: ToolDescriptor = { ...readTool("ask_user", "write") };
  *  tool that called this loop. */
 const vendoMake: ToolDescriptor = { ...readTool("vendo_make") };
 
-/** The two verbs that read an app that already exists, graded `read` exactly as
- *  the registry grades them — which is how they rode onto a FRESH build's loadout,
- *  where the app is the file the run has not written yet. */
+/** The two verbs that reach an app that already exists — which is how they rode
+ *  onto a FRESH build's loadout, where the app is the file the run has not
+ *  written yet. Equipped by NAME and not by grade (screen-agent.ts EDIT_TOOLS),
+ *  which is why `vendo_apps_sql` carries its authored `write` here. */
 const appsOpen: ToolDescriptor = { ...readTool("vendo_apps_open") };
-const appsDataList: ToolDescriptor = { ...readTool("vendo_apps_data_list") };
+const appsDataList: ToolDescriptor = { ...readTool("vendo_apps_sql", "write") };
 
 /** Machinery on the same `read` grade: WHERE a view goes is the caller's question,
  *  and a writer handed the verb is a writer handed the workshop. */
@@ -323,7 +324,7 @@ describe("the loadout (§4.2 — assembly tools only)", () => {
 
   it("a FRESH build has no app to open, and is offered neither verb nor button for one", async () => {
     // The loadout follows the task: this run's app is the file it has not written
-    // yet, so opening it or listing its saved records can only answer `not-found` —
+    // yet, so opening it or querying its database can only answer `not-found` —
     // a step off a ten-step budget. Both are graded `read`, which is exactly how
     // they rode in.
     const screen = harness({ turns: [saveApp(GOOD_APP), textTurn("done")] });
@@ -331,7 +332,7 @@ describe("the loadout (§4.2 — assembly tools only)", () => {
 
     const offered = screen.model.toolNamesPerCall[0] ?? [];
     expect(offered).not.toContain("vendo_apps_open");
-    expect(offered).not.toContain("vendo_apps_data_list");
+    expect(offered).not.toContain("vendo_apps_sql");
     // …and they do not come back as a BUTTON. Refusing to equip a verb drops it
     // into the brief's complement, so a withholding that covered one half would
     // teach the model to wire the very tool it was not given.
@@ -350,7 +351,7 @@ describe("the loadout (§4.2 — assembly tools only)", () => {
     expect(result.kind).toBe("assembled");
     const offered = screen.model.toolNamesPerCall[0] ?? [];
     expect(offered).toContain("vendo_apps_open");
-    expect(offered).toContain("vendo_apps_data_list");
+    expect(offered).toContain("vendo_apps_sql");
   });
 
   it("offers no `vendo_slots_list` in either mode — where a view GOES is the caller's question", async () => {
