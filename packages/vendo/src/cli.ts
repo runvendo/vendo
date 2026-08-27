@@ -32,7 +32,7 @@ Options:
   --agent                    Init only: ask first. Prints the open questions as JSON and writes nothing; re-run with the answers as flags and it writes, ending in a JSON receipt
   --yes                      Init: accept the detected auth preset, skip the cloud offer + AI polish + theme review, end with the agent tail
   --force                    Init/server-json: overwrite owned or generated files
-  --auth <answer>            Init only: answer "how do your users sign in?" without asking (authJs, clerk, supabase, auth0, jwt, custom, none)
+  --auth <preset>            Init only: answer "how do your users sign in?" without asking (authJs, clerk, supabase, auth0, jwt, custom, none)
   --framework <name>         Init only: override framework detection (next, express, custom) — required non-interactively when detection fails
   --cloud-key <key>          Init only: write this Vendo Cloud key to .env.local instead of the login offer
   --wait <seconds>           Login only: bound this call's polling to N seconds (agents loop re-runs; each resumes the same request), then exit resumably
