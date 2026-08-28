@@ -21,7 +21,7 @@ name: Version Packages
 #
 # The credential is now the vendo-release-bot GitHub App (this repo and
 # vendo-web only — Contents: read+write, Pull requests: read+write, and NO admin
-# or bypass), minted per run from RELEASE_BOT_APP_ID and RELEASE_BOT_PRIVATE_KEY.
+# or bypass), minted per run from RELEASE_BOT_CLIENT_ID and RELEASE_BOT_PRIVATE_KEY.
 # GitHub does not run workflows on branches or PRs pushed with the built-in
 # GITHUB_TOKEN, so a version PR opened under it gets zero checks: the four
 # required checks never report, the merge queue never takes it, and the PR sits
