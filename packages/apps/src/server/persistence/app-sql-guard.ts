@@ -47,7 +47,11 @@ const NAME = /^[a-z][a-z0-9_]{0,27}$/;
 const DENIED_PREFIX = /^(pg_|lo_|sqlite_|_vendo)/;
 
 /** Names that read a file, open a connection, or run SQL of their own — plus
-    the one DDL word that would collide across people. */
+    the one DDL word that would collide across people.
+
+    `query_to_xml` and its family are the reason this list is not paranoia:
+    they are PUBLIC-executable, take a whole SQL string, and run it as whoever
+    the connection is — the host's own store role. */
 const DENIED_WORDS = new Set([
   "information_schema", "dblink", "dblink_exec", "set_config", "current_setting",
   "xmltable", "query_to_xml", "query_to_xmlschema", "query_to_xml_and_xmlschema",
@@ -144,6 +148,23 @@ function endOfComment(sql: string, from: number): number | undefined {
   return end + 2;
 }
 
+/** The deny rules bind an IDENTIFIER, never a SPELLING of one.
+    `query_to_xml` and `"query_to_xml"` name the same PUBLIC-executable
+    function — quoting changes only whether the server folds the case — so a
+    check that ran in the bare branch alone was defeated by two characters, and
+    with it the whole `mine.`/`shared.` boundary: that function takes a SQL
+    string and runs it as the connection's role. `search_path` cannot help,
+    because `pg_catalog` is always implicitly searched. Every branch of the
+    tokenizer that produces an identifier comes through here. */
+const admit = (word: string, said: string): void => {
+  if (DENIED_PREFIX.test(word) || DENIED_WORDS.has(word)) {
+    refuse(
+      `"${said}" is reserved. The app's database keeps its own bookkeeping and the server's catalog out of reach, `
+      + "so names in those families are refused. Use a different name.",
+    );
+  }
+};
+
 function tokenize(sql: string): Token[] {
   const out: Token[] = [];
   const push = (kind: Kind, text: string, word = ""): number => out.push({ kind, text, word });
@@ -162,6 +183,9 @@ function tokenize(sql: string): Token[] {
     if (c === '"') {
       const j = endOfQuoted(sql, i, '"', 'a "…" quoted name');
       const inner = sql.slice(i + 1, j - 1).replace(/""/g, '"').toLowerCase();
+      // BEFORE the grammar, so a reserved family is refused for the reason it
+      // is reserved rather than for however it happens to be spelled.
+      admit(inner, inner);
       if (!NAME.test(inner)) {
         refuse(
           `"${inner}" is not a name this app can use. A name is a letter followed by letters, digits or underscores, `
@@ -184,12 +208,7 @@ function tokenize(sql: string): Token[] {
       while (j < sql.length && IDENT_PART.test(sql[j] as string)) j += 1;
       const text = sql.slice(i, j);
       const word = text.toLowerCase();
-      if (DENIED_PREFIX.test(word) || DENIED_WORDS.has(word)) {
-        refuse(
-          `"${text}" is reserved. The app's database keeps its own bookkeeping and the server's catalog out of reach, `
-          + "so names in those families are refused. Use a different name.",
-        );
-      }
+      admit(word, text);
       push("word", text, word);
       i = j;
       continue;

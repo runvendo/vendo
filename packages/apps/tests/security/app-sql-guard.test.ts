@@ -110,6 +110,92 @@ describe("app SQL guard — nothing outside the app", () => {
       "SELECT current_setting('data_directory')",
     ]) expect(refused(attack)).toContain("is reserved");
   });
+
+  /**
+   * The deny rules bind an IDENTIFIER, not a SPELLING of one.
+   *
+   * Every case above was written BARE, and the check ran in the bare branch
+   * alone — so two quote characters admitted the whole list, and
+   * `SELECT "query_to_xml"('SELECT rolname FROM pg_authid', …)` really did
+   * answer with the server's roles on a real Postgres (that run is
+   * `store/tests/app-database.test.ts`, on the real connection; these are the
+   * refusals). `query_to_xml` needs no superuser — it is PUBLIC-executable, it
+   * takes a whole SQL string, and it runs it as whoever the connection is,
+   * which is the host's own store role. `search_path` cannot fence it either:
+   * `pg_catalog` is always implicitly searched.
+   *
+   * So the bar is every spelling of the same name, not every name.
+   */
+  it("refuses the catalog however the name is spelled", () => {
+    for (const attack of [
+      // Quoting is the bypass that was: it changes only whether the server
+      // folds the case, never which function is named.
+      `SELECT "query_to_xml"('SELECT * FROM pg_authid', true, true, '')`,
+      `SELECT "Query_To_XML"('SELECT * FROM pg_authid', true, true, '')`,
+      `SELECT QuErY_tO_xMl('SELECT 1', true, true, '')`,
+      `SELECT "table_to_xml"('mine.a', true, true, '')`,
+      `SELECT "cursor_to_xml"('c', 1, true, true, '')`,
+      `SELECT "database_to_xml"(true, true, '')`,
+      `SELECT * FROM "xmltable"('/x' PASSING '<x/>' COLUMNS a TEXT)`,
+      `SELECT "pg_read_file"('/etc/passwd')`,
+      `SELECT "lo_import"('/etc/passwd')`,
+      `SELECT * FROM "pg_tables"`,
+      `SELECT * FROM "sqlite_master"`,
+      `SELECT "dblink"('x', 'y')`,
+      `SELECT "set_config"('search_path', 'public', false)`,
+      `SELECT "current_setting"('data_directory')`,
+      `SELECT * FROM "information_schema"."tables"`,
+      // The app database's own bookkeeping, quoted — refused for BEING
+      // reserved now, not for the accident that `_` fails the name grammar.
+      `SELECT * FROM "_vendo_ddl"`,
+      `SELECT * FROM "_vendo_owner"`,
+      // Partial quoting, in all four combinations. `pg_catalog` is itself a
+      // denied prefix, so the qualifier falls first whichever way it is said.
+      `SELECT pg_catalog.query_to_xml('SELECT 1', true, true, '')`,
+      `SELECT "pg_catalog".query_to_xml('SELECT 1', true, true, '')`,
+      `SELECT pg_catalog."query_to_xml"('SELECT 1', true, true, '')`,
+      `SELECT "pg_catalog"."query_to_xml"('SELECT 1', true, true, '')`,
+      // No space between an operator and the name. The operator characters are
+      // not identifier characters, so the name is still its own token.
+      `SELECT 'a' ~query_to_xml('SELECT 1', true, true, '')`,
+      `SELECT ''||query_to_xml('SELECT 1', true, true, '')`,
+    ]) expect(refused(attack)).toContain("is reserved");
+  });
+
+  /** The spellings that never reach the deny list because they are not the
+      name: the grammar takes them first, which is the same refusal from one
+      layer up. A doubled quote is a literal `"` inside the identifier; `U&"…"`
+      escapes are backslashes; a homoglyph is a different letter — and Postgres
+      folds only ASCII when it downcases an unquoted name, so none of these
+      resolves to the function they imitate. */
+  it("refuses a catalog name written with escapes, embedded quotes or homoglyphs", () => {
+    // A doubled "" is one literal quote character in the name.
+    expect(refused(`SELECT "quer""y_to_xml"('SELECT 1', true, true, '')`))
+      .toContain("is not a name this app can use");
+    // Postgres' unicode-escaped identifiers, with the default escape and a
+    // named one — both carry characters no name here admits.
+    expect(refused(`SELECT U&"quer\\0079_to_xml"('SELECT 1')`)).toContain("is not a name this app can use");
+    expect(refused(`SELECT U&"quer!0079_to_xml" UESCAPE '!' ('SELECT 1')`))
+      .toContain("is not a name this app can use");
+    // A Cyrillic "о" is not an "o": quoted, the name grammar refuses it.
+    expect(refused(`SELECT "query_tо_xml"('SELECT 1', true, true, '')`))
+      .toContain("is not a name this app can use");
+  });
+
+  /** Refusing everything would prove nothing. A quoted identifier is how an
+      app names a column that collides with an SQL keyword, and how the model
+      writes a name it wants case-folded — those keep working. */
+  it("still admits the quoted identifiers an app legitimately writes", () => {
+    expect(guard(`SELECT "body" FROM mine.notes`)).toContain(`"body"`);
+    expect(guard(`SELECT n."body" FROM mine.notes n`)).toContain(`"body"`);
+    expect(guard(`INSERT INTO mine.notes ("id", "body") VALUES (?, ?)`)).toContain("VALUES ($1, $2)");
+    // Reserved SQL keywords are exactly what quoting is FOR.
+    expect(guard(`CREATE TABLE mine.orders ("order" TEXT, "select" TEXT)`))
+      .toContain(`"${mineTable(ADA, "orders")}"`);
+    // And a quoted table name still folds onto the one table (see the name
+    // grammar block below).
+    expect(guard(`SELECT * FROM mine."NOTES"`)).toBe(guard("SELECT * FROM mine.notes"));
+  });
 });
 
 describe("app SQL guard — one statement, from a short list", () => {

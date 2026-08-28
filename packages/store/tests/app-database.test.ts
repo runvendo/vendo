@@ -264,6 +264,60 @@ describe("app database — Grace cannot reach Ada's rows", () => {
   });
 });
 
+/**
+ * The catalog, on the REAL connection.
+ *
+ * `packages/apps/tests/security/app-sql-guard.test.ts` proves the refusals
+ * against the guard alone. This block is the other half, and the reason the
+ * pair exists: the guard once refused `query_to_xml` bare and admitted
+ * `"query_to_xml"`, and the statement that got through ran here — on a real
+ * Postgres, through the real door — and answered with `pg_authid`. That
+ * function is PUBLIC-executable and takes a whole SQL string, so it is
+ * arbitrary SQL as the host's own store role, and `search_path` cannot fence
+ * it because `pg_catalog` is always implicitly searched.
+ *
+ * A refusal proven only against the guard is a refusal proven against a stub of
+ * the engine. These run.
+ */
+describe("app database — the server's catalog is out of reach on a real connection", () => {
+  const catalogAttacks = [
+    `SELECT "query_to_xml"('SELECT rolname FROM pg_authid', true, true, '') AS leaked`,
+    `SELECT "Query_To_XML"('SELECT rolname FROM pg_authid', true, true, '') AS leaked`,
+    `SELECT query_to_xml('SELECT rolname FROM pg_authid', true, true, '') AS leaked`,
+    `SELECT "pg_read_file"('/etc/passwd') AS leaked`,
+    `SELECT * FROM "pg_tables"`,
+    `SELECT * FROM "information_schema"."tables"`,
+    `SELECT "current_setting"('data_directory') AS leaked`,
+    `SELECT "set_config"('search_path', 'public', false) AS leaked`,
+    `SELECT * FROM "_vendo_ddl"`,
+    `SELECT "pg_catalog"."query_to_xml"('SELECT 1', true, true, '') AS leaked`,
+  ];
+
+  it("refuses every spelling before a single one reaches the engine", async () => {
+    await run(ADA, "CREATE TABLE mine.notes (id TEXT PRIMARY KEY)");
+    for (const attack of catalogAttacks) {
+      await expect(run(ADA, attack), attack).rejects.toBeInstanceOf(VendoError);
+    }
+  });
+
+  it("leaks no row of the server's own catalog to a second person either", async () => {
+    await run(ADA, "CREATE TABLE mine.notes (id TEXT PRIMARY KEY)");
+    for (const attack of catalogAttacks) {
+      expect(await refused(GRACE, attack), attack).toMatch(/is reserved|is not a name this app can use/);
+    }
+  });
+
+  /** The control. A guard that passed this file by refusing everything would
+      prove nothing, so the quoted identifiers an app legitimately writes have
+      to still round-trip through the real engine. */
+  it("still runs the quoted identifiers an app legitimately writes", async () => {
+    await run(ADA, `CREATE TABLE mine.orders (id TEXT PRIMARY KEY, "order" TEXT, "select" TEXT)`);
+    await run(ADA, `INSERT INTO mine.orders ("id", "order") VALUES (?, ?)`, ["o1", "first"]);
+    expect((await run(ADA, `SELECT "order" FROM mine."ORDERS"`)).rows).toEqual([{ order: "first" }]);
+    expect((await run(ADA, `SELECT o."order" FROM mine.orders o`)).rows).toEqual([{ order: "first" }]);
+  });
+});
+
 describe("app database — a read that comes back through a different handle", () => {
   it("is still there when a second process opens the same data directory", async () => {
     const dir = `/tmp/vendo-app-db-${process.pid}-${Math.random().toString(36).slice(2)}`;
