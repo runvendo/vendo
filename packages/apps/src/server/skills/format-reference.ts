@@ -191,7 +191,10 @@ has one, and it is real SQL.
   \`appId\` OUT, because the screen already knows which app it is:
   \`const pets = useQuery("vendo_apps_sql", { sql: "SELECT * FROM mine.pets" })\`.
   That input is LITERAL, written out in the file. It answers
-  \`{ columns, rows, rowCount }\`, so the rows are \`pets.data?.rows ?? []\`.
+  \`{ columns, rows, rowCount }\` — the tool's own fields, on the hook's result, as
+  every read here does — so the rows are \`pets.rows ?? []\`. Not \`pets.data.rows\`:
+  \`data\` is a field some tools happen to answer with, never a wrapper this one
+  has, and a screen that reads it gets \`undefined\` on every row it ever loads.
 - **Write from a handler**, never during render:
   \`tools.vendo_apps_sql({ sql: "INSERT INTO mine.pets (id, name, born) VALUES (?, ?, ?)", params: [id, name, born] })\`.
   Every \`useQuery\` re-runs after it, so never patch state to mirror the write.

@@ -231,6 +231,10 @@ export interface AgentToolsDataDependencies {
    *  offered at all: no adapter, no tool. */
   sql?: AppSqlAccess;
   requireOwned(appId: AppId, ctx: RunContext): Promise<AppDocument>;
+  /** Whether THIS caller's build is the one running for this id right now. The
+   *  app-database door reads it because an app being built has no row for
+   *  `requireOwned` to read an owner off — see `doors/sql-tool.ts`. */
+  buildingFor(appId: AppId, ctx: RunContext): boolean;
   /** B1 — claim the slot for an id this door just minted, before either engine
    *  runs. `AppsRuntime.place` cannot: it gates on an app record, and there is
    *  none yet. Filled by the runtime that constructs this registry. */

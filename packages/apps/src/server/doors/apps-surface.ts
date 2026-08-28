@@ -187,14 +187,14 @@ export const createAppsSurface = (
   deps: Pick<AppsRuntimeContext,
     "config" | "engine" | "caller" | "sql" | "history" | "opener" | "interchange"
     | "parkedActions" | "parkedBuilds" | "placementRows" | "owned" | "requireOwned"
-    | "grantedRecords" | "reportLifecycle" | "claimSlot" | "markUnbuilt"
+    | "grantedRecords" | "reportLifecycle" | "claimSlot" | "markUnbuilt" | "buildingFor"
     | "runtime">,
 ): Pick<AppsRuntime,
   "get" | "list" | "delete" | "fork" | "share" | "publish" | "seen"
   | "exportApp" | "importApp" | "history" | "open" | "call" | "agentTools"> => {
   const { config, engine, sql, history } = deps;
   const { parkedActions, parkedBuilds, placementRows } = deps;
-  const { requireOwned, reportLifecycle, claimSlot, markUnbuilt, runtime } = deps;
+  const { requireOwned, reportLifecycle, claimSlot, markUnbuilt, buildingFor, runtime } = deps;
   return {
     ...createAppReadDoors(deps),
     ...createAppCopyDoors(deps),
@@ -233,6 +233,7 @@ export const createAppsSurface = (
       return createAgentTools(runtime(), {
         ...(sql === undefined ? {} : { sql }),
         requireOwned,
+        buildingFor,
         claimSlot,
         markUnbuilt,
         ...(config.screen === undefined ? {} : { screen: config.screen }),

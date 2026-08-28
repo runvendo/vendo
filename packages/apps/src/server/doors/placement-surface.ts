@@ -85,9 +85,22 @@ export const createPlacementRows = (
    * `AppDocument.building` onto the row: the poll that reads it back is a
    * different request, often a different process.
    */
-  const buildsInFlight = new Set<AppId>();
-  const beginBuild = (appId: AppId): void => { buildsInFlight.add(appId); };
+  const buildsInFlight = new Map<AppId, string>();
+  const beginBuild = (appId: AppId, subject: string): void => { buildsInFlight.set(appId, subject); };
   const buildingNow = (appId: AppId): boolean => buildsInFlight.has(appId);
+  /**
+   * The same window, asked about a PERSON: is this caller the one whose build is
+   * running for this id right now?
+   *
+   * The subject is what makes this an answer about authority rather than about
+   * timing. `buildingNow` above says a build exists, which is all a save needs to
+   * mark its row; the app's DATABASE is a different question, because the app it
+   * belongs to has no row yet for `requireOwned` to read an owner off — so the
+   * only honest owner of an app mid-mint is the person minting it, and that is
+   * exactly what this says and nothing more.
+   */
+  const buildingFor = (appId: AppId, ctx: RunContext): boolean =>
+    buildsInFlight.get(appId) === ctx.principal.subject;
 
   /**
    * `markUnbuilt`'s LIVE twin — the assembler came back, however it came back, so
@@ -143,7 +156,7 @@ export const createPlacementRows = (
     };
   };
 
-  return { requireSlot, claimSlot, markUnbuilt, beginBuild, buildingNow, settleBuild, entryFor };
+  return { requireSlot, claimSlot, markUnbuilt, beginBuild, buildingNow, buildingFor, settleBuild, entryFor };
 };
 
 /** The placement slice of `AppsRuntime`. */

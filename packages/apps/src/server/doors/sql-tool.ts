@@ -1,10 +1,12 @@
 /**
  * `vendo_apps_sql` — the app's ONE reach into its own database, over the same
- * `requireOwned` gate every other door reads.
+ * `requireOwned` gate every other door reads, with the single exception an app
+ * that has no row yet forces (see `runAppSql`).
  *
  * The person is the LIVE caller: `subject` comes off the run context and never
  * off the tool args, so generated SQL has no field in which to name somebody
  * else — and no address either, which is the guard's half (app-sql-guard.ts).
+ * That half is what the exception cannot touch: it holds whoever gets here.
  */
 import {
   VendoError,
@@ -66,6 +68,10 @@ export const appSqlDescriptor = (dialect: SqlDialect): ToolDescriptor => ({
 export interface AppSqlDependencies {
   sql?: AppSqlAccess;
   requireOwned(appId: AppId, ctx: RunContext): Promise<AppDocument>;
+  /** Whether THIS caller's build is the one running for this id right now
+   *  (`doors/placement-surface.ts`). Filled by the runtime that constructs the
+   *  registry; see the ordering note in {@link runAppSql}. */
+  buildingFor(appId: AppId, ctx: RunContext): boolean;
 }
 
 export const runAppSql = async (
@@ -97,9 +103,25 @@ export const runAppSql = async (
   if (args.params !== undefined && !Array.isArray(args.params)) {
     throw new VendoError("validation", "params must be an array — one value per `?` in the statement, in order.");
   }
-  const app = await dependencies.requireOwned(appId, ctx);
+  // AN APP BEING BUILT HAS NO ROW TO OWN. A paint is what writes the app's row
+  // (`checking/floor.ts` `delivered` → `authoredScreen`), and the paint is
+  // gated by checks that RUN the screen's queries — so on the build that
+  // CREATES an app, both the screen agent's own `CREATE TABLE` and the checks
+  // floor's first-paint `SELECT` reach this line before any row exists, and
+  // `requireOwned` answered `app not found` to every one of them. A capability
+  // that cannot survive its own first build is not the receipt's item 4.
+  //
+  // The exemption is the narrowest true statement about that moment: an app
+  // mid-mint has exactly one owner, the person whose build is minting it, and
+  // `buildingFor` asks precisely that — this id, this subject, this process,
+  // inside this assembler run. Anything else is untouched, so an id with no
+  // build in flight is still existence-masked exactly as before and a row that
+  // exists still decides for itself. Nothing here reaches the mine./shared.
+  // boundary: `sql.run` scopes every `mine.` table to the caller's own subject
+  // below, whichever branch got here.
+  if (!dependencies.buildingFor(appId, ctx)) await dependencies.requireOwned(appId, ctx);
   const answer = await sql.run(
-    app.id,
+    appId,
     ctx.principal.subject,
     args.sql as string,
     args.params as readonly unknown[] | undefined,

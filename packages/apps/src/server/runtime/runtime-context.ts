@@ -173,11 +173,15 @@ export interface AppsRuntimeContext {
   claimSlot(appId: AppId, slot: string, ctx: RunContext): Promise<void>;
   /** The terminal record for an id no engine will ever land. */
   markUnbuilt(appId: AppId, name: string, reason: string, ctx: RunContext): Promise<void>;
-  /** An assembler run has started for this id — `AppDocument.building`. */
-  beginBuild(appId: AppId): void;
+  /** An assembler run has started for this id, for this person —
+   *  `AppDocument.building`, and the app-database door's mid-mint owner. */
+  beginBuild(appId: AppId, subject: string): void;
   /** Whether one is running right now, which is what makes a screen's first
    *  painting save a BUILD's rather than a harness's. */
   buildingNow(appId: AppId): boolean;
+  /** Whether THIS caller is the one building this id right now — the only owner
+   *  an app that has no row yet can have. */
+  buildingFor(appId: AppId, ctx: RunContext): boolean;
   /** The assembler came back, so the row may mount — `AppDocument.building`. */
   settleBuild(appId: AppId): Promise<void>;
   /** Where a placed app's build stands, read off its record every time. */
@@ -285,7 +289,7 @@ const withBuildTracking = (
     ...config,
     screen: {
       assemble: async (input, ctx) => {
-        beginBuild(input.appId);
+        beginBuild(input.appId, ctx.principal.subject);
         try {
           return await screen.assemble(input, ctx);
         } finally {
