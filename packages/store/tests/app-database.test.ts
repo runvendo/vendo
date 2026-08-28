@@ -241,6 +241,21 @@ describe("app database — Grace cannot reach Ada's rows", () => {
     ]) expect(await refused(GRACE, attack)).toContain("is not something an app's database does");
   });
 
+  // The fence rides with the NAME, so it is the same fence wherever the name
+  // appears — there is no "outside a join" for it to be weaker in. Proven in
+  // every position a table reference can take.
+  it("holds the same in a join, a CTE, a subquery and a UNION arm", async () => {
+    await run(GRACE, "SELECT * FROM mine.secrets"); // Grace's own table exists
+    await run(GRACE, "INSERT INTO mine.secrets (id, body) VALUES ('s1', 'grace only')");
+    for (const shape of [
+      "SELECT a.body FROM mine.secrets a JOIN mine.secrets b ON a.id = b.id",
+      "WITH t AS (SELECT body FROM mine.secrets) SELECT * FROM t",
+      "SELECT body FROM mine.secrets WHERE id IN (SELECT id FROM mine.secrets)",
+      "SELECT body FROM mine.secrets UNION SELECT body FROM mine.secrets",
+      "SELECT (SELECT body FROM mine.secrets LIMIT 1) AS body",
+    ]) expect((await run(GRACE, shape)).rows).toEqual([{ body: "grace only" }]);
+  });
+
   it("still sees nothing when Grace names Ada's subject in her own SQL", async () => {
     // There is no field for a subject and no address for one. The closest a
     // statement can come is putting it in a string, which is just a string.

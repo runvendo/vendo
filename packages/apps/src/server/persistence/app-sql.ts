@@ -128,11 +128,15 @@ export const createAppSql = (db: AppDatabase): AppSqlAccess => {
 
       // The two questions that have to be answered BEFORE the statement runs:
       // is a qualifier really a schema, and is this person's copy of the app's
-      // schema behind? Both are reads, so they ride one batch of their own.
+      // schema behind? Both are reads, so they ride one batch of their own —
+      // and that batch is a whole extra round trip, which on Cloud is a whole
+      // extra HTTP hop, so it only happens when there is really something to
+      // ask. A `shared.`-only read with a table alias asks neither and goes
+      // straight out.
       const replay: SqlStatement[] = [];
       let top = 0;
-      if (guarded.mine || guarded.qualifiers.length > 0) {
-        const probe = db.dialect === "postgres" && guarded.qualifiers.length > 0;
+      const probe = db.dialect === "postgres" && guarded.qualifiers.length > 0;
+      if (guarded.mine || probe) {
         const prelude: SqlStatement[] = [
           ...META.map((sql) => own(sql)),
           ...(probe ? [own(SCHEMAS, guarded.qualifiers)] : []),

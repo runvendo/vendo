@@ -120,6 +120,40 @@ describe("a read-graded call through apps.call takes the derived-id query arm", 
     expect(calls[0]?.id).not.toMatch(/^call_q_/);
   });
 
+  // `vendo_apps_sql` is ONE tool over statements that read and statements that
+  // write, so its AUTHORED grade is the pessimistic `write` and the real grade
+  // is the statement's (`AppsRuntime.agentToolRisk` → `sqlRisk`). Without the
+  // regrade, a screen bound to `useToolQuery` would take the action arm and get
+  // a fresh uuid on every refetch — the exact loop this whole file exists for.
+  it("regrades a SELECT through vendo_apps_sql onto the query arm", async () => {
+    const calls: ToolCall[] = [];
+    const { store, runtime } = setup(recordingTools(calls));
+    await seedAppRow(engineOverAdapter(store), app("app_sql"), "user_ada");
+    const ctx = context("user_ada");
+    const args = { appId: "app_sql", sql: "SELECT * FROM mine.todos" };
+
+    await runtime.call("app_sql", "vendo_apps_sql", args, ctx);
+    await runtime.call("app_sql", "vendo_apps_sql", args, ctx);
+
+    expect(calls).toHaveLength(2);
+    expect(calls[0]?.id).toBe(calls[1]?.id);
+    expect(calls[0]?.id).toMatch(/^call_q_[0-9a-f]{32}$/);
+  });
+
+  it("keeps a WRITING statement through vendo_apps_sql on the action arm", async () => {
+    const calls: ToolCall[] = [];
+    const { store, runtime } = setup(recordingTools(calls));
+    await seedAppRow(engineOverAdapter(store), app("app_sql"), "user_ada");
+    const ctx = context("user_ada");
+    const args = { appId: "app_sql", sql: "INSERT INTO mine.todos (id) VALUES (?)", params: ["t1"] };
+
+    await runtime.call("app_sql", "vendo_apps_sql", args, ctx);
+    await runtime.call("app_sql", "vendo_apps_sql", args, ctx);
+
+    expect(calls[0]?.id).not.toBe(calls[1]?.id);
+    expect(calls[0]?.id).not.toMatch(/^call_q_/);
+  });
+
   it("an ungraded tool keeps the action arm — only an authored read is a query", async () => {
     const calls: ToolCall[] = [];
     const tools: ToolRegistry = {
