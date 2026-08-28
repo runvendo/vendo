@@ -33,6 +33,27 @@ The demo host apps live under `examples/`.
 - UI-affecting changes need before/after screenshots in the PR.
 - Keep PRs focused; small is reviewable.
 
+## What happens to your PR
+
+Vendo is developed in a private monorepo that also holds the closed-source
+Cloud half, and the open-source half is projected out to this repo. Your change
+travels in two steps, and only the first one involves you.
+
+- **It is reviewed and merged here.** Your PR goes through this repo's merge
+  queue and shows as merged, because it is — there is no internal PR standing in
+  for it, and nothing closes your PR in place of merging it.
+- **It is then imported inward**, into the private repo, by a maintainer. This
+  needs nothing from you and leaves no trace on your PR.
+
+That second step is deliberately not automatic. An import writes to the private
+repo from a public source, so the maintainer who reviewed the change is the
+right person to decide when it crosses — not a timer.
+
+Maintainers: run the `upstream-import` workflow on `runvendo/vendo-cloud` via
+`workflow_dispatch`, passing this PR's number as the `pr` input. It lands on
+`oss/upstream-pr` and opens a PR there; nothing merges itself into the private
+repo.
+
 ## Releases
 
 Releases are tag-driven and CI-only: pushing a `v*` tag runs
