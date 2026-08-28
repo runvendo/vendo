@@ -19,14 +19,15 @@ name: Version Packages
 # needs no bypass: it is the one shape of this workflow that a tightening of main
 # cannot break, and the only credential it wants is an ordinary one.
 #
-# RELEASE_PAT (fine-grained, this repo only — Contents: read+write, Pull
-# requests: read+write, and NO admin or bypass) is required, not optional.
+# The credential is now the vendo-release-bot GitHub App (this repo and
+# vendo-web only — Contents: read+write, Pull requests: read+write, and NO admin
+# or bypass), minted per run from RELEASE_BOT_APP_ID and RELEASE_BOT_PRIVATE_KEY.
 # GitHub does not run workflows on branches or PRs pushed with the built-in
 # GITHUB_TOKEN, so a version PR opened under it gets zero checks: the four
 # required checks never report, the merge queue never takes it, and the PR sits
-# open forever looking healthy. Everything downstream — tagging, publishing —
-# waits on a merge that cannot happen, which is why its absence fails this job
-# loudly rather than leaving a notice in a green log.
+# open forever looking healthy — run 33125611079 left exactly that behind. An
+# App token does trigger them, and it cannot be stepped over the way a missing
+# secret can: create-github-app-token fails the job when either half is unset.
 #
 # The dispatch at the end is the whole publish automation. GitHub never triggers
 # a workflow from anything pushed with GITHUB_TOKEN, so the tag push alone
@@ -52,13 +53,18 @@ jobs:
     if: github.repository == 'runvendo/vendo'
     runs-on: ubuntu-latest
     steps:
+      - id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          app-id: ${{ secrets.RELEASE_BOT_APP_ID }}
+          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0
-          # The PAT has to be here too, not just on the action: changesets/action
-          # pushes the version branch with a plain `git push`, so it uses the
-          # credentials checkout persists.
-          token: ${{ secrets.RELEASE_PAT || secrets.GITHUB_TOKEN }}
+          # The App token has to be here too, not just on the action:
+          # changesets/action pushes the version branch with a plain `git push`,
+          # so it uses the credentials checkout persists.
+          token: ${{ steps.app-token.outputs.token }}
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
@@ -80,7 +86,7 @@ jobs:
           commit: "chore: version packages"
           title: "chore: version packages"
         env:
-          GITHUB_TOKEN: ${{ secrets.RELEASE_PAT || secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
 
       # THE 0.x CEILING — deliberate, not a bug. Vendo does not ship 1.0.0 until
       # Yousef says so, and lifting this ceiling is his call alone: delete this
@@ -99,7 +105,7 @@ jobs:
       - name: Guard the 0.x ceiling
         if: steps.changesets.outputs.pullRequestNumber != ''
         env:
-          GH_TOKEN: ${{ secrets.RELEASE_PAT || secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           PR: ${{ steps.changesets.outputs.pullRequestNumber }}
         run: |
           set -euo pipefail
@@ -129,26 +135,19 @@ jobs:
       # directly. It sits AFTER the 0.x guard on purpose: a version PR that
       # crossed the ceiling must never be armed.
       #
-      # RELEASE_PAT, and only RELEASE_PAT, for both halves of the same rule.
-      # Without it the version PR gets no checks at all, so required checks never
-      # report and auto-merge waits forever; and the merge it eventually performs
-      # is attributed to whoever armed it, so a GITHUB_TOKEN merge would land on
-      # main without re-triggering this workflow — no tag, no publish. Stepping
-      # over a missing secret here is precisely what a green run that releases
-      # nothing looks like, so it fails instead.
+      # The App token, and only it, for both halves of the same rule. Under
+      # GITHUB_TOKEN the version PR gets no checks at all, so required checks
+      # never report and auto-merge waits forever; and the merge it eventually
+      # performs is attributed to whoever armed it, so a GITHUB_TOKEN merge would
+      # land on main without re-triggering this workflow — no tag, no publish.
+      #
+      # Re-arming an armed PR is a no-op, so this is safe on every push.
       - name: Arm auto-merge on the version PR
         if: steps.changesets.outputs.pullRequestNumber != ''
         env:
-          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           PR: ${{ steps.changesets.outputs.pullRequestNumber }}
-        run: |
-          set -euo pipefail
-          if [ -z "${GH_TOKEN:-}" ]; then
-            echo "::error::RELEASE_PAT is not set, so PR #$PR was opened by GITHUB_TOKEN and GitHub will run no checks on it at all. Its required checks can never report, the merge queue can never take it, and nothing can ever be released. Mint the PAT described at the top of this file — this is not a transient failure."
-            exit 1
-          fi
-          # Re-arming an armed PR is a no-op, so this is safe on every push.
-          gh pr merge "$PR" --auto --squash
+        run: gh pr merge "$PR" --auto --squash
 
       # UNGATED, and the remote's tags are what it decides on — not whether this
       # run versioned anything. That is what makes every push to main a retry of
@@ -201,9 +200,9 @@ jobs:
           git tag "$tag" "$GITHUB_SHA"
           # The URL alone was NOT enough, and v0.38.0 proved it: actions/checkout
           # persists its credential as `http.https://github.com/.extraheader:
-          # AUTHORIZATION: basic <RELEASE_PAT>`, and that header BEATS basic auth
-          # embedded in the URL — git sends both, GitHub honours the header. So
-          # the tag went up as yousefh409 and fired `push: tags` anyway. Emptying
+          # AUTHORIZATION: basic <checkout's token>`, and that header BEATS basic
+          # auth embedded in the URL — git sends both, GitHub honours the header.
+          # So the tag went up as a real identity and fired `push: tags`. Emptying
           # the header for this one command is what actually forces the URL's
           # token; the config itself is left alone for every other git call.
           git -c http.https://github.com/.extraheader= push "$TAG_PUSH_URL" "refs/tags/$tag"

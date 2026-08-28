@@ -122,32 +122,36 @@ jobs:
   # own without claiming the publish failed — the publish really did succeed,
   # and the packages really are on npm.
   #
-  # GITHUB_TOKEN is scoped to this repo alone, so this needs its own cross-repo
-  # credential; without it the job says so and stops green, because a missing
-  # optional secret is not a failure.
+  # GITHUB_TOKEN is scoped to this repo alone, so this mints a vendo-release-bot
+  # App token narrowed to vendo-web. vendo-web's vendoai-bump-merge workflow
+  # gates on the PR's author, so the identity opening it is a contract: change
+  # the credential here and change BUMP_AUTHOR there in the same breath.
   bump-console:
     needs: publish
     if: github.event_name == 'push' || inputs.publish
     runs-on: ubuntu-latest
     # Narrower than the workflow default: this job reads this repo and talks to
-    # vendo-web with VENDO_WEB_PAT. It publishes nothing, so it has no business
+    # vendo-web with an App token. It publishes nothing, so it has no business
     # holding the OIDC token that `publish` mints npm credentials with.
     permissions:
       contents: read
     steps:
+      - id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          app-id: ${{ secrets.RELEASE_BOT_APP_ID }}
+          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+          owner: runvendo
+          repositories: vendo-web
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
       - name: Open the vendo-web dep bump PR
         env:
-          GH_TOKEN: ${{ secrets.VENDO_WEB_PAT }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           set -euo pipefail
-          if [ -z "$GH_TOKEN" ]; then
-            echo "::notice::VENDO_WEB_PAT is not set — skipping the vendo-web bump PR"
-            exit 0
-          fi
           version=$(node -p "require('./packages/vendo/package.json').version")
           # EVERY package the bump will pin, not just the umbrella. The lockstep
           # group is exactly the public packages carrying this version, so
