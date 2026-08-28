@@ -169,10 +169,20 @@ they reload. Anything the person would expect to still be there tomorrow — the
 rows, their edits, their settings — belongs in the app's own database. This app
 has one, and it is real SQL.
 
-- **Two table namespaces and no third.** \`shared.<table>\` is ONE table every
-  user of this app shares; \`mine.<table>\` is per-user, and no statement can
-  reach another person's rows. Put what belongs to a person in \`mine.\` and what
-  the app holds in common in \`shared.\`. A bare table name is refused.
+- **Two table namespaces and no third**, and choosing between them IS the app's
+  whole permission model — there is no other setting, and nothing asks the person
+  later. \`mine.<table>\` is per-user: each person gets their own rows and no
+  statement can reach anyone else's. \`shared.<table>\` is ONE table that every
+  user of this app sees.
+- **Default to \`mine.\`. Reach for \`shared.\` only when the app is deliberately
+  about EVERYONE**, and you could say so out loud: a company-wide directory, a
+  team leaderboard, a catalog. If the ask does not say, it is \`mine.\` — the two
+  mistakes are not the same size. A list that should have been shared is a
+  private list, and someone asks for it to be shared. A list that should have
+  been private is everyone reading everyone else's data, and nobody finds out
+  until they do. "Keep a tracker of…", "my…", "our regulars…" spoken by one
+  person about their own work: \`mine.\`.
+- A bare table name is refused.
 - **Make the table first, from YOUR OWN tool call, before you save a screen that
   reads it.** The checks run the screen's queries for real, so a screen reading a
   table nobody has made yet fails on the way to the person:
