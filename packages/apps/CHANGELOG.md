@@ -1,5 +1,67 @@
 # @vendoai/apps
 
+## 0.54.0
+
+### Minor Changes
+
+- 5e956c5: **One SQL database per app, and the app-data family is deleted.**
+
+  A generated app now keeps its data in a real SQL database of its own, reached
+  through one agent tool — `vendo_apps_sql`, which runs one statement and whose
+  description states the live dialect. Two table namespaces are the entire
+  permission model: `shared.<table>` is one table every user of the app shares,
+  and `mine.<table>` is per-user. A bare table name is refused with what
+  happened, why, and the fix.
+
+  `mine.` is enforced at the DOOR and never by generated SQL: `mine.x` becomes a
+  physical table of that person's own, named with a character no identifier the
+  grammar admits can contain, so one person's tables have no spelling in
+  another's SQL. Every statement runs with `search_path` set to the app's own
+  schema, so a name that arrives unqualified resolves inside the app or nowhere.
+  Ordinary SQL keeps ordinary meaning — a `PRIMARY KEY` is unique per person, a
+  `UNIQUE` is per person, and a join is a join.
+
+  New adapter slot `createVendo({ appDatabase })`, standard adapter rule: an
+  explicitly passed adapter always wins. Unset, every app gets its own fenced
+  schema inside the Postgres the host already wired — ZERO new configuration. A
+  store with no SQL handle composes no adapter and the tool is not offered.
+
+  **Deleted, whole:** the `vendo_apps_data_list` / `_put` / `_delete` tools, the
+  `storage` declaration on `AppDocument` (`StorageDecl`) and its allow-list gate,
+  `StoreOps["appData"]` and `AppDataTarget`, the `app:<id>:<collection>` record
+  and blob namespaces, the 256 KB record and 5 MB file caps, and the app-data
+  owner backfill. Migration is fix-forward: chat-built apps could never save
+  through the old path, and its blob half had no callers. The `appData.*` wire
+  paths keep their RETIRED slots so the `/status` op levels still point at the
+  ops they always pointed at; nothing serves them and they answer 501.
+
+  Three isolation hazards die with that path: the unowned façade that gave every
+  user one shared drawer on a store with no ops surface, `hostedStore`'s
+  `owner: "user_local"` default that put a whole multi-user deployment in one
+  drawer, and the un-allowlisted `ops.blobs` namespace that let a caller write
+  into another owner's app files.
+
+### Patch Changes
+
+- 5e956c5: **The app SQL guard's reserved names now bind an identifier, not a spelling of
+  one.**
+
+  The deny rules ran in the bare-identifier branch alone, so every reserved family
+  was admitted behind two quote characters: `query_to_xml` was refused and
+  `"query_to_xml"` ran. That function is `PUBLIC`-executable, takes a whole SQL
+  string and runs it as whoever the connection is — the host's own store role —
+  and `search_path` cannot fence it, because `pg_catalog` is always implicitly
+  searched. Every catalog name the guard knows about was reachable the same way,
+  which defeated the `mine.`/`shared.` boundary outright.
+
+  Quoted, unquoted, mixed case, partially quoted and `pg_catalog.`-prefixed now
+  refuse alike, and the refusal names the family rather than the grammar. The
+  quoted identifiers an app legitimately writes are untouched: a column named
+  `"order"`, a quoted alias, and a table name it wants case-folded all still run.
+
+- Updated dependencies [5e956c5]
+  - @vendoai/core@0.54.0
+
 ## 0.53.0
 
 ### Minor Changes
