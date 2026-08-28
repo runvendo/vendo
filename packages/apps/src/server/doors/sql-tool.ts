@@ -45,11 +45,15 @@ export const appSqlDescriptor = (dialect: SqlDialect): ToolDescriptor => ({
     $schema: "https://json-schema.org/draft/2020-12/schema",
     type: "object",
     properties: {
-      appId: { type: "string", minLength: 1 },
+      appId: {
+        type: "string",
+        minLength: 1,
+        description: "The app whose database this is. Leave it out from inside the app — it is already known.",
+      },
       sql: { type: "string", minLength: 1, description: "One SQL statement, with `?` where a parameter goes." },
       params: { type: "array", description: "One value per `?`, in order." },
     },
-    required: ["appId", "sql"],
+    required: ["sql"],
     additionalProperties: false,
   },
   // A SELECT is graded down to `read` per call by `AppsRuntime.agentToolRisk`,
@@ -77,11 +81,23 @@ export const runAppSql = async (
       + "every app), pass createVendo({ appDatabase }) yourself, or set VENDO_API_KEY for a Vendo Cloud database.",
     );
   }
-  const args = input(call.args, ["appId", "sql"], ["params"]);
+  // `appId` is OPTIONAL from inside a running app: `ctx.appId` is stamped by the
+  // platform when the app calls out (persistence/call.ts), so the app a screen
+  // belongs to is never something the screen has to name — and never something it
+  // can get wrong. An agent building one from outside that venue passes it.
+  const args = input(call.args, ["sql"], ["appId", "params"]);
+  const appId = (args.appId as string | undefined) ?? ctx.appId;
+  if (appId === undefined) {
+    throw new VendoError(
+      "validation",
+      "This call names no app, and it did not come from inside one. Pass appId — the id of the app whose database "
+      + "you mean.",
+    );
+  }
   if (args.params !== undefined && !Array.isArray(args.params)) {
     throw new VendoError("validation", "params must be an array — one value per `?` in the statement, in order.");
   }
-  const app = await dependencies.requireOwned(args.appId as string, ctx);
+  const app = await dependencies.requireOwned(appId, ctx);
   const answer = await sql.run(
     app.id,
     ctx.principal.subject,

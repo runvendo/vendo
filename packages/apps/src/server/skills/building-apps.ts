@@ -78,6 +78,11 @@ that parses.
 - **Call the query once** only when a tool declares no output schema, or when the
   actual values matter (what a status string really says, whether an amount is in
   cents or dollars).
+- **If they expect it to still be there when they come back, save it.** A
+  tracker, a list they add to, anything they edit — that is the app's own
+  database (\`vendo_apps_sql\`, in \`format.md\`), not \`useState\`. A screen that
+  seeds state from a hardcoded array looks finished and forgets everything on
+  reload, and the person finds out after they have typed their data in.
 - **A hole is a \`<Disclaimer>\`.** Where this product cannot serve part of the
   ask, say that in one sentence and build nothing around it. Never a placeholder
   part, never an empty card standing in for a feature, never a chart of zeros.

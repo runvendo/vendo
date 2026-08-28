@@ -10,6 +10,8 @@
  * exist, which is what lets it move to the paint seam.
  */
 import type { JsonSchema } from "@vendoai/core";
+import { VENDO_APPS_SQL_TOOL } from "../doors/sql-tool.js";
+import { sqlRisk } from "../persistence/app-sql-guard.js";
 import type {
   NormalizedCatalog,
   VendoRouteMap,
@@ -41,6 +43,23 @@ export interface HostToolInfo {
  *  {@link HostToolInfo}, so the two readers share one definition. */
 export const isMutatingTool = (tool: HostToolInfo | undefined): boolean =>
   tool?.risk === "write" || tool?.risk === "destructive";
+
+/** The SAME question, asked of the STATEMENT rather than of the tool.
+ *
+ *  `vendo_apps_sql` is ONE tool over statements that read and statements that
+ *  write, so its authored grade is the pessimistic `write` — which would leave a
+ *  screen unable to load its own rows on first paint, because `useQuery` refuses
+ *  a mutating tool. The runtime already regrades every call by its statement
+ *  (`AppsRuntime.agentToolRisk` → `sqlRisk`); this asks the identical question
+ *  HERE, where a query's input is a literal written out in the file, so the
+ *  authoring surface and the running one cannot disagree about what a SELECT is.
+ *  Anything not resolvable falls back to the authored grade, which stays
+ *  pessimistic. */
+export const isMutatingQuery = (tool: HostToolInfo | undefined, input: unknown): boolean => {
+  if (tool?.name !== VENDO_APPS_SQL_TOOL) return isMutatingTool(tool);
+  const sql = (input as { sql?: unknown } | undefined)?.sql;
+  return typeof sql !== "string" || sqlRisk(sql) !== "read";
+};
 
 /**
  * The host surface a check measures against.

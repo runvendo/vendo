@@ -62,7 +62,8 @@ import {
   type InertControl,
   type ScreenErrorKind,
 } from "../../contract/genui/component/index.js";
-import { isMutatingTool, type HostToolInfo } from "./deps.js";
+import { isMutatingQuery, isMutatingTool, type HostToolInfo } from "./deps.js";
+import { VENDO_APPS_SQL_TOOL } from "../doors/sql-tool.js";
 import { catalogIssues, factIssueLine, kitNestingIssues, routeIssues } from "./facts.js";
 import { sampleLines } from "./reviewer.js";
 import { list, QUERY_HOOK } from "./screen-typecheck.js";
@@ -445,7 +446,8 @@ const scan = (moduleSource: string, source: string, tools: readonly HostToolInfo
   }
 
   const known = tools.map((tool) => tool.name);
-  const readable = tools.filter((tool) => !isMutatingTool(tool)).map((tool) => tool.name);
+  const readable = tools.filter((tool) => !isMutatingTool(tool) || tool.name === VENDO_APPS_SQL_TOOL)
+    .map((tool) => tool.name);
   const byName = new Map(tools.map((tool) => [tool.name, tool]));
 
   // (a) the two constructs whose compiled form depends on which toolchain ran.
@@ -539,8 +541,14 @@ const scanQuery = (
       : `${QUERY_HOOK}("${literal}") names unknown tool "${literal}"; the host tools are: ${list(context.known)}`));
     return;
   }
-  if (isMutatingTool(tool)) {
-    context.issues.push(issue("query-tool", `${QUERY_HOOK}("${literal}") reads with a tool that CHANGES things (risk "${tool.risk}") — a query runs on every render, so this would write every time the screen paints. Call it from a handler as tools.${literal}({ … }), and read with one of: ${list(context.readable)}.`));
+  // `literalValue` answers a {ok, value} wrapper, not the value: a query whose
+  // input is COMPUTED cannot be graded before it runs, so it stays mutating and
+  // is refused — which is the honest answer for a statement nobody can read yet.
+  const asked = input === undefined ? undefined : literalValue(input);
+  if (isMutatingQuery(tool, asked?.ok === true ? asked.value : undefined)) {
+    context.issues.push(issue("query-tool", tool.name === VENDO_APPS_SQL_TOOL
+      ? `${QUERY_HOOK}("${literal}") runs a statement that CHANGES things — a query runs on every render, so this would write every time the screen paints. A SELECT is a query; everything else goes in a handler as tools.${literal}({ … }). The statement must also be written out literally here, not computed.`
+      : `${QUERY_HOOK}("${literal}") reads with a tool that CHANGES things (risk "${tool.risk}") — a query runs on every render, so this would write every time the screen paints. Call it from a handler as tools.${literal}({ … }), and read with one of: ${list(context.readable)}.`));
     return;
   }
   if (extra.length > 0) {

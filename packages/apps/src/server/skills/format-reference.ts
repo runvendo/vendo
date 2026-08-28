@@ -162,8 +162,42 @@ Those two imports are everything there is. Nothing else can be loaded.
 - A style that fetches (\`url(…)\`) is dropped.
 - \`key={…}\` on every row you \`.map\`.
 
+## Saving — \`vendo_apps_sql\`
+
+\`useState\` holds what is on the screen right now, and it is gone the moment
+they reload. Anything the person would expect to still be there tomorrow — their
+rows, their edits, their settings — belongs in the app's own database. This app
+has one, and it is real SQL.
+
+- **Two table namespaces and no third.** \`shared.<table>\` is ONE table every
+  user of this app shares; \`mine.<table>\` is per-user, and no statement can
+  reach another person's rows. Put what belongs to a person in \`mine.\` and what
+  the app holds in common in \`shared.\`. A bare table name is refused.
+- **Make the table first, from YOUR OWN tool call, before you save a screen that
+  reads it.** The checks run the screen's queries for real, so a screen reading a
+  table nobody has made yet fails on the way to the person:
+  \`tools.vendo_apps_sql({ appId: "<the app's id>", sql: "CREATE TABLE IF NOT EXISTS mine.pets (id TEXT PRIMARY KEY, name TEXT, born TEXT)" })\`.
+- **Read on first paint with \`useQuery\`**, like any other read — and leave
+  \`appId\` OUT, because the screen already knows which app it is:
+  \`const pets = useQuery("vendo_apps_sql", { sql: "SELECT * FROM mine.pets" })\`.
+  That input is LITERAL, written out in the file. It answers
+  \`{ columns, rows, rowCount }\`, so the rows are \`pets.data?.rows ?? []\`.
+- **Write from a handler**, never during render:
+  \`tools.vendo_apps_sql({ sql: "INSERT INTO mine.pets (id, name, born) VALUES (?, ?, ?)", params: [id, name, born] })\`.
+  Every \`useQuery\` re-runs after it, so never patch state to mirror the write.
+- **Every value goes in \`params\`, with \`?\` where it belongs in the statement.**
+  Never paste a person's text into the SQL itself — an apostrophe alone breaks it.
+- One statement per call. SELECT, INSERT, UPDATE, DELETE, CREATE TABLE, ALTER
+  TABLE, DROP TABLE.
+- Prefer SQL that reads the same on SQLite and Postgres — \`TEXT\`, \`INTEGER\`,
+  \`REAL\`, \`PRIMARY KEY\`, ordinary joins. An app can move between the two, and
+  the plain subset travels where a vendor-specific type or function does not.
+
 ## State — \`useState\`
 
+- State is for what the screen is doing NOW — what is typed, what is open, what
+  is selected. What the person expects to KEEP goes in the database above, not
+  here: a \`useState\` seeded from a hardcoded array is an app that forgets.
 - Inputs are controlled: \`value={x}\` with \`onChange={(e) => setX(e.target.value)}\`,
   and \`value\` must read STATE you set in that same handler. A \`value\` taken off
   query data — \`value={row.status}\` — with no \`setX\` behind it snaps back to the

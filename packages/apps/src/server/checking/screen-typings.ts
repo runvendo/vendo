@@ -43,6 +43,7 @@ import {
 } from "../../contract/index.js";
 import type { ZodTypeAny } from "zod";
 import { zodShape } from "../../contract/kit/zod-shape.js";
+import { VENDO_APPS_SQL_TOOL } from "../doors/sql-tool.js";
 import { isMutatingTool, type HostToolInfo } from "./deps.js";
 
 /**
@@ -744,7 +745,13 @@ export function componentScreenTypings(input: ComponentScreenTypingsInput): stri
     lines.push(`  export const ${name}: (props: ${propsText}) => JSX.Element;`);
   }
 
-  const overloads = input.tools.filter((tool) => !isMutatingTool(tool)).map((tool) => {
+  // `vendo_apps_sql` is queryable even though its authored grade is `write`: the
+  // grade of a CALL is its statement's, and a SELECT is a read. Offering it here
+  // is what lets a screen load its own rows on first paint; `scanQuery` resolves
+  // each call's literal and refuses the ones that really do change things.
+  const overloads = input.tools
+    .filter((tool) => !isMutatingTool(tool) || tool.name === VENDO_APPS_SQL_TOOL)
+    .map((tool) => {
     const { text, required } = toolInputText(tool, at(note, `useQuery("${tool.name}") input`));
     // `Partial`, because a read whose input the screen COMPUTES has no answer on
     // the first paint: the VM hands back `{ data: undefined }` there and the host
