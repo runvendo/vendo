@@ -285,6 +285,80 @@ describe("app database — a read that comes back through a different handle", (
   });
 });
 
+describe("app database — a read costs nothing", () => {
+  // The Cloud lane measured the pathology: replaying the schema log MAKES this
+  // person's tables, so doing it for a plain SELECT meant everyone who merely
+  // OPENED an app paid for a full set. Table count must track writers.
+  it("does not materialise a table for someone who only reads it", async () => {
+    await run(ADA, "CREATE TABLE mine.todos (id TEXT PRIMARY KEY, title TEXT)");
+    await run(ADA, "INSERT INTO mine.todos (id, title) VALUES ('t1', 'ada')");
+    const before = await postgresAppDatabase(store)!.tables(APP);
+
+    const seen = await run(GRACE, "SELECT * FROM mine.todos");
+    expect(seen.rows).toEqual([]);
+    expect(await postgresAppDatabase(store)!.tables(APP)).toEqual(before);
+
+    // Writing DOES materialise, and the schema is the app's.
+    await run(GRACE, "INSERT INTO mine.todos (id, title) VALUES ('g1', 'grace')");
+    expect((await run(GRACE, "SELECT title FROM mine.todos")).rows).toEqual([{ title: "grace" }]);
+    expect(await postgresAppDatabase(store)!.tables(APP)).toHaveLength(before.length + 1);
+  });
+
+  it("still names a table nobody ever created, rather than answering empty", async () => {
+    await run(ADA, "CREATE TABLE mine.todos (id TEXT PRIMARY KEY)");
+    expect(await refused(GRACE, "SELECT * FROM mine.nope")).toContain("mine.nope does not exist");
+  });
+});
+
+describe("app database — anonymous becomes signed in", () => {
+  const ANON = "anon_9f2";
+
+  it("moves the tables an anonymous session holds onto the account", async () => {
+    await run(ANON, "CREATE TABLE mine.cart (sku TEXT PRIMARY KEY, qty INTEGER)");
+    await run(ANON, "INSERT INTO mine.cart (sku, qty) VALUES ('mug', 2)");
+    await sql.adopt(APP, ANON, ADA);
+    expect((await run(ADA, "SELECT sku, qty FROM mine.cart")).rows).toEqual([{ sku: "mug", qty: 2 }]);
+    expect((await run(ANON, "SELECT * FROM mine.cart")).rows).toEqual([]);
+  });
+
+  it("merges when the account already holds that table, and never loses a row it had", async () => {
+    await run(ADA, "CREATE TABLE mine.cart (sku TEXT PRIMARY KEY, qty INTEGER)");
+    await run(ADA, "INSERT INTO mine.cart (sku, qty) VALUES ('mug', 1)");
+    await run(ANON, "INSERT INTO mine.cart (sku, qty) VALUES ('mug', 99)");
+    await run(ANON, "INSERT INTO mine.cart (sku, qty) VALUES ('pen', 5)");
+
+    await sql.adopt(APP, ANON, ADA);
+    // The signed-in row wins its key; the anonymous row that does not collide
+    // is carried across.
+    expect((await run(ADA, "SELECT sku, qty FROM mine.cart ORDER BY sku")).rows)
+      .toEqual([{ sku: "mug", qty: 1 }, { sku: "pen", qty: 5 }]);
+  });
+
+  it("costs one statement when the anonymous session only ever read", async () => {
+    await run(ADA, "CREATE TABLE mine.cart (sku TEXT PRIMARY KEY)");
+    await run(ANON, "SELECT * FROM mine.cart");
+    const before = await postgresAppDatabase(store)!.tables(APP);
+    await sql.adopt(APP, ANON, ADA);
+    expect(await postgresAppDatabase(store)!.tables(APP)).toEqual(before);
+  });
+});
+
+describe("app database — the table ceiling counts LOGICAL tables", () => {
+  it("does not fall as users arrive", async () => {
+    const capped = createAppSql({ ...postgresAppDatabase(store)!, maxTables: 2 });
+    await capped.run(APP, ADA, "CREATE TABLE mine.a (id TEXT PRIMARY KEY)");
+    await capped.run(APP, ADA, "CREATE TABLE shared.b (id TEXT PRIMARY KEY)");
+    // A second and third person holding `mine.a` is still ONE logical table —
+    // ported naively onto physical rows, this app would be dead at seven users.
+    await capped.run(APP, GRACE, "INSERT INTO mine.a (id) VALUES ('g')");
+    await capped.run(APP, "user_third", "INSERT INTO mine.a (id) VALUES ('t')");
+    expect(await capped.run(APP, GRACE, "SELECT id FROM mine.a")).toMatchObject({ rows: [{ id: "g" }] });
+
+    await expect(capped.run(APP, ADA, "CREATE TABLE mine.c (id TEXT PRIMARY KEY)"))
+      .rejects.toThrow(/already has its 2 tables/);
+  });
+});
+
 describe("app database — the erase cascade", () => {
   beforeEach(async () => {
     await run(ADA, "CREATE TABLE mine.rows (id TEXT PRIMARY KEY)");

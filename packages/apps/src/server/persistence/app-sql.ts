@@ -21,7 +21,7 @@ import {
   type SqlResult,
   type SqlStatement,
 } from "@vendoai/core";
-import { guardSql, mineTable, replayFor, templateOf, unnamespaced } from "./app-sql-guard.js";
+import { guardSql, mineTable, replayFor, sqlRisk, templateOf, unnamespaced } from "./app-sql-guard.js";
 
 /** Which person's copy of a `mine.` table. A digest and not the subject itself
     because a subject is the host's own user id in the host's own spelling —
@@ -96,22 +96,52 @@ export interface AppSqlAccess {
   forget(appId: string, subject: string): Promise<void>;
   /** Erase cascade, app leg. */
   drop(appId: string): Promise<void>;
+  /**
+   * Anonymous → signed-in. `mine.` is a table per person, so adoption MOVES
+   * TABLES rather than rewriting an owner column: each table `from` holds is
+   * renamed onto `to`, and `to` inherits the schema watermark.
+   *
+   * The collision — signed in, then anonymous, then signed in again, so `to`
+   * already holds that table — is settled by MERGE, and by the rule that the
+   * signed-in account never loses a row it already had: the anonymous rows that
+   * do not collide are carried across, the ones that do are dropped, and the
+   * anonymous copy goes. Refusing instead would strand the work the person just
+   * did behind an error nobody can act on.
+   */
+  adopt(appId: string, from: string, to: string): Promise<void>;
 }
 
 export const createAppSql = (db: AppDatabase): AppSqlAccess => {
   const own = spell(db.dialect);
   const cascade = db.dialect === "postgres" ? " CASCADE" : "";
 
-  /** The missing-table error, turned into the one sentence that fixes it. */
-  const explain = async (appId: string, owner: string, error: unknown): Promise<never> => {
+  /** Every logical table the app has, however many people hold a copy. */
+  const logical = (tables: readonly string[]): Set<string> => new Set(tables.flatMap((table) =>
+    table.startsWith("s:") ? [table.slice(2)]
+      : table.startsWith("m:") ? [table.slice(table.indexOf(":", 2) + 1)]
+        : []));
+
+  /** The missing-table error, turned into the one sentence that fixes it — or,
+      for a read that deliberately did not materialise, into the empty answer
+      that is the truth about a table this person has never written to. */
+  const explain = async (
+    appId: string,
+    owner: string,
+    error: unknown,
+    reading: boolean,
+  ): Promise<SqlResult> => {
     const found = MISSING.exec(error instanceof Error ? error.message : String(error));
     if (found === null) throw error;
     const missing = (found[1] ?? found[2]) as string;
     const said = spoken(missing, owner);
     if (said === undefined) unnamespaced(missing);
-    const held = (await db.tables(appId))
+    const tables = await db.tables(appId);
+    if (reading && missing.startsWith("m:") && logical(tables).has(missing.slice(missing.indexOf(":", 2) + 1))) {
+      return { columns: [], rows: [], rowCount: 0 };
+    }
+    const held = [...new Set((tables)
       .map((table) => spoken(table, owner))
-      .filter((name): name is string => name !== undefined);
+      .filter((name): name is string => name !== undefined))];
     throw new VendoError(
       "not-found",
       `${said} does not exist. Every table lives in shared. (all users) or mine. (per-user), and this app has `
@@ -133,14 +163,33 @@ export const createAppSql = (db: AppDatabase): AppSqlAccess => {
       // extra HTTP hop, so it only happens when there is really something to
       // ask. A `shared.`-only read with a table alias asks neither and goes
       // straight out.
+      // A READ never MATERIALISES. Replaying the schema log creates this
+      // person's tables, and doing that for a plain SELECT means everyone who
+      // merely OPENS an app pays for a full set of tables — so table count
+      // tracked everyone who looked instead of everyone who wrote. A read of a
+      // `mine.` table this person has never written answers EMPTY, which is the
+      // true answer: they have no rows in it. (One narrow consequence, worth
+      // saying rather than hiding: a LEFT JOIN from a materialised table onto a
+      // never-touched one answers empty rather than the left rows.)
+      const materialise = guarded.mine && (guarded.ddl || sqlRisk(sql) !== "read");
+      if (db.maxTables !== undefined && /^\s*create\s+table/i.test(sql)) {
+        const held = logical(await db.tables(appId));
+        if (held.size >= db.maxTables) {
+          throw new VendoError(
+            "validation",
+            `This app already has its ${db.maxTables} tables (${[...held].sort().join(", ")}), so there is no room `
+            + "for another. Drop one it no longer needs, or put the new columns on a table it already has.",
+          );
+        }
+      }
       const replay: SqlStatement[] = [];
       let top = 0;
       const probe = db.dialect === "postgres" && guarded.qualifiers.length > 0;
-      if (guarded.mine || probe) {
+      if (materialise || probe) {
         const prelude: SqlStatement[] = [
           ...META.map((sql) => own(sql)),
           ...(probe ? [own(SCHEMAS, guarded.qualifiers)] : []),
-          ...(guarded.mine ? [own(PENDING, owner), own(TOP)] : []),
+          ...(materialise ? [own(PENDING, owner), own(TOP)] : []),
         ];
         const answers = await db.run(appId, prelude);
         if (probe) {
@@ -153,7 +202,7 @@ export const createAppSql = (db: AppDatabase): AppSqlAccess => {
             );
           }
         }
-        if (guarded.mine) {
+        if (materialise) {
           top = Number((answers.at(-1) as SqlResult).rows[0]?.["top"] ?? 0);
           for (const row of (answers.at(-2) as SqlResult).rows) {
             replay.push({ sql: replayFor(String(row["sql"]), owner) });
@@ -166,13 +215,14 @@ export const createAppSql = (db: AppDatabase): AppSqlAccess => {
         { sql: guarded.sql, ...(params === undefined ? {} : { params }) },
       ];
       const answerAt = statements.length - 1;
-      if (guarded.mine) {
+      if (materialise) {
         if (guarded.ddl) statements.push(own(RECORD, top + 1, templateOf(guarded.sql, owner)));
         statements.push(own(CAUGHT_UP, owner, guarded.ddl ? top + 1 : top));
       }
 
-      const answers = await db.run(appId, statements).catch((error: unknown) => explain(appId, owner, error));
-      const answer = answers[answerAt] as SqlResult;
+      const answers = await db.run(appId, statements)
+        .catch((error: unknown) => explain(appId, owner, error, !materialise));
+      const answer = Array.isArray(answers) ? answers[answerAt] as SqlResult : answers;
       return answer.rows.length > APP_SQL_MAX_ROWS
         ? { ...answer, rows: answer.rows.slice(0, APP_SQL_MAX_ROWS), truncated: true }
         : answer;
@@ -184,6 +234,55 @@ export const createAppSql = (db: AppDatabase): AppSqlAccess => {
       await db.run(appId, [
         ...held.map((table) => ({ sql: `DROP TABLE IF EXISTS "${table}"${cascade}` })),
         own('DELETE FROM "_vendo_owner" WHERE owner = ?', owner),
+      ]);
+    },
+
+    async adopt(appId, from, to) {
+      const [was, now] = [ownerDigest(from), ownerDigest(to)];
+      if (was === now) return;
+      const held = await db.tables(appId);
+      const mine = (owner: string): Map<string, string> => new Map(held
+        .filter((table) => table.startsWith(`m:${owner}:`))
+        .map((table) => [table.slice(table.indexOf(":", 2) + 1), table]));
+      const leaving = mine(was);
+      if (leaving.size === 0) {
+        // Nothing materialised — the common case now that a read never creates
+        // tables. One statement, and the anonymous watermark goes with it.
+        await db.run(appId, [own('DELETE FROM "_vendo_owner" WHERE owner = ?', was)]);
+        return;
+      }
+      // Both sides go to the head of the log FIRST: a merge does `SELECT *`, so
+      // the two copies have to be at the same schema level before either is
+      // touched, and the renamed tables carry whatever level they were at.
+      const [, , pendingWas, pendingNow, head] = await db.run(appId, [
+        ...META.map((sql) => own(sql)),
+        own(PENDING, was), own(PENDING, now), own(TOP),
+      ]);
+      const top = Number((head as SqlResult).rows[0]?.["top"] ?? 0);
+      // ONE path, not a rename for the fresh case and a merge for the collision.
+      // Catching the target up to head is what makes `SELECT *` parity true, and
+      // it necessarily creates the very tables a rename would have moved onto —
+      // so a rename can only ever collide with the catch-up that had to happen
+      // anyway. Mixing the two also leaves the watermark unable to tell the
+      // truth: it is one number per person, and a target that was renamed INTO
+      // without being caught up holds tables at two different schema levels.
+      const move = [...leaving.values()].flatMap((table) => {
+        const target = mineTable(now, table.slice(table.indexOf(":", 2) + 1));
+        return [
+          {
+            sql: db.dialect === "postgres"
+              ? `INSERT INTO "${target}" SELECT * FROM "${table}" ON CONFLICT DO NOTHING`
+              : `INSERT OR IGNORE INTO "${target}" SELECT * FROM "${table}"`,
+          },
+          { sql: `DROP TABLE "${table}"${cascade}` },
+        ];
+      });
+      await db.run(appId, [
+        ...(pendingWas as SqlResult).rows.map((row) => ({ sql: replayFor(String(row["sql"]), was) })),
+        ...(pendingNow as SqlResult).rows.map((row) => ({ sql: replayFor(String(row["sql"]), now) })),
+        ...move,
+        own(CAUGHT_UP, now, top),
+        own('DELETE FROM "_vendo_owner" WHERE owner = ?', was),
       ]);
     },
 

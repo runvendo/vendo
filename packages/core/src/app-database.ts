@@ -34,6 +34,13 @@ export interface SqlResult {
 
 export interface AppDatabase {
   readonly dialect: SqlDialect;
+  /** How many LOGICAL tables one app may hold — `shared.x` and `mine.x` each
+      count once, however many people hold a copy of the latter. Counted above
+      this seam for exactly that reason: a cap read off the physical rows in the
+      database would fall as users arrive, and an app with a handful of them
+      would go dead. Absent = uncapped (a host's own Postgres needs no ceiling);
+      a hosted implementation sets its own. */
+  readonly maxTables?: number;
   /**
    * Runs every statement, IN ORDER, inside ONE transaction against `appId`'s
    * own database, and answers with one result per statement. A throw rolls the
