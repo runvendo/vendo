@@ -11,8 +11,24 @@
  * by a predicate — so ordinary SQL keeps ordinary meaning: a PRIMARY KEY is
  * unique per person, a UNIQUE is per person, and a join is a join. The schema
  * they share is kept identical by a per-app DDL log that every person replays
- * exactly once, lazily, the first time they touch a `mine.` table after it
+ * exactly once, lazily, the first time they WRITE to a `mine.` table after it
  * changed.
+ *
+ * THE CEILING, stated honestly. Replay is per person, so one schema change
+ * costs work proportional to the people who hold that table, and each table an
+ * app adds makes every later change dearer. Measured on the Cloud rung: ~3 ms
+ * per person at 100 tables, ~323 ms at 3,000 — and on a single-threaded object
+ * that time lands on somebody's request. A read costs none of it (below), so
+ * the curve is indexed on WRITERS, not on everyone who opened the app, which is
+ * what keeps it small for a real one.
+ *
+ * Splitting an app across one database PER PERSON is NOT the way out, and the
+ * receipt is why: `shared.` and `mine.` would land in different databases, so
+ * `FROM mine.todos JOIN shared.tags` — first-class in the design — becomes
+ * unexpressible, one transaction can no longer span the batch, and the
+ * bookkeeping reads turn into unbounded fan-outs. The honest answer when this
+ * ceiling is reached is that a schema change on a big app IS a migration, and
+ * should be surfaced as one rather than hidden inside somebody's next click.
  */
 import { createHash } from "node:crypto";
 import {
@@ -78,7 +94,12 @@ const spoken = (physical: string, owner: string): string | undefined => {
   return physical.startsWith(mine) ? `mine.${physical.slice(mine.length)}` : undefined;
 };
 
-const MISSING = /relation "([^"]+)" does not exist|no such table:?\s*([\w:.-]+)/i;
+/** The two engines' ways of saying a table is not there. The sqlite capture is
+    colon-SEPARATED rather than colon-greedy on purpose: a physical name is
+    `m:<owner>:<table>`, and workerd's message is `no such table: <name>:
+    SQLITE_ERROR` — a class that simply allowed ":" swallows the trailing one
+    and the app is told `mine.todos: does not exist`. */
+const MISSING = /relation "([^"]+)" does not exist|no such table:?\s*([\w.-]+(?::[\w.-]+)*)/i;
 
 export interface AppSqlResult extends SqlResult {
   /** Set when the answer was cut to {@link APP_SQL_MAX_ROWS}. */

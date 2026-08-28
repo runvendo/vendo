@@ -359,6 +359,34 @@ describe("app database — the table ceiling counts LOGICAL tables", () => {
   });
 });
 
+describe("app database — what the OTHER engine's errors turn into", () => {
+  // Not a mocked counterparty: workerd's missing-table message is a fixed
+  // string of a foreign engine, and this pins the ONE place its exact shape
+  // reaches the person. It ends `<name>: SQLITE_ERROR` — a trailing colon — and
+  // a name-capture that simply allowed ":" swallowed it, so the flagship error
+  // read `mine.nope: does not exist`.
+  // The stub answers with the name it was ASKED for, exactly as workerd does,
+  // so the physical name in the message is the one the door really built.
+  const throwing = (): AppSqlAccess => createAppSql({
+    dialect: "sqlite",
+    run: (_app, statements) => Promise.reject(new Error(
+      `no such table: ${/"(m:[^"]+)"/.exec(statements.at(-1)!.sql)?.[1]}: SQLITE_ERROR`,
+    )),
+    tables: () => Promise.resolve(["s:tags", "m:0123456789abcdef0123:todos"]),
+    drop: () => Promise.resolve(),
+  });
+
+  it("says mine.nope, not mine.nope:", async () => {
+    await expect(throwing().run(APP, ADA, "SELECT * FROM mine.nope"))
+      .rejects.toThrow(/mine\.nope does not exist/);
+  });
+
+  it("names what the app really has alongside it", async () => {
+    await expect(throwing().run(APP, ADA, "SELECT * FROM mine.nope"))
+      .rejects.toThrow(/shared\.tags/);
+  });
+});
+
 describe("app database — the erase cascade", () => {
   beforeEach(async () => {
     await run(ADA, "CREATE TABLE mine.rows (id TEXT PRIMARY KEY)");
