@@ -188,31 +188,41 @@ export const EDIT_APP_TOOL = "edit_app";
 export const ESCALATE_TOOL = "escalate";
 
 /**
- * The two verbs that read an app which ALREADY EXISTS — on an EDIT and nowhere
- * else, because the loadout follows the task.
+ * The verb that reads an app which ALREADY EXISTS — on an EDIT and nowhere else,
+ * because the loadout follows the task.
  *
- * A fresh build's app is the file the run is about to write, so opening it or
- * listing its saved records can only answer `not-found`: two entries on a
- * ten-step menu whose one possible use is a step spent learning that. An edit
- * starts the other way round — the app already on the person's screen is the
- * thing being changed, so what it is showing is worth a step. Withheld from the
- * brief's button half too on a fresh build (`withheld` below): a screen cannot
- * offer to open an app nobody has made yet.
+ * A fresh build's app is the file the run is about to write, so opening it can
+ * only answer `not-found`: an entry on a ten-step menu whose one possible use is
+ * a step spent learning that. An edit starts the other way round — the app
+ * already on the person's screen is the thing being changed, so what it is
+ * showing is worth a step. Withheld from the brief's button half too on a fresh
+ * build (`withheld` below): a screen cannot offer to open an app nobody has made
+ * yet.
  *
- * NEITHER OF THESE READS THE SOURCE, and believing otherwise cost a whole
+ * `vendo_apps_sql` is NOT here, and its predecessor `vendo_apps_data_list` was:
+ * the names read alike and mean opposite things. Listing saved records was a read
+ * of an app nobody had made yet; the app's own DATABASE is BORN on the build that
+ * creates the app, and the manual says so in the imperative ("Make the table
+ * first, from YOUR OWN tool call" — `apps` skills/format-reference.ts) over a door
+ * taught that exact ordering (`doors/sql-tool.ts` `buildingFor`). Withheld here,
+ * the brief taught a call the loop had not been handed.
+ *
+ * IT DOES NOT READ THE SOURCE, and believing otherwise cost a whole
  * investigation: `vendo_apps_open` is the client's render door
  * (`apps` persistence/open.ts `paintedScreenSurface`) — it RE-RUNS the screen and
  * answers with the flattened tree plus the compiled module, deliberately, because
  * that is what a caller mounts. The `app.tsx` a run starts from reaches the model
  * as {@link ScreenInput.source} instead, and only for a remix.
  */
-const EDIT_TOOLS: readonly string[] = ["vendo_apps_open", "vendo_apps_sql"];
+const EDIT_TOOLS: readonly string[] = ["vendo_apps_open"];
 
 /**
  * The assembly verbs, by NAME rather than by risk.
  *
  * Names, because a grade is not this file's to lean on: host read tools come in
- * by risk below; these come in by name, and stay.
+ * by risk below; these come in by name, and stay. `vendo_apps_sql` is authored
+ * `write` (`apps` doors/sql-tool.ts), so the name is the only way it can arrive
+ * at all — a CREATE TABLE is a write, and the manual asks for one.
  *
  * `validate` comes OFF by name, for the mirror reason: it is graded `read` too, so
  * the risk half re-equips it unless something says not to (`NEVER_WIRED` below).
@@ -221,7 +231,7 @@ const EDIT_TOOLS: readonly string[] = ["vendo_apps_open", "vendo_apps_sql"];
  * at the end whether or not anybody asked. A model-facing verb on top of those two
  * buys nothing but steps off a ten-step budget.
  */
-const ASSEMBLY_TOOLS: readonly string[] = ["ask_user", ...EDIT_TOOLS];
+const ASSEMBLY_TOOLS: readonly string[] = ["ask_user", "vendo_apps_sql", ...EDIT_TOOLS];
 
 /**
  * Vendo's own machinery, which is never a button — and never a step here either
@@ -239,8 +249,8 @@ const ASSEMBLY_TOOLS: readonly string[] = ["ask_user", ...EDIT_TOOLS];
  * reason it kept being equipped as though it were.
  *
  * The `vendo_apps_*` verbs are deliberately NOT here: pinning an app, or opening
- * one that exists, is a real thing a person can want a button for — the two READS
- * are withheld on a fresh build by `EDIT_TOOLS`, which is a different claim.
+ * one that exists, is a real thing a person can want a button for — `vendo_apps_open`
+ * is withheld on a fresh build by `EDIT_TOOLS`, which is a different claim.
  */
 const NEVER_WIRED: readonly string[] = [VALIDATE_TOOL, "schedule", VENDO_SLOTS_LIST_TOOL];
 

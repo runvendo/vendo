@@ -252,7 +252,12 @@ export const createAppSql = (db: AppDatabase): AppSqlAccess => {
     async forget(appId, subject) {
       const owner = ownerDigest(subject);
       const held = (await db.tables(appId)).filter((table) => table.startsWith(`m:${owner}:`));
+      // The same prelude `run` carries, for the same reason: a subject-leg erase
+      // sweeps EVERY app, and the bookkeeping only exists in the ones where
+      // somebody materialised a `mine.` table. Without it the watermark delete
+      // dies on the first neighbour that was never opened.
       await db.run(appId, [
+        ...META.map((sql) => own(sql)),
         ...held.map((table) => ({ sql: `DROP TABLE IF EXISTS "${table}"${cascade}` })),
         own('DELETE FROM "_vendo_owner" WHERE owner = ?', owner),
       ]);

@@ -145,12 +145,14 @@ const askUser: ToolDescriptor = { ...readTool("ask_user", "write") };
  *  tool that called this loop. */
 const vendoMake: ToolDescriptor = { ...readTool("vendo_make") };
 
-/** The two verbs that reach an app that already exists — which is how they rode
- *  onto a FRESH build's loadout, where the app is the file the run has not
- *  written yet. Equipped by NAME and not by grade (screen-agent.ts EDIT_TOOLS),
- *  which is why `vendo_apps_sql` carries its authored `write` here. */
+/** The verb that reaches an app that already exists — which is how it rode onto a
+ *  FRESH build's loadout, where the app is the file the run has not written yet.
+ *  Withheld there by NAME and not by grade (screen-agent.ts EDIT_TOOLS). */
 const appsOpen: ToolDescriptor = { ...readTool("vendo_apps_open") };
-const appsDataList: ToolDescriptor = { ...readTool("vendo_apps_sql", "write") };
+/** The app's own database, on BOTH modes: a fresh build is where the schema is
+ *  born. Its authored grade is `write` (`apps` doors/sql-tool.ts), so carrying it
+ *  here is what proves ASSEMBLY_TOOLS equips it by name rather than by risk. */
+const appsSql: ToolDescriptor = { ...readTool("vendo_apps_sql", "write") };
 
 /** Machinery on the same `read` grade: WHERE a view goes is the caller's question,
  *  and a writer handed the verb is a writer handed the workshop. */
@@ -204,7 +206,7 @@ function harness(options: {
 }): Harness {
   const guard = testGuard(options.guardPolicy);
   const descriptors = options.tools
-    ?? [spendSummary, sendMoney, validate, askUser, vendoMake, appsOpen, appsDataList, slotsList];
+    ?? [spendSummary, sendMoney, validate, askUser, vendoMake, appsOpen, appsSql, slotsList];
   const toolArgs: Record<string, Json[]> = {};
   const registry = boundRegistry(
     Object.fromEntries(descriptors.map((descriptor) => [
@@ -314,32 +316,42 @@ describe("the loadout (§4.2 — assembly tools only)", () => {
     const screen = harness({ turns: [saveApp(GOOD_APP), textTurn("done")] });
     await screen.assemble("show me my spending");
 
-    // EXACTLY these four, hands included — a mutating host tool (`maple_pay`), the
+    // EXACTLY these five, hands included — a mutating host tool (`maple_pay`), the
     // front door that called this loop (`vendo_make`) and every `read`-graded
     // platform verb are all absent, and a closed list is a claim about what is
     // absent. This is a FRESH build, which is the whole of what it may carry.
     expect(new Set(screen.model.toolNamesPerCall[0] ?? []))
-      .toEqual(new Set(["ask_user", "maple_spend_summary", SAVE_APP_TOOL, EDIT_APP_TOOL]));
+      .toEqual(new Set(["ask_user", "vendo_apps_sql", "maple_spend_summary", SAVE_APP_TOOL, EDIT_APP_TOOL]));
   });
 
   it("a FRESH build has no app to open, and is offered neither verb nor button for one", async () => {
     // The loadout follows the task: this run's app is the file it has not written
-    // yet, so opening it or querying its database can only answer `not-found` —
-    // a step off a ten-step budget. Both are graded `read`, which is exactly how
-    // they rode in.
+    // yet, so opening it can only answer `not-found` — a step off a ten-step
+    // budget. It is graded `read`, which is exactly how it rode in.
     const screen = harness({ turns: [saveApp(GOOD_APP), textTurn("done")] });
     await screen.assemble("show me my spending");
 
     const offered = screen.model.toolNamesPerCall[0] ?? [];
     expect(offered).not.toContain("vendo_apps_open");
-    expect(offered).not.toContain("vendo_apps_sql");
-    // …and they do not come back as a BUTTON. Refusing to equip a verb drops it
+    // …and it does not come back as a BUTTON. Refusing to equip a verb drops it
     // into the brief's complement, so a withholding that covered one half would
     // teach the model to wire the very tool it was not given.
-    expect(screen.model.systemPrompts[0] ?? "").not.toContain("vendo_apps_");
+    expect(screen.model.systemPrompts[0] ?? "").not.toContain("vendo_apps_open");
   });
 
-  it("an EDIT gets both back — the document already at this app's path is the distinction", async () => {
+  it("a FRESH build still gets `vendo_apps_sql` — the schema is born on this run", async () => {
+    // The one app verb that is NOT edit-only, and the mirror of the test above:
+    // the manual tells the loop to make its tables with its own call before it
+    // saves a screen that reads them (`apps` skills/format-reference.ts), and the
+    // checks run that screen's queries for real. Withheld here, the brief taught a
+    // call the loop had not been handed and every storage app died at the floor.
+    const screen = harness({ turns: [saveApp(GOOD_APP), textTurn("done")] });
+    await screen.assemble("show me my spending");
+
+    expect(screen.model.toolNamesPerCall[0] ?? []).toContain("vendo_apps_sql");
+  });
+
+  it("an EDIT gets `vendo_apps_open` back — the document already at this app's path is the distinction", async () => {
     // No mode flag exists and none is wanted: the app to open is the file the loop
     // is about to rewrite, and its presence is what the run reads.
     const screen = harness({
