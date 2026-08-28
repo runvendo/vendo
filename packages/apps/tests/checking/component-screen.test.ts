@@ -144,6 +144,10 @@ interface Ran {
   input?: unknown;
 }
 
+/** `pets.rows`, not `pets.data.rows`: `useQuery` hands back the tool's own result
+ *  (`vm-program.ts` `return data[key]`), and `.data` is only the shape of a read
+ *  nobody has answered yet. With a stubbed empty answer the two spellings paint
+ *  identically, which is exactly why a fixture must not teach the wrong one. */
 const PERSISTS = `import { useState } from "react";
 import { Button, Card, Stack, Text, tools, useQuery } from "@vendo/screen";
 
@@ -154,7 +158,7 @@ export default function Pets() {
   return (
     <Stack gap={12}>
       <Text text="Pets" variant="heading" />
-      {(pets.data?.rows ?? []).map((pet) => (
+      {(pets.rows ?? []).map((pet) => (
         <Card key={pet.id} title={pet.name} />
       ))}
       <Button label="Add" onClick={() => tools.vendo_apps_sql({ sql: "INSERT INTO mine.pets (id, name) VALUES (?, ?)", params: [name, name] })} />
@@ -2417,13 +2421,23 @@ export default function Build() {
   });
 });
 
-// Receipt item 4 — "the running app queries through the same guarded door it
-// already uses for tool calls". `vendo_apps_sql` is authored `write`, so a
-// grade-only rule filtered it out of `useQuery` and a screen could not load its
-// own rows on first paint. It shipped that way once: a generated tracker held a
-// hardcoded array in `useState`, said it had saved, and forgot everything on
-// reload. The grade of a CALL is its statement's.
-describe("a screen reads its own database on first paint", () => {
+// `vendo_apps_sql` is authored `write`, so a grade-only rule filtered it out of
+// `useQuery` and a screen could not name it there at all. The grade of a CALL is
+// its statement's.
+//
+// WHAT THIS DOES NOT COVER, said plainly, because it was once named "a screen
+// reads its own database on first paint" and was not that: `runQuery` below is
+// this file's own stub, so nothing here touches an app, a row, an owner or a
+// database. It measures the AUTHORING GRADE and only that — which statement may
+// ride `useQuery`. It passed green for a whole release while the live first
+// paint died on `app not found`, because the thing that refused was on the other
+// side of the stub.
+//
+// The ordering — a screen reading its own database on the build that CREATES the
+// app, where the paint being checked is what writes the row — is a seam and is
+// proven as one, with no stub on either side, in
+// `packages/vendo/tests/app-first-build.seam.test.ts`.
+describe("which SQL statements a screen may put in useQuery", () => {
   const empty = { columns: ["id", "name"], rows: [] as unknown[], rowCount: 0 };
   const checkSql = (source: string): Promise<ComponentScreenCheck> => checkComponentScreen({
     source,
