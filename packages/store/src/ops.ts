@@ -18,7 +18,7 @@ import {
   type VendoRecord,
 } from "@vendoai/core";
 import type { Db, Query } from "./db.js";
-import { eraseStore } from "./erase.js";
+import { eraseStore, type EraseAppSql } from "./erase.js";
 import { storeFiles, storeFilesForDb } from "./files-store.js";
 import { collectionFootprints } from "./footprint.js";
 import { appendThreadMessages, putThreadRow, THREAD_MESSAGES_AGGREGATE, threadFromRow } from "./helpers/rows.js";
@@ -277,7 +277,7 @@ const rowIdOf = (message: unknown): string => {
  */
 export function createStoreOps(
   store: VendoStore,
-  options: { files?: FilesAdapter; workspaceOwner?: string } = {},
+  options: { files?: FilesAdapter; workspaceOwner?: string; appSql?: EraseAppSql } = {},
 ): StoreOps {
   const db = dbFor(store);
   /** Whose drawer a workspace verb addresses. The call names it when the mount
@@ -882,9 +882,10 @@ export function createStoreOps(
     // -----------------------------------------------------------------------
     lifecycle: {
       /** The 20-table erase saga, as-is: re-runnable, real-deletion report.
-       *  Deliberately NOT one transaction — blob deletion is external work. */
+       *  Deliberately NOT one transaction — blob deletion is external work, and
+       *  neither is dropping an app's database. */
       async erase(target) {
-        const doors = eraseStore(store, { files });
+        const doors = eraseStore(store, { files, appSql: options.appSql });
         if (target.subject !== undefined) return await doors.bySubject(target.subject);
         if (target.appId !== undefined) return await doors.byApp(target.appId);
         invalid("lifecycle.erase needs a subject or an appId");

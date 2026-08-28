@@ -43,6 +43,7 @@ export const composeAdapters = (composition: VendoComposition): Pick<VendoCompos
   const { store, files, ops } = selectStore(
     composed?.store ?? config.store,
     composed?.files ?? config.files,
+    config.appDatabase,
   );
   // The sandbox seam, resolved by THE ladder — the one in @vendoai/apps that
   // `agent()` calls too (explicit → the Cloud rung → nothing; E2B_API_KEY is a

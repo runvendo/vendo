@@ -1436,7 +1436,19 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
           as a no-op that answers with a report — an uninstalled app whose data
           is all still there, and a deletion request answered with a receipt.
           Scoped to the app and nothing else: the user who installed it keeps
-          their conversations, and the app NEXT to it keeps everything. */
+          their conversations, and the app NEXT to it keeps everything.
+
+          WHAT "the app's data" MEANS HERE, said plainly so this name never
+          over-claims again: the rows this SURFACE can see. Since the storage
+          rebuild an app's own data is a SQL database of its own, which no op on
+          `StoreOps` can read or write — so no case here can prove it, and one
+          that pretended to would be a test agreeing with a bug. Its cascade leg
+          is `EraseAppSql` in @vendoai/store's erase.ts, proven at the seam (real
+          write path in, real read path out, nothing stubbed) by
+          `store/tests/erase-app-database.seam.test.ts`. When the app-data family
+          lived in `vendo_records`/`vendo_blobs` this case DID cover it, and the
+          assertions went with the family — that gap is what the seam test now
+          holds. */
       opsCase(opts, "lifecycle.erase removes one app's data, and only that app's", async (ops) => {
         await seedApp(ops, "app_gone");
         await seedApp(ops, "app_stays");

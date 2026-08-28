@@ -67,6 +67,32 @@ export const ERASE_TABLES = [
 
 export type EraseTable = typeof ERASE_TABLES[number];
 
+/**
+ * The app-database leg of both cascades.
+ *
+ * An app's own data is not a `vendo_*` row and cannot be reached by a selector
+ * over this schema: it lives in the app's own SQL database, behind the
+ * `AppDatabase` adapter the deployment selected. So the cascade reaches it
+ * through this port, which `@vendoai/apps` fills (`createAppSql` — it knows the
+ * physical names, and it is the ONLY place that does, so nothing here has a
+ * second copy of that convention to drift from).
+ *
+ * THREADED, never defaulted, for the reason `files` is: a host on a Cloud app
+ * database whose erase quietly ran against the local Postgres instead would get
+ * rows deleted and every app table left behind — a deletion request answered
+ * with a receipt. Composition passes the SAME adapter the rest of the
+ * deployment runs on; a caller that passes none erases no app SQL, which is
+ * visible here rather than silently wrong.
+ */
+export interface EraseAppSql {
+  /** Every `mine.` table this person holds in this app, and their place in the
+      app's schema log. For an app they merely USED — an org app outlives the
+      member who leaves it. */
+  forget(appId: string, subject: string): Promise<void>;
+  /** The app's whole database: `shared.` and every person's `mine.`. */
+  drop(appId: string): Promise<void>;
+}
+
 /** Rows deleted per table, plus the workspace content deleted behind the files
  *  adapter, plus a count of the workspace content objects erased. That last is
  *  its own axis because a workspace file's content is EITHER inline in the row
@@ -77,7 +103,13 @@ export type EraseTable = typeof ERASE_TABLES[number];
  *
  *  It is a COUNT OF OBJECTS, never bytes: one per content-bearing workspace row
  *  removed, inline or blob. The name says `objects` because that is the unit it
- *  measures. */
+ *  measures.
+ *
+ *  What it deliberately does NOT carry is the app-database leg
+ *  ({@link EraseAppSql}): that leg drops SCHEMAS and TABLES, not rows of this
+ *  map, and a made-up row count for it would be the one number in a GDPR
+ *  receipt that means nothing. The guarantee is proven by reading back through
+ *  the app's own door, not by this report. */
 export type EraseReport = Record<EraseTable, number> & { workspace_content_objects: number };
 
 function emptyReport(): EraseReport {
@@ -96,13 +128,17 @@ function emptyReport(): EraseReport {
  * Policy engines and schedulers stay out of scope: hosts call this from their
  * own jobs, and host SQL remains available for everything else.
  */
-export function eraseStore(store: VendoStore, options: { files: FilesAdapter }): {
-  /** Full erasure of one subject: their apps (and each app's records, blobs and
-      state), their automations and the runs those fired, plus every
+export function eraseStore(
+  store: VendoStore,
+  options: { files: FilesAdapter; appSql?: EraseAppSql },
+): {
+  /** Full erasure of one subject: their apps (each one's engine rows and its
+      whole SQL database), their `mine.` tables inside every app they merely
+      used, their automations and the runs those fired, plus every
       subject-keyed or subject-ref'd row. */
   bySubject(subject: string): Promise<EraseReport>;
-  /** Erase one app: its row, record collections, blob namespaces, state,
-      app-scoped grants and audit rows, and app-ref'd generic/door rows.
+  /** Erase one app: its row, its SQL database, state, app-scoped grants and
+      audit rows, and app-ref'd generic/door rows.
       (Threads, approvals and — since v11 — runs have no app axis: the subject
       selector covers them, through their automation in the runs' case.) */
   byApp(appId: string): Promise<EraseReport>;
@@ -132,6 +168,7 @@ export function eraseStore(store: VendoStore, options: { files: FilesAdapter }):
   // a wired bucket erase the rows and silently keep the objects. Pass the same
   // adapter the workspace was opened with (`storeFiles(store)` when none).
   const files = options.files;
+  const appSql = options.appSql;
 
   /** Delete workspace rows and the blobs they were the only pointer to. */
   const delWorkspace = async (
@@ -171,8 +208,8 @@ export function eraseStore(store: VendoStore, options: { files: FilesAdapter }):
 
   /** App-scoped engine rows shared by the subject and app cascades. The app's
       OWN data is not here and never was a `vendo_records` collection: it lives
-      in the app's own SQL database, which the apps runtime drops with the app
-      (`AppDatabase.drop`). */
+      in the app's own SQL database, and each cascade takes it through
+      {@link EraseAppSql} at the end of its own leg. */
   const eraseAppScoped = async (report: EraseReport, appId: string): Promise<void> => {
     // The capped version log (and the pin-intent trail inside it) is the one
     // app-scoped drawer neither selector could see: it is addressed by
@@ -215,6 +252,12 @@ export function eraseStore(store: VendoStore, options: { files: FilesAdapter }):
       // access to org apps: their `user:<subject>` grant rows, below.
       const owned = (await db.query("SELECT id FROM vendo_apps WHERE subject = $1", [subject])).rows
         .map((row) => String(row["id"]));
+      // Read BEFORE the app rows go, for the SQL leg below: an app's database
+      // is named by the app id, and once the row is deleted there is nothing
+      // left to enumerate it from.
+      const every = appSql === undefined
+        ? []
+        : (await db.query("SELECT id FROM vendo_apps", [])).rows.map((row) => String(row["id"]));
       await del(report, "vendo_apps", "subject = $1", [subject]);
       for (const appId of owned) await eraseAppScoped(report, appId);
 
@@ -292,6 +335,19 @@ export function eraseStore(store: VendoStore, options: { files: FilesAdapter }):
       // and the identifier goes. A redaction, not a deletion — it is deliberately
       // absent from the report, which counts rows destroyed.
       await db.query("UPDATE vendo_app_grants SET created_by = '' WHERE created_by = $1", [subject]);
+      // The app databases, LAST, because they are the one leg that is not this
+      // schema's own rows: an app this person owned goes whole, and inside every
+      // app they merely USED — a promoted org app belongs to the ORG (§9.7), so
+      // `subject = $1` never reaches it — their own `mine.` tables go while
+      // everybody else's stay. Both legs existed before the storage rebuild as
+      // the `app:<id>:%` namespaces and the `key LIKE '<subject>/%'` blob
+      // selector; they are the same two legs, moved to where the data went.
+      if (appSql !== undefined) {
+        for (const appId of every) {
+          if (owned.includes(appId)) await appSql.drop(appId);
+          else await appSql.forget(appId, subject);
+        }
+      }
       return report;
     },
 
@@ -330,6 +386,11 @@ export function eraseStore(store: VendoStore, options: { files: FilesAdapter }):
       const where = anchors.map((_, index) => `path LIKE $${index + 1} ESCAPE '\\'`).join(" OR ");
       await delWorkspace(report, "vendo_workspace_files", where, anchors);
       await delWorkspace(report, "vendo_workspace_history", where, anchors);
+      // The app's whole database — `shared.` and every person's `mine.` — the
+      // same leg the delete door runs (apps-surface's `delete`), reached here
+      // because an erase is a different door and answered a deletion request
+      // with a receipt while every app table stayed.
+      await appSql?.drop(appId);
       return report;
     },
 

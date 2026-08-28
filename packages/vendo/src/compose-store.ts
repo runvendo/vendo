@@ -4,7 +4,8 @@
  *
  * Moved out of server.ts with the composition that calls it.
  */
-import type { FilesAdapter, StoreOps } from "@vendoai/core";
+import { createAppSql } from "@vendoai/apps";
+import type { AppDatabase, FilesAdapter, StoreOps } from "@vendoai/core";
 import {
   createStore,
   createStoreOps,
@@ -12,10 +13,11 @@ import {
   maybeDbFor,
   storeFiles,
   threadMessageStore,
+  type EraseAppSql,
   type HostedStore,
   type VendoStore,
 } from "@vendoai/store";
-import { cloudKeyOptions } from "./compose-selection.js";
+import { cloudKeyOptions, selectAppDatabase } from "./compose-selection.js";
 import { keepAliveFetch } from "./keep-alive-fetch.js";
 import { environment } from "./wire/shared.js";
 
@@ -112,21 +114,29 @@ export function storeServesHarnessTurns(store: VendoStore): boolean {
     store's client is the same `vendo/store-wire@1` the local backend would be
     re-encoding, one hop shorter. A store with a SQL handle gets the local
     backend over it, holding THE files adapter so app files and blobs land in
-    the one place the erase cascade reads.
+    the one place the erase cascade reads — and THE app-database door, for the
+    same reason: an app's own data is not a `vendo_*` row, so an erase without
+    it answers a deletion request with a receipt and leaves every app table
+    standing.
 
     `undefined` for a store with NEITHER — the same three-way answer
     `@vendoai/store`'s own `backendOf` gives, and the reason this resolves the
     handle here instead of calling `createStoreOps` unconditionally: that call
     opens the handle eagerly, so composition would crash at boot for a host
     whose store has none, where today it refuses at the op that needed one. */
-export function selectStoreOps(store: VendoStore, files: FilesAdapter): StoreOps | undefined {
+export function selectStoreOps(
+  store: VendoStore,
+  files: FilesAdapter,
+  appSql: EraseAppSql | undefined,
+): StoreOps | undefined {
   if (store.ops !== undefined) return store.ops;
-  return maybeDbFor(store) === undefined ? undefined : createStoreOps(store, { files });
+  return maybeDbFor(store) === undefined ? undefined : createStoreOps(store, { files, appSql });
 }
 
 export function selectStore(
   configured: VendoStore | undefined,
   configuredFiles: FilesAdapter | undefined,
+  configuredAppDatabase: AppDatabase | undefined,
 ): {
   store: VendoStore;
   /** THE files adapter for this deployment. Every consumer takes it from here. */
@@ -151,7 +161,13 @@ export function selectStore(
   // whole reason selectFiles resolves once (the workspace writes blobs, the
   // erase cascade deletes them).
   const files = selectFiles(configuredFiles, selected);
-  return { store: selected, files, ops: selectStoreOps(selected, files) };
+  // The erase cascade's app-database leg, over the SAME adapter the apps
+  // runtime runs on (`selectAppDatabase`, the one place that precedence is
+  // stated). `createAppSql` is what knows the physical names — the cascade
+  // never re-derives them, so there is no second copy to drift.
+  const appDatabase = selectAppDatabase(configuredAppDatabase, selected);
+  const appSql = appDatabase === undefined ? undefined : createAppSql(appDatabase);
+  return { store: selected, files, ops: selectStoreOps(selected, files, appSql) };
 }
 
 /** The hosted-store automations notice, printed at most once per process. */
