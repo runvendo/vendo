@@ -110,6 +110,9 @@ const runtimeWith = (screen?: ScreenAssembler, options: {
     briefs,
     agentTools: createAgentTools(runtime, {
       requireOwned: async () => { throw new Error("unused"); },
+      // No build is running for this caller here: these cases route a SCREEN,
+      // and the app-database door is the only reader of this answer.
+      buildingFor: () => false,
       claimSlot: async () => { throw new Error("unused"); },
       markUnbuilt: async () => { throw new Error("unused"); },
       ...(screen === undefined ? {} : { screen }),
