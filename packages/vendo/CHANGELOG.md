@@ -1,5 +1,377 @@
 # @vendoai/vendo
 
+## 0.53.0
+
+### Minor Changes
+
+- 60d1f58: `auth` is one door, and you can write it by hand.
+
+  `createVendo({ auth })` has always taken a preset's result. It now documents and
+  scaffolds the other half of the same type: an object you write yourself, when
+  there is no identity vendor to name.
+
+  ```ts
+  export const vendo = createVendo({
+    auth: {
+      principal: async (req) => {
+        const user = await getSession(req);
+        return user ? { kind: "user", subject: user.id } : null;
+      },
+      facts: async (req) => ({ plan: (await getSession(req))?.plan }),
+    },
+  });
+  ```
+
+  A preset is a function that returns that object, so nothing is reserved to the
+  preset path — `facts`, `pools`, `memberships`, `actAs` and `oauth` are all
+  sibling keys you can fill by hand, and you can spread a preset to change one of
+  them. `principal` is the only required member.
+
+  This closes the hole that made `facts` and `pools` feel arbitrary: they never had
+  a top-level twin, so a host on the raw `principal:` key could not assert anything
+  about their users at all. Now they write `auth: { principal, facts }`.
+
+  The top-level `principal`, `actAs`, and `oauth` keys are `@deprecated` aliases.
+  They still work and will keep working — nothing breaks — but each is one seam
+  with nowhere to grow, and the editor now points at `auth`. Mixing them with
+  `auth` throws at composition, exactly as before.
+
+  `vendo init --auth none` writes the object form, so the file it hands you is the
+  shape you extend rather than one you outgrow.
+
+- 61c2fb6: The component registry has one name: `components`.
+
+  The same object was `createVendo({ catalog })` on the server and
+  `<VendoProvider components>` in the browser — one registry under two names, and
+  the docs had to explain the seam every time they mentioned it.
+
+  `components` is now the canonical `createVendo` key:
+
+  ```ts
+  createVendo({ components: registry }); // was: catalog: registry
+  ```
+
+  `catalog` still works and is marked `@deprecated`, so your editor points at the
+  new name and nothing breaks. Setting both throws at composition rather than
+  silently picking a winner.
+
+  `vendo sync` reads either spelling out of your source, so a repo mid-rename
+  never syncs an empty `.vendo/catalog.json`.
+
+  Unchanged: the `.vendo/catalog.json` file, `createVendo({ profile: { catalog } })`
+  (the in-memory stand-in for that file), and the merge order — explicit
+  registrations still win by name over the file, which wins over remix holes.
+
+- 5a62c19: `VENDO_CONSOLE_URL` names our origin; `VENDO_BASE_URL` names yours.
+
+  Vendo shipped four look-alike "a URL" environment variables, two of which landed
+  in the same generated code block on the edge-runtimes page:
+
+  ```ts
+  const apiKey = env.VENDO_API_KEY;
+  const baseUrl = (env.VENDO_CLOUD_URL ?? "https://console.vendo.run").replace(
+    /\/+$/,
+    ""
+  );
+  ```
+
+  `VENDO_BASE_URL` is the host app's own public URL. `VENDO_CLOUD_URL` read like
+  "the URL of my cloud deployment" — which is exactly what it is not. Point it at
+  your app and every Cloud adapter quietly calls your app instead of the console.
+
+  `VENDO_CLOUD_URL` is now `VENDO_CONSOLE_URL`. Nothing breaks: the old name is
+  still read, the new one wins when both are set, and the first read of the old one
+  logs a single line naming the new one. The generated Workers/Bun/Deno scaffold
+  spells the value `consoleUrl` rather than `baseUrl`, so the two URLs no longer
+  look alike where they sit side by side.
+
+  `VENDO_URL` is retired. It overrode the wire URL `vendo sync` probes — a job
+  `vendo sync --url` already does per run, and one `VENDO_BASE_URL` already derives.
+  It is still read, and `vendo sync` says so once when it is.
+
+  `VENDO_BASE_URL` and `VENDO_HOST_API_URL` are unchanged. Renaming either would
+  churn every deployment for no gain: one is the most-typed variable Vendo has, the
+  other already says what it is.
+
+  `@vendoai/core` exports `consoleUrlFromEnv(env?)`, the single reader every block
+  now shares instead of six copies of `process.env["VENDO_CLOUD_URL"]`. Two of
+  those copies took a blank value literally and passed `baseUrl: ""` down to the
+  adapter; every reader now treats blank as unset, the way the umbrella always did.
+
+- 6f02331: `vendo init` now ALWAYS asks "How do your users sign in?" — Auth.js / Clerk / Supabase / Auth0 / JWT / write my own / none yet. The package.json scan moves the CURSOR instead of deciding: one unambiguous family is pre-selected so Enter still wires it, and the hosts the scan cannot read (several auth dependencies, or none at all) now get the same question instead of an anonymous composition nobody chose. Runs nobody is watching — `--no-input`, no TTY, CI, `--yes`, `--agent` — take that same pre-selected answer silently, exactly as before; a question never hangs an unattended install.
+
+  Two answers are new. **JWT** is a real choice now rather than a printed recipe: it already satisfied the runtime (`jwt()` composes through the same `composeHostAuthPreset` the vendor presets do, oauth half included) and the only thing in its way was that it cannot be zero-argument, so init supplies the argument — `auth: jwt({ secret: () => process.env.HOST_API_JWT_SECRET })` in the composition, and the matching `.env.local` entry for you to paste your API's signing secret into (an existing value is never overwritten). **Write my own** scaffolds a working minimal seam — a fixed dev subject and a pass-through door principal — marked `// replace before production` with a link to the seam docs.
+
+  `vendo init --use-case mcp` with "none yet" is now an expected FAILURE (exit 1) instead of a warning over an exit-0 "Wired": nothing is written at all, and the message says what happened, why the door cannot open, how to answer, and carries the seam the "write my own" answer would have scaffolded. Because nothing lands, re-running with a real answer now works — the old refusal wrote the anonymous composition anyway, and init never rewrites a composition it already wrote. The claim that `jwt()` does not carry the oauth half is removed wherever it appeared; it does, and so does a hand-written seam, so a re-run over either is no longer refused.
+
+  `--auth` gains `custom` (`authJs | clerk | supabase | auth0 | jwt | custom | none`).
+
+- 60d1f58: New `isVendoToolPart(part)`, exported from `@vendoai/vendo/react` and
+  `@vendoai/ui`. It is the one branch a BYO chat surface needs to tell Vendo's
+  tool parts from its own:
+
+  ```tsx
+  import { isVendoToolPart, VendoToolResult } from "@vendoai/vendo/react";
+
+  if (isVendoToolPart(part)) {
+    return <VendoToolResult key={key} output={part.output} />;
+  }
+  // your own parts fall through to your own rendering
+  ```
+
+  It owns the whole question. Before this, a host had to know that Vendo
+  namespaces its tools under `vendo_` and had to match the part shape by hand —
+  `part.type === "dynamic-tool"`, which quietly missed the `tool-<name>` shape
+  Mastra also streams. The helper matches on the tool NAME, so both shapes are
+  covered and a host's own `dynamic-tool` parts are never caught by it.
+
+  It is a TypeScript type predicate, so `part.output` and `part.state` typecheck
+  inside the branch with no cast.
+
+  It answers "is this Vendo's", never "is it finished" — a part still streaming
+  carries no output and `<VendoToolResult>` renders nothing for it, so
+  `part.state === "output-available"` stays the host's own visible check for
+  wherever they want to show a running one.
+
+  Also new: `VENDO_TOOL_PREFIX` from `@vendoai/core`, the single home for the
+  `vendo_` namespace both the tool pack and the renderer read.
+  `VENDO_TOOL_PACK_PREFIX` is unchanged and now re-exports it.
+
+- 57c8868: A top-level `memberships` beside `auth` now throws instead of vanishing.
+
+  `createVendo` already refused `principal`, `actAs` and `oauth` alongside `auth`
+  — one preset or the per-seam keys, never both. `memberships` was missing from
+  that list, so it was read only when `auth` was unset and otherwise dropped in
+  silence.
+
+  That silence had teeth. An unset memberships seam is exactly how a keyed
+  deployment opts INTO the Cloud tenant directory, so a host who wrote
+  `memberships: async () => []` beside an `auth` preset to say "this deployment
+  has no orgs" was overruled without a word: Vendo built the directory and asked
+  Cloud who the caller's orgs were.
+
+  ```ts
+  createVendo({
+    auth: clerk(),
+    memberships: async () => [], // was: ignored. now: throws at compose time.
+  });
+  ```
+
+  The fix is the one the error names — move it inside the door:
+  `auth: { ...clerk(), memberships: async () => [] }`. A top-level `memberships`
+  on its own, next to the deprecated `principal` key, is unchanged and still the
+  per-seam escape hatch it always was.
+
+- 60d1f58: `<VendoOverlay>`'s `launcher` prop now defaults to `"none"`. A bare
+  `<VendoOverlay />` renders no launcher pill; the panel opens only when something
+  asks it to — `open`/`onOpenChange`, `useVendoOverlay`, `VendoTrigger`, the
+  command palette, or a slot. Showing the pill is an opt-in, so nothing Vendo
+  renders lands on a host's page unasked.
+
+  To keep the pill, pass `launcher={{}}`. Every other form of the prop is
+  unchanged: a corner string still places it, the object form still carries
+  `position`, `label`, `icon`, and `offset`, and an explicit `"none"` still means
+  what it always did.
+
+  The launcher cluster travels with the pill, so a host that does not opt in also
+  stops getting the first-run whisper caption and the run-completion toast — both
+  are anchored to the pill. The panel's own conversation is untouched.
+
+- 57c8868: A missing `.vendo/policy.json` now says so, at boot and in `vendo doctor`.
+
+  A deployment wired the way `vendo init` writes it — `guard: guard({ policy: {} })`
+  — reads its rules from `.vendo/policy.json`. If that file is not there, the
+  guard swallows it and keeps serving on its built-in posture. Nothing refused,
+  nothing logged: the host's own rules simply stopped applying, and the first
+  sign was an action that should have asked and didn't.
+
+  The fallback is deliberate and unchanged — a missing policy file still never
+  stops a boot. What changes is that it is no longer silent. The boot block gains
+  a warning row:
+
+  ```
+  ◆  vendo ready
+  │  ✓ guard     rules    createVendo({ guard })
+  │  ⚠ guard     .vendo/policy.json is missing — this deployment's rules are NOT in force.
+  │              Defaults are in effect: destructive and ungraded actions ask, everything else runs.
+  │              Restore the file, or pass the rules inline: guard({ policy: { rules: [ … ] } }).
+  ```
+
+  and `vendo doctor` gains the static twin, `wiring/policy-file` (E-CFG-001, a
+  warning — doctor still exits on the same rules it did before).
+
+  Both are scoped to a deployment that is actually waiting on that file. Rules
+  passed inline, a preset name, and a policy config with an explicitly named
+  `file` all say something different and stay silent — the first two replace the
+  file outright, and a missing explicit path already throws on its own.
+
+- 60d1f58: `import theme from ".vendo/theme.json"` now assigns to `<VendoProvider theme>`
+  with no cast. Every quickstart paste used to carry `as VendoTheme` plus an
+  `import type { VendoTheme }` line beside it, because a bundler widens a JSON
+  module's string literals and `density`, `motion` and `typography.fonts[].source`
+  were exact literal unions. Those three fields now carry a `| (string & {})` arm,
+  so plain `string` assigns.
+
+  Autocomplete is unchanged: `"compact"`/`"comfortable"`, `"full"`/`"reduced"` and
+  `"next/font"`/`"public"`/`"google"` are still the values an editor offers.
+
+  On-disk validation is unchanged: `vendoThemeSchema` still parses the file
+  strictly, so a machine-written `theme.json` with a bad adjective still fails to
+  parse. The CSS mapping normalizes too — an unknown `density` renders as
+  `comfortable` and an unknown `motion` as `full`, adjective variable included,
+  rather than emitting a value nothing can read.
+
+  `vendo init`'s printed client hint drops the cast and the type import, so the
+  TypeScript paste is now the same paste JavaScript hosts get.
+
+- c88e0e5: `connectedAccounts` splits out of `connectors`, so one word no longer names two products.
+
+  `connectors` carries connector objects — the outside APIs your deployment brings under one credential **you** hold. `connectedAccounts` names the services each of your **users** connects for themselves:
+
+  ```ts
+  createVendo({
+    connectedAccounts: ["gmail", "slack"],
+    connectors: [mcpConnector({ url, headers })],
+  });
+  ```
+
+  A bare service string in `connectors` used to mean the second product while an object meant the first. It still works and warns once, for one more minor. Naming services in both keys is refused at boot rather than merged, because which key scopes the connect dock would be a guess.
+
+- 61c2fb6: `VendoPalette` is deleted.
+
+  It was named for a command palette and never drew one. It rendered `null`, and
+  its whole job was to register a `⌘K` binding plus a list of commands the host
+  had to draw itself. A component that renders nothing is a component nobody can
+  see is there.
+
+  **The component is gone**, along with `VendoCommand`, `HotkeyChord`,
+  `PaletteHotkey`, and the command-set half of the overlay registry
+  (`registerConversationCommands` / `getConversationCommands`). Nothing consumed
+  that command set — the overlay's chip strip was removed in July 2026 and never
+  replaced.
+
+  **The built-in `⌘K` goes with it.** Vendo now binds no keyboard shortcut at
+  all, so your app keeps every chord it owns. If you want one, it is four lines
+  against the seam that was already there:
+
+  ```tsx
+  import { openVendoConversation } from "@vendoai/vendo/react";
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "k")
+        return;
+      event.preventDefault();
+      openVendoConversation({ toggle: true });
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+  ```
+
+  **Drawing your own command UI is unchanged.** `openVendoConversation` and every
+  one of its options stay: `prompt`, `send`, `newConversation`, `appId`,
+  `toggle`, and `close` (close first, then navigate, so your own routing never
+  lands behind the open panel).
+
+  `vendo doctor` no longer counts `<VendoPalette` as a visible surface, so a host
+  whose only surface marker was the palette now fails `E-WIRE-006` — correctly,
+  since that host had nothing on screen.
+
+### Patch Changes
+
+- aa89288: Bound the control radius that `vendo init` extracts from a host's CSS. A stock `create-next-app` declares `border-radius: 128px` on a pill button; read literally that became `radius: { small: 64px, medium: 128px, large: 192px }` in `.vendo/theme.json`, every Vendo surface rendered as an ellipse, and the chat panel's composer row fell outside its own rounded box so clicking Send dismissed the overlay instead of sending. The value is now bounded at both choke points every radius passes through — the exact `--radius` read and `validateSlotValue` — rather than rejected, so a genuinely round brand stays as round as a control can be.
+- 0b4b1f8: The build brief tells the box what "reality" is, so builds stop hunting for a browser.
+
+  A build box is told to "test what you built against reality, and fix what
+  fails" — and it was never told what reality it is standing in. The machine
+  reaches the npm registry and the inference host, and nothing else. So an agent
+  that took the instruction seriously went looking for the reality it knows: a
+  real browser to drive Playwright against, then a native canvas to render into.
+  Both are unreachable past the box's allowlist, and neither failure is one it can
+  be talked out of, so it re-architected the app and tried again.
+
+  Measured live on 2026-08-27: four escalated builds died at 15.2–15.4 minutes
+  against the 15-minute message budget, on asks as small as "show a QR code". Ask
+  weight was never the variable — every build reached the same cul-de-sac, and the
+  cul-de-sac costs the same whatever was asked for.
+
+  Two more of the same shape were measured once that one was gone: the image's
+  baked `@vendoai/ui` predates the frame protocol, so a build that used it lost
+  the time to find that out; and `callHost` was named as the way to reach host
+  data, which sent an agent hunting the box's disk for a tool list that is
+  deliberately absent.
+
+  The brief now names the egress it has to live inside — Node, a pure-JS DOM, no
+  browser, no native binaries — says to install `@vendoai/ui` from npm rather than
+  the stale baked copy, and places `startFrameProtocol`/`callHost` on the runtime
+  side of the line: they speak to the embedding page, so they answer for the
+  shipped app and never inside the box.
+
+  Nothing is withdrawn. The instruction to verify stands, `callHost` stays (it is
+  a postMessage to the host page, and dropping it would take the capability with
+  it), the allowlist is untouched because it is the security boundary, and
+  `MESSAGE_BUDGET_MS` is unchanged because a timeout is a hang-detector, not a
+  speed limit.
+
+  A build now completes: 836.6s end to end against a real Vendo Cloud box, sealing
+  a 257 KB `dist/app.js` from a "show a QR code" ask.
+
+- c2740df: `vendo init --use-case mcp` without an OAuth-carrying auth preset refuses the door and told the user to "wire an auth preset — then re-run `npx vendo init`". That was a loop with no exit: the same run goes on to write the anonymous composition, and init never rewrites a composition it already wrote, so every later re-run — `--auth authJs` and `--force` included — printed the identical warning and changed nothing. The message now names the composition file and says to delete it before re-running. The refusal itself is unchanged.
+- 60d1f58: A risk grade pinned in `.vendo/overrides.json` now wins for an outside-service
+  tool the agent reached by searching a provider's catalog, not just for the tools
+  on the listing. The dispatcher grades those calls live off the broker's own tag,
+  and it never read the authored file — so the one tool whose grade is decided at
+  call time was the one tool nobody could correct, while the docs said an override
+  is the last word.
+
+  ```json .vendo/overrides.json
+  {
+    "format": "vendo/overrides@3",
+    "tools": {
+      "GMAIL_DELETE_THREAD": { "risk": "destructive" }
+    }
+  }
+  ```
+
+  It reads the registry's own loaded copy of the file — the same source
+  `mergeOverride` applies to a listed tool, never a second read — so the two
+  layers cannot disagree. Nothing changes for a slug you did not pin: the broker's
+  tag still decides, and a slug nobody owns still grades `read` rather than
+  parking an approval for a call that cannot run.
+
+  The boot warning about orphaned override entries stops calling those pins typos
+  when a connector that dispatches by slug is configured.
+
+- Updated dependencies [66f6165]
+- Updated dependencies [a1e965c]
+- Updated dependencies [61c2fb6]
+- Updated dependencies [5a62c19]
+- Updated dependencies [f94bec1]
+- Updated dependencies [ebda436]
+- Updated dependencies [2cf7b3d]
+- Updated dependencies [60d1f58]
+- Updated dependencies [3ffc777]
+- Updated dependencies [60d1f58]
+- Updated dependencies [60d1f58]
+- Updated dependencies [20738bc]
+- Updated dependencies [e1e3d38]
+- Updated dependencies [60d1f58]
+- Updated dependencies [182b7b2]
+- Updated dependencies [61c2fb6]
+  - @vendoai/apps@0.53.0
+  - @vendoai/core@0.53.0
+  - @vendoai/ui@0.53.0
+  - @vendoai/actions@0.53.0
+  - @vendoai/agents@0.53.0
+  - @vendoai/harnesses@0.53.0
+  - @vendoai/telemetry@0.6.0
+  - @vendoai/mcp@0.53.0
+  - @vendoai/store@0.53.0
+  - @vendoai/automations@0.53.0
+  - @vendoai/guard@0.53.0
+  - @vendoai/knowledge@0.53.0
+
 ## 0.52.1
 
 ### Patch Changes

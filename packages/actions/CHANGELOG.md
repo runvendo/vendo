@@ -1,5 +1,72 @@
 # @vendoai/actions
 
+## 0.53.0
+
+### Minor Changes
+
+- 61c2fb6: The component registry has one name: `components`.
+
+  The same object was `createVendo({ catalog })` on the server and
+  `<VendoProvider components>` in the browser — one registry under two names, and
+  the docs had to explain the seam every time they mentioned it.
+
+  `components` is now the canonical `createVendo` key:
+
+  ```ts
+  createVendo({ components: registry }); // was: catalog: registry
+  ```
+
+  `catalog` still works and is marked `@deprecated`, so your editor points at the
+  new name and nothing breaks. Setting both throws at composition rather than
+  silently picking a winner.
+
+  `vendo sync` reads either spelling out of your source, so a repo mid-rename
+  never syncs an empty `.vendo/catalog.json`.
+
+  Unchanged: the `.vendo/catalog.json` file, `createVendo({ profile: { catalog } })`
+  (the in-memory stand-in for that file), and the merge order — explicit
+  registrations still win by name over the file, which wins over remix holes.
+
+### Patch Changes
+
+- 60d1f58: A risk grade pinned in `.vendo/overrides.json` now wins for an outside-service
+  tool the agent reached by searching a provider's catalog, not just for the tools
+  on the listing. The dispatcher grades those calls live off the broker's own tag,
+  and it never read the authored file — so the one tool whose grade is decided at
+  call time was the one tool nobody could correct, while the docs said an override
+  is the last word.
+
+  ```json .vendo/overrides.json
+  {
+    "format": "vendo/overrides@3",
+    "tools": {
+      "GMAIL_DELETE_THREAD": { "risk": "destructive" }
+    }
+  }
+  ```
+
+  It reads the registry's own loaded copy of the file — the same source
+  `mergeOverride` applies to a listed tool, never a second read — so the two
+  layers cannot disagree. Nothing changes for a slug you did not pin: the broker's
+  tag still decides, and a slug nobody owns still grades `read` rather than
+  parking an approval for a call that cannot run.
+
+  The boot warning about orphaned override entries stops calling those pins typos
+  when a connector that dispatches by slug is configured.
+
+- Updated dependencies [66f6165]
+- Updated dependencies [a1e965c]
+- Updated dependencies [5a62c19]
+- Updated dependencies [f94bec1]
+- Updated dependencies [ebda436]
+- Updated dependencies [2cf7b3d]
+- Updated dependencies [60d1f58]
+- Updated dependencies [20738bc]
+- Updated dependencies [60d1f58]
+- Updated dependencies [182b7b2]
+  - @vendoai/apps@0.53.0
+  - @vendoai/core@0.53.0
+
 ## 0.52.1
 
 ### Patch Changes

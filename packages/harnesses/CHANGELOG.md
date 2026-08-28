@@ -1,5 +1,67 @@
 # @vendoai/harnesses
 
+## 0.53.0
+
+### Minor Changes
+
+- 5a62c19: `VENDO_CONSOLE_URL` names our origin; `VENDO_BASE_URL` names yours.
+
+  Vendo shipped four look-alike "a URL" environment variables, two of which landed
+  in the same generated code block on the edge-runtimes page:
+
+  ```ts
+  const apiKey = env.VENDO_API_KEY;
+  const baseUrl = (env.VENDO_CLOUD_URL ?? "https://console.vendo.run").replace(
+    /\/+$/,
+    ""
+  );
+  ```
+
+  `VENDO_BASE_URL` is the host app's own public URL. `VENDO_CLOUD_URL` read like
+  "the URL of my cloud deployment" — which is exactly what it is not. Point it at
+  your app and every Cloud adapter quietly calls your app instead of the console.
+
+  `VENDO_CLOUD_URL` is now `VENDO_CONSOLE_URL`. Nothing breaks: the old name is
+  still read, the new one wins when both are set, and the first read of the old one
+  logs a single line naming the new one. The generated Workers/Bun/Deno scaffold
+  spells the value `consoleUrl` rather than `baseUrl`, so the two URLs no longer
+  look alike where they sit side by side.
+
+  `VENDO_URL` is retired. It overrode the wire URL `vendo sync` probes — a job
+  `vendo sync --url` already does per run, and one `VENDO_BASE_URL` already derives.
+  It is still read, and `vendo sync` says so once when it is.
+
+  `VENDO_BASE_URL` and `VENDO_HOST_API_URL` are unchanged. Renaming either would
+  churn every deployment for no gain: one is the most-typed variable Vendo has, the
+  other already says what it is.
+
+  `@vendoai/core` exports `consoleUrlFromEnv(env?)`, the single reader every block
+  now shares instead of six copies of `process.env["VENDO_CLOUD_URL"]`. Two of
+  those copies took a blank value literally and passed `baseUrl: ""` down to the
+  adapter; every reader now treats blank as unset, the way the umbrella always did.
+
+### Patch Changes
+
+- 182b7b2: fix: keep internal tool identifiers and run-on sentences out of the answer a user reads.
+
+  `modelToolDescription` dropped the human label whenever a host authored no `title` (or the listing's title had fallen back to the tool's own name), so on a host whose `.vendo/tools.json` carries descriptions but no titles the identifier was the only proper noun the model held — and it printed `host_getClient`, `host_listJobs` and `host_getRevenueByMonth` in a live answer, on a host whose own design rules forbid showing an internal id. The label now falls back down the same ladder the render layer already walks (Vendo's own title table, then the prettified id), so the beat on screen and the model's vocabulary say the same words instead of the screen saying "Get client" while the model has nothing but `host_getClient`. Nothing about the CALL name changes.
+
+  `vendo()` also dropped the model's own text-block boundaries, and the wire opens a fresh transcript part only when a tool call is mirrored — so two adjacent blocks ran together mid-sentence ("…exposed here.No matching tool exists…"). A block boundary now travels as a paragraph break.
+
+- Updated dependencies [66f6165]
+- Updated dependencies [a1e965c]
+- Updated dependencies [5a62c19]
+- Updated dependencies [f94bec1]
+- Updated dependencies [ebda436]
+- Updated dependencies [2cf7b3d]
+- Updated dependencies [60d1f58]
+- Updated dependencies [20738bc]
+- Updated dependencies [60d1f58]
+- Updated dependencies [182b7b2]
+  - @vendoai/apps@0.53.0
+  - @vendoai/core@0.53.0
+  - @vendoai/guard@0.53.0
+
 ## 0.52.1
 
 ### Patch Changes

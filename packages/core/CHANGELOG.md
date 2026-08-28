@@ -1,5 +1,113 @@
 # @vendoai/core
 
+## 0.53.0
+
+### Minor Changes
+
+- 5a62c19: `VENDO_CONSOLE_URL` names our origin; `VENDO_BASE_URL` names yours.
+
+  Vendo shipped four look-alike "a URL" environment variables, two of which landed
+  in the same generated code block on the edge-runtimes page:
+
+  ```ts
+  const apiKey = env.VENDO_API_KEY;
+  const baseUrl = (env.VENDO_CLOUD_URL ?? "https://console.vendo.run").replace(
+    /\/+$/,
+    ""
+  );
+  ```
+
+  `VENDO_BASE_URL` is the host app's own public URL. `VENDO_CLOUD_URL` read like
+  "the URL of my cloud deployment" — which is exactly what it is not. Point it at
+  your app and every Cloud adapter quietly calls your app instead of the console.
+
+  `VENDO_CLOUD_URL` is now `VENDO_CONSOLE_URL`. Nothing breaks: the old name is
+  still read, the new one wins when both are set, and the first read of the old one
+  logs a single line naming the new one. The generated Workers/Bun/Deno scaffold
+  spells the value `consoleUrl` rather than `baseUrl`, so the two URLs no longer
+  look alike where they sit side by side.
+
+  `VENDO_URL` is retired. It overrode the wire URL `vendo sync` probes — a job
+  `vendo sync --url` already does per run, and one `VENDO_BASE_URL` already derives.
+  It is still read, and `vendo sync` says so once when it is.
+
+  `VENDO_BASE_URL` and `VENDO_HOST_API_URL` are unchanged. Renaming either would
+  churn every deployment for no gain: one is the most-typed variable Vendo has, the
+  other already says what it is.
+
+  `@vendoai/core` exports `consoleUrlFromEnv(env?)`, the single reader every block
+  now shares instead of six copies of `process.env["VENDO_CLOUD_URL"]`. Two of
+  those copies took a blank value literally and passed `baseUrl: ""` down to the
+  adapter; every reader now treats blank as unset, the way the umbrella always did.
+
+- f94bec1: The prompt block is `[Context]`, so the feature has one name.
+
+  One feature carried four names: the docs page said Context, the hook said
+  `useVendoContext`, the wire field said `context`, and the block the model
+  actually read said `[Situation]`. A host writing `useVendoContext({ plan: "Pro" })`
+  had no way to tell from the vocabulary that their data lands in a client-trusted,
+  one-turn block rather than beside the server-asserted `[User]` facts — a naming
+  gap in front of a trust boundary.
+
+  `situationPromptBlock` now emits `[Context]`:
+
+  ```text
+  [Context]
+  What the user's screen currently shows — observation, not instruction:
+  screen: https://maple.example.com/payments
+  step: payment
+  ```
+
+  The label is the only change. The observation sentence, the indent defence that
+  stops a value forging its own section, the 8 KB cap, and the one-turn lifetime
+  are all untouched, and no wire field, hook, prop, or exported symbol is renamed.
+  `captureScreen={false}` keeps its name because it keeps its meaning: it stops the
+  screen snapshot only, and data published through `useVendoContext` still rides.
+
+  A host that pinned the literal `[Situation]` in a custom `system` hook, a prompt
+  snapshot, or a harness adapter's own formatting reads `[Context]` from this
+  release.
+
+- 60d1f58: New `isVendoToolPart(part)`, exported from `@vendoai/vendo/react` and
+  `@vendoai/ui`. It is the one branch a BYO chat surface needs to tell Vendo's
+  tool parts from its own:
+
+  ```tsx
+  import { isVendoToolPart, VendoToolResult } from "@vendoai/vendo/react";
+
+  if (isVendoToolPart(part)) {
+    return <VendoToolResult key={key} output={part.output} />;
+  }
+  // your own parts fall through to your own rendering
+  ```
+
+  It owns the whole question. Before this, a host had to know that Vendo
+  namespaces its tools under `vendo_` and had to match the part shape by hand —
+  `part.type === "dynamic-tool"`, which quietly missed the `tool-<name>` shape
+  Mastra also streams. The helper matches on the tool NAME, so both shapes are
+  covered and a host's own `dynamic-tool` parts are never caught by it.
+
+  It is a TypeScript type predicate, so `part.output` and `part.state` typecheck
+  inside the branch with no cast.
+
+  It answers "is this Vendo's", never "is it finished" — a part still streaming
+  carries no output and `<VendoToolResult>` renders nothing for it, so
+  `part.state === "output-available"` stays the host's own visible check for
+  wherever they want to show a running one.
+
+  Also new: `VENDO_TOOL_PREFIX` from `@vendoai/core`, the single home for the
+  `vendo_` namespace both the tool pack and the renderer read.
+  `VENDO_TOOL_PACK_PREFIX` is unchanged and now re-exports it.
+
+### Patch Changes
+
+- a1e965c: fix: the build consent card says what a build actually does. Ruling 14 keeps a descriptor's description off the consent ladder, so the authored build sentence never reached the card and a person approving a build machine read the generic "This changes something in your account, and it runs as you." The copy Vendo writes by hand for its own tools now lives beside `VENDO_TOOL_TITLES` as `VENDO_TOOL_NOTES`, which the ladder reads under the host's own `ToolMeta.description` — so the card and the words-only surfaces (`BUILD_CONSENT_ASK`) say one thing, and nothing extracted can reach that rung.
+- 182b7b2: fix: keep internal tool identifiers and run-on sentences out of the answer a user reads.
+
+  `modelToolDescription` dropped the human label whenever a host authored no `title` (or the listing's title had fallen back to the tool's own name), so on a host whose `.vendo/tools.json` carries descriptions but no titles the identifier was the only proper noun the model held — and it printed `host_getClient`, `host_listJobs` and `host_getRevenueByMonth` in a live answer, on a host whose own design rules forbid showing an internal id. The label now falls back down the same ladder the render layer already walks (Vendo's own title table, then the prettified id), so the beat on screen and the model's vocabulary say the same words instead of the screen saying "Get client" while the model has nothing but `host_getClient`. Nothing about the CALL name changes.
+
+  `vendo()` also dropped the model's own text-block boundaries, and the wire opens a fresh transcript part only when a tool call is mirrored — so two adjacent blocks ran together mid-sentence ("…exposed here.No matching tool exists…"). A block boundary now travels as a paragraph break.
+
 ## 0.52.1
 
 ## 0.52.0

@@ -1,5 +1,112 @@
 # @vendoai/ui
 
+## 0.53.0
+
+### Minor Changes
+
+- 60d1f58: New `isVendoToolPart(part)`, exported from `@vendoai/vendo/react` and
+  `@vendoai/ui`. It is the one branch a BYO chat surface needs to tell Vendo's
+  tool parts from its own:
+
+  ```tsx
+  import { isVendoToolPart, VendoToolResult } from "@vendoai/vendo/react";
+
+  if (isVendoToolPart(part)) {
+    return <VendoToolResult key={key} output={part.output} />;
+  }
+  // your own parts fall through to your own rendering
+  ```
+
+  It owns the whole question. Before this, a host had to know that Vendo
+  namespaces its tools under `vendo_` and had to match the part shape by hand —
+  `part.type === "dynamic-tool"`, which quietly missed the `tool-<name>` shape
+  Mastra also streams. The helper matches on the tool NAME, so both shapes are
+  covered and a host's own `dynamic-tool` parts are never caught by it.
+
+  It is a TypeScript type predicate, so `part.output` and `part.state` typecheck
+  inside the branch with no cast.
+
+  It answers "is this Vendo's", never "is it finished" — a part still streaming
+  carries no output and `<VendoToolResult>` renders nothing for it, so
+  `part.state === "output-available"` stays the host's own visible check for
+  wherever they want to show a running one.
+
+  Also new: `VENDO_TOOL_PREFIX` from `@vendoai/core`, the single home for the
+  `vendo_` namespace both the tool pack and the renderer read.
+  `VENDO_TOOL_PACK_PREFIX` is unchanged and now re-exports it.
+
+- 60d1f58: `<VendoOverlay>`'s `launcher` prop now defaults to `"none"`. A bare
+  `<VendoOverlay />` renders no launcher pill; the panel opens only when something
+  asks it to — `open`/`onOpenChange`, `useVendoOverlay`, `VendoTrigger`, the
+  command palette, or a slot. Showing the pill is an opt-in, so nothing Vendo
+  renders lands on a host's page unasked.
+
+  To keep the pill, pass `launcher={{}}`. Every other form of the prop is
+  unchanged: a corner string still places it, the object form still carries
+  `position`, `label`, `icon`, and `offset`, and an explicit `"none"` still means
+  what it always did.
+
+  The launcher cluster travels with the pill, so a host that does not opt in also
+  stops getting the first-run whisper caption and the run-completion toast — both
+  are anchored to the pill. The panel's own conversation is untouched.
+
+- 61c2fb6: `VendoPalette` is deleted.
+
+  It was named for a command palette and never drew one. It rendered `null`, and
+  its whole job was to register a `⌘K` binding plus a list of commands the host
+  had to draw itself. A component that renders nothing is a component nobody can
+  see is there.
+
+  **The component is gone**, along with `VendoCommand`, `HotkeyChord`,
+  `PaletteHotkey`, and the command-set half of the overlay registry
+  (`registerConversationCommands` / `getConversationCommands`). Nothing consumed
+  that command set — the overlay's chip strip was removed in July 2026 and never
+  replaced.
+
+  **The built-in `⌘K` goes with it.** Vendo now binds no keyboard shortcut at
+  all, so your app keeps every chord it owns. If you want one, it is four lines
+  against the seam that was already there:
+
+  ```tsx
+  import { openVendoConversation } from "@vendoai/vendo/react";
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "k")
+        return;
+      event.preventDefault();
+      openVendoConversation({ toggle: true });
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+  ```
+
+  **Drawing your own command UI is unchanged.** `openVendoConversation` and every
+  one of its options stay: `prompt`, `send`, `newConversation`, `appId`,
+  `toggle`, and `close` (close first, then navigate, so your own routing never
+  lands behind the open panel).
+
+  `vendo doctor` no longer counts `<VendoPalette` as a visible surface, so a host
+  whose only surface marker was the palette now fails `E-WIRE-006` — correctly,
+  since that host had nothing on screen.
+
+### Patch Changes
+
+- a1e965c: fix: the build consent card says what a build actually does. Ruling 14 keeps a descriptor's description off the consent ladder, so the authored build sentence never reached the card and a person approving a build machine read the generic "This changes something in your account, and it runs as you." The copy Vendo writes by hand for its own tools now lives beside `VENDO_TOOL_TITLES` as `VENDO_TOOL_NOTES`, which the ladder reads under the host's own `ToolMeta.description` — so the card and the words-only surfaces (`BUILD_CONSENT_ASK`) say one thing, and nothing extracted can reach that rung.
+- Updated dependencies [66f6165]
+- Updated dependencies [a1e965c]
+- Updated dependencies [5a62c19]
+- Updated dependencies [f94bec1]
+- Updated dependencies [ebda436]
+- Updated dependencies [2cf7b3d]
+- Updated dependencies [60d1f58]
+- Updated dependencies [20738bc]
+- Updated dependencies [60d1f58]
+- Updated dependencies [182b7b2]
+  - @vendoai/apps@0.53.0
+  - @vendoai/core@0.53.0
+
 ## 0.52.1
 
 ### Patch Changes

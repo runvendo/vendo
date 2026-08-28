@@ -1,5 +1,112 @@
 # @vendoai/apps
 
+## 0.53.0
+
+### Minor Changes
+
+- 5a62c19: `VENDO_CONSOLE_URL` names our origin; `VENDO_BASE_URL` names yours.
+
+  Vendo shipped four look-alike "a URL" environment variables, two of which landed
+  in the same generated code block on the edge-runtimes page:
+
+  ```ts
+  const apiKey = env.VENDO_API_KEY;
+  const baseUrl = (env.VENDO_CLOUD_URL ?? "https://console.vendo.run").replace(
+    /\/+$/,
+    ""
+  );
+  ```
+
+  `VENDO_BASE_URL` is the host app's own public URL. `VENDO_CLOUD_URL` read like
+  "the URL of my cloud deployment" — which is exactly what it is not. Point it at
+  your app and every Cloud adapter quietly calls your app instead of the console.
+
+  `VENDO_CLOUD_URL` is now `VENDO_CONSOLE_URL`. Nothing breaks: the old name is
+  still read, the new one wins when both are set, and the first read of the old one
+  logs a single line naming the new one. The generated Workers/Bun/Deno scaffold
+  spells the value `consoleUrl` rather than `baseUrl`, so the two URLs no longer
+  look alike where they sit side by side.
+
+  `VENDO_URL` is retired. It overrode the wire URL `vendo sync` probes — a job
+  `vendo sync --url` already does per run, and one `VENDO_BASE_URL` already derives.
+  It is still read, and `vendo sync` says so once when it is.
+
+  `VENDO_BASE_URL` and `VENDO_HOST_API_URL` are unchanged. Renaming either would
+  churn every deployment for no gain: one is the most-typed variable Vendo has, the
+  other already says what it is.
+
+  `@vendoai/core` exports `consoleUrlFromEnv(env?)`, the single reader every block
+  now shares instead of six copies of `process.env["VENDO_CLOUD_URL"]`. Two of
+  those copies took a blank value literally and passed `baseUrl: ""` down to the
+  adapter; every reader now treats blank as unset, the way the umbrella always did.
+
+- 60d1f58: `import theme from ".vendo/theme.json"` now assigns to `<VendoProvider theme>`
+  with no cast. Every quickstart paste used to carry `as VendoTheme` plus an
+  `import type { VendoTheme }` line beside it, because a bundler widens a JSON
+  module's string literals and `density`, `motion` and `typography.fonts[].source`
+  were exact literal unions. Those three fields now carry a `| (string & {})` arm,
+  so plain `string` assigns.
+
+  Autocomplete is unchanged: `"compact"`/`"comfortable"`, `"full"`/`"reduced"` and
+  `"next/font"`/`"public"`/`"google"` are still the values an editor offers.
+
+  On-disk validation is unchanged: `vendoThemeSchema` still parses the file
+  strictly, so a machine-written `theme.json` with a bad adjective still fails to
+  parse. The CSS mapping normalizes too — an unknown `density` renders as
+  `comfortable` and an unknown `motion` as `full`, adjective variable included,
+  rather than emitting a value nothing can read.
+
+  `vendo init`'s printed client hint drops the cast and the type import, so the
+  TypeScript paste is now the same paste JavaScript hosts get.
+
+### Patch Changes
+
+- 66f6165: A build that runs out of time says so, instead of blaming capacity.
+
+  A box gives one turn a fixed message budget, and a turn that outruns it throws
+  `unavailable` — the same code a genuinely busy service answers with. The
+  classifier that turns a build throw into the sentence on the person's failure
+  card read that code and nothing else, so it answered "busy, try again shortly"
+  for both.
+
+  For a busy service that sentence is true and useful. For a budget it is two
+  lies: the failure is not capacity, and waiting cannot help — a budget expires on
+  schedule, so the next attempt spends the whole window and dies at the same
+  mark. It also invites the retry it cannot survive; four escalated builds in a
+  row were reported this way, each dying at 15.2–15.4 minutes against a 15-minute
+  budget, on asks as small as "show a QR code".
+
+  Budget exhaustion is now told apart from capacity by the sentence the box throws
+  with it, and reported as "the build ran out of its time budget", non-retryable.
+  The number stays out of it: the bound is internal and a person cannot act on it.
+
+- a1e965c: fix: the build consent card says what a build actually does. Ruling 14 keeps a descriptor's description off the consent ladder, so the authored build sentence never reached the card and a person approving a build machine read the generic "This changes something in your account, and it runs as you." The copy Vendo writes by hand for its own tools now lives beside `VENDO_TOOL_TITLES` as `VENDO_TOOL_NOTES`, which the ladder reads under the host's own `ToolMeta.description` — so the card and the words-only surfaces (`BUILD_CONSENT_ASK`) say one thing, and nothing extracted can reach that rung.
+- ebda436: A `vendo_make` EDIT hands back the builder's own words, not the app's name.
+
+  The create arm has relayed the assembling agent's closing sentence since the
+  front door stopped composing one out of the app's title. The edit arm never did:
+  every landed change answered `"<name> is updated."` and every refused one
+  `"I couldn't make that change to <name>."` — a title and no facts. The floor's
+  own reason for the refusal was already computed and carried as far as
+  `EditResult.issues`, then dropped at the door.
+
+  Handed a title and no facts, a calling agent invents the rest. Across six
+  consecutive runs on a demo host, a chat agent told the person a per-client
+  document tracker was "still intact" over a stage-by-assignee table it had never
+  seen, and reported features that were never on the screen.
+
+  `ScreenOutcome.say` now travels the edit path the same way it travels the create
+  path, and a refused edit says why in the floor's own sentences.
+
+- 2cf7b3d: fix: bump esbuild to ^0.28.2 so the Go-compiled binary this package lazy-loads for screen checks carries a crypto/tls past CVE-2025-68121 (esbuild 0.25.12 was built with the EOL go1.23.12; 0.28.2 ships go1.26.5)
+- 20738bc: Stop a component screen's prop refusal from contradicting itself. When the value bound to a Kit prop differed from the prop's own type in one nested field — a `columns` array hoisted out of the JSX, so `align: "end"` widened to `string` before the enum saw it — the long-type summarizer collapsed BOTH sides to the same words and the screen agent was handed `prop "columns" on <DataTable> takes a list of rows, but this value is a list of rows`. A refusal that contradicts itself names no repair, so the agent retried forever, never painted, never errored and never escalated. Where the two summaries come out identical the check now falls through to the compiler's own nested sentence, which names the field that disagrees and the values it will take.
+- Updated dependencies [a1e965c]
+- Updated dependencies [5a62c19]
+- Updated dependencies [f94bec1]
+- Updated dependencies [60d1f58]
+- Updated dependencies [182b7b2]
+  - @vendoai/core@0.53.0
+
 ## 0.52.1
 
 ### Patch Changes
