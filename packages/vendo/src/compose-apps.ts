@@ -220,7 +220,7 @@ const appsTailSeams = (composition: VendoComposition, seams: AppsSeams): Partial
 /** 06-apps §1 — the app runtime, and the three registries that join the ONE
  *  tool registry the moment it exists. */
 export const composeApps = (composition: VendoComposition): Pick<VendoComposition,
-  "access" | "apps" | "appsRuntime" | "resolveAppToolRisk" | "appSqlDialect"> => {
+  "access" | "apps" | "appsRuntime" | "resolveAppToolRisk"> => {
   const { store, actions, capability } = composition;
   const boxTemplate = environment("VENDO_BOX_TEMPLATE");
   // ADAPTER RULE, share/publish seam: the apps block never reads the
@@ -301,12 +301,5 @@ export const composeApps = (composition: VendoComposition): Pick<VendoCompositio
     schedule: async ({ appId, cron }, ctx) =>
       await apps.schedule(appId as AppId, cron, ctx) as unknown as Json,
   }));
-  const appSqlDialect = selectAppDatabase(composition.config.appDatabase, store)?.dialect;
-  return {
-    access,
-    apps,
-    appsRuntime: apps,
-    resolveAppToolRisk: apps.agentToolRisk,
-    ...(appSqlDialect === undefined ? {} : { appSqlDialect }),
-  };
+  return { access, apps, appsRuntime: apps, resolveAppToolRisk: apps.agentToolRisk };
 };

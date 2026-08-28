@@ -6,6 +6,7 @@
  */
 import { mergedHostSemantics, VENDO_TOOLS_FORMAT } from "@vendoai/actions";
 import { agentToolDescriptors, buildingAppsSkill } from "@vendoai/apps";
+import { selectAppDatabase } from "./compose-selection.js";
 import {
   log,
   VENDO_AUTOMATE_TOOL,
@@ -168,7 +169,14 @@ export const composeSurfaces = (composition: VendoComposition): Pick<VendoCompos
  *  the component catalog beside it. */
 const capabilityAndCatalog = (composition: VendoComposition): Pick<VendoComposition,
   "capability" | "catalog"> => {
-  const { config, appsMounted, automationsMounted, appSqlDialect } = composition;
+  const { config, store, appsMounted, automationsMounted } = composition;
+  // Derived HERE rather than read off the composition: `composeSurfaces` runs
+  // BEFORE `composeApps` (compose-context.ts), so a field that block fills is
+  // always undefined by the time this reads it — which silently dropped
+  // `vendo_apps_sql` from every registry. `selectAppDatabase` is a pure
+  // function of the two things already composed, so asking it twice is honest
+  // where reading a not-yet-filled field is not.
+  const appSqlDialect = selectAppDatabase(config.appDatabase, store)?.dialect;
   // ONE composition call for everything that contributes tools or skills. It
   // runs here, before the apps runtime, because the skills it merges reach the
   // harness and the tools it merges reach the one registry. The apps runtime the
