@@ -1,5 +1,10 @@
 name: trivy
 
+# Round-trip probe (cutover, 2026-08-29): this comment exists to prove the
+# reverse import rewrites a PUBLIC root workflow back to oss/.github/workflows/
+# in the private repo, which is the path a release import travels and the one
+# case the import had never been exercised against. Harmless either way.
+
 # SOC 2 container-image scanning. This repo ships exactly one image —
 # examples/demo-bank (Maple) — and CI never builds it: Railway builds it at
 # deploy time from the repo root with examples/demo-bank/Dockerfile. So this
