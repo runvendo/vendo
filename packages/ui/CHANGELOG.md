@@ -1,5 +1,13 @@
 # @vendoai/ui
 
+## 0.54.1
+
+### Patch Changes
+
+- Updated dependencies [803e611]
+  - @vendoai/core@0.54.1
+  - @vendoai/apps@0.54.1
+
 ## 0.54.0
 
 ### Patch Changes
