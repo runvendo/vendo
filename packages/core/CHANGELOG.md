@@ -1,5 +1,98 @@
 # @vendoai/core
 
+## 0.57.0
+
+### Minor Changes
+
+- 4b189ec: **The drawers a guard writes, and the run-status acceptor, are exported for the
+  readers that live outside these packages.**
+
+  Additive only — nothing published narrows, and no exported type changes shape.
+
+  `@vendoai/guard` now exports `AUDIT_COLLECTION`, `APPROVALS_COLLECTION`,
+  `CONTROLS_COLLECTION`, `FREEZE_ROW` and `DEFAULT_PARKED_CALL_TTL_MS`. All five
+  were module-private, and the process that reads guard state most — Vendo Cloud's
+  console, which draws the audit feed and the approvals rail, and which FLIPS the
+  freeze row a guard in another process obeys on its next check — had spelled every
+  one of them again in its own literals. A reader's copy of a writer's collection
+  name is a seam that can only ever agree with itself: a rename here would have
+  shipped a Guard page that silently draws nothing, and an emergency stop that
+  silently does nothing.
+
+  `@vendoai/core` now declares `RUN_ROW_STATUSES` (and `RunRowStatus`) beside the
+  `RUN_STATUSES` it widens, and `@vendoai/store` re-exports it from its own surface:
+  it is the tuple `RunRow.status` was already built from — the engine's four plus `pending-approval`,
+  which no engine writes but `parseRunData` has accepted since before the ledger
+  dropped its waiting state. It is a tuple and not just a type because the readers
+  of this ledger are in other processes and validate query parameters against it at
+  runtime — a reader narrower than its writer refuses rows the store will happily
+  hold. `parseRunData`'s own five-way status check now reads the tuple instead of
+  being a third spelling of it.
+
+- e679e1d: **Three blocks fold into `@vendoai/vendo`. `@vendoai/knowledge`,
+  `@vendoai/automations` and `@vendoai/mcp` are gone.**
+
+  Pre-1.0 hard cut, no alias packages. Each block's public surface survives
+  unchanged — the same barrel, the same symbols — at a subpath of the umbrella,
+  so a migration is a specifier rewrite and nothing else:
+
+  - `@vendoai/automations` → `@vendoai/vendo/automations`
+  - `@vendoai/mcp` → `@vendoai/vendo/mcp`
+  - `@vendoai/knowledge` → `@vendoai/vendo/knowledge`
+
+  The umbrella ROOT is unchanged. It already re-exported the handful of names a
+  host actually composes with — `AutomationsEngine`, `RunRecord`, `RunStatus`,
+  `RunPlan`, `HostOAuthAdapter`, `UNATTENDED_IRREVERSIBILITY_RULE` — and it still
+  does, from the same place. Nothing was added to it, and the door's surface
+  beyond `HostOAuthAdapter` stays umbrella-internal exactly as before.
+
+  **Two constants move to `@vendoai/core` instead.**
+  `KNOWLEDGE_DOCS_COLLECTION` and `KNOWLEDGE_CHUNKS_COLLECTION` are released
+  store-collection names, not engine logic — a second repo is written against
+  these literals to keep its own tables out of their way. They are contract, so
+  they now ship from `@vendoai/core`, beside the `KnowledgeDoc` shape and the
+  engine-collection registry that already named both strings. Import them from
+  `@vendoai/core`; `@vendoai/vendo/knowledge` re-exports them too, so either
+  works.
+
+  **What a host installs.** `@vendoai/vendo` now depends directly on `croner`,
+  `jsonata`, `jose` and `@modelcontextprotocol/sdk`, which the three blocks
+  brought in before — the install graph is unchanged, the packages that declare
+  them moved.
+
+  No behaviour changes. Every symbol keeps its signature, and the one
+  type-level edit the fold forced (the umbrella compiles with the DOM lib, whose
+  `BufferSource` is narrower) is internal to webhook verification and changes no
+  published signature.
+
+- 3c8b4e6: One definition per wire shape, and `@vendoai/ui` no longer keeps a copy of any
+  of them.
+
+  `@vendoai/ui` carried its own restatement of fifteen shapes the wire returns,
+  because it may depend on `@vendoai/core` and `@vendoai/apps` and nothing else,
+  so it could not name the packages that produce them. "Verbatim from the frozen
+  contract text" was a promise rather than a mechanism, and `Thread` had already
+  drifted: the copy was missing `title` (the listing title the store precomputes)
+  and `revision` (the concurrency token), so a surface reading a thread through
+  the client could see neither. The compile-time parity gate could not catch it —
+  both fields are optional, so each declaration stayed assignable to the other.
+
+  The shapes moved UP instead of being patched. `Thread`, `ThreadSummary`,
+  `ConnectionAccount`, `InitiatedConnection`, `ConnectableToolkit`, `RunRecord`,
+  `RunPlan`, `EnableResult`, `AutomationEntry`, `SlotEntry`, `UploadedFile`,
+  `GuardPosture`, `ApprovalResolution` and `VendoStatus` are now declared once in
+  `@vendoai/core`, and every producer imports the same declaration:
+  `@vendoai/vendo`'s thread repository and connection adapters, `@vendoai/actions`
+  (`ConnectorAccount` is core's `ConnectionAccount` now), `@vendoai/automations`,
+  `@vendoai/guard` and `@vendoai/apps`. The restatement file is deleted. Nothing
+  in ui's public surface changed — the same names are exported, from their owners.
+
+  One rename in `@vendoai/apps`: the slot registry answers `SlotEntry`, the name
+  the wire and the client already used, in place of `SlotRecord`.
+
+  `GET /status` now satisfies core's `VendoStatus` rather than building an
+  unnamed object literal, so the door and the client are held to one shape.
+
 ## 0.56.0
 
 ### Minor Changes

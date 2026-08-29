@@ -1,5 +1,106 @@
 # @vendoai/vendo
 
+## 0.57.0
+
+### Minor Changes
+
+- 179fbf1: The standalone backend agent folds into `@vendoai/vendo`. `@vendoai/agents` is
+  gone: `agent()`, `tool()`, `api()`, `serve()`, `agentHandler`, `createUser`,
+  `createTurns`, `awayRunner`, `e2b`, `postgres`, `provideCloudAdapters` and the
+  rest now ship from the umbrella root, and the route runtime that was
+  `@vendoai/agents/http` is the one the umbrella's own wire already runs.
+
+  Pre-1.0 hard cut, no alias package. Change `@vendoai/agents` imports to
+  `@vendoai/vendo`, and `@vendoai/agents/claude-code` to
+  `@vendoai/vendo/claude-code`; every export name is unchanged but two.
+
+  `Turn` and `TurnResult` are the exception. Both halves claim those names and
+  they are not the same types — core's `Turn` is the Build-contract turn a
+  harness is handed, the agent surface's is the in-flight handle a caller holds —
+  so the umbrella root keeps the meaning it already had (core's). A host moving
+  off `@vendoai/agents` that named either one gets a compile error at its use
+  site rather than a silently different type; import the shape you need from the
+  module that defines it.
+
+  Boot errors that told you to import from `@vendoai/agents` now name
+  `@vendoai/vendo`, because the package they pointed at no longer resolves. This
+  affects the two sandbox errors in `agent()`, the `agent:` config-key error, and
+  the `createVendo({ agent })`, `createVendo({ agents })` and `serve({ agents })`
+  refusals.
+
+- 2f335d2: The CLI is its own package, `@vendoai/cli`. `vendo init`, `doctor`, `sync`,
+  `config`, `knowledge`, `mcp` and the Cloud login move out of the umbrella, so
+  `@vendoai/vendo` ships as a library only — its tarball no longer carries the
+  CLI's compiled code, its `bin`, or the setup skills.
+
+  **What a host does differently:** installing `@vendoai/vendo` no longer puts
+  `vendo` in `node_modules/.bin`. Install `@vendoai/cli` next to it —
+  `npm install -D @vendoai/cli` — which is also what the `predev` and `prebuild`
+  hooks init writes (`vendo sync …`) resolve through, so it has to stay in the
+  project rather than being run once through `npx`. A dev dependency is the right
+  home: every `vendo` command runs at development or build time, never inside a
+  request. `npx vendoai@latest …` is unchanged: the `vendoai` alias depends on
+  `@vendoai/cli` and re-exposes the bin.
+
+  `vendo init` now installs `@vendoai/cli` itself when it writes those hooks, the
+  same way it already installs what the files it generates import — a project it
+  wired can always run its own `npm run dev`. It installs the package unversioned,
+  so your package manager records its usual caret range (`^0.56.0`): on a `0.x`
+  version that is `>=0.56.0 <0.57.0`, so the CLI tracks patches within the minor
+  you installed and never crosses one on its own.
+
+  The extraction stages are `@vendoai/cli/extract` instead of
+  `@vendoai/vendo/extract`.
+
+- e679e1d: **Three blocks fold into `@vendoai/vendo`. `@vendoai/knowledge`,
+  `@vendoai/automations` and `@vendoai/mcp` are gone.**
+
+  Pre-1.0 hard cut, no alias packages. Each block's public surface survives
+  unchanged — the same barrel, the same symbols — at a subpath of the umbrella,
+  so a migration is a specifier rewrite and nothing else:
+
+  - `@vendoai/automations` → `@vendoai/vendo/automations`
+  - `@vendoai/mcp` → `@vendoai/vendo/mcp`
+  - `@vendoai/knowledge` → `@vendoai/vendo/knowledge`
+
+  The umbrella ROOT is unchanged. It already re-exported the handful of names a
+  host actually composes with — `AutomationsEngine`, `RunRecord`, `RunStatus`,
+  `RunPlan`, `HostOAuthAdapter`, `UNATTENDED_IRREVERSIBILITY_RULE` — and it still
+  does, from the same place. Nothing was added to it, and the door's surface
+  beyond `HostOAuthAdapter` stays umbrella-internal exactly as before.
+
+  **Two constants move to `@vendoai/core` instead.**
+  `KNOWLEDGE_DOCS_COLLECTION` and `KNOWLEDGE_CHUNKS_COLLECTION` are released
+  store-collection names, not engine logic — a second repo is written against
+  these literals to keep its own tables out of their way. They are contract, so
+  they now ship from `@vendoai/core`, beside the `KnowledgeDoc` shape and the
+  engine-collection registry that already named both strings. Import them from
+  `@vendoai/core`; `@vendoai/vendo/knowledge` re-exports them too, so either
+  works.
+
+  **What a host installs.** `@vendoai/vendo` now depends directly on `croner`,
+  `jsonata`, `jose` and `@modelcontextprotocol/sdk`, which the three blocks
+  brought in before — the install graph is unchanged, the packages that declare
+  them moved.
+
+  No behaviour changes. Every symbol keeps its signature, and the one
+  type-level edit the fold forced (the umbrella compiles with the DOM lib, whose
+  `BufferSource` is narrower) is internal to webhook verification and changes no
+  published signature.
+
+### Patch Changes
+
+- Updated dependencies [4b189ec]
+- Updated dependencies [e679e1d]
+- Updated dependencies [3c8b4e6]
+  - @vendoai/core@0.57.0
+  - @vendoai/guard@0.57.0
+  - @vendoai/store@0.57.0
+  - @vendoai/actions@0.57.0
+  - @vendoai/apps@0.57.0
+  - @vendoai/harnesses@0.57.0
+  - @vendoai/ui@0.57.0
+
 ## 0.56.0
 
 ### Patch Changes
