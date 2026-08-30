@@ -144,6 +144,25 @@ describe("composioConnector", () => {
     await expect(connector.descriptors()).rejects.toThrow("Composio pagination loop");
   });
 
+  it("times out when a response stalls before sending headers", async () => {
+    const server = await startServer(() => new Promise(() => {}));
+    closers.push(server.close);
+
+    const connector = composioConnector({ apiKey: "secret", baseUrl: server.url, apps: ["gmail"], timeoutMs: 20 });
+    await expect(connector.descriptors()).rejects.toThrow("Composio /api/v3.1/tools request timed out after 20ms");
+  });
+
+  it("keeps the timeout active while reading the response body", async () => {
+    const server = await startServer((_req, res) => {
+      res.setHeader("content-type", "application/json");
+      res.flushHeaders();
+    });
+    closers.push(server.close);
+
+    const connector = composioConnector({ apiKey: "secret", baseUrl: server.url, apps: ["gmail"], timeoutMs: 20 });
+    await expect(connector.descriptors()).rejects.toThrow("Composio /api/v3.1/tools request timed out after 20ms");
+  });
+
   it("bare (no apps) is LAZY: descriptors() loads nothing and fetches nothing", async () => {
     // Connection-scoped tool loading (spec 2026-07-20): the old unscoped
     // full-catalog walk is gone. Discovery rides the toolkit index; schemas
