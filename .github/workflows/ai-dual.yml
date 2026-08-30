@@ -32,7 +32,11 @@ jobs:
   # SHARDED like test-shards, because unsharded it was the whole PR run's
   # critical path: 31 minutes against every other job's <=9 (main run
   # 32394860278), of which the serial test phase was 27m30s and @vendoai/vendo
-  # alone was 1171s, ui 377s. Same split as the v6 lane — vendo x4, ui x2 — with
+  # alone was 1171s, ui 377s. vendo x8 — twice the v6 lane's x4, because at x4
+  # this cold lane finished last in all five full main runs measured on
+  # 2026-08-30 (worst leg 624s vs test-shards' 489s), so it alone set when the
+  # `ci` check closed; x8 hands the critical path back to test-shards and takes
+  # ~3 minutes off the run for four extra runners. ui x2 as in the v6 lane, with
   # everything else in one `rest` leg, whose own long pole is @vendoai/agents at
   # 320s. `pnpm test:ai7` is still the one-shot a laptop runs; the three halves
   # of it are unrolled below so the last one can shard.
@@ -101,10 +105,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { name: vendo-1, build: "--filter=@vendoai/vendo", test: "--filter=@vendoai/vendo exec vitest run --shard=1/4" }
-          - { name: vendo-2, build: "--filter=@vendoai/vendo", test: "--filter=@vendoai/vendo exec vitest run --shard=2/4" }
-          - { name: vendo-3, build: "--filter=@vendoai/vendo", test: "--filter=@vendoai/vendo exec vitest run --shard=3/4" }
-          - { name: vendo-4, build: "--filter=@vendoai/vendo", test: "--filter=@vendoai/vendo exec vitest run --shard=4/4" }
+          - { name: vendo-1, build: "--filter=@vendoai/vendo", test: "--filter=@vendoai/vendo exec vitest run --shard=1/8" }
+          - { name: vendo-2, build: "--filter=@vendoai/vendo", test: "--filter=@vendoai/vendo exec vitest run --shard=2/8" }
+          - { name: vendo-3, build: "--filter=@vendoai/vendo", test: "--filter=@vendoai/vendo exec vitest run --shard=3/8" }
+          - { name: vendo-4, build: "--filter=@vendoai/vendo", test: "--filter=@vendoai/vendo exec vitest run --shard=4/8" }
+          - { name: vendo-5, build: "--filter=@vendoai/vendo", test: "--filter=@vendoai/vendo exec vitest run --shard=5/8" }
+          - { name: vendo-6, build: "--filter=@vendoai/vendo", test: "--filter=@vendoai/vendo exec vitest run --shard=6/8" }
+          - { name: vendo-7, build: "--filter=@vendoai/vendo", test: "--filter=@vendoai/vendo exec vitest run --shard=7/8" }
+          - { name: vendo-8, build: "--filter=@vendoai/vendo", test: "--filter=@vendoai/vendo exec vitest run --shard=8/8" }
           - { name: ui-1, build: "--filter=@vendoai/ui", test: "--filter=@vendoai/ui exec vitest run --shard=1/2" }
           - { name: ui-2, build: "--filter=@vendoai/ui", test: "--filter=@vendoai/ui exec vitest run --shard=2/2" }
           # No build filter = the whole tree; this is the leg that carries the
