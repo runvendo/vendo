@@ -651,7 +651,8 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
   };
 
   function loadHost(): Promise<LoadedHost> {
-    if (!hostPromise) hostPromise = (async () => {
+    if (!hostPromise) {
+      hostPromise = (async () => {
       const emptyOverrides: OverridesFile = { format: VENDO_OVERRIDES_FORMAT, tools: {} };
       const configuredTools = config.tools?.map((tool, index) => parseExtractedTool(tool, `config.tools[${index}]`));
       // cse lane 3 — an injected overrides doc (hosted config or the try
@@ -711,7 +712,12 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
         compounds: overrides.compounds ?? [],
         briefs: overrides.briefs ?? [],
       };
-    })();
+      })();
+      const building = hostPromise;
+      building.catch(() => {
+        if (hostPromise === building) hostPromise = undefined;
+      });
+    }
     return hostPromise.then(warnHostToolSurface);
   }
 

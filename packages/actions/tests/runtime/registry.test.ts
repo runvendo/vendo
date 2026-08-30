@@ -181,6 +181,24 @@ describe("createActions registry", () => {
     await expect(actions.descriptors()).rejects.toMatchObject({ name: "VendoError", code: "validation" });
   });
 
+  it("recovers from a transient host-file failure after the file is fixed", async () => {
+    const root = await mkdtemp(join(tmpdir(), "vendo-actions-recover-"));
+    roots.push(root);
+    await mkdir(join(root, ".vendo"));
+    await writeFile(join(root, ".vendo", "tools.json"), "{ not json");
+    const actions = createActions({ dir: root });
+
+    await expect(actions.descriptors()).rejects.toMatchObject({ name: "VendoError", code: "validation" });
+
+    await writeFile(
+      join(root, ".vendo", "tools.json"),
+      JSON.stringify({ format: VENDO_TOOLS_FORMAT, tools: [routeTool("host_recovered")] }),
+    );
+
+    const descriptors = await actions.descriptors();
+    expect(descriptors.map((d) => d.name)).toContain("host_recovered");
+  });
+
   it("reserves disabled names and throws conflicts across every source", async () => {
     const actions = createActions({
       tools: [routeTool("same", { disabled: true })],
