@@ -27,27 +27,32 @@ export default defineConfig({
       provider: "v8",
       reporter: ["text", "json-summary"],
       include: ["src/**/*.{ts,tsx}"],
-      exclude: [
-        "src/**/*.test.{ts,tsx}",
-        "src/**/*.test-util.{ts,tsx}",
-        // The CLI folded in here when the `vendo` bin came back to the umbrella.
-        // It carried a floor of 0 as a separate package, so it is EXCLUDED
-        // rather than given a glob of its own: the 78 below then measures the
-        // file set it measured before the fold, instead of moving by whatever
-        // the CLI happens to score. A `{ lines: 0 }` glob would not do that —
-        // a glob adds a second check and still leaves its files in the number
-        // above. The CLI gets a floor of its own at the re-ratchet.
-        "src/cli/**",
-      ],
+      exclude: ["src/**/*.test.{ts,tsx}", "src/**/*.test-util.{ts,tsx}"],
       // Ratcheted line-coverage floor (ENG-255): set at/just below the measured
       // value so it can only rise. Regression below this fails CI.
       //
-      // The two globs are the app-generation code S11d folded in. A fold must
-      // not weaken a gate as a side effect: that code carried its own floor of
-      // 88 as @vendoai/apps, and the globs keep holding it there. Glob-matched
-      // files still count in the global number too — a glob is a second,
-      // stricter check, not an exclusion — which is fine at 88 over 78, and is
-      // why the folded CLI is excluded above instead of given a glob.
+      // A glob entry is an ADDITIVE check, never an exclusion: its files are
+      // held to the glob AND go on counting in the global number. That is why
+      // the CLI fold parked src/cli/ in `exclude` instead of handing it a glob
+      // of 0 — an exclusion was the only thing that could keep the then-78
+      // global measuring its pre-fold file set. This is the re-ratchet that
+      // exclusion was placed for, so src/cli/ comes back in with a floor.
+      //
+      // Measured on main, coverage-merge of run 33328955194 (the fold commit),
+      // 94.51 global without the CLI; the CLI itself last measured 93.57 as
+      // @vendoai/cli in run 33318885615, one commit earlier, over a src/ whose
+      // 71 files and 66 test files the fold moved across unchanged. A 93.57
+      // sixth of the tree blended into a 94.51 rest cannot land below 93.57, so
+      // the global goes 78 -> 93 and the CLI takes 92 — each keeping the point
+      // or so of slack the ui floor argues for: a floor with no room is a floor
+      // everyone learns to bypass.
+      //
+      // src/apps/** and src/sandbox/** are the app-generation code S11d folded
+      // in, held at the 88 it arrived with so a fold cannot weaken a gate as a
+      // side effect. They do NOT re-ratchet here: the text reporter prints one
+      // row per directory and each of those globs spans several, so the
+      // aggregate the threshold actually checks never appears in the log. They
+      // rise when someone measures them, not before.
       //
       // Off inside a shard, which sees a fraction of the files: coverage-merge
       // replays the blobs and enforces these against the whole suite. This gate
@@ -58,8 +63,9 @@ export default defineConfig({
       thresholds: process.env.VITEST_SHARD
         ? {}
         : {
-            lines: 78,
+            lines: 93,
             "src/apps/**": { lines: 88 },
+            "src/cli/**": { lines: 92 },
             "src/sandbox/**": { lines: 88 },
           },
     },

@@ -509,7 +509,7 @@ jobs:
     if: needs.cone.outputs.heavy == 'true'
     uses: ./.github/workflows/ai-dual.yml
 
-  # The per-package coverage floors (vendo 78 / ui 90, each in the
+  # The per-package coverage floors (vendo 93 / ui 92, each in the
   # package's vitest config) live HERE, because a floor is only meaningful
   # against the whole suite's coverage. vitest replays the shards' blob reports
   # without re-running a single test, then reports and enforces.

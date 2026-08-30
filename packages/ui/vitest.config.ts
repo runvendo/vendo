@@ -22,14 +22,15 @@ export default defineConfig({
       // against the whole suite's merged coverage rather than any single shard.
       // RATCHET — this number only ever rises: when it goes red, add coverage,
       // never lower the floor.
-      // Last set 2026-08-08 to 90, against a measured 91.65% lines (11509/12557)
-      // on main — re-measured through the merge path after the undo/rollback
-      // deletion and four ui fixes landed. The 1.65 points of slack are
-      // deliberate: a floor with no room is a floor everyone learns to bypass.
-      // Branches are not floored (88.86% when this was set).
+      // Last set 2026-08-30 to 92, against a measured 93.81% lines on main —
+      // coverage-merge of run 33328955194, the same merge path the floor is
+      // enforced through. The ~1.8 points of slack are deliberate, and are the
+      // same slack the previous setting carried (90 against 91.65 on
+      // 2026-08-08): a floor with no room is a floor everyone learns to bypass.
+      // Branches are not floored (91.53% when this was set).
       // Off inside a shard; enforced by coverage-merge. Same rule as
       // @vendoai/vendo's, and stated the same way.
-      thresholds: process.env.VITEST_SHARD ? {} : { lines: 90 },
+      thresholds: process.env.VITEST_SHARD ? {} : { lines: 92 },
     },
     environment: "jsdom",
     include: ["test/**/*.test.ts?(x)"],
