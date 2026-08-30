@@ -152,7 +152,7 @@ export function extractOpenApiDocument(
   const tools: Array<ExtractedTool & { binding: OpenApiBinding }> = [];
 
   for (const [route, rawPathItem] of Object.entries(paths)) {
-    const pathItem = jsonObject(rawPathItem);
+    const pathItem = jsonObject(resolveRefs(document, rawPathItem));
     for (const lowerMethod of METHODS) {
       const rawOperation = pathItem[lowerMethod];
       if (rawOperation === null || typeof rawOperation !== "object" || Array.isArray(rawOperation)) continue;

@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { RunContext } from "@vendoai/core";
 import type { OpenApiBinding, RouteBinding } from "../../src/formats.js";
+import { extractOpenApiDocument } from "../../src/openapi-document.js";
 import { createActions } from "../../src/runtime/registry.js";
 import { runExtractors } from "../../src/sync/extractors.js";
 import { openApiMountPath } from "../../src/sync/openapi.js";
@@ -67,6 +68,31 @@ describe("openApiMountPath", () => {
     ["a trailing slash on the mount point", [{ url: "/cadence/" }], "/cadence"],
   ])("reads %s as %j", async (_label, servers, expected) => {
     expect(await mountOf(servers)).toBe(expected);
+  });
+});
+
+describe("OpenAPI Path Item references", () => {
+  it("extracts operations and parameters from a local referenced Path Item", () => {
+    expect(extractOpenApiDocument({
+      openapi: "3.1.0",
+      info: { title: "Referenced paths", version: "1.0.0" },
+      components: {
+        pathItems: {
+          pets: {
+            parameters: [{ name: "limit", in: "query", schema: { type: "integer" } }],
+            get: { operationId: "listPets", responses: {} },
+          },
+        },
+      },
+      paths: { "/pets": { $ref: "#/components/pathItems/pets" } },
+    })).toMatchObject([{
+      name: "host_listPets",
+      inputSchema: {
+        type: "object",
+        properties: { limit: { type: "integer" } },
+      },
+      binding: { method: "GET", path: "/pets", operationId: "listPets" },
+    }]);
   });
 });
 
