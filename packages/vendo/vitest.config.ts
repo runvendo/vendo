@@ -27,16 +27,27 @@ export default defineConfig({
       provider: "v8",
       reporter: ["text", "json-summary"],
       include: ["src/**/*.{ts,tsx}"],
-      exclude: ["src/**/*.test.{ts,tsx}", "src/**/*.test-util.{ts,tsx}"],
+      exclude: [
+        "src/**/*.test.{ts,tsx}",
+        "src/**/*.test-util.{ts,tsx}",
+        // The CLI folded in here when the `vendo` bin came back to the umbrella.
+        // It carried a floor of 0 as a separate package, so it is EXCLUDED
+        // rather than given a glob of its own: the 78 below then measures the
+        // file set it measured before the fold, instead of moving by whatever
+        // the CLI happens to score. A `{ lines: 0 }` glob would not do that —
+        // a glob adds a second check and still leaves its files in the number
+        // above. The CLI gets a floor of its own at the re-ratchet.
+        "src/cli/**",
+      ],
       // Ratcheted line-coverage floor (ENG-255): set at/just below the measured
       // value so it can only rise. Regression below this fails CI.
       //
       // The two globs are the app-generation code S11d folded in. A fold must
-      // not weaken a gate as a side effect, and a single umbrella number would
-      // have: that code carried its own floor of 88 as @vendoai/apps, and
-      // averaging it into 78 would have retired 10 points nobody chose to give
-      // up. Files matched by a glob are held to the glob and excluded from the
-      // number above, so each half still answers for itself.
+      // not weaken a gate as a side effect: that code carried its own floor of
+      // 88 as @vendoai/apps, and the globs keep holding it there. Glob-matched
+      // files still count in the global number too — a glob is a second,
+      // stricter check, not an exclusion — which is fine at 88 over 78, and is
+      // why the folded CLI is excluded above instead of given a glob.
       //
       // Off inside a shard, which sees a fraction of the files: coverage-merge
       // replays the blobs and enforces these against the whole suite. This gate

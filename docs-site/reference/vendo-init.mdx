@@ -5,11 +5,11 @@ description: "What vendo init scans, every file it writes, how framework and aut
 ---
 
 ```bash
-npm install -D @vendoai/cli
+npm install @vendoai/vendo
 npx vendo init
 ```
 
-The `vendo` bin ships in `@vendoai/cli`, not in `@vendoai/vendo`. Before anything is installed, `npx vendoai@latest init` runs it straight from npm.
+The `vendo` bin ships in `@vendoai/vendo`, so installing the package is all it takes. Before anything is installed, `npx vendoai@latest init` runs it straight from npm.
 
 One command. It scans the app with deterministic analysis, writes everything it can, and tells you the little that is left.
 
@@ -41,7 +41,7 @@ It also adds idempotent `predev` and `prebuild` hooks to `package.json`:
 }
 ```
 
-Those hooks resolve `vendo` out of `node_modules/.bin`, so `@vendoai/cli` has to stay installed in the project — not just run once through `npx`. Init installs it as a dev dependency when it writes them, so a project it wired can always run its own hooks.
+Those hooks resolve `vendo` out of `node_modules/.bin`, so the bin has to be installed in the project — not just run once through `npx`. `@vendoai/vendo` carries it, and the files init writes import that package anyway, so a project it wired can always run its own hooks.
 
 The hooks carry `--no-ai` explicitly, so `npm run dev` can never stop to ask a question or spend on inference. An existing script keeps its formatting and gets `vendo sync` prepended.
 

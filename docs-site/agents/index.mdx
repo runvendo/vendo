@@ -67,7 +67,6 @@ pointed at.
 
    ```bash
    npm install @vendoai/vendo
-   npm install -D @vendoai/cli
    npx vendo --version   # must be >= 0.29.0
    ```
 
@@ -77,11 +76,8 @@ pointed at.
 
    ```bash
    npm install @vendoai/vendo --workspace apps/web   # npm workspaces
-   npm install -D @vendoai/cli --workspace apps/web
    yarn workspace <app-package-name> add @vendoai/vendo
-   yarn workspace <app-package-name> add -D @vendoai/cli
    pnpm --filter <app-package-name> add @vendoai/vendo
-   pnpm --filter <app-package-name> add -D @vendoai/cli
    ```
 
    Then run the version check — and every `npx vendo …` step below — from
@@ -101,12 +97,11 @@ pointed at.
      node-liblzma: false
    ```
 
-   TWO packages, and no others. `@vendoai/vendo` is the umbrella: it carries
-   every `@vendoai/vendo/*` subpath the files init writes import. `@vendoai/cli`
-   carries the `vendo` binary into `node_modules/.bin` — which is what the
-   version check above and the `predev`/`prebuild` hooks init adds to
-   `package.json` run, so it stays installed rather than being run once through
-   `npx`. A dev dependency is enough: it never runs inside a request. `vendoai` is a thin ALIAS depending on both, for `npx vendoai@latest …`
+   ONE package, and no others. `@vendoai/vendo` is the umbrella: it carries
+   every `@vendoai/vendo/*` subpath the files init writes import, and it puts
+   the `vendo` binary into `node_modules/.bin` — which is what the version
+   check above and the `predev`/`prebuild` hooks init adds to `package.json`
+   run. `vendoai` is a thin ALIAS of it, for `npx vendoai@latest …`
    before anything is installed; as a dependency it adds nothing, and installing
    it INSTEAD of the umbrella is the shape that breaks — pnpm's strict `node_modules` cannot
    resolve `@vendoai/vendo/*` through an alias, so every route 500s with

@@ -51,8 +51,8 @@ export async function packLocalVendo(workspaceRoot: string, destDir: string): Pr
     throw new Error("local pack requires space-free paths (file: specs)");
   }
   await fs.mkdir(destDir, { recursive: true });
-  // Discover by manifest name, not directory name (@vendoai/cli lives in
-  // packages/cli) — the corpus harness's discovery rule.
+  // Discover by manifest name, not directory name (`vendoai` lives in
+  // packages/vendoai) — the corpus harness's discovery rule.
   const byName = new Map<string, { dir: string; version: string }>();
   for (const entry of await fs.readdir(path.join(workspaceRoot, "packages"), { withFileTypes: true })) {
     if (!entry.isDirectory()) continue;

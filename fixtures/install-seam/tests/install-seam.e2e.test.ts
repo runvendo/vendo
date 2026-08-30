@@ -59,11 +59,11 @@ describe("the install seam", () => {
   });
 
   it("runs the packed CLI's init to completion without writing outside the app or minting an account", () => {
-    // The `vendo` under test is the PACKED @vendoai/cli, installed from its own
-    // tarball into a directory outside the app (`src/stranger.ts`). Running the
-    // workspace copy would prove the source tree and leave the one risk the CLI
-    // split creates — does the published CLI install and run — proven by
-    // nothing.
+    // The `vendo` under test is the bin of the PACKED @vendoai/vendo, installed
+    // from its own tarball into a directory outside the app (`src/stranger.ts`).
+    // Running the workspace copy would prove the source tree and leave the one
+    // risk that matters — does the PUBLISHED umbrella install and run `vendo` —
+    // proven by nothing.
     expect(stranger.cliBin, "init ran a CLI out of the source tree").not.toContain(workspaceRoot);
     expect(stranger.init.code, stranger.init.output.slice(-4000)).toBe(0);
     // "Asks before accounts", asserted as an absence: an unattended init that
@@ -77,12 +77,15 @@ describe("the install seam", () => {
   });
 
   it("leaves the app able to run the hooks init wrote into it", () => {
-    // `predev` is `vendo sync --no-ai`, and `vendo` ships in @vendoai/cli — a
-    // package this fixture never installs into the app. Init wrote the hook, so
-    // init owes it a binary; without that, a host's very first `npm run dev`
-    // exits 127 on `vendo: not found`.
-    expect(stranger.declaredDependencies["@vendoai/cli"], "init wrote hooks that shell a package it never added")
+    // `predev` is `vendo sync --no-ai`, and `vendo` ships in @vendoai/vendo —
+    // the single package a host installs. This is the whole one-install
+    // contract: nothing else is typed, so the umbrella's own tarball has to put
+    // `vendo` in the app's `node_modules/.bin`, or a host's very first
+    // `npm run dev` exits 127 on `vendo: not found`.
+    expect(stranger.declaredDependencies["@vendoai/vendo"], "the app never declared the umbrella")
       .toBeDefined();
+    expect(stranger.appVendoBin, "installing @vendoai/vendo did not put a `vendo` bin in the app")
+      .toBe(true);
     expect(stranger.predev.code, stranger.predev.output.slice(-4000)).toBe(0);
   });
 
@@ -118,17 +121,12 @@ describe("the install seam", () => {
       expect(spec, `${name} did not resolve to a packed tarball`).toMatch(/^file:vendor\//);
       expect(spec, `${name} resolved to a tarball that is not ${packed}`).toContain(`-${packed}.tgz`);
     }
-    // The whole umbrella closure really is in there. Two names are absent from
+    // The whole umbrella closure really is in there. One name is absent from
     // the APP's tree by design: `vendoai` is the bare alias a host may install
-    // INSTEAD of @vendoai/vendo, so nothing pulls it in transitively; and
-    // `@vendoai/cli` is not a dependency of the project it initialises — it is
-    // installed and invoked from outside, the way npx runs it. The CLI is still
-    // packed, installed from its tarball and executed by this same fixture, and
-    // the init test above asserts the binary that ran came out of that install
-    // rather than out of the source tree.
+    // INSTEAD of @vendoai/vendo, so nothing pulls it in transitively.
     const resolved = new Set(locked.map(([, name]) => name!));
     for (const name of Object.keys(stranger.packedVersions)) {
-      if (name === "vendoai" || name === "@vendoai/cli") continue;
+      if (name === "vendoai") continue;
       expect([...resolved], `${name} never reached the stranger's tree`).toContain(name);
     }
   });

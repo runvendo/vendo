@@ -82,19 +82,9 @@ const LAYERS = {
   "@vendoai/ui": ["@vendoai/core"],
   // the canonical umbrella is the only package allowed to depend on every block
   "@vendoai/vendo": "*",
-  // The CLI (S10, 2026-08-29): its own published package, ABOVE the umbrella
-  // rather than inside it. The umbrella is a real edge, not scaffolding text —
-  // `vendo init` pins and installs `@vendoai/vendo@<this version>` into the
-  // host, every scaffold it writes imports `@vendoai/vendo/*`, and the seam
-  // suites boot a real composition to prove the two agree. The edge is one-way
-  // and must stay so: @vendoai/vendo does NOT depend on the CLI.
-  "@vendoai/cli": [
-    "@vendoai/core",
-    "@vendoai/vendo",
-  ],
-  // the unscoped compatibility package is a thin alias of the canonical umbrella,
-  // plus the CLI whose `vendo` bin it re-exposes for `npx vendoai@latest …`
-  vendoai: ["@vendoai/cli", "@vendoai/vendo"],
+  // the unscoped compatibility package is a thin alias of the canonical
+  // umbrella, whose `vendo` bin it re-exposes for `npx vendoai@latest …`
+  vendoai: ["@vendoai/vendo"],
 };
 
 /**

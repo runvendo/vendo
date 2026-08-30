@@ -9,13 +9,13 @@ import { findClientMount, mountedChild } from "../../src/layers/structural.js";
 import { pathExists } from "../../src/util.js";
 
 // The BUILT CLI, resolved exactly as init-step.ts resolves it. Nothing here
-// imports the product's rule: `clientRoot` sits in packages/cli/src/shared.ts
-// and has no export path out of the package (@vendoai/cli publishes . and
+// imports the product's rule: `clientRoot` sits in packages/vendo/src/cli/shared.ts
+// and has no export path out of the package (@vendoai/vendo publishes . and
 // ./extract), and reaching into another package's source is what
 // scripts/dependency-guard.mjs exists to stop. So the seam is tested the way
 // the corpus itself meets the product — as a subprocess.
 const workspaceRoot = path.resolve(fileURLToPath(new URL("../../../../", import.meta.url)));
-const cliBin = path.join(workspaceRoot, "packages/cli/bin/vendo.mjs");
+const cliBin = path.join(workspaceRoot, "packages/vendo/bin/vendo.mjs");
 const run = promisify(execFile);
 
 const tempRoots: string[] = [];
@@ -72,7 +72,7 @@ const MATRIX: ReadonlyArray<{ name: string; files: string[]; expected: string }>
 ];
 
 /** SEAM TEST. `findClientMount` is the corpus's copy of the product's
- * `clientRoot` (packages/cli/src/shared.ts) — the file init's `File:`
+ * `clientRoot` (packages/vendo/src/cli/shared.ts) — the file init's `File:`
  * line names and doctor grades. The two copies drifted twice, first on teable's
  * pages `_app` and then on nextcrm's nested `[locale]` layout, and each time the
  * corpus pasted nothing, scored a mount that was never there, and only said so
@@ -81,7 +81,7 @@ const MATRIX: ReadonlyArray<{ name: string; files: string[]; expected: string }>
 describe("findClientMount agrees with the built CLI's client root", () => {
   it("names the same file and wraps the same expression on every host shape", async () => {
     expect(
-      await pathExists(path.join(workspaceRoot, "packages/cli/dist/index.js")),
+      await pathExists(path.join(workspaceRoot, "packages/vendo/dist/cli/index.js")),
       "the vendo CLI is not built — run pnpm build (turbo runs test after ^build)",
     ).toBe(true);
 

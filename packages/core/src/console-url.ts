@@ -59,7 +59,7 @@ export interface CloudUrlOptions {
  *  {@link consoleUrlFromEnv}, else the hosted default — with any trailing
  *  slashes stripped so a caller can always append a path. Pure, and here rather
  *  than with any one caller because the runtime (@vendoai/vendo's
- *  cloud-key-fetch.ts) and the CLI (@vendoai/cli's cloud client) must resolve
+ *  cloud-key-fetch.ts) and the CLI (its cloud client) must resolve
  *  the same origin from the same inputs. */
 export function resolveCloudBaseUrl(options: CloudUrlOptions = {}): string {
   const value = options.apiUrl ?? consoleUrlFromEnv(options.env) ?? DEFAULT_CONSOLE_URL;

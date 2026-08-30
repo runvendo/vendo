@@ -183,7 +183,7 @@ describe("createTelemetry.track", () => {
  * because Node's global fetch keeps a connecting socket alive after an abort,
  * which held `vendo init` open for ten seconds past its summary on a
  * captive-portal network. The socket is unref'd, so the timeout is the only
- * bound; `packages/cli/tests/telemetry-exit.test.ts` proves the exit
+ * bound; `packages/vendo/tests/cli/telemetry-exit.test.ts` proves the exit
  * guarantee on the real CLI process.
  */
 describe("default transport (no fetchImpl)", () => {

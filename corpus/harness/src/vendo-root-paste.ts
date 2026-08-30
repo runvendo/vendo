@@ -152,7 +152,7 @@ function mountSpan(source: string, fileName: string, router: "app" | "pages"): {
  * prints a paste, so the corpus harness plays the human and pastes the
  * documented canonical mount — docs-site/product/mount-the-surface.mdx, "The client mount".
  * It does NOT mirror init's printed block: init's copy is init's own contract
- * (packages/cli/tests/init.test.ts owns it), and wording changes there
+ * (packages/vendo/tests/cli/init.test.ts owns it), and wording changes there
  * must never fail the corpus. A green corpus run still means the app is wired
  * end to end, not just that init exited 0. The only thing it resolves besides
  * the client-root path (layers/structural.ts's findClientMount) is WHERE the

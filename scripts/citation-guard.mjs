@@ -151,6 +151,7 @@ const liveNames = new Set(
 const MAY_NAME_RETIRED = new Set([
   "scripts/citation-guard.mjs",
   "scripts/dependency-guard.mjs",
+  ".changeset/cli-ships-with-vendo.md",
   "cloud/console/tests/config-preview.test.ts",
   "packages/ui/src/tree/screen-engine.ts",
   "packages/vendo/README.md",

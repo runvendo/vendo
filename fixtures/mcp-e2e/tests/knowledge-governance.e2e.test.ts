@@ -54,7 +54,7 @@ async function createKnowledgeUmbrella(): Promise<Umbrella> {
     store,
     // The shipped read posture: the call RUNS at the door, so the leg proves
     // zero leakage on execution (init's vendo_knowledge_* → ask hardening is
-    // its own test in packages/cli/tests/init.test.ts).
+    // its own test in packages/vendo/tests/cli/init.test.ts).
     guard: {
       policy: {
         rules: [

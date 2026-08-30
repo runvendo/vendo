@@ -215,7 +215,7 @@ is scored on:
 
   Three rules the mutation test does not derive on its own decide the rows it
   used to leave undecidable. They are the same rules the judge prompt states
-  (`packages/cli/src/judge/prompts.ts`), so labels and model are graded
+  (`packages/vendo/src/cli/judge/prompts.ts`), so labels and model are graded
   against one policy rather than two:
   - **A catch-all route is graded at its WORST reachable operation**, and carries
     that grade on every method it exports. When one URL fronts many operations

@@ -40,10 +40,14 @@ export interface Stranger {
   baseUrl: string;
   /** `pnpm add <tarballs>` — assertion 1. */
   add: CommandResult;
-  /** The `vendo` that ran: the bin of the PACKED `@vendoai/cli`, installed
+  /** The `vendo` that ran: the bin of the PACKED `@vendoai/vendo`, installed
    *  outside the app. A path inside this workspace would mean the suite proved
    *  the source tree and not the tarball — assertion 2. */
   cliBin: string;
+  /** Does the APP's own install carry a `vendo` bin? The whole contract in one
+   *  boolean: a host types `npm install @vendoai/vendo` and nothing else, so
+   *  the umbrella's tarball is what has to put `vendo` on the hook's PATH. */
+  appVendoBin: boolean;
   /** `vendo init …` — assertion 2. */
   init: CommandResult;
   /** The scaffold's own `predev` hook, run for real: the first thing a host's
@@ -232,7 +236,7 @@ export async function bootStranger(artifactsDir: string): Promise<{ stranger: St
     // The tarballs are only as good as `dist/`, and a pack of an unbuilt
     // package succeeds — it just ships an empty one. Say so here instead of
     // three minutes later, as a module-not-found inside a Next dev server.
-    await fs.access(path.join(workspaceRoot, "packages/cli/dist/index.js")).catch(() => {
+    await fs.access(path.join(workspaceRoot, "packages/vendo/dist/cli/index.js")).catch(() => {
       throw new Error("the workspace is not built — run `pnpm build` before the install seam");
     });
     const packed = await packOnce();
@@ -252,21 +256,19 @@ export async function bootStranger(artifactsDir: string): Promise<{ stranger: St
     );
     await writeLog("add.log", add.output);
 
-    // Assertion 2, first half: the published CLI is a package a host installs,
-    // so the seam installs it — from its own tarball, into a directory that is
-    // NOT the app. That is the shape of `npx @vendoai/cli init <dir>`: the CLI
-    // is never a dependency of the project it initialises, and its own install
+    // Assertion 2, first half: `npx vendo init <dir>` runs the umbrella's bin
+    // from OUTSIDE the app — a directory that is not the project, whose install
     // cannot see the project's typescript (which is why extraction resolves the
     // compiler project-first — `compiler-gate.ts:90`). Init still runs from the
     // empty `elsewhere`, so "wrote nothing into its cwd" stays a check on init.
     await fs.writeFile(path.join(cliDir, "package.json"), '{"name":"vendo-cli-runner","private":true}\n');
     await vendorInto(cliDir, packed);
     const cliAdd = await checked(
-      "pnpm add @vendoai/cli",
-      run("pnpm", ["add", "-w", fileSpec(packed, "@vendoai/cli")], { cwd: cliDir, env }),
+      "pnpm add @vendoai/vendo",
+      run("pnpm", ["add", "-w", fileSpec(packed, "@vendoai/vendo")], { cwd: cliDir, env }),
     );
     await writeLog("cli-add.log", cliAdd.output);
-    const cliBin = path.join(cliDir, "node_modules/@vendoai/cli/bin/vendo.mjs");
+    const cliBin = path.join(cliDir, "node_modules/@vendoai/vendo/bin/vendo.mjs");
 
     // Assertion 2: one non-interactive init, answered entirely by flags.
     // `--yes` and NOT `--byo`: an unattended run that already has a working
@@ -289,10 +291,13 @@ export async function bootStranger(artifactsDir: string): Promise<{ stranger: St
     await writeLog("init.log", init.output);
 
     // Init wrote `predev: vendo sync --no-ai` into the scaffold's package.json,
-    // and since the split that binary lives in @vendoai/cli — which nothing
-    // here installed into the app. Running the hook is how "a host's first
-    // `npm run dev` works" stops being an assumption: a missing CLI is
+    // and that binary rides along with @vendoai/vendo — the one package the app
+    // declares. Running the hook is how "a host's first `npm run dev` works"
+    // stops being an assumption: a bin the umbrella failed to ship is
     // `vendo: not found`, exit 127, right here.
+    const appVendoBin = await fs
+      .access(path.join(scaffoldDir, "node_modules/.bin/vendo"))
+      .then(() => true, () => false);
     const predev = await run("pnpm", ["run", "predev"], { cwd: scaffoldDir, env });
     await writeLog("predev.log", predev.output);
 
@@ -334,6 +339,7 @@ export async function bootStranger(artifactsDir: string): Promise<{ stranger: St
       baseUrl,
       add,
       cliBin,
+      appVendoBin,
       init,
       predev,
       typecheck,

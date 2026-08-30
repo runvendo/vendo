@@ -1,0 +1,950 @@
+import { readFile, rm } from "node:fs/promises";
+import { join } from "node:path";
+import type { z } from "zod";
+import type { ExtractedTool } from "../actions/index.js";
+import { firstOpenApiSpec, openApiMountPath, vendoSync, type SyncReportWithWarnings } from "../actions/sync/public.js";
+import type { VendoThemeFont } from "@vendoai/core/apps";
+import type { ToolImpact } from "@vendoai/core";
+import {
+  pushHostComponents,
+  readPushComponents,
+  writePushComponents,
+} from "./cloud/host-components.js";
+import { pushSeedBaselines } from "./cloud/seed-baselines.js";
+import { AGENT_ENDPOINT_ENV_VAR } from "./extract/gateway-fuel.js";
+import type { ThemeStageInput } from "./extract/stages.js";
+import { runProseStages } from "./init-judgment.js";
+import { selectJudgmentEngines, type AvailableEngine } from "./judge/engine.js";
+import { runJudgmentPass, type JudgmentPassOptions } from "./judge/pass.js";
+import { plainSelect, type PrettyOutput, type SelectOption } from "./pretty.js";
+import { embedHostFonts } from "./theme/embed-fonts.js";
+import {
+  applyThemeFonts,
+  extractTheme,
+  toVendoTheme,
+  type modelThemeSchema,
+  type ThemeSlotValues,
+  type ThemeSummary,
+} from "./theme/extract-theme.js";
+import { baseFrom, mergeExtraction, readBase, writeBase } from "./theme/provenance.js";
+import { askYesNo, exists, parseDotEnv, readOptional, writeText, type Output } from "./shared.js";
+
+/**
+ * THE flow both `vendo init` (mode "full" — a fresh install has judged nothing)
+ * and `vendo sync` (mode "incremental" — only what moved) run: extraction, the
+ * theme path, ONE consent question, the judgment pass, the report, the impact
+ * check, and the keyed Cloud pushes.
+ *
+ * Everything in here is fail-soft, exactly as it is today; the CALLERS own the
+ * exit codes, and the two postures stay deliberately different (init fails
+ * loud with 1, sync fails soft with 0 so a sync problem never breaks a build).
+ */
+
+/** The telemetry `engine` enum value for each ladder rung (both Claude rungs
+    are the same engine reached two ways). Unlisted ids (test seams) map to
+    undefined — init's "none" default covers them. Distinct from the
+    user-facing `--engine` family, which says "npx" where telemetry's closed
+    enum says "npx-engine". */
+const ENGINE_BY_HARNESS_ID: Record<string, "claude" | "codex" | "npx-engine"> = {
+  "claude-agent-sdk": "claude",
+  "claude-cli": "claude",
+  "codex-cli": "codex",
+  "npx-engine": "npx-engine",
+};
+
+export interface SyncFlowOptions {
+  root: string;
+  /** Human narration. A caller that owns its stdout byte-for-byte (`sync
+   *  --json`) passes a silent sink and reads `notes` off the result instead. */
+  output: Output;
+  /** init → full (a fresh install has judged nothing); sync → incremental. */
+  mode: "full" | "incremental";
+  interactive: boolean;
+  yes: boolean;
+  ai?: boolean;
+  engine?: string;
+  force?: boolean;
+  themeRefresh?: boolean;
+  review?: boolean;
+  apiKey?: string;
+  apiUrl?: string;
+  /** The dev server the impact check asks about. */
+  url?: string;
+  pushComponents?: boolean;
+  sync?: typeof vendoSync;
+  fetchImpl?: typeof fetch;
+  confirm?: (question: string, defaultYes: boolean) => Promise<boolean>;
+  choose?: (question: string, options: SelectOption[], defaultIndex: number) => Promise<string>;
+  judge?: Pick<JudgmentPassOptions,
+    "harness" | "harnesses" | "resolveCredential" | "confirm" | "onProgress">;
+  /** The renderer's spinner, for the two phases that can hold the terminal for
+   *  minutes: extraction and the judgment pass. Absent (plain runs, CI, pipes)
+   *  → nothing spins and the printed lines stay exactly what they are today. */
+  spinner?: { spin: (label: string) => void; stopSpin: () => void };
+  /** Never block on the loosening review: proposals QUEUE as pending instead
+      of being reviewed inline. init sets it, because init asks nothing once its
+      up-front questions are done — a loosening is never applied without a
+      human, so queueing is the only other honest answer. `vendo sync --review`
+      is the deliberate ask and is unaffected. */
+  queueLoosenings?: boolean;
+  /** Test seam: the wall-clock budget for each Cloud reconcile. */
+  baselineBudgetMs?: number;
+}
+
+/** Everything a renderer contributes to a flow run: the questions AND the
+    spinner. ONE spelling for both commands on purpose — `vendo sync` passed the
+    spinner from day one and `vendo init` never did, so the slowest phases of
+    every install ran against a dead screen (#1163). A caller that overrides one
+    of these spreads its own value after this. */
+export function rendererFlowOptions(
+  pretty: Pick<PrettyOutput, "confirm" | "select" | "spin" | "stopSpin"> | null,
+): Pick<SyncFlowOptions, "confirm" | "choose" | "spinner"> {
+  return pretty === null ? {} : {
+    confirm: pretty.confirm,
+    choose: pretty.select,
+    spinner: { spin: pretty.spin, stopSpin: pretty.stopSpin },
+  };
+}
+
+/** A slow phase under the caller's spinner, when it supplied one. */
+async function withSpin<T>(
+  spinner: SyncFlowOptions["spinner"],
+  label: string,
+  run: () => Promise<T>,
+): Promise<T> {
+  spinner?.spin(label);
+  try {
+    return await run();
+  } finally {
+    spinner?.stopSpin();
+  }
+}
+
+export interface SyncFlowResult {
+  report: SyncReportWithWarnings;
+  judged: {
+    ran: boolean;
+    engine?: "claude" | "codex" | "npx-engine";
+    /** Loosening proposals held as PENDING — never applied, waiting for a human
+        (`vendo sync --review`). init reports the count in its closing facts. */
+    queued: number;
+  };
+  /** The theme re-scan: which slots this run took from the host, and which the
+   *  host disagrees with but a human owns. null = nothing to reconcile (the
+   *  file was just created, or there is none). */
+  theme: { updated: string[]; pinned: string[] } | null;
+  /** The exact-only slot summary, present only when this run CREATED the
+   *  theme (init's model fill and uncertain-slot review read it). */
+  themeSummary: ThemeSummary | null;
+  /** What the theme stage filled into the still-open slots, when it ran. */
+  themeDraft: z.infer<typeof modelThemeSchema> | null;
+  /** How long the deterministic theme scan took, when this run made one. */
+  themeMs?: number;
+  /** The catalog on disk after this run: the tools themselves, and what
+   *  telemetry counts. Unreadable degrades to empty, so every consumer sees
+   *  the same answer instead of one of them failing the run. */
+  catalog: ExtractedTool[];
+  counts: { tools: number; routes: number };
+  /** [] = nothing referenced the changed tools; null = impact unknown. */
+  impact: ToolImpact[] | null;
+  baselines: { pushed: string[]; pruned: string[] } | null;
+  components: { pushed: string[]; pruned: string[]; modules: { uploaded: number; deleted: number } } | null;
+  /** CLI-level events not carried by the report, in order. */
+  notes: string[];
+  /** The Cloud key this run resolved (--key, else the merged env). One sync,
+   *  one key — a second leg re-reading the env was #567's trap. */
+  cloudKey: string | undefined;
+}
+
+/**
+ * The keys a project dotenv may contribute to the EXTRACTION env — the allowlist
+ * `readEnvFiles` applies on that path (see its `fileAllowlist`). Extraction
+ * forwards this env into the coding-agent child processes sync spawns, and the
+ * dotenv ships with the repo, so membership is exactly what extraction reads
+ * from a dotenv: a credential `vendo login`/BYO writes there, the extraction
+ * model pin, and the dev-server URL init writes to `.env.local`. Every
+ * redirect/injection var (NODE_OPTIONS, npm_config_*, VENDO_CONSOLE_URL and its
+ * retired VENDO_CLOUD_URL spelling, ANTHROPIC_BASE_URL) earns its keep by being
+ * ABSENT, so it reaches a child only from the developer's own shell, never from
+ * the checkout.
+ */
+export const EXTRACTION_DOTENV_ALLOWLIST: ReadonlySet<string> = new Set([
+  "VENDO_API_KEY",
+  "ANTHROPIC_API_KEY",
+  "ANTHROPIC_AUTH_TOKEN",
+  "CLAUDE_CODE_OAUTH_TOKEN",
+  "OPENAI_API_KEY",
+  "GOOGLE_GENERATIVE_AI_API_KEY",
+  "VENDO_MODEL_EXTRACT",
+  "VENDO_BASE_URL",
+  "VENDO_URL",
+]);
+
+/**
+ * `.env` then `.env.local` (local wins), then process.env — except that a
+ * BLANK process value yields to a concrete file one. THE env reader for the
+ * whole CLI: init read only `.env.local` (the defect — a key in `.env` was
+ * invisible and the run went structural-only with no signal why), sync read
+ * both through doctor's copy, and telemetry had a third. Minimal KEY=VALUE
+ * parser: `export ` prefix, matching quotes, `#` comment lines.
+ *
+ * A security boundary rides here, not a parsing rule, because this is the last
+ * point where file-vs-shell provenance is still known (everything downstream
+ * sees a flat map). `fileAllowlist` names the ONLY keys a project dotenv may
+ * contribute; the EXTRACTION path passes one (EXTRACTION_DOTENV_ALLOWLIST)
+ * because its env is forwarded into coding-agent child processes, so a repo file
+ * that set NODE_OPTIONS / npm_config_registry / VENDO_CONSOLE_URL (or its
+ * retired VENDO_CLOUD_URL spelling) could otherwise inject code into or redirect
+ * them. A general reader (doctor's config checks) passes none and gets every
+ * file key — it never spawns a child with them — and
+ * either way AGENT_ENDPOINT_ENV_VAR is dropped, because no caller may take the
+ * coding-agent endpoint from a project file. Dropping here (rather than at each
+ * consumer) carries the guarantee to every rung for free: the only remaining
+ * source of a dropped key is `processEnv`, and every rung re-merges
+ * `process.env` over its input, so the developer's own shell value still reaches
+ * the child.
+ */
+export async function readEnvFiles(
+  root: string,
+  processEnv: NodeJS.ProcessEnv = process.env,
+  fileAllowlist?: ReadonlySet<string>,
+): Promise<Record<string, string | undefined>> {
+  const fromFiles: Record<string, string> = {};
+  for (const file of [".env", ".env.local"]) {
+    const source = await readOptional(join(root, file));
+    if (source === null) continue;
+    Object.assign(fromFiles, parseDotEnv(source));
+  }
+  for (const key of Object.keys(fromFiles)) {
+    const denied = fileAllowlist === undefined ? key === AGENT_ENDPOINT_ENV_VAR : !fileAllowlist.has(key);
+    if (denied) delete fromFiles[key];
+  }
+  const merged: Record<string, string | undefined> = { ...fromFiles, ...processEnv };
+  for (const [key, value] of Object.entries(processEnv)) {
+    if ((value ?? "").trim() === "" && fromFiles[key] !== undefined) merged[key] = fromFiles[key];
+  }
+  return merged;
+}
+
+/** The one catalog summary both commands print. */
+export function printSyncReport(report: SyncReportWithWarnings, output: Output): void {
+  for (const warning of report.warnings) output.error(`warning: ${warning}`);
+  output.log(`tools: +${report.tools.added.length} -${report.tools.removed.length} ~${report.tools.changed.length}`);
+  const { total, inputs, outputs } = report.toolSchemas;
+  const blind = [...new Set([...inputs.unknown, ...outputs.unknown])].sort();
+  output.log(`tool schemas: inputs ${inputs.known}/${total} · outputs ${outputs.known}/${total}`
+    + (blind.length === 0
+      ? ""
+      : ` — blind: ${blind.slice(0, 6).join(", ")}${blind.length > 6 ? ` +${blind.length - 6} more` : ""}`));
+  if (blind.length > 0) {
+    // #1339: a blind tool is a method and a path with no parameters — the
+    // agent cannot use what it cannot see, and the file that fixes it was
+    // named nowhere. Field-measured on a Next host: one openapi.json took the
+    // catalog from 0/18 to 18/18 declared schemas.
+    output.log("tool schemas: blind tools take their parameters and output shapes from an openapi.json"
+      + " at the app root (public/ and docs/ are read too) — add one and re-run");
+  }
+  output.log(`pins: ${report.pins.captured.length} captured, ${report.pins.drifted.length} drifted`);
+  // Right under the count it contradicts. "0 captured, 0 drifted" printed over
+  // a file with `<Remixable>` in it is the single most misleading line sync can
+  // emit, so the wrappers it could not attribute are named here, not buried.
+  const unattributed = report.pins.unattributed ?? [];
+  if (unattributed.length > 0) {
+    output.error(`warning: ${unattributed.length} <Remixable> wrapper${unattributed.length === 1 ? " was" : "s were"} found but NOT captured — sync could not trace ${unattributed.length === 1 ? "its" : "their"} \`Remixable\` back to @vendoai/ui:`);
+    for (const line of unattributed) output.error(`  ${line}`);
+  }
+  if ((report.pins.ported ?? []).length > 0) {
+    // BOTH call sites, or the feature silently does not exist: the ✦ chrome is
+    // fail-closed on the provider's wiring, so a host that wires only
+    // createVendo gets clean ports and no ✦ anywhere.
+    output.log(`remix wiring: ${report.pins.ported!.join(", ")} — hook .vendo/generated/remix-wiring.ts up in BOTH places: createVendo({ remixWiring }) on the server, and <VendoProvider remixWiring={remixWiring}> around the page. Without the provider, ported components show no ✦ at all.`);
+  }
+  for (const slot of report.pins.pruned ?? []) {
+    output.log(`pruned: ${slot} — stale baseline deleted (no <Remixable> wrapper names this slot anymore)`);
+  }
+  output.log(`catalog.json: ${report.catalog.discovered} discovered, ${report.catalog.registered} registered`);
+  output.log(`components: ${report.components.captured.length} captured, ${report.components.drifted.length} updated${report.components.skipped === undefined ? "" : `, ${report.components.skipped.length} skipped`}`);
+  if (report.components.withoutSamples !== undefined) {
+    // One line, not one warning per component: a preview with no seed is a
+    // labeled placeholder, not a failure — but it IS why a component looks
+    // blank in the console, so it must be visible and fixable from here.
+    const names = report.components.withoutSamples;
+    output.log(`components: ${names.join(", ")} ${names.length === 1 ? "declares" : "declare"} no examples, so the console can only show a labeled placeholder — add \`examples\` to ${names.length === 1 ? "its" : "their"} registration to preview ${names.length === 1 ? "it" : "them"}`);
+  }
+  for (const name of report.components.pruned ?? []) {
+    output.log(`pruned: ${name} — stale component capture deleted (your app no longer registers it)`);
+  }
+  if (report.pins.drifted.length > 0) {
+    // 06-apps §8 — drift never updates anything on its own: the owner decides,
+    // because updating REPLACES whatever they changed about the component.
+    output.log(`drifted: ${report.pins.drifted.join(", ")} — remixes of these stay on the old capture until each owner updates (POST /apps/:id/reseed or the vendo_apps_reseed agent tool). Updating replaces their changes with the new component.`);
+  }
+  // A `<Remixable>` wrapper that cannot capture is a hard error (final-shape
+  // spec 2026-08-02): the constraint — one statically importable child — is
+  // defended loudly at sync time, never degraded silently.
+  if (report.remixableErrors.length > 0) {
+    output.error("error: <Remixable> wrappers that cannot be captured:");
+    for (const remixableError of report.remixableErrors) output.error(`  ${remixableError}`);
+  }
+}
+
+/**
+ * The theme re-scan (decision 3): a rebrand must reach Vendo, but a hand edit
+ * must never be clobbered. Deterministic, keyless, and fail-soft — a theme
+ * problem is a note, never an exit code. See theme/provenance.ts for the law.
+ */
+async function reconcileTheme(
+  root: string,
+  vendoDir: string,
+  force: boolean,
+  note: (message: string) => void,
+): Promise<SyncFlowResult["theme"]> {
+  const raw = await readOptional(join(vendoDir, "theme.json"));
+  if (raw === null) return null;
+  let theme: unknown;
+  try {
+    theme = JSON.parse(raw);
+  } catch {
+    note("theme: .vendo/theme.json is not valid JSON — skipped (fix it, or delete it and re-run `vendo init`)");
+    return null;
+  }
+  const summary = await extractTheme(root);
+  const base = await readBase(vendoDir);
+  const merge = mergeExtraction({ theme, base, summary, ...(force ? { force: true } : {}) });
+  // The brand moved, or this host predates fonts.css — either way the sheet is
+  // (re)built. An unchanged brand with the sheet already on disk touches
+  // nothing: resolving a face can reach the network, and sync runs from
+  // `predev`.
+  //
+  // The sheet is rebuilt BEFORE theme.json is written, because
+  // `typography.fonts` describes that sheet: writing the document first left it
+  // advertising the previous brand's faces.
+  const document = merge.theme ?? theme;
+  const rebuilt = merge.theme !== null || !(await exists(join(vendoDir, "fonts.css")))
+    ? await writeFonts(root, vendoDir, document, note)
+    : null;
+  if (rebuilt !== null) applyThemeFonts(document, rebuilt);
+  if (merge.theme !== null || rebuilt !== null) {
+    await writeText(join(vendoDir, "theme.json"), `${JSON.stringify(document, null, 2)}\n`);
+  }
+  // The base advances whenever this run is unambiguous — everything agreed, or
+  // every disagreement was resolved. While disagreements remain unresolved it
+  // stays put, so the warning repeats every sync instead of quietly baking the
+  // stale value in as the new truth.
+  if (merge.pinned.length === 0) await writeBase(vendoDir, baseFrom(summary));
+  // One line, and every claim in it is literally true: "re-read" names ONLY
+  // the slots just written to theme.json, and a pinned slot shows BOTH values
+  // so nobody can read it as "your accent now tracks your CSS".
+  const parts: string[] = [];
+  if (merge.updated.length > 0) {
+    parts.push(`${merge.updated.length} slot${merge.updated.length === 1 ? "" : "s"} re-read from your app (${merge.updated.join(", ")}) → .vendo/theme.json`);
+  }
+  if (merge.pinned.length > 0) {
+    const detail = merge.pinned.map((entry) => `${entry.slot} — yours ${entry.mine} vs your app's ${entry.theirs}`).join("; ");
+    parts.push(`${merge.pinned.length} pinned by you, unchanged (${detail}) — \`vendo sync --theme-refresh\` takes your app's values`);
+  }
+  if (parts.length > 0) note(`theme: ${parts.join(" · ")}`);
+  return { updated: merge.updated, pinned: merge.pinned.map((entry) => entry.slot) };
+}
+
+/** The still-open brand slots the theme stage is asked to fill, plus the exact
+ *  values the deterministic pass already proved — so the model fills gaps
+ *  instead of second-guessing tokens the app states outright. */
+function themeStageInput(summary: ThemeSummary): Pick<ThemeStageInput, "needed" | "alreadyExact" | "evidencePaths"> {
+  return {
+    needed: summary.needed,
+    alreadyExact: Object.fromEntries(
+      Object.entries(summary.matched)
+        .filter(([, provenance]) => provenance.startsWith("--"))
+        .map(([slot]) => [slot, String(summary.slots[slot as keyof ThemeSlotValues])]),
+    ),
+    evidencePaths: summary.evidencePaths,
+  };
+}
+
+/** The catalog as it stands on disk: read and parsed ONCE for everyone who
+ *  needs it (telemetry's counts, init's risk advice). Unreadable degrades to
+ *  empty — sync already reported any extraction warning, and a second reader
+ *  that threw instead would fail a run this one calls fine. */
+async function readCatalog(vendoDir: string): Promise<ExtractedTool[]> {
+  try {
+    const file = JSON.parse(await readFile(join(vendoDir, "tools.json"), "utf8")) as { tools?: ExtractedTool[] };
+    return file.tools ?? [];
+  } catch {
+    return [];
+  }
+}
+
+function impactResponse(value: unknown): ToolImpact[] {
+  if (typeof value !== "object" || value === null || !Array.isArray((value as { impact?: unknown }).impact)) {
+    throw new Error("invalid sync impact response");
+  }
+  const impact = (value as { impact: unknown[] }).impact;
+  for (const entry of impact) {
+    if (typeof entry !== "object" || entry === null) throw new Error("invalid sync impact response");
+    const candidate = entry as Partial<ToolImpact>;
+    if (typeof candidate.tool !== "string" || !Array.isArray(candidate.apps)
+      || !Array.isArray(candidate.automations) || typeof candidate.grants !== "number") {
+      throw new Error("invalid sync impact response");
+    }
+  }
+  return impact as ToolImpact[];
+}
+
+function printImpact(output: Output, impact: ToolImpact[]): void {
+  for (const entry of impact) {
+    const categories = [
+      [entry.automations.length, "automation"],
+      [entry.apps.length, "app"],
+      [entry.grants, "grant"],
+    ] as const;
+    const references = categories
+      .filter(([count]) => count > 0)
+      .map(([count, label]) => `${count} ${label}${count === 1 ? "" : "s"}`);
+    output.log(references.length === 0
+      ? `impact: ${entry.tool} no saved references`
+      : `impact: ${entry.tool} breaks ${references.join(", ")}`);
+  }
+}
+
+/**
+ * ONE consent, one wording, both commands (decision 2): `--ai` runs the pass
+ * with no prompt, `--no-ai` refuses it, and with neither flag an interactive
+ * run ASKS — every run, because no answer is ever persisted — while a run that
+ * cannot ask skips, so CI builds stay deterministic and never spend.
+ *
+ * The engine ladder is walked when there is a question to ask, and — in `full`
+ * mode only — also under `--ai`: a one-time install must SAY what the machine
+ * is missing ("AI polish: unavailable") instead of degrading in silence.
+ * `vendo sync` runs in predev on every dev-server start, so an incremental
+ * `--ai` run never probes a single harness; the pass resolves its own engine
+ * behind its credential gate instead.
+ */
+const JUDGMENT_SKIPPED = "Skipped — extractor defaults stand; re-run `vendo init` any time to add the AI polish.";
+
+/** THE one question the judgment pass owes a person: may a coding agent read
+ *  this codebase, and — where several could — which one. ONE question either
+ *  way, and it never prints: the caller owns what a decline says, because init
+ *  asks this UP FRONT (nothing may prompt once the long pass starts) while sync
+ *  still asks it inline. Null is "no". */
+async function askJudgmentConsent(input: {
+  available: readonly AvailableEngine[];
+  chosen: AvailableEngine;
+  /** `--engine` already named the family, so there is nothing left to pick. */
+  pinned: boolean;
+  choose?: SyncFlowOptions["choose"];
+  confirm?: SyncFlowOptions["confirm"];
+}): Promise<AvailableEngine | null> {
+  const { available, chosen, pinned } = input;
+  if (!pinned && available.length > 1) {
+    // Several engines: the SAME single consent question, as a pick-with-
+    // default instead of yes/no — never a second question.
+    const picked = await (input.choose ?? plainSelect)(
+      "Let a coding agent read this codebase to draft tool descriptions, review risk, write the product brief, and fill unresolved theme slots? Source goes to the chosen provider under your account.",
+      [
+        ...available.map((entry) => ({ value: entry.family, label: entry.credential, hint: `--engine ${entry.family}` })),
+        { value: "skip", label: "Skip — keep extractor defaults" },
+      ],
+      0,
+    );
+    return available.find((entry) => entry.family === picked) ?? null;
+  }
+  const consented = await (input.confirm ?? askYesNo)(
+    `Let ${chosen.credential} read this codebase to draft tool descriptions, review risk, write the product brief, and fill unresolved theme slots? Source goes to your model provider under your account.`,
+    true,
+  );
+  return consented ? chosen : null;
+}
+
+/**
+ * init's UP-FRONT form of that question. It is knowable before the long pass —
+ * the ladder is a read-only probe of this machine — so init asks it with the
+ * rest of its questions and hands the flow a settled `--ai`/`--engine` pair,
+ * leaving nothing to prompt once the writing starts.
+ *
+ * Null means there was no question to ask: no engine resolves here, so the flow
+ * takes its own (silent, non-prompting) unavailable path and says so there.
+ */
+export async function resolveJudgmentConsent(input: {
+  root: string;
+  env: Record<string, string | undefined>;
+  engine?: string;
+  harnesses?: Parameters<typeof selectJudgmentEngines>[0]["harnesses"];
+  choose?: SyncFlowOptions["choose"];
+  confirm?: SyncFlowOptions["confirm"];
+}): Promise<{ ai: boolean; engine?: string } | null> {
+  const available = await selectJudgmentEngines({
+    root: input.root,
+    env: input.env,
+    ...(input.harnesses === undefined ? {} : { harnesses: input.harnesses }),
+  });
+  if (available.length === 0) return null;
+  // An unavailable `--engine` pin is the flow's own loud line, not a question.
+  const pinned = input.engine === undefined ? undefined : available.find((entry) => entry.family === input.engine);
+  if (input.engine !== undefined && pinned === undefined) return null;
+  const chosen = await askJudgmentConsent({
+    available,
+    chosen: pinned ?? available[0]!,
+    pinned: input.engine !== undefined,
+    ...(input.choose === undefined ? {} : { choose: input.choose }),
+    ...(input.confirm === undefined ? {} : { confirm: input.confirm }),
+  });
+  return chosen === null ? { ai: false } : { ai: true, engine: chosen.family };
+}
+
+async function chooseEngine(
+  options: SyncFlowOptions,
+  env: Record<string, string | undefined>,
+  note: (message: string) => void,
+): Promise<{ skip: true } | { skip: false; engine?: AvailableEngine }> {
+  const { output } = options;
+  if (options.ai === false) {
+    output.log("AI polish (descriptions, risk review, brief, theme): off (--no-ai) — extractor defaults stand.");
+    return { skip: true };
+  }
+  if (options.ai !== true && (options.yes || !options.interactive)) {
+    note("judgment: skipped — this run cannot ask (pass `--ai` to judge non-interactively, `--no-ai` to say so explicitly)");
+    return { skip: true };
+  }
+  // An explicitly supplied harness IS the choice — the ladder has nothing left
+  // to discover, and walking it would probe the machine for engines the caller
+  // already declined to use.
+  if (options.ai === true && (options.mode !== "full" || options.judge?.harness !== undefined)) {
+    return { skip: false };
+  }
+
+  const available = await selectJudgmentEngines({
+    root: options.root,
+    env,
+    ...(options.judge?.harnesses === undefined ? {} : { harnesses: options.judge.harnesses }),
+  });
+  if (available.length === 0) {
+    output.log("AI polish: unavailable — needs Claude Code installed (`npm install -g @anthropic-ai/claude-code`) or @anthropic-ai/claude-agent-sdk resolvable, plus a Claude Code login or ANTHROPIC_API_KEY; or the `codex` CLI installed, plus a codex login (`codex login`) or OPENAI_API_KEY; or a VENDO_API_KEY (`vendo login`), which fetches Claude Code on the fly via npx. Extractor defaults stand; re-run `vendo init` once set up.");
+    return { skip: true };
+  }
+
+  // --engine pins a family. An unavailable pin never falls back to another
+  // provider (the pin is usually a privacy/policy choice about where source
+  // goes) — one loud line naming what IS available, exit code untouched.
+  let chosen = available[0]!;
+  if (options.engine !== undefined) {
+    const pinned = available.find((entry) => entry.family === options.engine);
+    if (pinned === undefined) {
+      const alternatives = available
+        .map((entry) => `\`--engine ${entry.family}\` (${entry.credential})`)
+        .join(", or ");
+      output.log(`AI polish: \`--engine ${options.engine}\` requested but that engine isn't available on this machine. Available: ${alternatives}. Extractor defaults stand; re-run \`vendo init\` once it's set up.`);
+      return { skip: true };
+    }
+    chosen = pinned;
+  }
+
+  // `--ai` IS the answer: the ladder was walked only to report what is here.
+  if (options.ai === true) return { skip: false, engine: chosen };
+
+  const consented = await askJudgmentConsent({
+    available,
+    chosen,
+    pinned: options.engine !== undefined,
+    ...(options.choose === undefined ? {} : { choose: options.choose }),
+    ...(options.judge?.confirm ?? options.confirm) === undefined
+      ? {}
+      : { confirm: options.judge?.confirm ?? options.confirm },
+  });
+  if (consented === null) {
+    output.log(JUDGMENT_SKIPPED);
+    return { skip: true };
+  }
+  return { skip: false, engine: consented };
+}
+
+/** The two CLI-level event sinks every stage writes through — printed AND
+ *  collected, so `sync --json` carries them in its one object. */
+interface FlowNotes {
+  note: (message: string) => void;
+  noteError: (message: string) => void;
+}
+
+/**
+ * `.vendo/fonts.css` — the theme's families resolved to real files and inlined,
+ * so the surfaces the host's own stylesheet never reaches can still render the
+ * brand font (embed-fonts.ts).
+ *
+ * Built at install, on any sync where the brand actually moved, and on the
+ * first sync of a host that predates the file. Never on an unchanged run:
+ * resolving a face can reach the network, and `sync` runs from `predev`, so
+ * rebuilding it every `npm run dev` would buy a request per run and a
+ * committed artifact that churns.
+ */
+export async function writeFonts(
+  root: string,
+  vendoDir: string,
+  theme: unknown,
+  note: (message: string) => void,
+): Promise<VendoThemeFont[]> {
+  const embedded = await embedHostFonts(root, theme);
+  for (const line of embedded.notes) note(`fonts: ${line}`);
+  const sheet = join(vendoDir, "fonts.css");
+  if (embedded.css === "") {
+    // Nothing resolved. Leaving the old sheet would keep the host SHIPPING the
+    // brand they just dropped, from a theme that no longer mentions it.
+    if (await exists(sheet)) {
+      await rm(sheet);
+      note("fonts: no face resolved for this brand — removed .vendo/fonts.css");
+    }
+    return [];
+  }
+  await writeText(sheet, embedded.css);
+  note(`fonts: ${embedded.fonts.length} face${embedded.fonts.length === 1 ? "" : "s"} inlined (${Math.round(embedded.bytes / 1024)} KB) → .vendo/fonts.css`);
+  return embedded.fonts;
+}
+
+/** Theme, ONE path: init's install creates the file (it is the editable source
+ *  of truth from then on), and every later run reconciles it — a rebrand
+ *  reaches Vendo, a hand edit is never clobbered. */
+async function resolveTheme(input: {
+  root: string;
+  vendoDir: string;
+  mode: SyncFlowOptions["mode"];
+  options: SyncFlowOptions;
+  note: (message: string) => void;
+}): Promise<{ themeSummary: ThemeSummary | null; themeMs: number | undefined; theme: SyncFlowResult["theme"] }> {
+  const { root, vendoDir, mode, options, note } = input;
+  const themePath = join(vendoDir, "theme.json");
+  if (mode === "full" && (options.force === true || !(await exists(themePath)))) {
+    const themeStarted = Date.now();
+    const themeSummary = await extractTheme(root);
+    const themeMs = Date.now() - themeStarted;
+    const document = toVendoTheme(themeSummary.slots);
+    themeSummary.fonts = await writeFonts(root, vendoDir, document, note);
+    applyThemeFonts(document, themeSummary.fonts);
+    await writeText(themePath, `${JSON.stringify(document, null, 2)}\n`);
+    // The merge base for every later re-scan: what the DETERMINISTIC pass read,
+    // before any model fill or --theme answer — those are decisions, and the
+    // reconcile must pin them (theme/provenance.ts).
+    await writeBase(vendoDir, baseFrom(themeSummary));
+    return { themeSummary, themeMs, theme: null };
+  }
+  return {
+    themeSummary: null,
+    themeMs: undefined,
+    theme: await reconcileTheme(root, vendoDir, options.themeRefresh === true, note),
+  };
+}
+
+/** The judgment pass: grade the freshly synced catalog, with a verbatim quote
+ *  behind every proposal and an independent skeptic checking each one.
+ *  Hardenings and prose apply themselves; loosenings wait for a human —
+ *  `--review` (or an attended run) asks now, otherwise they queue as
+ *  `pending`. Keyless resolves to one structural-only line. */
+async function runGradingStages(input: {
+  root: string;
+  vendoDir: string;
+  mode: SyncFlowOptions["mode"];
+  env: Record<string, string | undefined>;
+  options: SyncFlowOptions;
+  output: SyncFlowOptions["output"];
+  themeSummary: ThemeSummary | null;
+  notes: FlowNotes;
+}): Promise<{ judged: SyncFlowResult["judged"]; themeDraft: SyncFlowResult["themeDraft"] }> {
+  const { root, vendoDir, mode, env, options, output, themeSummary } = input;
+  const { note, noteError } = input.notes;
+  const judged: SyncFlowResult["judged"] = { ran: false, queued: 0 };
+  let themeDraft: SyncFlowResult["themeDraft"] = null;
+  const selection = await chooseEngine(options, env, note);
+  if (selection.skip) return { judged, themeDraft };
+
+  // A one-time install narrates the slowest step it is about to take; an
+  // incremental sync stays as quiet as it is today. With a renderer attached
+  // that same narration becomes the spinner's label instead of a printed line.
+  const credential = selection.engine === undefined ? null : selection.engine.credential;
+  // It says how long this takes because it TAKES that long: the pass reads the
+  // whole API and then drafts prose over it, and a silent spinner on a
+  // many-minute stage is what a person reads as a hang.
+  const narration = mode === "full" && credential !== null
+    ? `Reading your product (${credential}) — this can take several minutes…`
+    : null;
+  if (narration !== null && options.spinner === undefined) output.log(`\n${narration}`);
+  const spinLabel = narration
+    ?? `Judging what moved…${credential === null ? "" : ` (${credential})`}`;
+  try {
+    // `--yes` means every question is already answered, so it must not reach
+    // the aggregated loosening review either: an unattended run cannot
+    // answer, and the guard law forbids lowering risk without a human, so
+    // loosenings queue instead — and no `confirm` is handed down at all, so
+    // nothing downstream can acquire a way to block.
+    const attended = options.interactive && !options.yes;
+    const loosenings = options.queueLoosenings !== true && (attended || options.review === true)
+      ? "review"
+      : "queue";
+    const pass = await withSpin(options.spinner, spinLabel, () => runJudgmentPass({
+      root,
+      out: vendoDir,
+      mode,
+      loosenings,
+      env,
+      output: { log: note, error: noteError },
+      ...(options.engine === undefined ? {} : { engine: options.engine }),
+      ...(selection.engine === undefined
+        ? (options.judge?.harness === undefined ? {} : { harness: options.judge.harness })
+        : { harness: selection.engine.harness }),
+      ...(loosenings === "review" ? { confirm: options.judge?.confirm ?? options.confirm ?? askYesNo } : {}),
+      ...(options.judge?.harnesses === undefined ? {} : { harnesses: options.judge.harnesses }),
+      ...(options.judge?.resolveCredential === undefined ? {} : { resolveCredential: options.judge.resolveCredential }),
+      ...(options.judge?.onProgress === undefined ? {} : { onProgress: options.judge.onProgress }),
+    }));
+    // The pass already printed the count and `vendo sync --review`; say WHY
+    // they were held, so an unattended caller doesn't read it as a refusal.
+    if (loosenings === "queue" && pass.status === "judged" && pass.queued > 0) {
+      judged.queued = pass.queued;
+      note("  (held, not applied: a loosening needs a human — review them with `vendo sync --review`)");
+    }
+    judged.ran = true;
+    const engine = selection.engine === undefined ? undefined : ENGINE_BY_HARNESS_ID[selection.engine.harness.id];
+    if (engine !== undefined) judged.engine = engine;
+  } catch (error) {
+    note(`judgment failed soft: ${error instanceof Error ? error.message : "unknown error"}`);
+    judged.ran = false;
+  }
+
+  // The prose stages — the product brief and the theme fill — read the GRADED
+  // catalog, so they run after the pass. Full mode only: `vendo sync` in
+  // predev must not redraft a brief on every dev-server start.
+  //
+  // Under the spinner, and this is the phase that most needs it: the pass above
+  // answers in milliseconds when nothing changed, so its `finally` stopped the
+  // spinner right before the two model calls that own MINUTES of the run. That
+  // left the longest stretch of the install as a dead screen (#1163).
+  if (mode === "full" && selection.engine !== undefined) {
+    const { harness } = selection.engine;
+    const tools = await exists(join(vendoDir, "tools.json"));
+    const stages = await withSpin(options.spinner, spinLabel, () => runProseStages({
+      root,
+      output,
+      env,
+      harness,
+      tools,
+      ...(options.force === true ? { force: true } : {}),
+      ...(themeSummary === null ? {} : { theme: themeStageInput(themeSummary) }),
+    }));
+    themeDraft = stages.theme ?? null;
+  }
+  return { judged, themeDraft };
+}
+
+/** The deployment's path prefix, for the run that has no VENDO_BASE_URL to read
+ *  it off. The spec's relative server mount is the only other place it is
+ *  written down — doctor holds the two to agreement (E-CFG-003) — and it is
+ *  already how the prefix reaches host tool calls. Without it the probe asks a
+ *  mounted host one prefix short and reads its own 404 back as "not reachable".
+ *
+ *  Total on purpose, the way doctor's own mount check is (`doctor-config-checks`):
+ *  this reads a file and parses it, it runs OUTSIDE the probe's error boundary,
+ *  and no prefix is the answer the probe already handles. A spec that will not
+ *  parse costs the run its impact line, never the sync. */
+async function declaredMount(root: string): Promise<string> {
+  try {
+    const spec = await firstOpenApiSpec(root);
+    return spec === null ? "" : await openApiMountPath(spec);
+  } catch {
+    return "";
+  }
+}
+
+async function probeImpact(input: {
+  report: SyncReportWithWarnings;
+  options: SyncFlowOptions;
+  /** The dotenv-aware environment: init wrote the host's real dev port here as
+      VENDO_BASE_URL, so 3000 is the last resort rather than the assumption. */
+  env: Record<string, string | undefined>;
+  output: SyncFlowOptions["output"];
+  note: (message: string) => void;
+}): Promise<ToolImpact[] | null> {
+  const { report, options, env, output, note } = input;
+  const base = (env.VENDO_BASE_URL ?? `http://localhost:3000${await declaredMount(options.root)}`).replace(/\/+$/, "");
+  // VENDO_URL is retired: a fourth "a URL" env var whose whole job was
+  // overriding a wire path that `--url` already overrides per run, and
+  // VENDO_BASE_URL already derives. Still read, so a shell that exports it keeps
+  // working, and it says which of the two survived.
+  const fromRetiredVar = env.VENDO_URL?.trim() === "" ? undefined : env.VENDO_URL;
+  if (options.url === undefined && fromRetiredVar !== undefined) {
+    note("VENDO_URL is retired — it still works, but use `vendo sync --url` for one run, or VENDO_BASE_URL for the deployment");
+  }
+  const wireUrl = (options.url ?? fromRetiredVar ?? `${base}/api/vendo`).replace(/\/+$/, "");
+  const tools = [...new Set([
+    ...report.breaking.map((breaking) => breaking.tool),
+    ...report.tools.changed,
+  ])];
+  if (tools.length === 0) return [];
+  try {
+    const response = await (options.fetchImpl ?? fetch)(`${wireUrl}/sync/impact`, {
+      method: "POST",
+      headers: { accept: "application/json", "content-type": "application/json" },
+      body: JSON.stringify({ tools }),
+    });
+    if (!response.ok) throw new Error(`sync impact returned ${response.status}`);
+    const impact = impactResponse(await response.json());
+    printImpact(output, impact);
+    return impact;
+  } catch {
+    note(`impact unknown — dev server not reachable at ${wireUrl}`);
+    return null;
+  }
+}
+
+async function pushBaselinesToCloud(input: {
+  vendoDir: string;
+  cloudKey: string | undefined;
+  keyed: boolean;
+  options: SyncFlowOptions;
+  notes: FlowNotes;
+}): Promise<SyncFlowResult["baselines"]> {
+  const { vendoDir, cloudKey, keyed, options } = input;
+  const { note, noteError } = input.notes;
+  // No `.vendo/remixable/` at all means this host has never had a wrapper —
+  // nothing to push, and nothing Cloud could be holding to prune.
+  if (!(await exists(join(vendoDir, "remixable")))) return null;
+  if (!keyed) {
+    // Captures exist but this environment has no key. Keyless is a supported
+    // path (BYO), so this is a statement of fact rather than a warning — but
+    // it must be SAID: a build env that lacks the key the runtime has pushes
+    // nothing, and the console then shows a fork it cannot diff.
+    note("baselines stay local — no Vendo Cloud key in this environment; Cloud's Remix reviews screen needs a keyed sync to diff forks");
+    return null;
+  }
+  // Never throws: whatever landed before a failure is still accounted for.
+  const result = await pushSeedBaselines({
+    vendoDir,
+    apiKey: cloudKey!,
+    ...(options.apiUrl === undefined ? {} : { baseUrl: options.apiUrl }),
+    ...(options.fetchImpl === undefined ? {} : { fetchImpl: options.fetchImpl }),
+    ...(options.baselineBudgetMs === undefined ? {} : { budgetMs: options.baselineBudgetMs }),
+  });
+  if (result.unreadable.length > 0) {
+    // A file that exists but won't parse is a half-written capture, not a
+    // deleted slot — its Cloud row was deliberately left in place.
+    noteError(`warning: unreadable baselines left untouched in Vendo Cloud: ${result.unreadable.join(", ")} — re-run sync to recapture .vendo/remixable/<slot>.json`);
+  }
+  if (result.pushed.length > 0 || result.pruned.length > 0) {
+    note(`baselines → Vendo Cloud: ${result.pushed.length} pushed, ${result.pruned.length} pruned (component source crosses the wire so the console can review forks)`);
+  }
+  if (result.error !== undefined) {
+    noteError(`warning: pin baselines did not fully reach Vendo Cloud: ${result.error} — the rest stay in .vendo/remixable/ and the next sync retries`);
+  }
+  return { pushed: result.pushed, pruned: result.pruned };
+}
+
+/** Registered host components → Vendo Cloud. The project answers once and the
+ *  answer is committed with the rest of `.vendo/`. Keyless/BYO never asks and
+ *  never uploads. */
+async function pushComponentsToCloud(input: {
+  vendoDir: string;
+  cloudKey: string | undefined;
+  keyed: boolean;
+  options: SyncFlowOptions;
+  notes: FlowNotes;
+}): Promise<SyncFlowResult["components"]> {
+  const { vendoDir, cloudKey, keyed, options } = input;
+  const { note, noteError } = input.notes;
+  if (!(keyed && await exists(join(vendoDir, "components")))) {
+    if (await exists(join(vendoDir, "components"))) {
+      // Same statement of fact #765 makes for baselines, for the same reason: a
+      // build env without the key its runtime has pushes nothing, and the console
+      // then draws grey placeholders with no host-side signal why.
+      note("components stay local — no Vendo Cloud key in this environment; the console needs a keyed sync to render your components instead of placeholders");
+    }
+    return null;
+  }
+  let allowed = options.pushComponents ?? await readPushComponents(vendoDir);
+  if (allowed === undefined) {
+    allowed = options.interactive && await (options.confirm ?? askYesNo)(
+      "Send this project's registered host components to Vendo Cloud, so the console renders them instead of grey placeholders? Their source and your app-root CSS cross the wire; package code never does. Saved to .vendo/cloud.json — asked once.",
+      true,
+    );
+    if (options.interactive) await writePushComponents(vendoDir, allowed);
+    else note("components: not pushed — this run cannot ask (pass `--push-components` in CI, or run `vendo sync` once in a terminal to decide)");
+  }
+  if (!allowed) return null;
+  const result = await pushHostComponents({
+    vendoDir,
+    apiKey: cloudKey!,
+    ...(options.apiUrl === undefined ? {} : { baseUrl: options.apiUrl }),
+    ...(options.fetchImpl === undefined ? {} : { fetchImpl: options.fetchImpl }),
+    ...(options.baselineBudgetMs === undefined ? {} : { budgetMs: options.baselineBudgetMs }),
+  });
+  if (result.unreadable.length > 0) {
+    noteError(`warning: unreadable component captures left untouched in Vendo Cloud: ${result.unreadable.join(", ")} — re-run sync to recapture .vendo/components/<Name>.json`);
+  }
+  if (result.pushed.length > 0 || result.pruned.length > 0 || result.modules.uploaded > 0) {
+    note(`components → Vendo Cloud: ${result.pushed.length} pushed, ${result.pruned.length} pruned, ${result.modules.uploaded} new module${result.modules.uploaded === 1 ? "" : "s"} (${Math.round(result.uploadedBytes / 1024)} KB)`);
+  }
+  if (result.error !== undefined) {
+    noteError(`warning: host components did not fully reach Vendo Cloud: ${result.error} — the rest stay in .vendo/components/ and the next sync retries`);
+  }
+  return { pushed: result.pushed, pruned: result.pruned, modules: result.modules };
+}
+
+export async function runSyncFlow(options: SyncFlowOptions): Promise<SyncFlowResult> {
+  const { root, output, mode } = options;
+  const vendoDir = join(root, ".vendo");
+  // CLI-level events, in order: printed here AND returned, so `sync --json`
+  // can carry them in its one object without a second channel.
+  const notes: string[] = [];
+  const note = (message: string): void => { notes.push(message); output.log(message); };
+  const noteError = (message: string): void => { notes.push(message); output.error(message); };
+
+  // The credential env for the judgment pass and the Cloud key: the project's
+  // dotenv must be visible, because `vendo login` and BYO keys land in
+  // `.env.local` / `.env` and a fresh shell that never `source`d them would
+  // otherwise sync structural-only with no signal why (#567). This env is
+  // forwarded into the extraction children, so it is read through the allowlist:
+  // a repo file can contribute a credential but never a NODE_OPTIONS, a rogue
+  // npm registry, or a Cloud/agent endpoint.
+  const env = await readEnvFiles(root, process.env, EXTRACTION_DOTENV_ALLOWLIST);
+
+  const report: SyncReportWithWarnings = await withSpin(
+    options.spinner,
+    "Re-reading your product…",
+    () => (options.sync ?? vendoSync)({
+      root,
+      out: vendoDir,
+      // The CLI needs the report to compute exit 2 vs 3; it applies strictness.
+      strict: false,
+    }),
+  );
+  printSyncReport(report, output);
+
+  const notes_ = { note, noteError };
+  const { themeSummary, themeMs, theme } = await resolveTheme({ root, vendoDir, mode, options, note });
+  const { judged, themeDraft } = await runGradingStages({ root, vendoDir, mode, env, options, output, themeSummary, notes: notes_ });
+  const impact = await probeImpact({ report, options, env, output, note });
+
+  // Pin baselines → Vendo Cloud (decision 4). Part of a NORMAL keyed run, not
+  // something `--report` gates: the console's Remix reviews screen cannot show
+  // a fork's diff without the host baseline it forked from. Keyless/BYO makes
+  // no request at all, and a Cloud hiccup is a note — never a failed build.
+  const cloudKey = options.apiKey ?? env.VENDO_API_KEY;
+  const keyed = cloudKey !== undefined && cloudKey.trim() !== "";
+  const baselines = await pushBaselinesToCloud({ vendoDir, cloudKey, keyed, options, notes: notes_ });
+  const components = await pushComponentsToCloud({ vendoDir, cloudKey, keyed, options, notes: notes_ });
+  const catalog = await readCatalog(vendoDir);
+
+  return {
+    report,
+    judged,
+    theme,
+    themeSummary,
+    themeDraft,
+    ...(themeMs === undefined ? {} : { themeMs }),
+    catalog,
+    counts: {
+      tools: catalog.length,
+      routes: catalog.filter((tool) => tool.binding?.kind === "route").length,
+    },
+    impact,
+    baselines,
+    components,
+    notes,
+    cloudKey,
+  };
+}

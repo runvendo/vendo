@@ -39,7 +39,7 @@ export interface RunVendoInitStepOptions {
 }
 
 const defaultWorkspaceRoot = path.resolve(fileURLToPath(new URL("../../../", import.meta.url)));
-const defaultCliBin = path.join(defaultWorkspaceRoot, "packages/cli/bin/vendo.mjs");
+const defaultCliBin = path.join(defaultWorkspaceRoot, "packages/vendo/bin/vendo.mjs");
 
 function defaultCliInvocation(): { command: string; args: string[] } {
   return {

@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { VENDO_JUDGMENTS_FORMAT } from "@vendoai/vendo/actions";
-import type { JudgmentPassOptions, JudgmentPassResult } from "@vendoai/cli/extract";
+import type { JudgmentPassOptions, JudgmentPassResult } from "@vendoai/vendo/extract";
 import {
   DEFAULT_MODEL_LABEL,
   buildAiScoreboard,

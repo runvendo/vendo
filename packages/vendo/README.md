@@ -5,14 +5,14 @@ your APIs, and automate work inside your brand and guardrails.
 
 ```bash
 npm install @vendoai/vendo
-npm install -D @vendoai/cli
 npx vendo init
 ```
 
 This is the default composition: the public wire handler, React provider,
-policy-bound agent and app blocks, persistence, and the MCP door. The `vendo`
-CLI is its own package, `@vendoai/cli`. Install individual `@vendoai/*` blocks
-only when you want to compose Vendo yourself.
+policy-bound agent and app blocks, persistence, the MCP door — and the `vendo`
+CLI, whose bin this package installs. One install is the whole surface; reach
+for individual `@vendoai/*` blocks only when you want to compose Vendo
+yourself.
 
 Vendo extracts host APIs as signed-in-user tools, renders theme-driven React
 surfaces, applies approvals and audit at one execution choke point, and uses

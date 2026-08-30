@@ -33,7 +33,7 @@ export const UPLOAD_HEADER = "x-vendo-upload";
  *
  * Here beside {@link UPLOAD_HEADER} for the same reason that constant is: the
  * default is quoted by the drawer that enforces it (@vendoai/vendo) and by
- * `vendo doctor`, which reports it (@vendoai/cli). */
+ * `vendo doctor`, which reports it. */
 export const UPLOAD_MAX_BYTES = 5 * 1024 * 1024;
 
 /** What `POST /files` answers: where the file the user shared landed in their

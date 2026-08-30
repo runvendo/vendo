@@ -1,7 +1,7 @@
 /**
  * The one copy-paste prompt every Vendo surface hands a coding agent. The docs
  * card and the README carry verbatim copies of what this builds, and
- * `packages/cli/tests/agent-prompt-docs.docs.test.ts` holds them to it.
+ * `packages/vendo/tests/cli/agent-prompt-docs.docs.test.ts` holds them to it.
  *
  * The paste stays route-only: it names the playbook and the done-gate, and
  * every install mechanic lives behind vendo.run/agents.md, never in the text a

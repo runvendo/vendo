@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 
 const hostDir = fileURLToPath(new URL("..", import.meta.url));
 const repoRoot = fileURLToPath(new URL("../../../..", import.meta.url));
-const cli = fileURLToPath(new URL("../../../../packages/cli/bin/vendo.mjs", import.meta.url));
+const cli = fileURLToPath(new URL("../../../../packages/vendo/bin/vendo.mjs", import.meta.url));
 
 function runDoctor(): Promise<{ code: number | null; output: string }> {
   return new Promise((resolve, reject) => {

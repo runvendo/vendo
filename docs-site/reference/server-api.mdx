@@ -14,7 +14,7 @@ description: "Every server-side symbol: the createVendo composition and the Vend
 | `@vendoai/vendo/ai-sdk` | `vendoTools`, the guarded tool pack as an AI SDK `ToolSet` |
 | `@vendoai/vendo/mastra` | `vendoMastraTools`, the same pack as Mastra tool shapes |
 | `@vendoai/vendo/auth/{auth0,auth-js,clerk,jwt,supabase}` | One preset factory each |
-| `@vendoai/cli/extract` | The extraction stages the CLI drives |
+| `@vendoai/vendo/extract` | The extraction stages the CLI drives |
 | `@vendoai/vendo` | `agent()`, the standalone backend agent |
 
 Type imports come from the umbrella, not the block packages. Importing the same type from `@vendoai/core` is a `TS2307` under strict linking, because it is not your dependency.

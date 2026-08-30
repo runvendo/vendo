@@ -67,7 +67,7 @@ const nextConfig: NextConfig = {
             "@vendoai/vendo/harnesses/claude-turn": "../../packages/vendo/src/harnesses/claude-code/claude-turn.ts",
             // No line for @vendoai/vendo/box-door: it ships as source
             // (box/turn-routes.mjs), so there is no dist copy to bypass.
-            "@vendoai/cli/extract": "../../packages/cli/src/extract/index.ts",
+            "@vendoai/vendo/extract": "../../packages/vendo/src/cli/extract/index.ts",
             "@vendoai/vendo/react": "../../packages/vendo/src/react.tsx",
             "@vendoai/vendo/ai-sdk": "../../packages/vendo/src/ai-sdk.ts",
             "@vendoai/vendo/mastra": "../../packages/vendo/src/mastra.ts",

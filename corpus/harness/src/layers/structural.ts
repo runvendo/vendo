@@ -210,7 +210,7 @@ async function appDirectoryRel(repoDir: string): Promise<"app" | "src/app"> {
  * `app/layout.tsx` that does not exist yet.
  *
  * SEAM — this mirrors `clientRoot` (and its app-dir choice, `appDirectory`) in
- * packages/cli/src/shared.ts: init prints the paste for exactly that file
+ * packages/vendo/src/cli/shared.ts: init prints the paste for exactly that file
  * (init.ts's mountStep) and doctor grades it there. If the product's rule moves,
  * this must move with it, or the corpus grades a file init never mentioned —
  * that has now cost two hosts (teable's pages `_app`, nextcrm's nested

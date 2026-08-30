@@ -84,8 +84,8 @@ export const ENGINE_COLLECTION_REGISTRY = {
   // CONFIG — the host's component registry, the pinned-baseline seed, the
   // guard's freeze switch — not any user's or any app's data, so the erase
   // cascade correctly never sweeps them. Do not "fix" them by adding a ref.
-  vendo_host_components: { kind: "storage" }, // HOST_COMPONENTS_COLLECTION, packages/cli/src/cloud/host-components.ts:34
-  vendo_pin_baselines: { kind: "storage" }, // PIN_BASELINES_COLLECTION, packages/cli/src/cloud/seed-baselines.ts:26
+  vendo_host_components: { kind: "storage" }, // HOST_COMPONENTS_COLLECTION, packages/vendo/src/cli/cloud/host-components.ts:34
+  vendo_pin_baselines: { kind: "storage" }, // PIN_BASELINES_COLLECTION, packages/vendo/src/cli/cloud/seed-baselines.ts:26
   vendo_placements: { kind: "storage" }, // PLACEMENTS_COLLECTION, packages/vendo/src/apps/persistence/placements.ts:48
   vendo_placement_slots: { kind: "storage" }, // PLACEMENT_SLOTS_COLLECTION, packages/vendo/src/apps/persistence/placements.ts:54
   vendo_parked_action: { kind: "storage" }, // COLLECTION, packages/vendo/src/apps/persistence/parked-action.ts:50

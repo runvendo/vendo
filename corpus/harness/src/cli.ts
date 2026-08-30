@@ -61,7 +61,7 @@ import {
   type AiRepoResult,
   type RunAiRepoMatrixOptions,
 } from "./ai/matrix.js";
-import type { ExtractionHarness } from "@vendoai/cli/extract";
+import type { ExtractionHarness } from "@vendoai/vendo/extract";
 import {
   applyVendoRootPaste as defaultApplyVendoRootPaste,
   type VendoRootPasteResult,

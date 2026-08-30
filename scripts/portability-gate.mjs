@@ -46,7 +46,7 @@ const NODE_BUILTIN_EXTERNALS = [
 /** Node-only legs that must NEVER be reachable from the worker-condition
  *  server graph. Each entry names the containment seam that keeps it out. */
 const FORBIDDEN_INPUTS = [
-  { fragment: "packages/cli/dist/", seam: "@vendoai/cli is its own package (runtime code must not borrow CLI modules)" },
+  { fragment: "packages/vendo/dist/cli/", seam: "the CLI is the umbrella's Node-only bin half (runtime code must not borrow CLI modules)" },
   { fragment: "packages/vendo/dist/dev-creds/model.js", seam: "#dev-creds/model conditions" },
   { fragment: "packages/vendo/dist/actions/sync/", seam: "@vendoai/vendo/actions/sync subpath split" },
   { fragment: "packages/vendo/dist/actions/runtime/host-files.js", seam: "#actions/host-files conditions" },

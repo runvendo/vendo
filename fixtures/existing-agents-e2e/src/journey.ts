@@ -14,7 +14,7 @@ import { injectLocalVendo, packLocalVendo, type PackedVendo } from "./local-pack
  * turn to an actual app creation over the same wire the embeds use. */
 
 export const workspaceRoot = path.resolve(fileURLToPath(new URL("../../../", import.meta.url)));
-const vendoCli = path.join(workspaceRoot, "packages/cli/bin/vendo.mjs");
+const vendoCli = path.join(workspaceRoot, "packages/vendo/bin/vendo.mjs");
 
 export interface JourneyOptions {
   /** examples/<name> to journey. */

@@ -17,21 +17,18 @@ No agent handy? Do it by hand. Three steps.
 
 <Steps>
   <Step title="Install">
-    Two packages, installed in the app you already have, on Node 20 or newer:
-    the library your app imports, and the CLI that wires it up — a dev
-    dependency, since it only ever runs at dev and build time. Only the blocks
-    your project uses ship.
+    One package, installed in the app you already have, on Node 20 or newer:
+    the library your app imports, and the `vendo` CLI that wires it up ride
+    together. Only the blocks your project uses ship.
 
     <CodeGroup>
 
     ```bash npm
     npm install @vendoai/vendo
-    npm install -D @vendoai/cli
     ```
 
     ```bash pnpm
     pnpm add @vendoai/vendo
-    pnpm add -D @vendoai/cli
     ```
 
     </CodeGroup>

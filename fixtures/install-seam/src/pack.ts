@@ -4,8 +4,8 @@ import { run } from "./process.js";
 
 /**
  * The publish set, packed into tarballs — the same discovery-by-manifest-name
- * rule the corpus harness and the Lane E journey use (`@vendoai/cli` lives in
- * `packages/cli`, so directory names cannot be trusted).
+ * rule the corpus harness and the Lane E journey use (`vendoai` lives in
+ * `packages/vendoai`, so directory names cannot be trusted).
  *
  * The stranger installs THESE, never a `workspace:` link and never a source
  * import: a link would resolve the umbrella's inter-package deps through the
@@ -15,7 +15,6 @@ export const VENDO_PACKAGE_NAMES = [
   "@vendoai/core",
   "@vendoai/ui",
   "@vendoai/vendo",
-  "@vendoai/cli",
   "vendoai",
 ] as const;
 

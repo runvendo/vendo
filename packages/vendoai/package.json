@@ -76,7 +76,6 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "@vendoai/cli": "workspace:*",
     "@vendoai/vendo": "workspace:*"
   },
   "devDependencies": {

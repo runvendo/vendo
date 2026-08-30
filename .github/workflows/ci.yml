@@ -686,17 +686,14 @@ jobs:
           # existing-agents-e2e is the sharpest case — #1001 added a
           # devDependency to examples/mastra-agent and left it red on main for
           # ~17h while every affected probe and cache key stayed clean.
-          # `@vendoai/cli` is in the build list with no `^`, and with no
-          # workspace edge to justify it: the express host's doctor e2e and the
-          # existing-agents journey both SPAWN packages/cli/bin/vendo.mjs, which
-          # imports ../dist/index.js. Nothing in this leg depends on the CLI
-          # package, so `^...` never reached it once #38 split the CLI out of
-          # @vendoai/vendo — and the shim died on ERR_MODULE_NOT_FOUND. The
-          # private lane hid it: there the CLI's own unit tests run in the same
-          # job first and leave a dist/ behind, so the ordering held by accident.
+          # `@vendoai/vendo` is in the build list with no `^`: the express
+          # host's doctor e2e and the existing-agents journey both SPAWN
+          # packages/vendo/bin/vendo.mjs, which imports ../dist/cli/index.js.
+          # `^...` builds a leg's DEPENDENCIES, not the umbrella's own dist, so
+          # without this entry the spawned bin dies on ERR_MODULE_NOT_FOUND.
           - name: orphans
             guarded: ""
-            build: "--filter=@vendoai-corpus/express-host^... --filter=@vendoai-examples/ai-sdk-agent^... --filter=@vendoai-examples/mastra-agent^... --filter=@vendoai/cli"
+            build: "--filter=@vendoai-corpus/express-host^... --filter=@vendoai-examples/ai-sdk-agent^... --filter=@vendoai-examples/mastra-agent^... --filter=@vendoai/vendo"
             suites: "@vendoai-corpus/express-host @vendoai-examples/ai-sdk-agent @vendoai-examples/mastra-agent @vendoai-fixtures/existing-agents-e2e"
           # The install seam: pack the publish set, `pnpm add` the tarballs into
           # a stranger app in a temp dir, run the real CLI, boot it, and drive
