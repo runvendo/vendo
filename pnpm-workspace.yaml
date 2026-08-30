@@ -22,6 +22,11 @@ allowBuilds:
   # consumer of the published packages inherits the same two — that is why
   # docs-site/index.mdx tells them to deny both. Flip to true the day a
   # bash-native harness needs `tar -z`.
+  # @clerk/shared's postinstall only prints Clerk's telemetry notice and drops a
+  # "notice shown" marker in the user's config dir — it builds nothing the SDK
+  # needs. Denied: crate (the Clerk host example) runs fine without it, and the
+  # notice is in Clerk's docs either way.
+  '@clerk/shared': false
   '@mongodb-js/zstd': false
   cbor-extract: true
   esbuild: true

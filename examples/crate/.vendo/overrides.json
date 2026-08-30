@@ -1,0 +1,44 @@
+{
+  "format": "vendo/overrides@3",
+  "tools": {
+    "host_listOrders": { "risk": "read", "title": "Find orders" },
+    "host_getOrder": { "risk": "read", "title": "Look up an order" },
+    "host_listCustomers": { "risk": "read", "title": "Find customers" },
+    "host_getCustomer": { "risk": "read", "title": "Look up a customer" },
+    "host_listProducts": { "risk": "read", "title": "Browse the catalogue" },
+    "host_getProduct": { "risk": "read", "title": "Look up a product" },
+    "host_listShipments": { "risk": "read", "title": "Find shipments" },
+    "host_getShipment": { "risk": "read", "title": "Track a shipment" },
+    "host_listRefunds": { "risk": "read", "title": "See past refunds" },
+    "host_getShopSummary": { "risk": "read", "title": "How the shop is doing" },
+
+    "host_fulfillOrder": { "risk": "write", "title": "Mark an order packed" },
+    "host_createShipment": { "risk": "write", "title": "Ship an order" },
+    "host_addShipmentEvent": { "risk": "write", "title": "Record a carrier scan" },
+    "host_adjustStock": { "risk": "write", "title": "Correct stock on hand" },
+    "host_addCustomerNote": { "risk": "write", "title": "Add a customer note" },
+
+    "host_cancelOrder": {
+      "risk": "destructive",
+      "title": "Cancel an order",
+      "description": "Cancels an order that has not shipped and releases its stock. There is no un-cancel."
+    },
+    "host_createRefund": {
+      "risk": "destructive",
+      "confirmEach": true,
+      "title": "Refund money to a customer",
+      "description": "Sends money back to the customer. This IRREVERSIBLY MOVES MONEY: a refund cannot be taken back."
+    },
+
+    "host_resetDemo": {
+      "risk": "destructive",
+      "disabled": true,
+      "audience": "operator",
+      "title": "Reset the demo shop",
+      "description": "Discards every refund, shipment, note and stock correction and rebuilds the seeded store. An operator surface, not something an agent helping a customer should ever reach for."
+    }
+  },
+  "remix": {
+    "ignoreSlots": []
+  }
+}
