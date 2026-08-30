@@ -1,6 +1,6 @@
 {
   "name": "@vendoai/cli",
-  "version": "0.58.0",
+  "version": "0.59.0",
   "description": "The Vendo CLI: init, doctor, sync, config, knowledge, mcp and the Cloud login.",
   "keywords": [
     "ai",
