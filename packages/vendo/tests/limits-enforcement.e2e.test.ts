@@ -98,7 +98,7 @@ describe("the message choke — a denied message costs nothing", () => {
   it("turns the third message away with the host's sentence, before any model call", async () => {
     // Two turns scripted, and only two: a third model call is exhaustion, not a
     // pass.
-    const { model, chat } = await compose({ limits: twoMessages, turns: [textTurn("one"), textTurn("two")] });
+    const { vendo, model, chat } = await compose({ limits: twoMessages, turns: [textTurn("one"), textTurn("two")] });
 
     expect(limitCards(await chat("first"))).toEqual([]);
     expect(limitCards(await chat("second"))).toEqual([]);
@@ -108,6 +108,99 @@ describe("the message choke — a denied message costs nothing", () => {
     // THE POINT: the turn was refused at the door, so the provider was never
     // dialed at all.
     expect(model.calls).toBe(2);
+    // The question and the card were written through the real persist path, so
+    // GET /threads/:id (a reload) reads them back — no stub on either side.
+    const stored = await vendo.harness.threads.get("thr_limits", {
+      principal, venue: "chat", presence: "present", sessionId: "s_limits",
+    });
+    expect(stored?.messages.map((message) => message.role)).toEqual([
+      "user", "assistant", "user", "assistant", "user", "assistant",
+    ]);
+    const last = stored?.messages.at(-1);
+    expect(last?.role).toBe("assistant");
+    expect(last?.parts.some((part) => part.type === "data-vendo-limit")).toBe(true);
+    expect(stored?.messages.at(-2)).toMatchObject({
+      role: "user",
+      parts: [{ type: "text", text: "third" }],
+    });
+  });
+
+  it("homes a staged drop on a denied turn, so a reload still opens the file", async () => {
+    const { vendo } = await compose({ limits: () => false, turns: [] });
+    const staged = await vendo.harness.stageUpload({
+      principal,
+      name: "ledger.csv",
+      content: "jan,1\n",
+    });
+    const ctx = { principal, venue: "chat" as const, presence: "present" as const, sessionId: "s_limits" };
+    const response = await vendo.handler(new Request("https://host.test/api/vendo/threads", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        threadId: "thr_limits",
+        message: {
+          id: "m_file",
+          role: "user",
+          parts: [
+            { type: "text", text: "what is in this?" },
+            { type: "file", mediaType: "text/csv", filename: "ledger.csv", url: staged.path },
+          ],
+        },
+      }),
+    }));
+    expect(limitCards(await readSse(response))).toEqual([{ type: "data-vendo-limit" }]);
+    const stored = await vendo.harness.threads.get("thr_limits", ctx);
+    const file = stored?.messages[0]?.parts.find((part) => part.type === "file") as { url?: string } | undefined;
+    expect(file?.url).toBe("/user/threads/thr_limits/files/ledger.csv");
+    expect(await (await vendo.harness.workspace(principal)).readFile(file!.url!)).toBe("jan,1\n");
+  });
+
+  it("drops a rehomed file if the transcript write fails, and still streams the card", async () => {
+    const store = await tempStore();
+    const original = store.records.bind(store);
+    store.records = ((collection: string) => {
+      const seam = original(collection);
+      if (collection !== "vendo_threads" || seam.atomic === undefined) return seam;
+      return {
+        ...seam,
+        atomic: {
+          insertIfAbsent: async () => { throw new Error("transcript down"); },
+          compareAndSwap: async () => { throw new Error("transcript down"); },
+        },
+      };
+    }) as typeof store.records;
+    const vendo = createVendo({
+      models: { default: scriptedModel([]) as unknown as LanguageModel },
+      principal: async () => principal,
+      store,
+      limits: () => false,
+    } as CreateVendoConfig);
+    const staged = await vendo.harness.stageUpload({
+      principal,
+      name: "ledger.csv",
+      content: "jan,1\n",
+    });
+    const ctx = { principal, venue: "chat" as const, presence: "present" as const, sessionId: "s_limits" };
+    const response = await vendo.handler(new Request("https://host.test/api/vendo/threads", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        threadId: "thr_limits",
+        message: {
+          id: "m_orphan",
+          role: "user",
+          parts: [
+            { type: "text", text: "what is in this?" },
+            { type: "file", mediaType: "text/csv", filename: "ledger.csv", url: staged.path },
+          ],
+        },
+      }),
+    }));
+    expect(limitCards(await readSse(response))).toEqual([{ type: "data-vendo-limit" }]);
+    expect(await vendo.harness.threads.get("thr_limits", ctx)).toBeNull();
+    await expect((await vendo.harness.workspace(principal)).readFile(
+      "/user/threads/thr_limits/files/ledger.csv",
+    )).rejects.toThrow();
   });
 
   it("says nothing of its own when the policy gave no sentence", async () => {

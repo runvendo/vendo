@@ -13,6 +13,7 @@
  * It decides nothing about how to think. Every value below is a façade or a gate.
  */
 import {
+  STORE_WIRE_APPEND_MESSAGES_OPS,
   STORE_WIRE_TURN_OPS,
   isVendoError,
   VendoError,
@@ -20,6 +21,7 @@ import {
   emitUsage,
   hostSkillFiles,
   isUnattended,
+  log,
   situationPromptBlock,
   toVendoWirePart,
   WARM_THREAD_PREFIX,
@@ -299,20 +301,29 @@ function modelFamilyOf(models: ResolvedModels<LanguageModel>): string | null {
   return typeof id === "string" ? id : null;
 }
 
-/** The whole of a message the host's policy refused: the card the chat surface
- *  renders, and nothing else. No thread row, no transcript, no model call — the
- *  point of the choke is that a denied message costs nothing. */
-const limitResponse = (verdict: { message?: string; retryable?: true }): Response => createUIMessageStreamResponse({
-  stream: createUIMessageStream<UIMessage>({
-    execute: ({ writer }) => {
-      writer.write(toVendoWirePart({
-        type: "data-vendo-limit",
-        ...(verdict.message === undefined ? {} : { message: verdict.message }),
-        ...(verdict.retryable === undefined ? {} : { retryable: verdict.retryable }),
-      }) as never);
-    },
-  }),
+/** The card a refused message streams, nested in the wire envelope the chrome
+ *  and a persisted transcript both read. */
+const limitCardPart = (verdict: { message?: string; retryable?: true }) => toVendoWirePart({
+  type: "data-vendo-limit",
+  ...(verdict.message === undefined ? {} : { message: verdict.message }),
+  ...(verdict.retryable === undefined ? {} : { retryable: verdict.retryable }),
 });
+
+/** The live stream of a message the host's policy refused: the card the chat
+ *  surface renders. The same pair is persisted beside it so a reload can read
+ *  it back. No model call — the point of the choke is that a denied message
+ *  does not spend one. */
+const limitResponse = (verdict: { message?: string; retryable?: true }, threadId?: ThreadId): Response => {
+  const response = createUIMessageStreamResponse({
+    stream: createUIMessageStream<UIMessage>({
+      execute: ({ writer }) => {
+        writer.write(limitCardPart(verdict) as never);
+      },
+    }),
+  });
+  if (threadId !== undefined) response.headers.set(THREAD_ID_HEADER, threadId);
+  return response;
+};
 
 export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
   const threads = new ThreadRepository(config.store);
@@ -578,6 +589,137 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
     }
   };
 
+  /** A denied turn that moved a drop and then failed to write the transcript
+   *  must not leave the file under the thread with no message pointing at it.
+   *  Delete first (retry once); if that still fails, move it back to staging so
+   *  the stray sweep can reclaim it. Never swallow — a leftover at the thread
+   *  path has no janitor. */
+  const dropHomedFiles = async (
+    homes: Map<string, string>,
+    ctx: RunContext,
+  ): Promise<void> => {
+    if (homes.size === 0) return;
+    const paths = [...homes.values()];
+    const remove = async (): Promise<void> => {
+      const workspace = await sqlDoors().workspaces.open(ctx.principal);
+      for (const path of paths) await workspace.rm(path, { force: true });
+      await workspace.commit();
+      for (const path of paths) await eraseStagedFile(ctx, path);
+    };
+    let lastError: unknown;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        await remove();
+        return;
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    try {
+      const workspace = await sqlDoors().workspaces.open(ctx.principal);
+      let moved = 0;
+      for (const [from, to] of homes) {
+        if (await workspace.exists(to)) {
+          await workspace.mv(to, from);
+          moved += 1;
+        }
+      }
+      if (moved === 0) {
+        log({
+          code: "vendo.limit_denial_file_not_reclaimed",
+          level: "error",
+          message: "[vendo] a denied turn left a rehomed file with no transcript row; the staging sweep cannot see it",
+          data: { error: lastError, paths },
+        });
+        return;
+      }
+      await workspace.commit();
+      log({
+        code: "vendo.limit_denial_file_restaged",
+        level: "error",
+        message: "[vendo] a denied turn could not delete a rehomed file; it was moved back to staging for the stray sweep",
+        data: { error: lastError },
+      });
+    } catch (error) {
+      log({
+        code: "vendo.limit_denial_file_not_reclaimed",
+        level: "error",
+        message: "[vendo] a denied turn left a rehomed file with no transcript row; the staging sweep cannot see it",
+        data: { error, paths },
+      });
+    }
+  };
+
+  /** `upsertMany` is one transaction on SQL and on a mount that serves
+   *  `transcripts.appendMessages`. Older StoreOps mounts fall through to two
+   *  `putMessage` calls, which can land the user bubble without the card. */
+  const pairWriteIsAtomic = async (): Promise<boolean> => {
+    if (maybeDbFor(config.store) !== undefined) return true;
+    if (config.ops?.transcripts.appendMessages === undefined) return false;
+    try {
+      return (await config.ops.status()).ops >= STORE_WIRE_APPEND_MESSAGES_OPS;
+    } catch {
+      return false;
+    }
+  };
+
+  /** The question and the card, written the same way an ordinary turn writes:
+   *  a staged drop comes home first, then the pair lands in one write. No model
+   *  call. */
+  const persistDeniedMessage = async (
+    input: { threadId?: string; message: UIMessage; ctx: RunContext },
+    verdict: { message?: string; retryable?: true },
+  ): Promise<ThreadId> => {
+    const given = input.threadId;
+    if (given !== undefined && !isThreadId(given)) {
+      throw new VendoError("validation", "threadId is malformed");
+    }
+    const thread = await threads.resolve(given as ThreadId | undefined, input.ctx);
+    const fresh = thread.messages.length === 0;
+    const message = await rehomeStagedFiles(input.message, thread.id, input.ctx);
+    validateUpsert(thread.messages, message);
+    const assistant: UIMessage = {
+      id: `msg_${globalThis.crypto.randomUUID()}`,
+      role: "assistant",
+      parts: [limitCardPart(verdict) as UIMessage["parts"][number]],
+    };
+    const homes = new Map<string, string>();
+    for (let i = 0; i < input.message.parts.length; i++) {
+      const before = input.message.parts[i];
+      const after = message.parts[i];
+      if (before?.type === "file" && after?.type === "file" && before.url !== after.url) {
+        homes.set(before.url, after.url);
+      }
+    }
+    // `persist` is the pair write (CAS of the whole transcript). `upsertMany`
+    // is used only where that verb is itself one transaction — a SQL store, or
+    // a mount that serves `transcripts.appendMessages`. A turn-capable store
+    // without `records.atomic` still needs the batch verb; an older mount
+    // without it must not split the pair across two `putMessage` calls.
+    let batchAppend: ReturnType<typeof sqlDoors>["transcript"]["upsertMany"] | undefined;
+    try {
+      batchAppend = sqlDoors().transcript.upsertMany;
+    } catch (error) {
+      if (!isVendoError(error) || error.code !== "not-implemented") throw error;
+    }
+    try {
+      if (fresh || batchAppend === undefined || !await pairWriteIsAtomic()) {
+        await threads.persist(thread, [message, assistant], { fresh });
+      } else {
+        await batchAppend(
+          input.ctx.principal,
+          thread.id,
+          [message, assistant],
+          { title: deriveTitle([...thread.messages, message]) },
+        );
+      }
+    } catch (error) {
+      await dropHomedFiles(homes, input.ctx);
+      throw error;
+    }
+    return thread.id;
+  };
+
   return {
     threads: {
       get: (id, ctx) => threads.get(id, ctx),
@@ -647,10 +789,25 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
       const timings = createTurnTimings();
       validateMessage(input?.message);
       // The message choke (limits.ts owns the counting, the policy and the
-      // recording): asked BEFORE the thread is resolved, so a refused message
-      // costs no read, no write and no model call.
+      // recording): asked BEFORE the model is called, so a refused message
+      // spends no tokens. The question and the card ARE written, so a reload
+      // can still say why the assistant went quiet.
       const verdict = await config.limiter?.gate("message", input.ctx);
-      if (verdict?.allow === false) return limitResponse(verdict);
+      if (verdict?.allow === false) {
+        let threadId: ThreadId | undefined;
+        try {
+          threadId = await persistDeniedMessage(input, verdict);
+        } catch (error) {
+          if (isVendoError(error)) throw error;
+          log({
+            code: "vendo.limit_denial_not_persisted",
+            level: "error",
+            message: "[vendo] a denied message could not be written to the thread; the card still streams",
+            data: { error },
+          });
+        }
+        return limitResponse(verdict, threadId);
+      }
       // Assembled once, per turn, for WHOEVER thinks. The venue gate and the guard's
       // directions live in here, which is why it is composition's job and not the
       // harness's. Which discovery section it may promise is decided by what is
@@ -662,7 +819,7 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
       // store below can change — so assembling it after the reads meant the turn
       // paid the store's wait and the guard's `directions` wait end to end.
       // Started after the limiter gate, not before: a refused message must still
-      // cost nothing.
+      // skip the model, even though the card is now persisted.
       const rail = discoveryRail(config.harness, config.connectorDiscovery);
       const systemRead = config.system(input.ctx, { discovery: rail });
       // A rejection is delivered where the prompt is awaited below; this only

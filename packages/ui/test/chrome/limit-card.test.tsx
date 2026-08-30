@@ -82,4 +82,20 @@ describe("the limit card in the thread", () => {
     expect(card.querySelector(".fl-beat-x")).toBeNull();
     expect(document.querySelector("[data-vendo-build-failed]")).toBeNull();
   });
+
+  it("does not offer Regenerate on a reached cap", async () => {
+    await mountDenial({ message: "Daily limit reached." });
+    expect(screen.queryByRole("button", { name: "Regenerate" })).toBeNull();
+  });
+
+  it("still offers Regenerate when the meter could not be checked", async () => {
+    await mountDenial(
+      {
+        message: "Vendo Cloud is busy right now, so this limit could not be checked — this is temporary, not a cap.",
+        retryable: true,
+      },
+      "Couldn’t check your limit",
+    );
+    expect(screen.getByRole("button", { name: "Regenerate" })).toBeTruthy();
+  });
 });

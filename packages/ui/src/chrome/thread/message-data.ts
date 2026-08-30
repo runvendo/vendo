@@ -7,6 +7,16 @@ export function partData(part: UIMessage["parts"][number]): unknown {
   return "data" in part ? part.data : part;
 }
 
+/** A reached cap is not worth regenerating: the same policy will refuse again.
+ *  A meter that could not be CHECKED (`retryable`) is the exception — trying
+ *  again is the whole point of that card. */
+export function isReachedCap(message: UIMessage): boolean {
+  return message.parts.some((part) => {
+    if (part.type !== "data-vendo-limit") return false;
+    return (partData(part) as { retryable?: true }).retryable !== true;
+  });
+}
+
 /** The marker the agent's `wireErrorMessage` puts on its OWN safe error text
  * (VendoError code + operator-crafted message). Only prefixed strings may be
  * shown in detail to an end user; raw transport/provider strings never carry

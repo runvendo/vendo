@@ -4,7 +4,7 @@ import { Fragment, useRef, useState } from "react";
 import { BeatSummary } from "../build-beat.js";
 import { useCopyFeedback } from "../clipboard.js";
 import { SentAttachment, type FilePart } from "./attachments.js";
-import { assistantText, collapseToolRuns, isAgentContext, toolCallIsContent, toolCallParked, toolCallPending, userText } from "./message-data.js";
+import { assistantText, collapseToolRuns, isAgentContext, isReachedCap, toolCallIsContent, toolCallParked, toolCallPending, userText } from "./message-data.js";
 import { ThreadPart } from "./parts.js";
 import { TurnCitations } from "./turn-citations.js";
 
@@ -36,7 +36,8 @@ function CopyTurnButton({ text }: { text: string }) {
 
 /** One turn in the transcript: the user attachments beside the bubble, the
     article with its stream parts, and the settled-turn actions (Copy always;
-    Edit on the last user turn, Regenerate on the last assistant turn). */
+    Edit on the last user turn, Regenerate on the last assistant turn unless
+    that turn is a reached cap). */
 export function ThreadMessage({ message, restored, risks, busy, activeAssistantId, lastUserId, lastAssistantId, onEditLast, onRegenerateLast, sendMessage, respond }: {
   message: UIMessage;
   restored: boolean;
@@ -66,7 +67,10 @@ export function ThreadMessage({ message, restored, risks, busy, activeAssistantI
   // Regenerate on the last assistant turn.
   const streamingTurn = busy && message.role === "assistant" && message.id === activeAssistantId;
   const showEdit = !busy && message.role === "user" && message.id === lastUserId;
-  const showRegenerate = !busy && message.role === "assistant" && message.id === lastAssistantId;
+  // A reached cap will refuse the same turn again ("Calling again gets the
+  // same answer"), so the ordinary last-assistant Regenerate is withheld.
+  const showRegenerate = !busy && message.role === "assistant" && message.id === lastAssistantId
+    && !isReachedCap(message);
   // The turn's beats fold into ONE summary row once the whole turn
   // has settled: while any call is still working (or parked on an approval)
   // every beat stays open, and the fold waits. Restored history arrives folded,

@@ -40,5 +40,8 @@ test("the limit card says who set the cap, in their words or ours", async ({ pag
   // The turn either side of the denials survives — the thread keeps going.
   await expect(page.getByText("build me a spending breakdown for last quarter")).toBeVisible();
   await expect(page.getByText("just a plain list of last month's charges then")).toBeVisible();
+  // A reached cap is not worth regenerating — the same policy will refuse again.
+  await expect(page.getByRole("button", { name: "Regenerate" })).toHaveCount(0);
+
   await page.screenshot({ path: screenshotPath("limit-card-thread"), fullPage: true, animations: "disabled" });
 });
