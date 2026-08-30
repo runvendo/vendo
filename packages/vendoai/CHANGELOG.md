@@ -1,5 +1,13 @@
 # vendoai
 
+## 0.59.2
+
+### Patch Changes
+
+- Updated dependencies [c9b76b5]
+  - @vendoai/vendo@0.59.2
+  - @vendoai/cli@0.59.2
+
 ## 0.59.1
 
 ### Patch Changes
