@@ -60,7 +60,7 @@ concurrency:
 #   push to main  NO filter. Every shard, every package, plus coverage-merge
 #                 with the real per-package floors. This is the backstop that
 #                 makes cone-only PR CI safe, and the workflow going red on
-#                 main is the whole notification — there is no pager.
+#                 main is what red-main-alert.yml pages Slack for.
 #
 # The gap that backstop is covering, stated plainly: the cone is turbo's
 # dependency graph, and inputs outside the graph are invisible to it.

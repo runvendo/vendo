@@ -1,0 +1,72 @@
+name: red-main-alert
+
+# The pager for a red main. Until now there wasn't one, deliberately: a red
+# main was found by whoever next opened the Actions tab, and ci.yml said so in
+# as many words. Scope is CI alone — ai-dual-nightly.yml still has no pager,
+# which its own header now says.
+#
+# It watches CI from outside rather than adding a notify job inside ci.yml,
+# because such a job would have to `needs:` every leg, would be skipped rather
+# than run when a leg is cancelled, and would fire on pull_request too. A
+# workflow_run listener sees one conclusion for the whole workflow, which is
+# exactly the question being asked.
+#
+# The channel is Slack, which is why the payload below is the incoming-webhook
+# shape. CI_ALERT_WEBHOOK_URL holds the hook URL, and that URL is itself the
+# credential — anyone holding it can post as the app — so it is a repo secret
+# and is never written down here.
+#
+# Note this cannot fire until it is on the default branch: workflow_run only
+# dispatches from the copy of the workflow that lives on main.
+on:
+  workflow_run:
+    # Matches ci.yml's `name:`, not its filename.
+    workflows: ["CI"]
+    types: [completed]
+    # Filters the triggering run's HEAD branch. Its job is to stop a workflow
+    # run being created at all for the PR and merge_group runs of CI, which
+    # would otherwise show up as skipped noise on every PR.
+    branches: [main]
+
+# Nothing here reads the API or the tree.
+permissions: {}
+
+jobs:
+  alert:
+    # `completed` also fires for success, cancelled and skipped; only failure
+    # is a red main.
+    #
+    # The event check is not redundant with `branches:` above: that filter
+    # matches the head branch, so a fork PR opened from a branch called `main`
+    # satisfies it. merge_group runs are already excluded (their head branch is
+    # gh-readonly-queue/...) and could not redden main anyway — they fail the
+    # queue entry instead.
+    if: >-
+      github.event.workflow_run.conclusion == 'failure' &&
+      github.event.workflow_run.event == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # Every failing run alerts; no transition tracking, no stored state. main
+      # went red five times on 2026-08-30 alone, so a main that stays red will
+      # repeat itself — the accepted cost of holding no state. Each repeat
+      # names a different commit, which is what bisecting it needs anyway.
+      #
+      # An unset CI_ALERT_WEBHOOK_URL fails this step rather than silently not
+      # alerting, so the missing decision stays visible.
+      - name: Post to the alert channel
+        env:
+          WEBHOOK_URL: ${{ secrets.CI_ALERT_WEBHOOK_URL }}
+          TITLE: ${{ github.event.workflow_run.display_title }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+          ACTOR: ${{ github.event.workflow_run.triggering_actor.login }}
+        run: |
+          set -euo pipefail
+          # Via jq --arg from the environment, never expression-interpolated
+          # into the JSON: a commit message carrying a quote would otherwise
+          # break the payload, or run as shell.
+          jq -n --arg t "$TITLE" --arg u "$RUN_URL" --arg s "$SHA" --arg a "$ACTOR" \
+            '{text: "main is RED — \($t)\n\($s[0:7]) pushed by \($a)\n\($u)"}' \
+            | curl --fail-with-body --silent --show-error --max-time 30 \
+                -H 'Content-Type: application/json' --data @- "$WEBHOOK_URL"

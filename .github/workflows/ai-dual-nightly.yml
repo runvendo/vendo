@@ -7,8 +7,9 @@ name: ai-dual nightly
 # merge_group alike until #1584. This workflow resolves the NEWEST ai@7 every
 # morning instead, on main, so the drift is found here.
 #
-# Red here IS the notification — same as a red main, there is no pager. The fix
-# is a deliberate PR: read the version off the run's "Resolved AI SDK versions"
+# Red here IS the notification: red-main-alert.yml pages Slack for a red main,
+# but it watches CI only, so nothing pages for this workflow. The fix is a
+# deliberate PR: read the version off the run's "Resolved AI SDK versions"
 # step, fix the break or move the pin, land it with a green run behind it.
 #
 # It provides no required check and never runs on a PR, so it cannot block a
