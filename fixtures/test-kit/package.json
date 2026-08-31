@@ -30,7 +30,7 @@
   "devDependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@types/node": "^22.0.0",
-    "ai": "6.0.28",
+    "ai": "6.0.272",
     "typescript": "^5.6.0"
   }
 }
