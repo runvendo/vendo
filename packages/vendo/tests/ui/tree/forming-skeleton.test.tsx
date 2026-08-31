@@ -61,15 +61,10 @@ describe("TreeView streaming placeholders (pick A)", () => {
     streaming: true,
   } as unknown as WalkTree);
 
-  it("paints shape-aware silhouettes for unarrived generated sources", () => {
+  it("paints shape-aware silhouettes for unresolved streaming nodes", () => {
     render(<TreeView tree={streamingTree()} components={{}} onAction={ok} />);
     expect(document.querySelector('[data-streaming-component="RenewalHero"] [data-form-shape="tiles"]')).not.toBeNull();
     expect(document.querySelector('[data-streaming-component="RenewalList"] [data-form-shape="rows"]')).not.toBeNull();
-  });
-
-  it("marks shaped reveals for in-place fill instead of the rise morph", () => {
-    render(<TreeView tree={streamingTree()} components={{}} onAction={ok} />);
-    expect(document.querySelectorAll(".fl-reveal.fl-reveal-fill").length).toBe(2);
   });
 
   it("keeps the slab for dangling children (no name to derive from)", () => {

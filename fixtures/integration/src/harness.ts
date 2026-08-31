@@ -339,7 +339,7 @@ export async function createStack(options: StackOptions = {}): Promise<Stack> {
     };
     // The door's apps ride-along over vendo.apps. The door types these three
     // verbs off the real `AppsRuntime`, so `open` may answer every surface;
-    // this fixture narrows positively to the two the door viewer can render,
+    // this fixture narrows positively to the one the door viewer can render,
     // like the production adapter in @vendoai/vendo (the door is a viewer +
     // runner, 10-mcp §4).
     const appsPort: NonNullable<McpDoorConfig["apps"]> = {
@@ -347,7 +347,6 @@ export async function createStack(options: StackOptions = {}): Promise<Stack> {
       async open(appId, ctx) {
         const opened = await vendo.apps.open(appId, ctx);
         if (opened.kind === "tree") return { kind: "tree", payload: opened.payload };
-        if (opened.kind === "http") return { kind: "http", url: opened.url };
         throw new Error(`app surface "${opened.kind}" is unreachable for the door viewer role`);
       },
       call: (appId, ref, args, ctx) => vendo.apps.call(appId, ref, args, ctx),

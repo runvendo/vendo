@@ -60,7 +60,6 @@ const APP_DOCUMENT_FIELDS = [
   "source",
   "machine",
   "egress",
-  "secrets",
   "seed",
   "forkedFrom",
 ] as const;

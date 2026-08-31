@@ -46,7 +46,7 @@ const bespoke = async (component: string, props: Record<string, unknown>): Promi
     ],
     queries: [],
   } as unknown as Tree;
-  return (await catalogIssues(tree, undefined, [])).map((issue) => issue.message);
+  return (await catalogIssues(tree, [])).map((issue) => issue.message);
 };
 
 describe("an engine's own props are legal on the component that renders it", () => {

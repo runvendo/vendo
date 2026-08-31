@@ -175,7 +175,7 @@ describe("the Kit's slots", () => {
             source: "prewired",
             props: propsAt(name, slot, held) as Tree["nodes"][0]["props"],
           }],
-        }, undefined, []);
+        }, []);
 
         expect(issues.map((issue) => issue.message).filter((message) => message.includes("unknown prop")), at)
           .toEqual([]);

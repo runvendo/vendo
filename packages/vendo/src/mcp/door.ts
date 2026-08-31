@@ -1089,7 +1089,7 @@ class Door {
     identity: HostIdentity,
   ): Promise<unknown> {
     let appName: string | undefined;
-    if ((isHttpOpenSurface(output) || isBundleOpenSurface(output)) && typeof args.appId === "string") {
+    if (isBundleOpenSurface(output) && typeof args.appId === "string") {
       try {
         appName = (await this.#config.apps!.list(ctx)).find((app) => app.id === args.appId)?.name;
       } catch {
@@ -1641,10 +1641,6 @@ function turnResult(result: ToolResult): CallToolResult {
   return inBandError(`${result.error.code}: ${result.error.message}`);
 }
 
-function isHttpOpenSurface(output: unknown): output is { kind: "http"; url: string } {
-  return isRecord(output) && output.kind === "http" && typeof output.url === "string";
-}
-
 function isBundleOpenSurface(output: unknown): output is { kind: "bundle"; entry: string } {
   return isRecord(output) && output.kind === "bundle" && typeof output.entry === "string";
 }
@@ -1676,11 +1672,8 @@ function projectAppsOpenOutput(
   // FINAL SPEC v1 — a SEALED bundle IS the app, and it is not a page: it boots
   // inside the host's own UI, in a sandboxed frame whose only way out is the
   // host's postMessage bridge (`ui/src/tree/frame-bridge.ts`). So the link-out
-  // names the PRODUCT, which is where the person opens it — the same card an
-  // app with a url of its own takes, because the sentence is the same sentence.
-  const url = isHttpOpenSurface(output)
-    ? output.url
-    : isBundleOpenSurface(output) ? details.productUrl : undefined;
+  // names the PRODUCT, which is where the person opens it.
+  const url = isBundleOpenSurface(output) ? details.productUrl : undefined;
   if (url !== undefined) {
     const projected: OpenInProductPayload = {
       kind: OPEN_IN_PRODUCT_KIND,
@@ -1696,10 +1689,9 @@ function projectAppsOpenOutput(
     return { ...output, say: `This app is built and ready to open in ${details.productName}.` };
   }
   // FIX E — the registry's vendo_apps_open returns an OpenSurface envelope
-  // (`{ kind: "tree", payload } | { kind: "http", url } | { kind: "resuming" }`);
+  // (`{ kind: "tree", payload } | { kind: "resuming" }`);
   // the door's own apps path projects that same envelope. Unwrap tree surfaces
-  // so a registry-executed open renders identically over MCP Apps. HTTP
-  // surfaces take the explicitly-tagged link-out projection above. A
+  // so a registry-executed open renders identically over MCP Apps. A
   // `resuming` (or any other shape) passes through untouched — the shim's
   // core-§8 dispatch contains an unrenderable payload gracefully.
   const payload = isRecord(output) && output.kind === "tree" ? output.payload : output;

@@ -168,16 +168,7 @@ const createEditPersist = (
       return row.enabled;
     };
     await assertCurrent();
-    // Lane E — egressApproved is grant state, written ONLY by the egress
-    // approval flow: an engine- or model-authored edit must never mint or
-    // widen it (same rule as model-forged venue/drift fields above). Pin it
-    // to the stored document's value.
-    if (previous.egressApproved === undefined) {
-      delete app.egressApproved;
-    } else {
-      app.egressApproved = [...previous.egressApproved];
-    }
-    // Same rule, same reason: the memory is written by the memory door alone, so
+    // The memory is written by the memory door alone, so
     // an edit carries the STORED one across rather than whatever the generated
     // document happens to hold (which, on a rebuild, is nothing).
     if (previous.memory === undefined) {

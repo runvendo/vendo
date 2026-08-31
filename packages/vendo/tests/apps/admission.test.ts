@@ -53,12 +53,12 @@ const SUBJECT = "user_1";
 
 const valid = (id: string): AppDocument => screenDocument(id, { name: "Renewals" });
 
-/** Refused for a CROSS-FIELD reason, not a schema typo: an island tool manifest
- *  naming a component the document does not carry. Only the normative validator
+/** Refused for a FORMAT reason, not a schema typo: a seed whose baseline is not
+ *  a sha256 pin. Only the normative validator
  *  catches this — `appDocumentSchema` alone accepts it — so a door that skipped
  *  admission would let it through. */
 const invalid = (id: string): AppDocument =>
-  screenDocument(id, { name: "Renewals", componentTools: { Missing: ["host_read"] } });
+  screenDocument(id, { name: "Renewals", seed: { component: "Card", baseline: "not-a-pin", wishes: [] } });
 
 const apps = (): RecordStore => memoryStore().records("vendo_apps");
 
@@ -99,7 +99,7 @@ describe("the one door in", () => {
 
     const distinct = new Set(reasons.values());
     expect([...distinct]).toHaveLength(1);
-    expect([...distinct][0]).toContain('componentTools names "Missing"');
+    expect([...distinct][0]).toContain('seed baseline "not-a-pin"');
   });
 
   it.each(ORIGINS)("admits a valid document written as %s, byte-identically", async (origin) => {

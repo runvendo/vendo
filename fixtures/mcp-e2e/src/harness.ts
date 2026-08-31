@@ -15,7 +15,6 @@ import { createStore, storeFiles, type VendoStore } from "@vendoai/vendo/store";
 
 export const SUBJECT = "user_1";
 export const FIXTURE_APP_ID = "app_mcp_fixture";
-export const HTTP_FIXTURE_APP_ID = "app_mcp_http_fixture";
 export const BUNDLE_FIXTURE_APP_ID = "app_mcp_bundle_fixture";
 export const MCP_MOUNT = "/api/vendo/mcp";
 export const FIXTURE_THEME: VendoTheme = {
@@ -117,13 +116,6 @@ const fixtureApp: AppDocument = {
   },
 };
 
-const httpFixtureApp: AppDocument = {
-  format: "vendo/app@1",
-  id: HTTP_FIXTURE_APP_ID,
-  name: "MCP hosted dashboard",
-  description: "A rung-4 fixture projected as an MCP open-in-product card.",
-};
-
 export type OAuthMode = "auto" | "interactive" | "prebuilt";
 
 export interface Stack {
@@ -205,11 +197,6 @@ export async function createStack(options: StackOptions = {}): Promise<Stack> {
     data: { subject: SUBJECT, enabled: false, doc: fixtureApp },
     refs: { subject: SUBJECT },
   });
-  await store.records("vendo_apps").put({
-    id: httpFixtureApp.id,
-    data: { subject: SUBJECT, enabled: false, doc: httpFixtureApp },
-    refs: { subject: SUBJECT },
-  });
   // A SEALED bundle (FINAL SPEC v1) written through the REAL seal, so what the
   // door projects is a built app's own surface rather than a shape this file
   // invented.
@@ -262,9 +249,6 @@ export async function createStack(options: StackOptions = {}): Promise<Stack> {
   const appsPort: NonNullable<McpDoorConfig["apps"]> = {
     list: (ctx) => apps.list(ctx),
     async open(appId, ctx) {
-      if (appId === HTTP_FIXTURE_APP_ID) {
-        return { kind: "http", url: `${origin}/fixture/apps/${HTTP_FIXTURE_APP_ID}` };
-      }
       const opened = await apps.open(appId, ctx);
       // Only the tree is narrowed (its resolved payload is what the shim
       // renders); every other surface travels as itself, exactly as the

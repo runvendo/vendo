@@ -1144,9 +1144,10 @@ export async function createWireServer(options: WireServerOptions = {}) {
           root: "root",
           nodes: [
             { id: "root", component: "Stack", source: "prewired", children: [`${componentName.toLowerCase()}-1`] },
-            { id: `${componentName.toLowerCase()}-1`, component: componentName, source: "generated" },
+            // A remix is a ported SCREEN — its tree is whatever rendering it
+            // produced, marked `source: "ported"` — never generated source.
+            { id: `${componentName.toLowerCase()}-1`, component: "Text", source: "ported", props: { text: `${component} fork` } },
           ],
-          components: { [componentName]: `export default function Fork() { return <p>${component} fork</p>; }` },
         });
         minted.seed = { component, baseline: "sha256:fixture", wishes: [instruction] };
         state.apps.push(minted);

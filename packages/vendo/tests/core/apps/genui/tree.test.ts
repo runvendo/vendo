@@ -116,8 +116,9 @@ describe("validateTree components rejection", () => {
     expect(validateTree({ ...minimal(), extra: 1 }).ok).toBe(true);
   });
 
-  it("accepts a generated-source node without a document-level component", () => {
-    // The presence rule is the app-document layer's to enforce, not the tree's.
+  it("accepts a legacy generated-source node (read-compat for stored trees)", () => {
+    // The island venue is gone; the source enum keeps "generated" so stored
+    // trees from that era still parse.
     expect(validateTree({
       ...minimal(),
       nodes: [{ id: "n1", component: "Gauge", source: "generated" }],

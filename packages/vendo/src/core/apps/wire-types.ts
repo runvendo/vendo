@@ -7,8 +7,8 @@
  * them — one fewer copy, and ui's public surface is unchanged.
  *
  * NOT yet one definition. The server half declares its own richer `EditResult`
- * (`packages/vendo/src/apps/runtime/types.ts`) carrying `failure`, `graduated`, `box`,
- * `pendingEgress` and `automation`; this one is the four-field wire shape a
+ * (`packages/vendo/src/apps/runtime/types.ts`) carrying `failure`, `say` and
+ * `automation`; this one is the four-field wire shape a
  * surface reads. Two declarations of the same name ship from this package, one
  * per door. Unifying them is a behavior question — which fields the wire is
  * allowed to expose — not a move, so it is deliberately left to the slice that
@@ -35,7 +35,6 @@ export interface AppListRow extends AppDocument {
 /** 06-apps §1 — what `GET /apps/:id/open` returns. */
 export type OpenSurface =
   | { kind: "tree"; payload: UIPayload; components?: Record<string, string> }
-  | { kind: "http"; url: string }
   /** A SEALED bundle. `entry` is the content hash of the file the frame boots,
    *  so it is both the address to fetch (`GET /apps/:id/bundle/:hash`) and the
    *  frame's remount key. */

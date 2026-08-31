@@ -136,9 +136,6 @@ const createAppCopyDoors = (
         id: `app_${globalThis.crypto.randomUUID()}`,
         forkedFrom: source.id,
       };
-      // Lane E grant hygiene — egress approval never travels with a copy; the
-      // fork re-approves its declaration.
-      delete fork.egressApproved;
       // The conversation belongs to the owner who had it, not to the copy: the
       // persist already drops it (appRecordInput takes no session here), and the
       // RETURNED document must not hand it back either.
@@ -161,12 +158,9 @@ const createAppCopyDoors = (
       if (config.cloud === undefined) {
         throw new VendoError("cloud-required", "Vendo Cloud requires VENDO_API_KEY");
       }
-      // Lane E grant hygiene — a share copy never carries the owner's egress
-      // approval; whoever runs the copy approves its declaration themselves.
-      // …and the brain's conversation never travels either: it is the owner's
+      // The brain's conversation never travels with a copy: it is the owner's
       // transcript, not part of the app.
-      const { egressApproved: _egressApproved, ...shared } = app;
-      return config.cloud.share(appId, withoutSession(shared));
+      return config.cloud.share(appId, withoutSession(app));
     },
 
     async publish(appId, ctx) {
@@ -175,9 +169,8 @@ const createAppCopyDoors = (
       if (config.cloud === undefined) {
         throw new VendoError("cloud-required", "Vendo Cloud requires VENDO_API_KEY");
       }
-      // Lane E grant hygiene — same rule as share: approval never travels.
-      const { egressApproved: _published, ...published } = app;
-      return config.cloud.publish(appId, withoutSession(published));
+      // Same rule as share: the conversation never travels.
+      return config.cloud.publish(appId, withoutSession(app));
     },
   };
 };

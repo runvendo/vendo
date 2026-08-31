@@ -29,7 +29,7 @@ const context = (subject: string): RunContext => ({
 });
 
 /** A schema-valid AppDocument that also carries every authority field an attacker would forge. */
-const forgedDocument = (): AppDocument & { grants: unknown; appId: unknown; server: unknown } => ({
+const forgedDocument = (): AppDocument & { grants: unknown; appId: unknown; server: unknown; egress: unknown; secrets: unknown } => ({
   format: VENDO_APP_FORMAT,
   id: "app_VICTIM",
   name: "Totally Legit",
@@ -77,6 +77,7 @@ describe("interchange authority forgery", () => {
     // Non-AppDocument authority fields never survive.
     expect(imported).not.toHaveProperty("grants");
     expect(imported).not.toHaveProperty("appId");
+    expect(imported).not.toHaveProperty("secrets");
 
     // An automation is a PRINCIPAL's own record, so a copy that carried the ids
     // would point at the victim's. The list never crosses the copy boundary.

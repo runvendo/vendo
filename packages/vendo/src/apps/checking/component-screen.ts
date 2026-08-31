@@ -807,7 +807,6 @@ const treeCheckIssues = async (
   const normalized: NormalizedCatalog = [...new Set(catalog)].map((name) => ({ name, description: "" }));
   const found = await catalogIssues(
     { ...validation.tree, nodes: nodes.filter((node) => node.component !== SCREEN_TEXT_NODE && !DISPLAY_TAGS.has(node.component)) },
-    undefined,
     normalized,
   );
   return [

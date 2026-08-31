@@ -104,11 +104,10 @@ export const amountUnitIssue = (
   return walk(args, schemaProperties(descriptor.inputSchema));
 };
 
-// execution-v2 — the v1 MachineSessions fn: path is deleted. fn: refs on a
-// machine-bearing app resolve over the box door (fn.ts decorates this
-// caller in createApps); what remains HERE is the fallthrough for an app with
-// no machine, which settles as a CONTAINED error outcome — a stale binding
-// must not take down open() or an automation run.
+// execution-v2 — the fn: execution path is deleted with the per-app machine
+// lane. What remains HERE is the permanent terminus for a stored fn: binding,
+// which settles as a CONTAINED error outcome — a stale binding must not take
+// down open() or an automation run.
 export const fnOutcome = (name: string): ToolOutcome => ({
   status: "error",
   error: FN_NAME_PATTERN.test(name)

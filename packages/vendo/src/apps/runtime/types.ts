@@ -274,22 +274,6 @@ export interface EditResult {
    * edit time, not only in sync output or the ship-diff. */
   seedDrift?: SeedDrift;
   /**
-   * execution-v2 Wave 3 — set when this edit graduated the app 1→2 (or edited
-   * an already-graduated app's server): the machine was provisioned, the box
-   * agent wrote/updated the server code, and the tree gained its fn: bindings.
-   */
-  graduated?: boolean;
-  /** The in-box agent's structured report for a graduating/server edit (DATA:
-   * it carries no host authority — approvals still gate every mutation). */
-  box?: { ok: boolean; summary: string; fns?: string[]; filesChanged?: string[] };
-  /**
-   * execution-v2 Wave 3 — a graduating edit whose server code declares egress
-   * the owner has not approved surfaces the parked approval HERE (not a silent
-   * failure). The code is written and snapshotted; the fn does real egress only
-   * once the owner approves this card.
-   */
-  pendingEgress?: { approvalId?: ApprovalId; domains: string[] };
-  /**
    * Set when this edit authored an automation: the RECORD the create operation
    * minted (owned by the caller, carrying no reference back to this app), with
    * its id appended to the app's own `automations` list. No machine is involved.
@@ -325,8 +309,6 @@ export interface EditFailure {
  */
 export interface CreateServerWork {
   automation?: EditResult["automation"];
-  /** The box wrote real server code for this app (layer 2 or 3). */
-  graduated?: boolean;
   /** Caller-facing sentences: refused surface flips, arming issues. */
   issues?: string[];
   /** The plan REQUIRED server work that could not be built. The app still
@@ -344,7 +326,6 @@ export interface VersionEntry {
 /** 06-apps §1 */
 export type OpenSurface =
   | { kind: "tree"; payload: UIPayload; components?: Record<string, string> }
-  | { kind: "http"; url: string }
   /** A SEALED bundle. `entry` is the content hash of the file the frame boots,
    *  so it is both the address to fetch and the frame's remount key. */
   | { kind: "bundle"; entry: string }

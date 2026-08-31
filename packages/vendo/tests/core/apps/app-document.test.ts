@@ -94,23 +94,6 @@ describe("appDocumentSchema and validateAppDocument", () => {
     expect(validateAppDocument({ ...base, components: { Gauge: "export default () => null;" } }).ok).toBe(true);
   });
 
-  it("validates componentTools against the components map and tool-name grammar", () => {
-    const base = {
-      format: VENDO_APP_FORMAT,
-      id: "app_x",
-      name: "X",
-      components: { Gauge: "export default () => null;" },
-    };
-    // W4b — a stamped per-island tool manifest rides beside components.
-    expect(validateAppDocument({ ...base, componentTools: { Gauge: ["clients_search"] } }).ok).toBe(true);
-    expect(validateAppDocument({ ...base, componentTools: { Gauge: [] } }).ok).toBe(true);
-    // A manifest for an island that does not exist is a stamping bug.
-    expectValidation({ ...base, componentTools: { Missing: ["clients_search"] } });
-    // Manifest entries are registry tool names — the flat grammar, never dotted.
-    expectValidation({ ...base, componentTools: { Gauge: ["clients.search"] } });
-    expectValidation({ ...minimal(), componentTools: { Gauge: ["clients_search"] } });
-  });
-
   it("never throws on hostile inputs with throwing getters", () => {
     const hostile = Object.defineProperty({}, "format", {
       enumerable: true,

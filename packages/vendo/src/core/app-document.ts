@@ -144,7 +144,7 @@ export const appSourceFileSchema = z.object({
  * SERVER-WRITTEN, like {@link AppBuildFailure}: `asks` is recorded by the front
  * door and `decisions` by the agent's own save hand, both through the runtime's
  * one memory door. A model-authored `memory` on a generated document is stripped
- * before persist, exactly as a forged `egressApproved` is.
+ * before persist.
  *
  * Deliberately NOT a log. Reasoning traces, transcripts and tool outputs are not
  * here and must not be added: this is the smallest thing the next editor needs,
@@ -343,14 +343,6 @@ export interface AppDocument {
   ui?: "tree" | "bundle";
   components?: Record<string, ComponentEntry>;
   /**
-   * W4b — the compiler-stamped per-island tool manifest: for each generated
-   * component, the registry tool names its source reaches through the ambient
-   * `tools` API (literal member access, scanned at compile). The runtime
-   * exposes ONLY these tools to that island's jail; derived data, so it
-   * travels with `components` on copy.
-   */
-  componentTools?: Record<string, string[]>;
-  /**
    * Contract §3.2 — the app's own code, at rest. Keys are POSIX-relative paths
    * inside the app directory ("src/App.tsx", "vendo.json"), the app's own
    * screen (`app.tsx`) included.
@@ -372,18 +364,6 @@ export interface AppDocument {
    * app that is deleted takes nothing down with it.
    */
   automations?: AutomationId[];
-  egress?: string[];
-  /**
-   * execution-v2 Lane E — the outbound domains the OWNER has approved for this
-   * app's machine (grant state, written only by the egress approval flow).
-   * `egress` is the app's declaration (mirrors `vendo.json`); this field is
-   * the one-time user/host approval over it. A declared domain missing from
-   * here blocks provision/wake loudly. Grant hygiene: the field never travels
-   * with a copy — fork/share/publish/export all strip it, so a copied app
-   * re-approves its egress.
-   */
-  egressApproved?: string[];
-  secrets?: string[];
   /** Remix provenance ONLY (drift, ship-diff, re-seed). "Show this app in that
    *  slot" is a placement ROW, never a document field — see
    *  `@vendoai/vendo/apps` `placements.ts`. */
@@ -442,13 +422,9 @@ export const appDocumentSchema = z.object({
   description: z.string().optional(),
   ui: z.enum(["tree", "bundle"]).optional(),
   components: z.record(componentEntrySchema).optional(),
-  componentTools: z.record(z.array(z.string())).optional(),
   source: z.record(appSourceFileSchema).optional(),
   bundle: appBundleSchema.optional(),
   automations: z.array(z.string()).optional(),
-  egress: z.array(z.string()).optional(),
-  egressApproved: z.array(z.string()).optional(),
-  secrets: z.array(z.string()).optional(),
   seed: appSeedSchema.optional(),
   forkedFrom: appIdSchema.optional(),
   buildFailed: appBuildFailureSchema.optional(),

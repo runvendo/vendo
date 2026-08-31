@@ -156,14 +156,10 @@ const prewiredPropsIssues = (node: TreeNode): FactIssue[] => {
 
 export const catalogIssues = async (
   tree: Tree,
-  /** Names only — the generated map's KEYS are the vocabulary this check
-   *  measures against, so an entry's shape is none of its business. */
-  components: Record<string, unknown> | undefined,
   catalog: NormalizedCatalog,
 ): Promise<FactIssue[]> => {
   const hostCatalog = new Map(catalog.map((component) => [component.name, component]));
   const hostNames = new Set(hostCatalog.keys());
-  const generatedNames = new Set(Object.keys(components ?? {}));
   const issues: FactIssue[] = [];
   for (const node of tree.nodes) {
     if (node.source === "host") {
@@ -179,8 +175,6 @@ export const catalogIssues = async (
       } else {
         issues.push(...prewiredPropsIssues(node));
       }
-    } else if (node.source === "generated" && !generatedNames.has(node.component)) {
-      issues.push(atNode(node.id, `references generated component "${node.component}" without source`));
     } else if (node.source === undefined) {
       // Legacy/direct trees can omit source; the renderer resolves the name to
       // a prewired primitive first, so a reserved name here gets the same
@@ -188,7 +182,7 @@ export const catalogIssues = async (
       // stored tree could still ship an ignored prop (e.g. Table.data).
       if (reserved.has(node.component)) {
         issues.push(...prewiredPropsIssues(node));
-      } else if (!hostNames.has(node.component) && !generatedNames.has(node.component)) {
+      } else if (!hostNames.has(node.component)) {
         issues.push(atNode(node.id, `references unknown component "${node.component}"`));
       }
     }
@@ -387,7 +381,7 @@ export const kitNestingIssues = (tree: Tree): FactIssue[] => {
   };
 
   for (const node of tree.nodes) {
-    if (node.source === "host" || node.source === "generated") continue;
+    if (node.source === "host") continue;
     checkKitElement(node.id, "", node.component, node.props ?? {}, node.children, parents.get(node.id));
   }
   return issues;

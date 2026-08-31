@@ -16,7 +16,7 @@
  *    guarded query path. `data` on this channel would be a server deciding what a
  *    viewer may see at paint time instead of at ask time, so the schema refuses
  *    the key outright rather than merely omitting it.
- * 2. **No islands.** `components`/`componentTools` are not part of this contract.
+ * 2. **No islands.** `components` is not part of this contract.
  *    Legacy island apps keep flowing through the open payload shape they always
  *    did; nothing new enters through here.
  */

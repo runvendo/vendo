@@ -1,26 +1,17 @@
 import {
   automationRecordSchema,
   VendoError,
-  type AppDocument,
   type AutomationRecord,
   type PermissionGrant,
   type StoreOps,
   type ToolImpact,
   type VendoRecord,
 } from "./core/index.js";
-import { appRowSchema } from "./core/apps/index.js";
 
 /** The wire shape lives in core: `vendo sync` reads this report back off the
  *  response from another package, so producer and consumer share one
  *  definition. Named here because this is where it is produced. */
 export type { ToolImpact };
-
-/** The app row as this reader takes it OFF the store. `appRowSchema` is the
- *  contract's one definition of the stored row, and it is parsed rather than
- *  cast: `sync` telling a deployment that changing a tool would affect NOTHING
- *  reads as "nothing to worry about", which is the one wrong answer here that
- *  costs something. This reader needs two of its three fields. */
-const storedAppSchema = appRowSchema.pick({ enabled: true, doc: true });
 
 async function allRecords(ops: StoreOps, collection: string): Promise<VendoRecord[]> {
   const records: VendoRecord[] = [];
@@ -31,20 +22,6 @@ async function allRecords(ops: StoreOps, collection: string): Promise<VendoRecor
     cursor = page.cursor;
   } while (cursor !== undefined);
   return records;
-}
-
-function referencedTools(doc: AppDocument): Set<string> {
-  const tools = new Set<string>();
-  // The compiler-stamped manifest of what each island's SOURCE calls through
-  // the ambient `tools` API. A screen's own `app.tsx` names host tools as well,
-  // in its `useQuery` calls, and nothing reads those yet — an app whose reads
-  // all live in the screen is absent from this report.
-  for (const names of Object.values(doc.componentTools ?? {})) {
-    for (const name of names) {
-      if (!name.startsWith("fn:")) tools.add(name);
-    }
-  }
-  return tools;
 }
 
 /** An automation's own tool references. Only a STEPS task names tools ahead of
@@ -82,18 +59,13 @@ export async function computeImpact(
       + "or a StoreOps-capable store (the Cloud hosted store). The configured store is neither.",
     );
   }
-  const [appRecords, automationRecords, grantRecords] = await Promise.all([
-    allRecords(ops, "vendo_apps"),
+  const [automationRecords, grantRecords] = await Promise.all([
     allRecords(ops, "vendo_automations"),
     allRecords(ops, "vendo_grants"),
   ]);
   // A row that will not parse is skipped rather than thrown on: `sync` is
   // advisory and read-only, and one unreadable row must not take the whole
   // impact report — including every other row's warning — down with it.
-  const apps = appRecords.flatMap((record) => {
-    const parsed = storedAppSchema.safeParse(record.data);
-    return parsed.success ? [parsed.data] : [];
-  }).filter((app) => app.enabled);
   const automations = automationRecords.flatMap((record) => {
     const parsed = automationRecordSchema.safeParse(record.data);
     return parsed.success && parsed.data.armed ? [parsed.data] : [];
@@ -104,10 +76,10 @@ export async function computeImpact(
     .filter((grant) => activeGrant(grant, now));
 
   return tools.map((tool) => {
+    // `apps` stays empty for now: a screen's own `app.tsx` names host tools in
+    // its `useQuery` calls, and nothing reads those yet — an app whose reads
+    // all live in the screen is absent from this report.
     const impact: ToolImpact = { tool, apps: [], automations: [], grants: 0 };
-    for (const app of apps) {
-      if (referencedTools(app.doc).has(tool)) impact.apps.push({ id: app.doc.id, title: app.doc.name });
-    }
     for (const automation of automations) {
       if (automationTools(automation).has(tool)) {
         impact.automations.push({ id: automation.id, title: automationTitle(automation.when) });

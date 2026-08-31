@@ -1661,39 +1661,6 @@ describe("createMcpDoor MCP protocol", () => {
     await connected.client.close();
   });
 
-  it("projects an HTTP app into a tagged open-in-product envelope with useful text", async () => {
-    const app: AppDocument = {
-      format: "vendo/app@1",
-      id: "app_http",
-      name: "Revenue dashboard",
-    };
-    const apps: AppsRideAlong = {
-      async list() { return [app]; },
-      async open() { return { kind: "http", url: "https://apps.example/revenue" }; },
-      async call() { return { status: "ok", output: null }; },
-    };
-    const harness = makeHarness({ apps });
-    const registration = await register(harness.door);
-    const tokens = await issue(harness.door, registration.body.client_id);
-    const connected = await connect(harness.door, tokens.access_token);
-
-    const opened = await connected.client.callTool({
-      name: "vendo_apps_open",
-      arguments: { appId: app.id },
-    });
-    expect(opened.structuredContent).toEqual({
-      kind: "vendo/open-in-product@1",
-      url: "https://apps.example/revenue",
-      appName: "Revenue dashboard",
-      productName: expect.any(String),
-    });
-    expect(opened.content).toEqual([expect.objectContaining({
-      type: "text",
-      text: expect.stringMatching(/Open Revenue dashboard in .+: https:\/\/apps\.example\/revenue/),
-    })]);
-    await connected.client.close();
-  });
-
   it("gives vendo_apps_* door tools full guard treatment with venue mcp", async () => {
     const apps: AppsRideAlong = {
       async list() { return []; },
@@ -1864,7 +1831,7 @@ describe("createMcpDoor MCP protocol", () => {
     };
     const apps: AppsRideAlong = {
       async list() { return []; },
-      async open() { return { kind: "http", url: "https://app.example" }; },
+      async open() { return { kind: "resuming" }; },
       async call() { return { status: "ok", output: null }; },
     };
     const harness = makeHarness({
@@ -2981,7 +2948,7 @@ describe("createMcpDoor MCP Apps on a turn-bearing session", () => {
   function harnessFor(payload: Record<string, unknown>) {
     const apps: AppsRideAlong = {
       async list() { return []; },
-      async open() { return { kind: "http", url: "https://app.example" }; },
+      async open() { return { kind: "resuming" }; },
       async call() { return { status: "ok", output: null }; },
     };
     return makeHarness({

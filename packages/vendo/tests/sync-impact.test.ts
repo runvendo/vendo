@@ -19,17 +19,16 @@ afterEach(async () => {
 
 const principal: Principal = { kind: "user", subject: "user_sync_impact" };
 
-/** An app that names a tool. A document names one in exactly one place now: the
- *  compiler-stamped manifest of what each island's SOURCE calls through the
- *  ambient `tools` API. */
-function plainApp(id: string, name: string, tool: string): AppDocument {
+/** An app on the store. A document no longer names tools ahead of time — a
+ *  screen's own `app.tsx` names host tools in its `useQuery` calls, and nothing
+ *  reads those yet — so the report's `apps` bucket stays empty. */
+function plainApp(id: string, name: string): AppDocument {
   return {
     format: VENDO_APP_FORMAT,
     id,
     name,
     ui: "tree",
     components: { Widgets: "export default function Widgets(){ return null; }" },
-    componentTools: { Widgets: [tool] },
   };
 }
 
@@ -62,13 +61,13 @@ async function setup(): Promise<VendoStore> {
 }
 
 describe("computeImpact", () => {
-  it("maps tools to enabled apps, automations, and active grants across subjects", async () => {
+  it("maps tools to automations and active grants, and leaves the apps bucket empty", async () => {
     const store = await setup();
     const apps = appStore(store);
     const grants = grantStore(store);
 
-    await apps.put(principal, plainApp("app_widgets", "Widget viewer", "host_get_widgets"));
-    await apps.put(principal, plainApp("app_unrelated", "Invoice viewer", "host_get_invoices"));
+    await apps.put(principal, plainApp("app_widgets", "Widget viewer"));
+    await apps.put(principal, plainApp("app_unrelated", "Invoice viewer"));
     // An automation is its OWN record now — the impact report reads that
     // drawer, not an app's document, so a steps task naming the tool is what
     // puts a deployment in the "this will change something running" bucket.
@@ -93,35 +92,11 @@ describe("computeImpact", () => {
     await expect(computeImpact(createStoreOps(store), ["host_get_widgets", "host_absent"])).resolves.toEqual([
       {
         tool: "host_get_widgets",
-        apps: [{ id: "app_widgets", title: "Widget viewer" }],
+        apps: [],
         automations: [{ id: "atm_refresh", title: "1h" }],
         grants: 1,
       },
       { tool: "host_absent", apps: [], automations: [], grants: 0 },
-    ]);
-  });
-
-  it("counts the tools an island's generated SOURCE calls, not just the tree's queries", async () => {
-    const store = await setup();
-    // `componentTools` is the compiler-stamped manifest of what each generated
-    // island's code calls through the ambient `tools` API — calls that by
-    // construction never appear in tree.queries or node props. Missing it makes
-    // `vendo sync` answer "no saved references" for a tool live apps call.
-    await appStore(store).put(principal, {
-      format: VENDO_APP_FORMAT,
-      id: "app_island",
-      name: "Island dashboard",
-      ui: "tree",
-      componentTools: { OrdersPanel: ["host_get_orders"] },
-    });
-
-    await expect(computeImpact(createStoreOps(store), ["host_get_orders"])).resolves.toEqual([
-      {
-        tool: "host_get_orders",
-        apps: [{ id: "app_island", title: "Island dashboard" }],
-        automations: [],
-        grants: 0,
-      },
     ]);
   });
 });

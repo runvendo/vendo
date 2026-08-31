@@ -171,7 +171,7 @@ describe("tsc subsumes components-exist (the unresolved-name branches)", () => {
     const ghost = tree({ id: "ghost", component: "MapleGhostCard", props: { valueCents: path("/invoices/total_cents") } } as Node);
     const { bespoke, tsc: findings } = await bothReport(
       GHOST,
-      catalogIssues(ghost, undefined, catalog).then((issues) => issues.map((issue) => issue.message)),
+      catalogIssues(ghost, catalog).then((issues) => issues.map((issue) => issue.message)),
     );
     expect(bespoke[0]).toContain('references unknown component "MapleGhostCard"');
     expect(findings.map((finding) => finding.message).join(" ")).toContain("MapleGhostCard");
@@ -181,7 +181,7 @@ describe("tsc subsumes components-exist (the unresolved-name branches)", () => {
     // The HOST branch proper — reached by a stored or edited tree whose node
     // names a host component the catalog no longer carries.
     const ghost = tree({ id: "ghost", component: "MapleGhostCard", source: "host", props: {} } as Node);
-    const bespoke = await catalogIssues(ghost, undefined, catalog);
+    const bespoke = await catalogIssues(ghost, catalog);
     expect(bespoke[0]?.message).toContain('references host component "MapleGhostCard" absent from the catalog');
     expect(tsc(GHOST).map((finding) => finding.message).join(" ")).toContain("MapleGhostCard");
   });
@@ -194,7 +194,7 @@ describe("tsc subsumes components-exist (hostPropsIssues)", () => {
   it("a host prop whose LITERAL value has the wrong type is a JSX assignability error", async () => {
     const { bespoke, tsc: findings } = await bothReport(
       screen('<MapleNetWorthCard valueCents="lots" series={[1]} />', "MapleNetWorthCard"),
-      catalogIssues(hostNode({ valueCents: "lots", series: [1] }), undefined, catalog)
+      catalogIssues(hostNode({ valueCents: "lots", series: [1] }), catalog)
         .then((issues) => issues.map((issue) => issue.message)),
     );
     expect(bespoke.join(" ")).toContain("MapleNetWorthCard");
@@ -208,7 +208,7 @@ describe("tsc subsumes components-exist (hostPropsIssues)", () => {
     // expression, so the same screen is a plain assignability error. This is
     // strictly more coverage, not a substitute for a bespoke finding.
     const bound = hostNode({ valueCents: path("/invoices/label"), series: [1] });
-    expect(await catalogIssues(bound, undefined, catalog)).toEqual([]);
+    expect(await catalogIssues(bound, catalog)).toEqual([]);
     const findings = tsc(screen('<MapleNetWorthCard valueCents={invoices.label} series={[1]} />', "MapleNetWorthCard"));
     expect(findings.some((finding) => finding.message.includes('prop "valueCents"'))).toBe(true);
   });
@@ -225,7 +225,7 @@ describe("tsc subsumes components-exist (hostPropsIssues)", () => {
   it("a missing required host prop is a JSX missing-property error", async () => {
     const { bespoke, tsc: findings } = await bothReport(
       screen('<MapleNetWorthCard series={[1]} />', "MapleNetWorthCard"),
-      catalogIssues(hostNode({ series: [1] }), undefined, catalog)
+      catalogIssues(hostNode({ series: [1] }), catalog)
         .then((issues) => issues.map((issue) => issue.message)),
     );
     expect(bespoke.join(" ")).toContain("valueCents");
@@ -239,7 +239,6 @@ describe("tsc subsumes components-exist (prewiredPropsIssues)", () => {
       screen('<DataTable data={invoices.data} />', "DataTable"),
       catalogIssues(
         tree({ id: "table", component: "DataTable", source: "prewired", props: { data: path("/invoices/data") } } as Node),
-        undefined,
         catalog,
       ).then((issues) => issues.map((issue) => issue.message)),
     );
@@ -253,7 +252,6 @@ describe("tsc subsumes components-exist (prewiredPropsIssues)", () => {
       screen('<Button label="Remind" onPress={() => undefined} />', "Button"),
       catalogIssues(
         tree({ id: "button", component: "Button", source: "prewired", props: { label: "Remind", onPress: "maple_remind" } } as Node),
-        undefined,
         catalog,
       ).then((issues) => issues.map((issue) => issue.message)),
     );

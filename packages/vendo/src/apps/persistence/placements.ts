@@ -6,8 +6,7 @@
  * it, a slot could not show a build that had not landed yet (no document, no
  * placement), and eviction was a read-modify-write across other people's rows.
  *
- * The rows live in the GENERIC records collection — like this package's own
- * egress-approval rows (`egress-approval.ts`), and unlike the app-GRANT rows,
+ * The rows live in the GENERIC records collection — unlike the app-GRANT rows,
  * which earned a dedicated table (`packages/vendo/src/store/routing.ts`
  * RESERVED_COLLECTIONS). One adapter interface, so this behaves identically on
  * the local PGlite store, a BYO Postgres, and the Cloud hosted store — none of
@@ -36,9 +35,8 @@
  * `refs` is the queryable key on both: `subject` is what the erase cascade
  * matches (`vendo_records WHERE refs @> '{"subject": …}'::jsonb` —
  * `packages/vendo/src/store/erase.ts`), `{subject, slot}` is the GIN-indexed pair a
- * slot query reads, and `app_id` is what app deletion sweeps on (the same ref
- * name `egress-approval.ts` clears an app by) — a shared app is placed by
- * people its owner cannot enumerate.
+ * slot query reads, and `app_id` is what app deletion sweeps on — a shared
+ * app is placed by people its owner cannot enumerate.
  */
 import type { RecordInput, VendoRecord } from "../../core/index.js";
 import type { EngineOps } from "./engine.js";

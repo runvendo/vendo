@@ -117,7 +117,7 @@ describe("TreeView public surface", () => {
     expect(document.querySelector('[data-dangling-node="not-yet-streamed"] [data-skeleton]')).not.toBeNull();
   });
 
-  it("skeletons a generated node until its streamed source arrives", () => {
+  it("skeletons an unresolved component name mid-stream (legacy generated nodes included)", () => {
     const partial = {
       ...tree([{ id: "root", component: "RevenueCard", source: "generated" }]),
       streaming: true,
@@ -316,15 +316,17 @@ describe("TreeView public surface", () => {
     const invalid = {
       formatVersion: VENDO_TREE_FORMAT,
       root: "root",
-      nodes: [{ id: "root", component: "Stack" }],
-      components: { Stack: "export default function Stack() { return null }" },
+      nodes: [
+        { id: "root", component: "Stack" },
+        { id: "root", component: "Text" },
+      ],
     } as unknown as WalkTree;
 
     render(<TreeView tree={invalid} components={{}} onAction={ok} />);
 
     const notice = screen.getByRole("note", { name: /invalid ui tree/i });
     expect(notice.getAttribute("data-error-code")).toBe("provision");
-    expect(notice.textContent).toMatch(/shadows a Kit component/i);
+    expect(notice.textContent).toMatch(/duplicate node id/i);
   });
 });
 

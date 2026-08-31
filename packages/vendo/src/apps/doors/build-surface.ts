@@ -59,8 +59,6 @@ type CreateInput = Parameters<AppsRuntime["create"]>[0];
 export const assembleTree = (source: {
   tree: UIPayload | Tree | Pick<Tree, "root" | "nodes">;
   components?: Record<string, string>;
-  /** W4b — the stamped per-island tool manifests ride beside the sources. */
-  componentTools?: Record<string, string[]>;
 }): Tree => ({
   // The format tag FIRST, so a caller that has only a tree's two structural
   // members — the component screen's flattened paint (`ComponentPaintResult`) is
@@ -69,7 +67,6 @@ export const assembleTree = (source: {
   formatVersion: VENDO_TREE_FORMAT,
   ...structuredClone(source.tree),
   ...(source.components === undefined ? {} : { components: structuredClone(source.components) }),
-  ...(source.componentTools === undefined ? {} : { componentTools: structuredClone(source.componentTools) }),
 } as Tree);
 
 /**

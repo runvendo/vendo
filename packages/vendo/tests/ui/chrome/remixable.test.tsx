@@ -78,10 +78,9 @@ describe("Remixable — one door into the chat, one ✦ menu on the remix", () =
   /** The same mark WITHOUT assuming what it says — the word is the state. */
   const pill = () => wrapper().querySelector<HTMLButtonElement>(".fl-remix-pill")!;
   const revealed = () => wrapper().hasAttribute("data-vendo-revealed");
-  // In jsdom the mock's fork surface is a bare `source: "generated"` node, and
-  // generated source no longer runs natively, so the fork surface IS the
-  // contained can't-render notice — the proxy for "the fork mounted".
-  const forkSurface = () => screen.queryByRole("note", { name: "Can't render here" });
+  // The mock's fork surface is a ported screen whose one line names the fork
+  // (wire-server's seed route) — the proxy for "the fork mounted".
+  const forkSurface = () => screen.queryByText(`${SLOT} fork`);
   const opens = () => wire.requests.filter(r => r.method === "GET" && /\/apps\/.+\/open/.test(r.path));
 
   /** The remix the CHAT minted — the wrapper no longer mints anything itself. */

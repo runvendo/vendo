@@ -206,8 +206,6 @@ const createStores = (
   const slots = createSlotRegistry(engine);
   const sql = config.appDatabase === undefined ? undefined : createAppSql(config.appDatabase);
   const history = createAppHistory(engine);
-  // Lane E — parked egress approvals (approved state lives on the document's
-  // egressApproved field; this collection holds only undecided cards).
   // W0 — parked in-app actions: a mutating action the guard sent to approval
   // is recorded here (keyed by its approval) so onApprovalDecision can
   // re-dispatch the exact call the instant the owner approves. Holds only

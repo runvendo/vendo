@@ -340,7 +340,6 @@ const createEditDoor = (
     }
     let app = edited.kind === "assembled" ? edited.app : previous;
     let automation: EditResult["automation"] | undefined;
-    let graduated: boolean | undefined;
     const issues: string[] = [];
     // ── The escalation ladder, from an app that already exists ──────────────
     // An edit the assembler cannot make out of components used to reach for a
@@ -365,7 +364,6 @@ const createEditDoor = (
       ...(edited.say === undefined ? {} : { say: edited.say }),
       ...(issues.length === 0 ? {} : { issues }),
       ...(automation === undefined ? {} : { automation }),
-      ...(graduated === undefined ? {} : { graduated }),
     });
   };
 };

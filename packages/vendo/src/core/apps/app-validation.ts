@@ -10,7 +10,6 @@
  */
 import {
   safeErrorMessage,
-  TOOL_NAME_PATTERN,
   VENDO_APP_FORMAT,
   VendoError,
   appDocumentSchema,
@@ -32,23 +31,6 @@ const componentsError = (app: AppDocument): AppDocumentValidation | null => {
   if (app.components === undefined) return null;
   const componentError = componentMapError(app.components);
   return componentError === null ? null : fail("validation", componentError);
-};
-
-/** W4b — a stamped island tool manifest must name a real island and real
- *  (grammar-valid) registry tool names; the runtime trusts this map as the
- *  island's entire tool surface. */
-const componentToolsError = (app: AppDocument): AppDocumentValidation | null => {
-  for (const [componentName, manifest] of Object.entries(app.componentTools ?? {})) {
-    if (!Object.prototype.hasOwnProperty.call(app.components ?? {}, componentName)) {
-      return fail("validation", `componentTools names "${componentName}" which has no components entry`);
-    }
-    for (const toolName of manifest) {
-      if (!TOOL_NAME_PATTERN.test(toolName)) {
-        return fail("validation", `componentTools["${componentName}"] entry "${toolName}" is not a valid tool name`);
-      }
-    }
-  }
-  return null;
 };
 
 /** Contract §3.2 — a source key is a POSIX-relative path inside the app
@@ -113,7 +95,6 @@ const validateAppDocumentUnsafe = (input: unknown): AppDocumentValidation => {
   // The cross-field rules, in the order their messages are pinned to: each
   // returns the failure it found, or null.
   const violation = componentsError(app)
-    ?? componentToolsError(app)
     ?? sourceError(app)
     ?? referenceFieldsError(app)
     ?? buildStateError(app);

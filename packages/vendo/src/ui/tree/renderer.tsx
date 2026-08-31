@@ -1,7 +1,4 @@
 import {
-  TREE_MAX_COMPONENT_SOURCE_CHARS,
-  TREE_MAX_GENERATED_COMPONENTS,
-  TREE_MAX_TOTAL_COMPONENT_CHARS,
   TREE_NODE_SOURCES,
   applyReshape,
   isPathBinding,
@@ -40,8 +37,7 @@ import type { SeedDrift } from "../../core/apps/index.js";
 import { resolvePointer } from "./bindings.js";
 import { DISPLAY_BRICKS, SURFACE_CONTAINMENT, safeProps } from "./display-bricks.js";
 import { NodeErrorBoundary } from "./error-boundary.js";
-import { FluidReveal } from "./fluid-reveal.js";
-import { deriveFormShape, FormingContext, FormingSkeleton, PendingLeaf } from "./forming-skeleton.js";
+import { FormingContext, FormingSkeleton, PendingLeaf } from "./forming-skeleton.js";
 import { ContainedNotice } from "./notice.js";
 import { playNodeMotion, useMotionLayoutEffect, useRepaintMotion, type NodeMark } from "./repaint-motion.js";
 import { KIT_COMPONENTS } from "../kit/registry.js";
@@ -133,7 +129,7 @@ const isPlainRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
 /** The structural render-gate (per-render hot path): ids unique and rooted,
- *  node shapes sane, generated components present. Format-tag checks live one
+ *  node shapes sane. Format-tag checks live one
  *  layer up (PayloadView dispatch + validateTree in convert-payload). */
 const validateWalkTree = (input: WalkTree): WalkValidation => {
   const ids = new Set<string>();
@@ -152,34 +148,6 @@ const validateWalkTree = (input: WalkTree): WalkValidation => {
     if (node.props !== undefined && !isPlainRecord(node.props)) return walkFail(`node "${node.id}" props must be a plain object`);
     if (ids.has(node.id)) return walkFail(`duplicate node id "${node.id}"`);
     ids.add(node.id);
-  }
-  const components = input.components ?? {};
-  // The compile bounds hold per render: Kit names can never be shadowed
-  // and the 01-core §8 component caps apply even to payloads that bypassed
-  // document validation (direct TreeView input).
-  const names = Object.keys(components);
-  if (names.length > TREE_MAX_GENERATED_COMPONENTS) {
-    return walkFail(`too many generated components (max ${TREE_MAX_GENERATED_COMPONENTS})`);
-  }
-  let totalChars = 0;
-  for (const name of names) {
-    if (KIT_COMPONENT_NAMES.includes(name)) {
-      return walkFail(`generated component "${name}" shadows a Kit component name`);
-    }
-    const source = components[name];
-    if (typeof source !== "string") return walkFail(`generated component "${name}" source must be a string`);
-    if (source.length > TREE_MAX_COMPONENT_SOURCE_CHARS) {
-      return walkFail(`generated component "${name}" source is too large`);
-    }
-    totalChars += source.length;
-  }
-  if (totalChars > TREE_MAX_TOTAL_COMPONENT_CHARS) {
-    return walkFail("generated component sources exceed the total size cap");
-  }
-  for (const node of input.nodes) {
-    if (node.source === "generated" && !Object.prototype.hasOwnProperty.call(components, node.component)) {
-      return walkFail(`node "${node.id}" references generated component "${node.component}" with no definition in components`);
-    }
   }
   if (typeof input.root !== "string" || !ids.has(input.root)) {
     return walkFail(`root "${String(input.root)}" does not match any node id`);
@@ -480,7 +448,6 @@ interface NodeRendererProps {
   nodeId: string;
   ancestry: ReadonlySet<string>;
   nodes: ReadonlyMap<string, TreeNode>;
-  generated: Record<string, string>;
   components: Record<string, ComponentType>;
   data: Record<string, Json>;
   state: Record<string, Json>;
@@ -562,47 +529,6 @@ interface NodeContent {
   handle: HandlerDispatch | undefined;
 }
 
-/** The `source: "generated"` branch. Generated component SOURCE no longer runs
- *  natively in the host page (that venue is gone), so a defined-source node
- *  fails soft to a contained notice rather than a silent hole; an instant remix
- *  renders through the sandboxed screen VM, whose nodes are `ported`/built-in. */
-function generatedContent(context: NodeContent): ReactNode {
-  const { props, node } = context;
-  const source = props.generated[node.component];
-  const revealKey = source === undefined ? "forming" : "ready";
-  let content: ReactNode;
-  if (source === undefined) {
-    content = props.streaming ? (
-      <span data-streaming-component={node.component} style={{ display: "block", width: "100%" }}>
-        <FormingSkeleton name={node.component} />
-      </span>
-    ) : (
-      <ContainedNotice label="Unknown generated component">
-        {`Generated component "${node.component}" has no source.`}
-      </ContainedNotice>
-    );
-  } else {
-    content = (
-      <ContainedNotice label="Can't render here" outcome="blocked">
-        {`"${node.component}" is generated code, which no longer runs in the host page.`}
-      </ContainedNotice>
-    );
-  }
-  // ENG-205 render-slot morph: the streaming placeholder and the arrived
-  // component share this wrapper, so the swap morphs instead of popping.
-  // Pick A: a shape-derived silhouette already holds (approximately) the
-  // final geometry, so its reveal crossfades in place (.fl-reveal-fill)
-  // instead of running the rise/settle morph; slab fallbacks keep the morph.
-  return (
-    <FluidReveal
-      stateKey={revealKey}
-      className={deriveFormShape(node.component) === "slab" ? undefined : "fl-reveal-fill"}
-    >
-      {content}
-    </FluidReveal>
-  );
-}
-
 /** Which implementation wins for a built-in node. An explicit `source: "host"`
  *  means the host brand won the name. A `"ported"` node's names are the host's
  *  own — its `LineChart` is the npm chart the wiring registered as a hole, and
@@ -622,8 +548,7 @@ function resolveBuiltin(node: TreeNode, components: NodeRendererProps["component
  *
  * Hosts name their own components, and a host `Modal` is an ordinary in-flow
  * component: classifying it by name alone handed it a shell that generates no
- * box, and it lost its layout box. (A GENERATED `Modal` needs no clause here —
- * `validateWalkTree` refuses a generated name that shadows a Kit one.)
+ * box, and it lost its layout box.
  */
 function rendersKitOverlay(node: TreeNode, components: NodeRendererProps["components"]): boolean {
   if (KIT_OVERLAY_SPECS[node.component] === undefined) return false;
@@ -685,7 +610,7 @@ function builtinContent({ props, node, children, invoke, handle }: NodeContent):
   const { bound, mismatch } = bindProps(node.props ?? {}, props.data, props.state, invoke, handle);
   // The notice replaces only the mis-bound component, never its subtree —
   // a container (Stack/Grid) with one bad prop must not swallow its valid
-  // children (same containment scope as the generated paths above).
+  // children.
   const screen = props.screen;
   // `hostClass` is written AFTER the bound props, and that is what makes it
   // unforgeable: a brick paints a class off a PORTED node and off nothing else
@@ -757,7 +682,7 @@ function NodeRenderer(props: NodeRendererProps) {
   ));
 
   const context: NodeContent = { props, node, children, invoke, handle };
-  const content = node.source === "generated" ? generatedContent(context) : builtinContent(context);
+  const content = builtinContent(context);
 
   const outcome = props.outcomes[node.id];
   const review = props.onReview;
@@ -942,18 +867,7 @@ function StatefulTreeView({
     && typeof (seedDriftRaw as SeedDrift).component === "string"
     ? seedDriftRaw as SeedDrift
     : null;
-  // A partial stream may close a generated node before its top-level source
-  // string closes. Supply validator-only placeholders, then keep the real map
-  // empty so NodeRenderer paints a skeleton until the source arrives.
-  const validation = validateWalkTree(streaming ? {
-    ...tree,
-    components: Object.fromEntries([
-      ...Object.entries(tree.components ?? {}),
-      ...tree.nodes
-        .filter((node) => node.source === "generated")
-        .map((node) => [node.component, tree.components?.[node.component] ?? ""]),
-    ]),
-  } : tree);
+  const validation = validateWalkTree(tree);
 
   const nodes = useMemo(
     () => new Map(validation.ok ? validation.tree.nodes.map((node) => [node.id, node]) : []),
@@ -1053,7 +967,6 @@ function StatefulTreeView({
             ancestry={new Set()}
             nodes={repaint.nodes}
             marks={repaint.marks}
-            generated={streaming ? tree.components ?? {} : validation.tree.components ?? {}}
             components={components}
             data={data ?? validation.tree.data ?? {}}
             state={viewState}

@@ -20,8 +20,6 @@ const committed = resolve(packageDir, "src/mcp/shim/shim-html.gen.ts");
 // not an exhaustive scan — see the block comment below for what it does and
 // doesn't prove.
 const EXECUTOR = /(^|[^.\w$])(new\s+Function|Function|eval)\s*\(/;
-// The refusal the shim renders instead of executing generated component source.
-const REFUSAL_MARKER = "no longer runs in the host page";
 
 // The committed MCP shim bundle (packages/vendo/src/mcp/shim/shim-html.gen.ts) is
 // generated from src/tree/mcp-shim/entry.tsx by build:mcp-shim, wired into no
@@ -39,11 +37,12 @@ const REFUSAL_MARKER = "no longer runs in the host page";
 // interpreter's own identifiers (see EXECUTOR's prefix gate above).
 //
 // What's actually load-bearing is that the bundle byte-matches a fresh build of
-// the current source, and the current source (renderer.tsx) refuses to execute
-// `source:"generated"` component code. A dynamic executor can only reappear in
-// the bundle if one is reintroduced in source — which the source-level refusal
-// and its review are what prevent. The tripwire above is belt-and-suspenders on
-// top of that for the common forms, not the security boundary itself.
+// the current source, and the current source (renderer.tsx) has no code path
+// that executes `source:"generated"` component code — the island venue is
+// deleted outright. A dynamic executor can only reappear in the bundle if one
+// is reintroduced in source, which review is what prevents. The tripwire above
+// is belt-and-suspenders on top of that for the common forms, not the security
+// boundary itself.
 //
 // The byte-compare below is kept byte-exact for simplicity: a cosmetic
 // Vite/esbuild/Rollup output change trips it, and the fix is to regenerate on a
@@ -75,10 +74,6 @@ describe("MCP shim bundle", () => {
       EXECUTOR.test(bundle),
       `${label} shim bundle matches a known dynamic-execution call form (new Function / Function( / eval() — the signature the removed native executor used`,
     ).toBe(false);
-    expect(
-      bundle.includes(REFUSAL_MARKER),
-      `${label} shim bundle is missing the refusal marker ${JSON.stringify(REFUSAL_MARKER)}`,
-    ).toBe(true);
   };
 
   it("committed bundle contains no dynamic-execution primitive", () => {
