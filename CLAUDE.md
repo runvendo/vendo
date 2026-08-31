@@ -10,15 +10,6 @@ generated UI in a sandboxed, brand-native surface.
   `vendoai` alias. The behavior contract is the exported types/zod schemas and
   the test suites — there are no prose contract docs; layering enforced by
   `scripts/dependency-guard.mjs` in `pnpm lint`
-- `examples/` — the demo host `demo-bank` (Maple) and the framework integration
-  examples (`ai-sdk-agent`, `mastra-agent`, `claude-code-plugin`)
-- `corpus/` — init-extraction corpus harness (`pnpm corpus`)
-- `docs-site/` — the public docs site
-
-## Commands
-
-- `pnpm install` · `pnpm build` · `pnpm test` · `pnpm test:affected` (scoped to changed packages — the local default) · `pnpm typecheck` · `pnpm lint` (turbo-cached)
-- Demo: `pnpm --filter demo-bank dev` (Maple)
 
 ## Vendo Cloud
 
@@ -94,21 +85,8 @@ generated UI in a sandboxed, brand-native surface.
   names breaks merges. No browser runs in CI (2026-08-06) — headless
   mis-resolves `:focus-visible` and `light-dark()`, so the Playwright suites
   stay a LOCAL pre-PR gate.
-- Iterating on a browser spec is two-speed. While you are editing, start ONE
-  warm hot-reloading harness (`VENDO_HARNESS_DEV=1` plus a pinned
-  `VENDO_HARNESS_PORT`) and rerun specs against it with the same two variables —
-  reuse is dev-mode-only, so every rerun skips the build and starts in seconds.
-  Then one run WITHOUT the flag — a fresh production build — is the proof of
-  record, and the only result worth reporting. A production run never reuses a
-  server: `vite preview` serves whatever was built last, so a reused one greens
-  the previous build.
-- An agent proves a browser flow by SCRIPTING it, never by stepping through it
-  click-by-click: write one throwaway Playwright script for the whole flow, run
-  it once, judge the screenshot/video artifacts — one model turn instead of
-  fifteen, seconds instead of minutes. Interactive stepping is for two cases
-  only: exploring UI the agent didn't write, and diagnosing a scripted run that
-  failed for unclear reasons — and whatever stepping teaches gets banked as a
-  script so the flow is never stepped twice.
+- Iterating on or proving a browser spec has its own workflow — see the
+  **browser-specs** skill (`.claude/skills/browser-specs/SKILL.md`).
 - `--continue` and a turbo concurrency bound are the standing rule wherever the
   suite runs: `--continue` so one red package never hides every other package's
   result; the bound (2 in CI's `test-rest`, 4 in the root `test` /
