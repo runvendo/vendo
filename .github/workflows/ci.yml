@@ -101,7 +101,7 @@ jobs:
       bigpkg: ${{ steps.resolve.outputs.bigpkg }}
       heavy: ${{ steps.heavy.outputs.heavy }}
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0 # turbo --affected diffs against the base branch
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
@@ -179,7 +179,7 @@ jobs:
       TURBO_SCM_BASE: ${{ needs.cone.outputs.base }}
       CONE: ${{ needs.cone.outputs.filter }}
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0 # turbo --affected diffs against the base branch
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
@@ -237,7 +237,7 @@ jobs:
     needs: cone
     if: needs.cone.outputs.heavy == 'true' && needs.cone.outputs.base != ''
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0 # changeset status diffs against the base branch
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
@@ -378,7 +378,7 @@ jobs:
       RUN: ${{ needs.cone.outputs.heavy == 'true' && contains(needs.cone.outputs.bigpkg, matrix.key) }}
     steps:
       - if: env.RUN == 'true'
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - if: env.RUN == 'true'
         uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
       - if: env.RUN == 'true'
@@ -411,7 +411,7 @@ jobs:
       # always(): a failed shard must still upload its blob, or coverage-merge
       # merges a hole and reports a phantom coverage drop on top of the real
       # failure.
-      - uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always() && env.RUN == 'true'
         with:
           name: blob-${{ matrix.name }}
@@ -465,7 +465,7 @@ jobs:
       TURBO_SCM_BASE: ${{ needs.cone.outputs.base }}
       CONE: ${{ needs.cone.outputs.filter }}
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0 # turbo --affected diffs against the base branch
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
@@ -541,7 +541,7 @@ jobs:
     # No turbo cache step: this job never invokes turbo — it replays blob
     # reports through vitest directly.
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
@@ -706,7 +706,7 @@ jobs:
             build: "--filter=vendoai..."
             suites: "@vendoai-fixtures/install-seam"
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0 # turbo ls --affected diffs against the base branch
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
@@ -823,7 +823,7 @@ jobs:
     env:
       POSTGRES_URL: postgres://vendo:vendo@localhost:5432/vendo_conformance
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0 # turbo ls --affected diffs against the base branch
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
@@ -880,7 +880,7 @@ jobs:
   audit:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
