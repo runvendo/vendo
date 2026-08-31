@@ -1,6 +1,6 @@
 {
   "name": "@vendoai/vendo",
-  "version": "0.61.1",
+  "version": "0.61.2",
   "description": "The Vendo umbrella: the v0 contracts, default composition, public wire routes, the React provider and headless UI, and the `vendo` CLI.",
   "keywords": [
     "ai",
