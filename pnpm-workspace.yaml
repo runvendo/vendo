@@ -209,6 +209,25 @@ overrides:
   # check on main. Still inside both consumers' declared ranges (postcss
   # ^3.3.16, @ai-sdk/provider-utils ^3.3.8).
   "nanoid@<3.3.18": ">=3.3.18 <4"
+  # 2026-09-01 advisories, both browserslist and both HIGH (<=4.28.6, patched
+  # 4.28.7): GHSA-c83g-rgw3-j3cx, unbounded memory growth because the query
+  # cache never evicts, and GHSA-73wf-gq98-2v4g, an uncaught crash / prototype
+  # write from an untrusted `browserslist-stats.json`. They published at 16:41
+  # UTC and reddened the required `audit` check repo-wide within the hour — main
+  # went green on d058a700b two hours earlier with the identical tree.
+  #
+  # Genuinely examples-only, in the sense the sharp floor above claims and the
+  # fast-uri one had to retract: `pnpm why --prod -r` reaches browserslist ONLY
+  # through examples/{ai-sdk-agent,demo-bank} and fixtures/host-app, via
+  # next(-auth) > styled-jsx > @babel/core > @babel/helper-compilation-targets
+  # (14 paths). No @vendoai/* tarball carries it. Neither advisory is reachable
+  # from a build anyway — the cache is per-process and the stats file is one we
+  # would have to author — so this is hygiene for the gate, not a live exposure.
+  #
+  # Bounded below 5 like every other floor here. @babel/helper-compilation-targets
+  # declares `browserslist: ^4.24.0`, so 4.28.7 is inside its range and nothing
+  # crosses a major; 4.28.8 is what actually resolves.
+  "browserslist@<4.28.7": ">=4.28.7 <5"
   # 2026-08-26 advisory: Go stdlib crypto/tls may complete a resumed handshake
   # that should have failed, when Config.RootCAs/ClientCAs are mutated between
   # the initial and the resumed handshake, CVE-2025-68121 (CVSS 9.1). Not a JS
