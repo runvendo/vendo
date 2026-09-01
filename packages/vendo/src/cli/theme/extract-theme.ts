@@ -250,7 +250,11 @@ async function collectCss(layout: ContextFile | null, targetDir: string): Promis
         await visit(path.join(targetDir, spec.slice(2)), depth + 1);
       }
     }
-    files.push({ path: path.relative(targetDir, absolute), content });
+    // Repo-relative POSIX spelling: these paths surface as extraction
+    // evidence and the model pass's hints, and are compared as written — a
+    // platform-separator variant reads as a different file everywhere they
+    // are matched against conventional entry names.
+    files.push({ path: path.relative(targetDir, absolute).split(path.sep).join("/"), content });
   };
 
   if (layout !== null) {
