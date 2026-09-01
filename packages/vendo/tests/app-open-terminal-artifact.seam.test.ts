@@ -28,9 +28,6 @@
  * deployment paints screens at all, so a refusal here is the SCREEN's and not a
  * deployment with no engine wired.
  */
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import {
   type AppId,
   type Json,
@@ -38,7 +35,7 @@ import {
   type RunContext,
   type ToolDefinition,
 } from "../src/core/index.js";
-import { createStore } from "../src/store/index.js";
+import { emptySharedStore } from "../src/store/backends.test-util.js";
 import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it } from "vitest";
 import { createVendo, type Vendo } from "../src/server.js";
@@ -83,13 +80,7 @@ export default function Balance() {
 `;
 
 async function setup(tools: ToolDefinition[] = []): Promise<Vendo> {
-  const dataDir = await mkdtemp(join(tmpdir(), "vendo-open-terminal-"));
-  const store = createStore({ dataDir });
-  cleanups.push(async () => {
-    await store.close();
-    await rm(dataDir, { recursive: true, force: true });
-  });
-  await store.ensureSchema();
+  const store = await emptySharedStore();
   return createVendo({
     models: { default: {} as LanguageModel },
     principal: async (request) => {

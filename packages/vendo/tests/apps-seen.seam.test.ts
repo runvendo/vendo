@@ -19,9 +19,6 @@
  * route and phase 3 goes red; put one back inside `AppsRuntime.open` and phase 2
  * goes red.
  */
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import {
   THREAD_WINDOW_INITIAL,
   toVendoWirePart,
@@ -30,7 +27,8 @@ import {
   type Principal,
   type RunContext,
 } from "../src/core/index.js";
-import { createStore, type VendoStore } from "../src/store/index.js";
+import { type VendoStore } from "../src/store/index.js";
+import { emptySharedStore } from "../src/store/backends.test-util.js";
 import { screenDocument } from "./screen-fixture.js";
 import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it } from "vitest";
@@ -54,13 +52,7 @@ const agentCtx: RunContext = {
 };
 
 async function setup(): Promise<{ vendo: Vendo; store: VendoStore }> {
-  const dataDir = await mkdtemp(join(tmpdir(), "vendo-apps-seen-"));
-  const store: VendoStore = createStore({ dataDir });
-  cleanups.push(async () => {
-    await store.close();
-    await rm(dataDir, { recursive: true, force: true });
-  });
-  await store.ensureSchema();
+  const store: VendoStore = await emptySharedStore();
   for (const [id, name] of [["app_arrival", "Spending"], ["app_buried", "Old receipts"]] as const) {
     await store.records("vendo_apps").put({
       id,

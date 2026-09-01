@@ -4,11 +4,9 @@
  * of this file, so the thing worth proving here is that it did not go missing on
  * the way — on every one of the five, and on the umbrella's own BYO read.
  */
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import type { Principal, RunContext, ToolDescriptor, ToolRegistry } from "../src/core/index.js";
-import { createStore, type VendoStore } from "../src/store/index.js";
+import { type VendoStore } from "../src/store/index.js";
+import { emptySharedStore } from "../src/store/backends.test-util.js";
 import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it } from "vitest";
 import { createVendo, type Vendo } from "../src/server.js";
@@ -40,12 +38,7 @@ const host: ToolRegistry = {
 
 /** One deployment, two visitors: the `x-subject` header says which. */
 async function setup(): Promise<Vendo> {
-  const dataDir = await mkdtemp(join(tmpdir(), "vendo-approvals-check-"));
-  const store: VendoStore = createStore({ dataDir });
-  cleanups.push(async () => {
-    await store.close();
-    await rm(dataDir, { recursive: true, force: true });
-  });
+  const store: VendoStore = await emptySharedStore();
   const vendo = createVendo({
     models: { default: {} as LanguageModel },
     async principal(request) {

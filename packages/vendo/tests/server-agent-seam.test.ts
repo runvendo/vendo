@@ -11,11 +11,9 @@ import { inMemoryBoxFiles } from "../src/apps/testing/index.js";
 import { agent, agentComposition } from "../src/turn/index.js";
 import type { Principal } from "../src/core/index.js";
 import { defineHarness, harnessAdapters } from "../src/harnesses/index.js";
-import { createStore, threadStore, type VendoStore } from "../src/store/index.js";
+import { threadStore } from "../src/store/index.js";
+import { emptySharedStore } from "../src/store/backends.test-util.js";
 import type { LanguageModel, UIMessage } from "ai";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createVendo } from "../src/server.js";
 
@@ -25,19 +23,6 @@ afterEach(async () => {
   vi.unstubAllGlobals();
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 });
-
-async function tempStore(): Promise<VendoStore> {
-  const dataDir = await mkdtemp(join(tmpdir(), "vendo-agent-seam-"));
-  const store = createStore({ dataDir });
-  // Migrated up front: `agent()` defers this to its first `session()`, and the
-  // cases below reach the audit table by booting a box directly.
-  await store.ensureSchema();
-  cleanups.push(async () => {
-    await store.close();
-    await rm(dataDir, { recursive: true, force: true });
-  });
-  return store;
-}
 
 /** No env sandbox and no Vendo key, unless a case says otherwise. */
 const noKeys = (): void => {
@@ -77,7 +62,7 @@ const fakeSandbox = (): SandboxAdapter & { created: unknown[] } => {
 describe("createVendo({ agent }) adopts what the agent already composed", () => {
   it("thinks with the agent's harness, over the agent's store", async () => {
     noKeys();
-    const store = await tempStore();
+    const store = await emptySharedStore();
     let thought = false;
     const support = agent({
       name: "support",
@@ -121,7 +106,7 @@ describe("createVendo({ agent }) adopts what the agent already composed", () => 
     const support = agent({
       name: "support",
       harness,
-      store: await tempStore(),
+      store: await emptySharedStore(),
       sandbox: fakeSandbox(),
       egress: ["api.stripe.com"],
     });
@@ -144,7 +129,7 @@ describe("createVendo({ agent }) adopts what the agent already composed", () => 
 
   it("refuses a slot filled twice, naming every conflict", async () => {
     noKeys();
-    const store = await tempStore();
+    const store = await emptySharedStore();
     const support = agent({ name: "support", harness: boxy(), store, sandbox: fakeSandbox() });
     const base = {
       models: { default: {} as LanguageModel },
@@ -168,7 +153,7 @@ describe("createVendo({ agent }) adopts what the agent already composed", () => 
 
   it("refuses an agent-shaped object this runtime did not build", async () => {
     noKeys();
-    const store = await tempStore();
+    const store = await emptySharedStore();
     expect(() => createVendo({
       models: { default: {} as LanguageModel },
       principal: async () => ({ kind: "user", subject: "user_seam" }),
@@ -192,7 +177,7 @@ describe("the umbrella fills the agent's unset Cloud slots, and only those", () 
     // No `sandbox:` anywhere: the only rung that can answer is the one importing
     // this module registered (provideCloudAdapters, top of server.ts).
     const harness = boxy();
-    agent({ name: "support", harness, store: await tempStore() });
+    agent({ name: "support", harness, store: await emptySharedStore() });
 
     const injected = harnessAdapters(harness).sandbox as SandboxAdapter;
     await injected.create({ env: {} });
@@ -206,7 +191,7 @@ describe("the umbrella fills the agent's unset Cloud slots, and only those", () 
     vi.stubEnv("VENDO_API_KEY", "vk_seam");
     const sandbox = fakeSandbox();
     const harness = boxy();
-    agent({ name: "support", harness, store: await tempStore(), sandbox });
+    agent({ name: "support", harness, store: await emptySharedStore(), sandbox });
 
     const injected = harnessAdapters(harness).sandbox as SandboxAdapter;
     await injected.create({ env: {} });
@@ -235,7 +220,7 @@ describe("the umbrella fills the agent's unset Cloud slots, and only those", () 
     vi.stubEnv("VENDO_API_KEY", "vk_seam");
     const fetchSpy = vi.fn(async () => Response.json({ record: null }));
     vi.stubGlobal("fetch", fetchSpy);
-    const store = await tempStore();
+    const store = await emptySharedStore();
 
     const support = agent({ name: "support", harness: inert(), store });
     // Written through the composition's store, read back through the host's own

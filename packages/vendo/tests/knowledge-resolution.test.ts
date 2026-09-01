@@ -4,6 +4,7 @@ import { join } from "node:path";
 import type { KnowledgeAdapter, KnowledgeDoc, Principal, RunContext, ToolOutcome } from "../src/core/index.js";
 import { httpKnowledge, vendoKnowledge } from "../src/knowledge/index.js";
 import { createStore, type VendoStore } from "../src/store/index.js";
+import { emptySharedStore } from "../src/store/backends.test-util.js";
 import type { LanguageModel } from "ai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createVendo, type CreateVendoConfig, type Vendo } from "../src/server.js";
@@ -43,7 +44,10 @@ beforeEach(() => {
   vi.stubEnv("VENDO_CLOUD_URL", "");
 });
 
-async function tempStore(): Promise<VendoStore> {
+/** A database of this row's OWN — for the one row that holds TWO at once and
+ *  proves they stay apart. Everywhere else takes the file's shared store, which
+ *  cannot serve two independent databases at the same time. */
+async function ownDatabase(): Promise<VendoStore> {
   const dataDir = await mkdtemp(join(tmpdir(), "vendo-knowledge-resolution-"));
   const store = createStore({ dataDir });
   cleanups.push(async () => {
@@ -64,7 +68,7 @@ async function compose(config: Partial<CreateVendoConfig> = {}): Promise<Vendo> 
     // default here would build a whole PGlite database per compose and then
     // throw it away, which is what made the two-store rows slow enough to
     // trip the 30s default timeout under fleet load.
-    ...(config.store === undefined ? { store: await tempStore() } : {}),
+    ...(config.store === undefined ? { store: await emptySharedStore() } : {}),
     ...config,
   });
 }
@@ -212,7 +216,7 @@ describe("knowledge resolution matrix (ENG-368) — which engine composes, and d
     const wire = wireRouter();
     vi.stubGlobal("fetch", wire.fetch);
     withKey();
-    const store = await tempStore();
+    const store = await emptySharedStore();
     await store.ensureSchema();
     await vendoKnowledge({ store }).upsert!([doc("docs#composed-store.md")]);
 
@@ -225,8 +229,8 @@ describe("knowledge resolution matrix (ENG-368) — which engine composes, and d
   });
 
   it("vendoKnowledge({ store }): the host's own knowledge database is never re-pointed at the composed one", async () => {
-    const composed = await tempStore();
-    const elsewhere = await tempStore();
+    const composed = await ownDatabase();
+    const elsewhere = await ownDatabase();
     await composed.ensureSchema();
     await elsewhere.ensureSchema();
     await vendoKnowledge({ store: composed }).upsert!([doc("docs#composed-store.md")]);

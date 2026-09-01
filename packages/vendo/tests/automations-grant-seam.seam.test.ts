@@ -8,9 +8,6 @@
  * package-level test for this uses a GuardDouble whose `mintGrant` writes
  * nothing at all, so it cannot see a producer and consumer disagreeing.
  */
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { automationsInternals } from "../src/automations/index.js";
 import type {
   AutomationId,
@@ -19,7 +16,8 @@ import type {
   ToolDescriptor,
   ToolRegistry,
 } from "../src/core/index.js";
-import { createStore, type VendoStore } from "../src/store/index.js";
+import { type VendoStore } from "../src/store/index.js";
+import { emptySharedStore } from "../src/store/backends.test-util.js";
 import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it } from "vitest";
 import { createVendo, type Vendo } from "../src/server.js";
@@ -49,12 +47,7 @@ const host: ToolRegistry = {
 };
 
 async function setup(): Promise<{ vendo: Vendo; id: AutomationId }> {
-  const dataDir = await mkdtemp(join(tmpdir(), "vendo-grant-seam-"));
-  const store: VendoStore = createStore({ dataDir });
-  cleanups.push(async () => {
-    await store.close();
-    await rm(dataDir, { recursive: true, force: true });
-  });
+  const store: VendoStore = await emptySharedStore();
   const vendo = createVendo({
     models: { default: {} as LanguageModel },
     principal: async () => principal,

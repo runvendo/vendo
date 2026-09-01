@@ -15,9 +15,6 @@
  * decide path executes it; the resolution the embed reads back is the one
  * `createByoApprovals` actually serves. The only double is the transport.
  */
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import {
   vendoApprovalRefSchema,
   type AgentRunner,
@@ -28,7 +25,8 @@ import {
   type ToolRegistry,
 } from "../src/core/index.js";
 import { createGuard } from "../src/guard/index.js";
-import { createStore, createStoreOps } from "../src/store/index.js";
+import { createStoreOps } from "../src/store/index.js";
+import { emptySharedStore } from "../src/store/backends.test-util.js";
 import { VendoProvider, VendoToolResult, createVendoClient } from "../src/ui/index.js";
 import { act, createElement, type ReactElement } from "react";
 import { createRoot } from "react-dom/client";
@@ -66,11 +64,7 @@ const host: ToolRegistry = {
 /** Real store, real guard, real parking registry — the composition the umbrella
  *  hands a BYO loop. */
 async function harness() {
-  const root = await mkdtemp(join(tmpdir(), "vendo-approval-title-seam-"));
-  cleanups.push(async () => rm(root, { recursive: true, force: true }));
-  const store = createStore({ dataDir: join(root, ".data") });
-  cleanups.push(async () => store.close());
-  await store.ensureSchema();
+  const store = await emptySharedStore();
   const guard = createGuard({ store, policy: { rules: [{ match: { risk: "write" }, action: "ask" }] } });
   const byo = createByoApprovals({ guard, tools: guard.bind(host), ops: createStoreOps(store) });
   const pack = await buildVendoToolPack({ registry: byo.registry, runner: nullRunner });

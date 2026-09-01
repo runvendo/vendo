@@ -19,7 +19,8 @@
 import type { RunContext, ThreadId, ToolResult, TurnId } from "../../src/core/index.js";
 import { createGuard } from "../../src/guard/index.js";
 import { defineHarness } from "../../src/harnesses/index.js";
-import { createStore, storeFiles, threadMessageStore } from "../../src/store/index.js";
+import { storeFiles, threadMessageStore, type VendoStore } from "../../src/store/index.js";
+import { emptySharedStore } from "../../src/store/backends.test-util.js";
 import type { UIMessage } from "ai";
 import { describe, expect, it } from "vitest";
 import { createSession } from "../../src/turn/session.js";
@@ -39,8 +40,6 @@ const ALLOWED: Record<string, string> = {
   // (empty — the merge is meant to be observationally identical. Anything that
   // has to go in here is a decision, not a detail.)
 };
-
-let stores = 0;
 
 /** A destructive tool is what makes the guard park: it can be traced to no
  *  grant, so it needs a person. */
@@ -70,18 +69,19 @@ const thinker = (calls: number) =>
   });
 
 interface World {
-  store: ReturnType<typeof createStore>;
+  store: VendoStore;
   guard: ReturnType<typeof createGuard>;
   deps: TurnDeps;
   tools: ReturnType<ReturnType<typeof createGuard>["bind"]>;
   ran: { count: number };
 }
 
-/** One side's whole world: its own store, its own guard, its own thinker. The
+/** One side's whole world: an empty store, its own guard, its own thinker. The
  *  same construction both sides get, so a difference can only come from the
- *  driver. */
-const world = (calls: number): World => {
-  const store = createStore({ dataDir: `memory://s9-diff-${stores++}` });
+ *  driver. The two sides are built and observed strictly in sequence, so they
+ *  can share the file's one engine. */
+const world = async (calls: number): Promise<World> => {
+  const store = await emptySharedStore();
   const ran = { count: 0 };
   // The agent()-composition TTL (agent.ts): a parked turn waits for a PERSON.
   const guard = createGuard({ store, approvals: { parkedCallTtlMs: 7 * 24 * 60 * 60 * 1000 } });
@@ -187,7 +187,7 @@ describe("S9 differential · the unattended lane (interactive: false)", () => {
       const run = async (
         driver: typeof runTurn,
       ): Promise<{ record: unknown; observed: unknown }> => {
-        const w = world(scenario.calls);
+        const w = await world(scenario.calls);
         const record = await driver(w.deps, {
           prompt: "Refund invoice 7.",
           tools: w.tools,
@@ -213,7 +213,7 @@ describe("S9 differential · the unattended lane (interactive: false)", () => {
     const resumeOn = async (
       driver: typeof runTurn,
     ): Promise<{ first: unknown; second: unknown; observed: unknown }> => {
-      const w = world(1);
+      const w = await world(1);
       const ctx = ctxFor("present", THREAD);
       const first = await driver(w.deps, {
         prompt: "Refund invoice 7.",
@@ -264,7 +264,7 @@ describe("S9 differential · the streaming lane (interactive: true)", () => {
     calls: number,
     autoApprove: boolean,
   ): Promise<{ wire: unknown; observed: unknown }> => {
-    const w = world(calls);
+    const w = await world(calls);
     // `interactive: true` BLOCKS on the tap. This is the tap — the guard's own
     // subscription, which is exactly what `session.on("approval")` rides.
     if (autoApprove) {

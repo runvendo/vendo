@@ -11,13 +11,11 @@
  * store through the store's own read path. No double stands between the harness
  * that saw `turn.turnId` and the rows that must carry it.
  */
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import type { Connector } from "../src/actions/index.js";
 import type { AuditEvent, Principal, ToolDescriptor, ToolRegistry } from "../src/core/index.js";
 import { defineHarness } from "../src/harnesses/index.js";
-import { createStore, type VendoStore } from "../src/store/index.js";
+import { type VendoStore } from "../src/store/index.js";
+import { emptySharedStore } from "../src/store/backends.test-util.js";
 import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it } from "vitest";
 import { createVendo } from "../src/server.js";
@@ -30,16 +28,6 @@ afterEach(async () => {
 const principal: Principal = { kind: "user", subject: "user_turnid" };
 const THREAD = "thr_turnid";
 const READ_TOOL = "maple_invoices_list";
-
-async function tempStore(): Promise<VendoStore> {
-  const dataDir = await mkdtemp(join(tmpdir(), "vendo-turnid-"));
-  const store = createStore({ dataDir });
-  cleanups.push(async () => {
-    await store.close();
-    await rm(dataDir, { recursive: true, force: true });
-  });
-  return store;
-}
 
 function hostTools(): ToolRegistry {
   const descriptors: ToolDescriptor[] = [{
@@ -66,7 +54,7 @@ const auditRows = async (store: VendoStore): Promise<AuditEvent[]> => {
 
 describe("the turn id (contract §3.5)", () => {
   it("stamps one id on the Turn and on every audit row that turn produced", async () => {
-    const store = await tempStore();
+    const store = await emptySharedStore();
     const seen: string[] = [];
 
     const harness = defineHarness({
@@ -121,7 +109,7 @@ describe("the turn id (contract §3.5)", () => {
   }, 60_000);
 
   it("stamps the turn on a GATED call's row — the only row that call produces", async () => {
-    const store = await tempStore();
+    const store = await emptySharedStore();
     const seen: string[] = [];
 
     // An unconnected brokered tool. The connect gate wraps OUTSIDE guard.bind,
@@ -187,7 +175,7 @@ describe("the turn id (contract §3.5)", () => {
   }, 60_000);
 
   it("mints a fresh id for the next turn on the same thread", async () => {
-    const store = await tempStore();
+    const store = await emptySharedStore();
     const seen: string[] = [];
     const harness = defineHarness({
       name: "turn-id-probe",

@@ -15,12 +15,10 @@
  * the fields a copy is most likely to drop. `fetch` is the only double, and it
  * is a wire, not a fake.
  */
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { automationsInternals } from "../src/automations/index.js";
 import { RUN_STATUSES, type AutomationId, type Principal, type RunContext } from "../src/core/index.js";
-import { createStore, type VendoStore } from "../src/store/index.js";
+import { type VendoStore } from "../src/store/index.js";
+import { emptySharedStore } from "../src/store/backends.test-util.js";
 import { createVendoClient, type VendoClient } from "../src/ui/index.js";
 import { afterEach, describe, expect, it } from "vitest";
 import { scriptedModel, textTurn } from "../src/agent-doubles.test-util.js";
@@ -36,12 +34,7 @@ afterEach(async () => {
 });
 
 async function seam(turns = [textTurn("Here is your spending.")]): Promise<{ vendo: Vendo; client: VendoClient }> {
-  const dataDir = await mkdtemp(join(tmpdir(), "vendo-core-wire-shapes-"));
-  const store: VendoStore = createStore({ dataDir });
-  cleanups.push(async () => {
-    await store.close();
-    await rm(dataDir, { recursive: true, force: true });
-  });
+  const store: VendoStore = await emptySharedStore();
   const vendo = createVendo({
     models: { default: scriptedModel(turns) },
     principal: async () => principal,

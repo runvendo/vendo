@@ -31,7 +31,8 @@ import {
   type RunContext,
   type ToolDefinition,
 } from "../src/core/index.js";
-import { createStore, eraseStore, secretStore, storeFiles, storeSecrets, type VendoStore } from "../src/store/index.js";
+import { eraseStore, secretStore, storeFiles, storeSecrets, type VendoStore } from "../src/store/index.js";
+import { emptySharedStore } from "../src/store/backends.test-util.js";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   scriptedModel,
@@ -60,6 +61,20 @@ const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 });
+
+/** One vault key for the file, since the compositions below share one engine.
+ *  What each test proves about the vault is that a token round-trips through
+ *  it — never that two deployments hold different keys. */
+const VAULT_KEY = { key: randomBytes(32).toString("base64") };
+
+/** A profile root with nothing in it, so every composition reads its surface
+ *  from config alone. Was the store's own data dir, which had the same
+ *  emptiness by accident. */
+async function emptyProfileDir(): Promise<string> {
+  const root = await mkdtemp(join(tmpdir(), "vendo-tenant-profile-"));
+  cleanups.push(async () => { await rm(root, { recursive: true, force: true }); });
+  return root;
+}
 
 async function jsonBody(req: IncomingMessage): Promise<Record<string, unknown>> {
   const chunks: Buffer[] = [];
@@ -179,18 +194,12 @@ async function deployment(
   policy?: "autopilot",
   tools?: ToolDefinition[],
 ): Promise<{ vendo: Vendo; store: VendoStore }> {
-  const dataDir = await mkdtemp(join(tmpdir(), "vendo-tenant-connectors-"));
-  const store = createStore({ dataDir, encryption: { key: randomBytes(32).toString("base64") } });
-  cleanups.push(async () => {
-    await store.close();
-    await rm(dataDir, { recursive: true, force: true });
-  });
-  await store.ensureSchema();
+  const store = await emptySharedStore({ encryption: VAULT_KEY });
   const vendo = createVendo({
     models: { default: {} as LanguageModel },
     principal: async () => ADA,
     store,
-    profileDir: dataDir,
+    profileDir: await emptyProfileDir(),
     ...(policy === undefined ? {} : { guard: { policy } }),
     ...(tools === undefined ? {} : { tools }),
   });
@@ -335,18 +344,12 @@ describe("a tenant registers its own MCP server", () => {
     // looks for a row (store/secrets.ts). A connector that needs no credential
     // must therefore never ask, or one tokenless registration takes down every
     // turn for every member of the org.
-    const dataDir = await mkdtemp(join(tmpdir(), "vendo-tenant-novault-"));
-    const store = createStore({ dataDir });
-    cleanups.push(async () => {
-      await store.close();
-      await rm(dataDir, { recursive: true, force: true });
-    });
-    await store.ensureSchema();
+    const store = await emptySharedStore();
     const vendo = createVendo({
       models: { default: {} as LanguageModel },
       principal: async () => ADA,
       store,
-      profileDir: dataDir,
+      profileDir: await emptyProfileDir(),
     });
     const server = await startMcpServer("lookup_invoice");
 
@@ -601,13 +604,7 @@ describe("the agent can reach a tenant's tools in a real turn", () => {
     model: ScriptedModel;
     chat: (as: string, text: string) => Promise<Response>;
   }> {
-    const dataDir = await mkdtemp(join(tmpdir(), "vendo-tenant-chat-"));
-    const store = createStore({ dataDir, encryption: { key: randomBytes(32).toString("base64") } });
-    cleanups.push(async () => {
-      await store.close();
-      await rm(dataDir, { recursive: true, force: true });
-    });
-    await store.ensureSchema();
+    const store = await emptySharedStore({ encryption: VAULT_KEY });
     const model = scriptedModel(turns);
     const vendo = createVendo({
       models: { default: model as unknown as LanguageModel },
@@ -623,7 +620,7 @@ describe("the agent can reach a tenant's tools in a real turn", () => {
         ],
       },
       store,
-      profileDir: dataDir,
+      profileDir: await emptyProfileDir(),
       guard: { policy: "autopilot" },
       // A hard cap, so the tenant tool is genuinely PAST the belt and the only
       // way to it is the discovery hand. Without this the deployment's surface

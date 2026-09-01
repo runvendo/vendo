@@ -22,6 +22,7 @@ import {
 } from "../src/core/index.js";
 import { createGuard, type PolicyConfig } from "../src/guard/index.js";
 import { createStore } from "../src/store/index.js";
+import { emptySharedStore } from "../src/store/backends.test-util.js";
 import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createVendo } from "../src/server.js";
@@ -93,10 +94,7 @@ async function compose(options: {
   fetchSpy: ReturnType<typeof vi.fn>;
   store: ReturnType<typeof createStore>;
 }> {
-  const dataDir = await mkdtemp(join(tmpdir(), "vendo-compound-"));
-  const store = createStore({ dataDir });
-  cleanups.push(async () => { await store.close(); await rm(dataDir, { recursive: true, force: true }); });
-  await store.ensureSchema();
+  const store = await emptySharedStore();
   const guard = createGuard({
     store,
     ...(options.policy === undefined ? {} : { policy: options.policy }),
@@ -418,12 +416,10 @@ describe("no unguarded path", () => {
 describe("the real createVendo composition wires the seam", () => {
   it("a compound defined in .vendo/overrides.json executes through guard with per-step approvals", async () => {
     const root = await mkdtemp(join(tmpdir(), "vendo-umbrella-compound-"));
-    const dataDir = await mkdtemp(join(tmpdir(), "vendo-umbrella-store-"));
     const previousCwd = process.cwd();
     cleanups.push(async () => {
       process.chdir(previousCwd);
       await rm(root, { recursive: true, force: true });
-      await rm(dataDir, { recursive: true, force: true });
     });
     await mkdir(join(root, ".vendo"));
     await writeFile(join(root, ".vendo", "tools.json"), JSON.stringify({
@@ -442,12 +438,7 @@ describe("the real createVendo composition wires the seam", () => {
     vi.stubGlobal("fetch", fetchSpy);
 
     process.chdir(root);
-    const store = createStore({ dataDir });
-    cleanups.push(async () => { await store.close(); });
-    // Kept deliberately: the approval rows below are read directly, so this
-    // case needs the schema present. (Not for the old close-race reason —
-    // construction is pure now, so nothing kicks schema off on its own.)
-    await store.ensureSchema();
+    const store = await emptySharedStore();
     const vendo = createVendo({
       models: { default: {} as LanguageModel },
       principal: async () => principal,

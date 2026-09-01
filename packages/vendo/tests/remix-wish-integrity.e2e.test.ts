@@ -36,7 +36,8 @@ import { SCREEN_FILE, type SeedBaseline } from "../src/apps/index.js";
 import { makeReceiptSchema } from "../src/core/apps/index.js";
 import { VENDO_MAKE_TOOL, type AppId, type RunContext } from "../src/core/index.js";
 import { defineHarness } from "../src/harnesses/index.js";
-import { createStore, type VendoStore } from "../src/store/index.js";
+import { type VendoStore } from "../src/store/index.js";
+import { emptySharedStore } from "../src/store/backends.test-util.js";
 import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createVendo } from "../src/server.js";
@@ -191,9 +192,7 @@ async function walk(
     join(root, ".vendo", "remixable", `${baseline.slot}.json`),
     JSON.stringify(baseline, null, 2),
   );
-  const store: VendoStore = createStore({ dataDir: join(root, ".data") });
-  await store.ensureSchema();
-  cleanups.push(async () => store.close());
+  const store: VendoStore = await emptySharedStore();
   const { model, prompts } = scripted(steps);
   const receipts: Array<ReturnType<typeof makeReceiptSchema.parse>> = [];
   const harness = defineHarness({

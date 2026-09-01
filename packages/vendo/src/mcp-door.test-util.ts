@@ -9,13 +9,11 @@
  * would only be a claim about two different clients.
  */
 import { createHash } from "node:crypto";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import type { ExtractedTool } from "./actions/index.js";
 import type { AuditEvent, Principal, ToolDescriptor, ToolRegistry, ToolResult } from "./core/index.js";
 import { defineHarness, harnessAdapters } from "./harnesses/index.js";
-import { createStore, type VendoStore } from "./store/index.js";
+import { emptySharedStore } from "./store/backends.test-util.js";
+import type { VendoStore } from "./store/index.js";
 import type { LanguageModel } from "ai";
 import { createVendo, type Vendo } from "./server.js";
 
@@ -35,15 +33,11 @@ export async function runCleanups(): Promise<void> {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 }
 
-export async function tempStore(): Promise<VendoStore> {
-  const dataDir = await mkdtemp(join(tmpdir(), "vendo-parity-"));
-  const store = createStore({ dataDir });
-  cleanups.push(async () => {
-    await store.close();
-    await rm(dataDir, { recursive: true, force: true });
-  });
-  return store;
-}
+/** A store nothing else has written to — the file's one engine, emptied. Each
+ *  composition below asks for one, and two compositions in a single spec are
+ *  always driven in sequence (leg A is observed before leg B is composed), so
+ *  they never need engines of their own. */
+export const tempStore = emptySharedStore;
 
 /** One read the `cautious` policy runs silently, one write it parks for a human. */
 export function hostTools(): ToolRegistry {

@@ -1,8 +1,5 @@
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import type { ApprovalId } from "../src/core/index.js";
-import { createStore, type VendoStore } from "../src/store/index.js";
+import { emptySharedStore } from "../src/store/backends.test-util.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ChannelAskRepository,
@@ -28,19 +25,8 @@ afterEach(async () => {
   vi.restoreAllMocks();
 });
 
-async function freshStore(): Promise<VendoStore> {
-  const dataDir = await mkdtemp(join(tmpdir(), "vendo-channel-links-"));
-  const store: VendoStore = createStore({ dataDir });
-  cleanups.push(async () => {
-    await store.close();
-    await rm(dataDir, { recursive: true, force: true });
-  });
-  await store.ensureSchema();
-  return store;
-}
-
 async function repository(): Promise<ChannelLinkRepository> {
-  return new ChannelLinkRepository(await freshStore());
+  return new ChannelLinkRepository(await emptySharedStore());
 }
 
 /** Travel without touching timers: the repository asks `Date.now()`, and PGlite
@@ -188,7 +174,7 @@ const OTHER_APPROVAL = "apr_22222222-2222-2222-2222-222222222222" as ApprovalId;
  */
 describe("the ask rows a YES is answered from", () => {
   it("are readable by another instance over the same store", async () => {
-    const store = await freshStore();
+    const store = await emptySharedStore();
     await new ChannelAskRepository(store).add("user_a", "conv_1", APPROVAL);
 
     const elsewhere = new ChannelAskRepository(store);
@@ -199,7 +185,7 @@ describe("the ask rows a YES is answered from", () => {
   });
 
   it("are spent when the card is decided, so one YES cannot answer twice", async () => {
-    const store = await freshStore();
+    const store = await emptySharedStore();
     const asks = new ChannelAskRepository(store);
     await asks.add("user_a", "conv_1", APPROVAL);
     await asks.add("user_a", "conv_1", OTHER_APPROVAL);
@@ -210,7 +196,7 @@ describe("the ask rows a YES is answered from", () => {
   });
 
   it("records one row per card, however many times the ask is retried", async () => {
-    const store = await freshStore();
+    const store = await emptySharedStore();
     const asks = new ChannelAskRepository(store);
     await asks.add("user_a", "conv_1", APPROVAL);
     await asks.add("user_a", "conv_1", APPROVAL);
@@ -229,7 +215,7 @@ describe("the ask rows a YES is answered from", () => {
  */
 describe("the delivery log", () => {
   it("gives one delivery to exactly one caller, on any instance", async () => {
-    const store = await freshStore();
+    const store = await emptySharedStore();
     const log = new ChannelEventLog(store);
 
     expect(await log.claim("evt_1", "conv_1")).toBe(true);
@@ -241,7 +227,7 @@ describe("the delivery log", () => {
   it("still gives it to exactly one caller on an adapter with no guarded write", async () => {
     // 01 §12 makes `atomic` optional, so a BYO adapter may omit it. The claim
     // then reads-then-writes, exactly as it always did — slower, never different.
-    const store = await freshStore();
+    const store = await emptySharedStore();
     const bare = store.records("vendo_channel_events");
     vi.spyOn(store, "records").mockImplementation((collection: string) =>
       collection === "vendo_channel_events" ? { ...bare, atomic: undefined } : store.records(collection));
@@ -252,7 +238,7 @@ describe("the delivery log", () => {
   });
 
   it("keeps a vendor's event id out of the row id, so two ids never collide", async () => {
-    const store = await freshStore();
+    const store = await emptySharedStore();
     const log = new ChannelEventLog(store);
 
     // Two ids a naive sanitize would fold onto one row — the second text would
@@ -262,7 +248,7 @@ describe("the delivery log", () => {
   });
 
   it("forgets deliveries older than a day and keeps the ones inside it", async () => {
-    const store = await freshStore();
+    const store = await emptySharedStore();
     const log = new ChannelEventLog(store);
     expect(await log.claim("evt_old", "conv_1")).toBe(true);
 

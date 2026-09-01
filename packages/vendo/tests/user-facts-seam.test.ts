@@ -11,12 +11,10 @@
  * covered only the preset would let the hand-written path — the one the docs
  * now lead with, and the one `vendo init --auth none` writes — rot silently.
  */
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { genericJwtPreset } from "../src/actions/presets/index.js";
 import type { PermissionGrant } from "../src/core/index.js";
-import { createStore, type VendoStore } from "../src/store/index.js";
+import { type VendoStore } from "../src/store/index.js";
+import { emptySharedStore } from "../src/store/backends.test-util.js";
 import type { LanguageModel, UIMessage } from "ai";
 import { afterEach, describe, expect, it } from "vitest";
 import { jwt } from "../src/auth-presets/jwt.js";
@@ -133,12 +131,7 @@ const objectSpelling: Spelling = {
 };
 
 async function compose(auth: HostAuthPreset): Promise<{ vendo: Vendo; seen: string[] }> {
-  const dataDir = await mkdtemp(join(tmpdir(), "vendo-user-facts-"));
-  const store: VendoStore = createStore({ dataDir });
-  cleanups.push(async () => {
-    await store.close();
-    await rm(dataDir, { recursive: true, force: true });
-  });
+  const store: VendoStore = await emptySharedStore();
   const seen: string[] = [];
   const vendo = createVendo({ models: { default: recordingModel(seen) }, auth, store });
   return { vendo, seen };
@@ -213,12 +206,7 @@ describe("a hand-written door with `principal` alone", () => {
  */
 describe("the deprecated top-level `principal` still works", () => {
   it("resolves the caller and renders no [User] block", async () => {
-    const dataDir = await mkdtemp(join(tmpdir(), "vendo-user-facts-loose-"));
-    const store: VendoStore = createStore({ dataDir });
-    cleanups.push(async () => {
-      await store.close();
-      await rm(dataDir, { recursive: true, force: true });
-    });
+    const store: VendoStore = await emptySharedStore();
     const seen: string[] = [];
     const vendo = createVendo({
       models: { default: recordingModel(seen) },

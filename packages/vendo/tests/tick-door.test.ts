@@ -13,9 +13,6 @@
  * every knock in the fleet forever; a test that restates the scheme cannot tell
  * that apart from a working door.
  */
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 // The SHIPPED verifier, the same one the door itself calls — so this test signs
 // against the very code Cloud verified against, never a scheme restated here.
 import {
@@ -24,7 +21,8 @@ import {
   signedWebhookBytes,
   verifySignature,
 } from "../src/automations/index.js";
-import { createStore, type VendoStore } from "../src/store/index.js";
+import type { VendoStore } from "../src/store/index.js";
+import { emptySharedStore } from "../src/store/backends.test-util.js";
 import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CODE_AUTOMATION_OWNER } from "../src/compose-automations.js";
@@ -57,13 +55,8 @@ const ownerCtx = {
 } as const;
 
 async function setup(): Promise<{ vendo: Vendo; store: VendoStore }> {
-  const dataDir = await mkdtemp(join(tmpdir(), "vendo-tick-door-"));
-  const store = createStore({ dataDir });
+  const store = await emptySharedStore();
   const vendo = createVendo({ models: { default: model }, principal: async () => null, store });
-  cleanups.push(async () => {
-    await store.close();
-    await rm(dataDir, { recursive: true, force: true });
-  });
   // The boot reconcile and the schema both ride the ready() latch.
   await vendo.handler(new Request("https://host.test/api/vendo/status"));
   return { vendo, store };

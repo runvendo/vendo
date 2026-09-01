@@ -3,12 +3,10 @@
  * default `vendo()` and for a host-constructed one, and NOT for a harness whose
  * thinker lives on a machine.
  */
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { defineHarness } from "../src/harnesses/index.js";
 import { VENDO_BASH_TOOL } from "../src/core/index.js";
-import { createStore, type VendoStore } from "../src/store/index.js";
+import { type VendoStore } from "../src/store/index.js";
+import { emptySharedStore } from "../src/store/backends.test-util.js";
 import { afterEach, describe, expect, it } from "vitest";
 import { createVendo, type Vendo } from "../src/server.js";
 import { vendo as vendoHarness } from "../src/harnesses/index.js";
@@ -19,12 +17,7 @@ afterEach(async () => {
 });
 
 async function compose(extra: Record<string, unknown> = {}): Promise<Vendo> {
-  const dataDir = await mkdtemp(join(tmpdir(), "vendo-shell-mount-"));
-  const store: VendoStore = createStore({ dataDir });
-  cleanups.push(async () => {
-    await store.close();
-    await rm(dataDir, { recursive: true, force: true });
-  });
+  const store: VendoStore = await emptySharedStore();
   return createVendo({
     store,
     principal: async () => ({ kind: "user", subject: "dev" }),

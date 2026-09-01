@@ -1,9 +1,9 @@
 import { execFileSync } from "node:child_process";
 import { rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 // 09-vendo §1: the umbrella root (`@vendoai/vendo`) re-exports "root types
 // re-exported from core (+ each block's primary types)". This is a PURE TYPE
@@ -92,21 +92,43 @@ const HOST_FACING_TYPES = [
   "HostOAuthAdapter",
 ];
 
-const fixtures: string[] = [];
-afterEach(() => {
-  for (const path of fixtures.splice(0)) rmSync(path, { force: true });
-});
+/** Every fixture this file checks: the names it `import type`s, and the entry
+ *  it names them from. */
+const FIXTURES = {
+  root: { entry: "./src/index.js", names: HOST_FACING_TYPES },
+  // The hosted try venue composes typed createVendo({ profile }) pieces from
+  // @vendoai/vendo/server alone — every piece type must resolve there.
+  server: {
+    entry: "./src/server.js",
+    names: ["CreateVendoConfig", "CatalogFile", "ExtractedTool", "OverridesFile", "VendoTheme"],
+  },
+  // Proves the mechanism genuinely catches a dropped re-export, so the
+  // assertions above cannot silently pass if the surface regresses.
+  teeth: { entry: "./src/index.js", names: ["__DefinitelyNotAVendoRootExport"] },
+} satisfies Record<string, { entry: string; names: readonly string[] }>;
 
-/** Type-check a fixture that `import type`s `names` from a source entry
- *  (the root by default). Returns tsc's combined output on failure, or null
- *  when it exits clean. */
-function typecheckImports(names: string[], entry = "./src/index.js"): string | null {
-  // Written at the package root so `./src/index.js` and node_modules both
-  // resolve; a unique name keeps parallel runs isolated and out of the build
-  // (tsconfig `include` is `src/**`, so a root-level file is never compiled).
-  const fixturePath = join(packageDir, `.type-surface.${process.pid}.${Math.random().toString(36).slice(2)}.ts`);
-  fixtures.push(fixturePath);
-  writeFileSync(fixturePath, `import type { ${names.join(", ")} } from "${entry}";\n`);
+type FixtureName = keyof typeof FIXTURES;
+
+// Written at the package root so `./src/index.js` and node_modules both resolve;
+// the pid keeps concurrent runs isolated, and a dotfile at the root is out of
+// the build (tsconfig `include` is `src/**`).
+const pathOf = (name: FixtureName): string => join(packageDir, `.type-surface.${process.pid}.${name}.ts`);
+
+/** tsc's diagnostics for each fixture, from ONE invocation.
+ *
+ *  A tsc run's cost is the source tree it loads (~4.5s here — the root entry
+ *  reaches the whole package plus the DOM lib), not the one-line fixture on top
+ *  of it, so a checker per fixture paid for the same tree three times. One
+ *  program over all three fixtures costs what one of them did, and every
+ *  diagnostic names the file it came from, so each test still reads its OWN
+ *  verdict. A diagnostic that names no fixture is a failure of the run itself
+ *  and lands on all of them, never swallowed. */
+function typecheckFixtures(): Record<FixtureName, string | null> {
+  const names = Object.keys(FIXTURES) as FixtureName[];
+  for (const name of names) {
+    writeFileSync(pathOf(name), `import type { ${FIXTURES[name].names.join(", ")} } from "${FIXTURES[name].entry}";\n`);
+  }
+  let output = "";
   try {
     execFileSync(
       process.execPath,
@@ -115,45 +137,40 @@ function typecheckImports(names: string[], entry = "./src/index.js"): string | n
       // package's emitted `.d.ts` and now resolves to `src/ui/context.tsx` — real
       // TSX against the DOM. Without them tsc stops at TS6142 on every hook and
       // the surface it was asked about is never checked. Mirrors tsconfig.base.
-      [tsc, fixturePath, "--noEmit", "--strict", "--target", "ES2022", "--module", "ESNext",
+      [tsc, ...names.map(pathOf), "--noEmit", "--strict", "--target", "ES2022", "--module", "ESNext",
         "--moduleResolution", "Bundler", "--skipLibCheck", "--esModuleInterop",
         "--jsx", "react-jsx", "--lib", "ES2022,DOM,DOM.Iterable"],
       { cwd: packageDir, stdio: "pipe" },
     );
-    return null;
   } catch (error) {
     const err = error as { stdout?: Buffer; stderr?: Buffer };
-    return `${err.stdout?.toString() ?? ""}${err.stderr?.toString() ?? ""}`;
+    output = `${err.stdout?.toString() ?? ""}${err.stderr?.toString() ?? ""}`;
   }
+  const lines = output.split("\n").filter((line) => line.trim() !== "");
+  const unattributed = lines.filter((line) => !names.some((name) => line.startsWith(basename(pathOf(name)))));
+  return Object.fromEntries(names.map((name) => {
+    const own = [...lines.filter((line) => line.startsWith(basename(pathOf(name)))), ...unattributed];
+    return [name, own.length === 0 ? null : own.join("\n")];
+  })) as Record<FixtureName, string | null>;
 }
+
+let failures: Record<FixtureName, string | null>;
+beforeAll(() => { failures = typecheckFixtures(); });
+afterAll(() => {
+  for (const name of Object.keys(FIXTURES) as FixtureName[]) rmSync(pathOf(name), { force: true });
+});
 
 describe("09-vendo §1 — umbrella root type surface", () => {
   it("re-exports every host-facing type from the source root entry", () => {
-    const failure = typecheckImports(HOST_FACING_TYPES);
-    expect(failure, failure ?? "").toBeNull();
+    expect(failures.root, failures.root ?? "").toBeNull();
   });
 
   it("names the profile piece types beside createVendo on the server entry (Task 15a)", () => {
-    // The hosted try venue composes typed createVendo({ profile }) pieces
-    // from @vendoai/vendo/server alone — every piece type must resolve there.
-    const failure = typecheckImports(
-      [
-        "CreateVendoConfig",
-        "CatalogFile",
-        "ExtractedTool",
-        "OverridesFile",
-        "VendoTheme",
-      ],
-      "./src/server.js",
-    );
-    expect(failure, failure ?? "").toBeNull();
+    expect(failures.server, failures.server ?? "").toBeNull();
   });
 
   it("has teeth: a missing re-export fails the tsc gate with TS2305", () => {
-    // Proves the mechanism genuinely catches a dropped re-export, so the
-    // assertion above cannot silently pass if the surface regresses.
-    const failure = typecheckImports(["__DefinitelyNotAVendoRootExport"]);
-    expect(failure).not.toBeNull();
-    expect(failure).toContain("TS2305");
+    expect(failures.teeth).not.toBeNull();
+    expect(failures.teeth).toContain("TS2305");
   });
 });

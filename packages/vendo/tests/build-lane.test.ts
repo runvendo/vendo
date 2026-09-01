@@ -15,7 +15,6 @@
  * composition can carry — that the slot is filled at all, and WITH WHAT env.
  */
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { LanguageModel } from "ai";
@@ -40,7 +39,8 @@ import {
   disposeSessionMachines,
   inferenceEnv,
 } from "../src/harnesses/claude-code/box.js";
-import { createStore, type VendoStore } from "../src/store/index.js";
+import { type VendoStore } from "../src/store/index.js";
+import { emptySharedStore } from "../src/store/backends.test-util.js";
 import * as kit from "../src/ui/kit/index.js";
 import { afterEach, describe, expect, it } from "vitest";
 import { appBuilder, BUILD_ALLOWED_DOMAINS, BUILD_STATUS_LINES } from "../src/build-agent.js";
@@ -591,13 +591,11 @@ describe("a failed RESEAL keeps the app it was rebuilding", () => {
 });
 
 describe("composition fills the slot", () => {
-  const compose = async (sandbox: ScriptedSandbox | undefined) => {
-    const dataDir = await mkdtemp(join(tmpdir(), "vendo-build-lane-"));
-    const store: VendoStore = createStore({ dataDir });
-    cleanups.push(async () => {
-      await store.close();
-      await rm(dataDir, { recursive: true, force: true });
-    });
+  /** `engine` names a database of this composition's own — the case below builds
+   *  a second composition while the first is still in hand, and one engine
+   *  cannot serve both: acquiring the second empties the first. */
+  const compose = async (sandbox: ScriptedSandbox | undefined, engine?: string) => {
+    const store: VendoStore = await emptySharedStore({ ...(engine === undefined ? {} : { engine }) });
     const vendo = createVendo({
       // Never reached: nothing in this lane thinks on the host.
       models: { default: {} as LanguageModel },
@@ -626,7 +624,7 @@ describe("composition fills the slot", () => {
   });
 
   it("a composed sandbox is the ONE gate, and the composed box holds no store credentials", async () => {
-    expect((await compose(undefined)).apps.build.available()).toBe(false);
+    expect((await compose(undefined, "no-sandbox")).apps.build.available()).toBe(false);
 
     let started: () => void = () => undefined;
     const inTheBox = new Promise<void>((resolve) => { started = resolve; });

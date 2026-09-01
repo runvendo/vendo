@@ -1,10 +1,7 @@
 import type { Connector, ConnectorAccount } from "../src/actions/index.js";
 import type { LanguageModel } from "ai";
 import type { Principal, RunContext, ToolDescriptor } from "../src/core/index.js";
-import { createStore } from "../src/store/index.js";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { emptySharedStore } from "../src/store/backends.test-util.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createVendo } from "../src/server.js";
 
@@ -61,12 +58,7 @@ function brokerWithGmail() {
 }
 
 async function composeVendo(connector: Connector) {
-  const dataDir = await mkdtemp(join(tmpdir(), "vendo-connect-invalidation-"));
-  const store = createStore({ dataDir });
-  cleanups.push(async () => {
-    await store.close();
-    await rm(dataDir, { recursive: true, force: true });
-  });
+  const store = await emptySharedStore();
   const vendo = createVendo({
     models: { default: {} as LanguageModel },
     store,

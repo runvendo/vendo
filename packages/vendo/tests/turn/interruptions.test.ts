@@ -13,6 +13,7 @@
 import { createGuard } from "../../src/guard/index.js";
 import { defineHarness } from "../../src/harnesses/index.js";
 import { createStore, threadMessageStore, type VendoStore } from "../../src/store/index.js";
+import { emptySharedStore } from "../../src/store/backends.test-util.js";
 import { VendoError, type RunContext, type ToolResult } from "../../src/core/index.js";
 import type { UIMessage } from "ai";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -161,7 +162,7 @@ describe("an interrupted turn outlives the process that parked it", () => {
 describe("an approved call runs once, however many callers answer", () => {
   it("survives two processes resuming the same turn at the same instant", async () => {
     const ran = { count: 0 };
-    const support = parking(memoryStore(), ran);
+    const support = parking(await emptySharedStore(), ran);
     const turns = turnsOf(support, "u_42");
     const asked = await interrupted(support.chat("Refund invoice 7.", { as: "u_42" }));
     const decisions = { [asked.interruptions[0]!.id]: "approve" as const };
@@ -183,7 +184,7 @@ describe("an approved call runs once, however many callers answer", () => {
 describe("every interruption is answered, or none is", () => {
   it("refuses a partial decision map by name, and leaves the turn exactly as it was", async () => {
     const ran = { count: 0 };
-    const support = parking(memoryStore(), ran, 2);
+    const support = parking(await emptySharedStore(), ran, 2);
     const turns = turnsOf(support, "u_42");
     const asked = await interrupted(support.chat("Refund invoice 7 and invoice 8.", { as: "u_42" }));
     expect(asked.interruptions).toHaveLength(2);
@@ -218,7 +219,7 @@ describe("authority comes from the call that resumes", () => {
 
   it("runs the approved call with the resuming call's headers and context, never the parked ones", async () => {
     const ran: Ran = { count: 0 };
-    const { turns, asked } = await parkWith(memoryStore(), ran);
+    const { turns, asked } = await parkWith(await emptySharedStore(), ran);
 
     await turns.resume(asked.turnId, { [asked.interruptions[0]!.id]: "approve" }, {
       headers: { authorization: "Bearer fresh" },
@@ -232,7 +233,7 @@ describe("authority comes from the call that resumes", () => {
 
   it("carries no authority at all when the resuming call brings none", async () => {
     const ran: Ran = { count: 0 };
-    const { turns, asked } = await parkWith(memoryStore(), ran);
+    const { turns, asked } = await parkWith(await emptySharedStore(), ran);
 
     await turns.resume(asked.turnId, { [asked.interruptions[0]!.id]: "approve" });
 
@@ -247,7 +248,7 @@ describe("authority comes from the call that resumes", () => {
 describe("a turn you do not own", () => {
   it("reads back as absent, and cannot be answered on the owner's behalf", async () => {
     const ran = { count: 0 };
-    const support = parking(memoryStore(), ran);
+    const support = parking(await emptySharedStore(), ran);
     const asked = await interrupted(support.chat("Refund invoice 7.", { as: "u_42" }));
 
     const stranger = turnsOf(support, "u_99");
@@ -292,7 +293,7 @@ describe("a parked turn waits a week, and says so when the week is up", () => {
       name: "support",
       harness: refunder(),
       tools: [refundTool(ran)],
-      store: memoryStore(),
+      store: await emptySharedStore(),
       // One millisecond: the same clock the seven days ride, wound forward.
       guard: { approvals: { parkedCallTtlMs: 1 } },
     });
@@ -335,7 +336,7 @@ describe("a message that arrives instead of an answer", () => {
    */
   it("leaves the interruption standing, and the turn is still answerable after it", async () => {
     const ran = { count: 0 };
-    const support = parking(memoryStore(), ran);
+    const support = parking(await emptySharedStore(), ran);
     const turns = turnsOf(support, "u_42");
     const asked = await interrupted(support.chat("Refund invoice 7.", { as: "u_42" }));
     expect(await turns.list({ status: "interrupted" })).toHaveLength(1);

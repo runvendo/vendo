@@ -1,8 +1,6 @@
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { VENDO_APP_FORMAT, type AppDocument, type Membership, type Principal } from "../src/core/index.js";
-import { appAccess, createStore, type VendoStore } from "../src/store/index.js";
+import { appAccess, type VendoStore } from "../src/store/index.js";
+import { emptySharedStore } from "../src/store/backends.test-util.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createVendo, type Vendo } from "../src/server.js";
 
@@ -49,12 +47,7 @@ afterEach(async () => {
 let acting: Principal = dana;
 
 async function boot(): Promise<{ vendo: Vendo; store: VendoStore }> {
-  const dataDir = await mkdtemp(join(tmpdir(), "vendo-mcp-orgs-"));
-  const store = createStore({ dataDir });
-  cleanups.push(async () => {
-    await store.close().catch(() => undefined);
-    await rm(dataDir, { recursive: true, force: true });
-  });
+  const store = await emptySharedStore();
   // NO VENDO_API_KEY: `mcp: true` plus a key composes a Cloud-brokered door
   // (compose-mcp.ts), and this test is about the LOCAL door's org handling.
   const vendo = createVendo({

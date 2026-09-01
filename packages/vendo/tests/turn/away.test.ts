@@ -14,12 +14,10 @@ import {
 } from "../../src/core/index.js";
 import { createGuard } from "../../src/guard/index.js";
 import { defineHarness } from "../../src/harnesses/index.js";
-import { createStore, threadMessageStore, threadStore, workspaceStore, type VendoStore } from "../../src/store/index.js";
+import { threadMessageStore, threadStore, workspaceStore, type VendoStore } from "../../src/store/index.js";
+import { emptySharedStore } from "../../src/store/backends.test-util.js";
 import { describe, expect, it } from "vitest";
 import { awayRunner } from "../../src/turn/away.js";
-
-let stores = 0;
-const memoryStore = (): VendoStore => createStore({ dataDir: `memory://agents-away-${stores++}` });
 
 const readDescriptor: ToolDescriptor = {
   name: "invoices_list",
@@ -93,7 +91,7 @@ async function armTrigger(store: VendoStore): Promise<void> {
 
 describe("awayRunner", () => {
   it("returns a schema-valid report whose summary is the harness's own words", async () => {
-    const store = memoryStore();
+    const store = await emptySharedStore();
     const run = awayRunner(deps(store, defineHarness({
       name: "scripted",
       async *run() {
@@ -115,7 +113,7 @@ describe("awayRunner", () => {
     // This runtime's seam is BARE (no apps runtime, so no screen engine), so
     // nothing paints here; what the composed path paints is the umbrella's to
     // prove. The file still has to LAND through the wrap.
-    const store = memoryStore();
+    const store = await emptySharedStore();
     const run = awayRunner(deps(store, defineHarness({
       name: "builder",
       async *run(turn) {
@@ -163,7 +161,7 @@ describe("awayRunner", () => {
     ].join("\n\n");
 
     const summaryOf = async (text: string): Promise<string> => {
-      const store = memoryStore();
+      const store = await emptySharedStore();
       const run = awayRunner(deps(store, defineHarness({
         name: "narrator",
         async *run() {
@@ -205,7 +203,7 @@ describe("awayRunner", () => {
   });
 
   it("runs NON-interactively and preserves the firing ctx the engine built", async () => {
-    const store = memoryStore();
+    const store = await emptySharedStore();
     let seen: Turn | undefined;
     const run = awayRunner(deps(store, defineHarness({
       name: "peek",
@@ -232,7 +230,7 @@ describe("awayRunner", () => {
   });
 
   it("is the TASK's registry that the harness may call, not one of its own", async () => {
-    const store = memoryStore();
+    const store = await emptySharedStore();
     const run = awayRunner(deps(store, defineHarness({
       name: "caller",
       async *run(turn) {
@@ -247,7 +245,7 @@ describe("awayRunner", () => {
   });
 
   it("records every guarded call it made, with the outcome the guard returned", async () => {
-    const store = memoryStore();
+    const store = await emptySharedStore();
     const guard = createGuard({ store });
     const registry = taskRegistry();
     const run = awayRunner({
@@ -272,7 +270,7 @@ describe("awayRunner", () => {
   });
 
   it("records a call nobody was there to approve as pending, and never runs it", async () => {
-    const store = memoryStore();
+    const store = await emptySharedStore();
     const registry = taskRegistry();
     // No grant and no allowing rule: an away call the guard wants a person for.
     const run = awayRunner(deps(store, defineHarness({
@@ -291,7 +289,7 @@ describe("awayRunner", () => {
   });
 
   it("honors budget.maxToolCalls: the call past the budget never reaches the registry, and the run is stopped", async () => {
-    const store = memoryStore();
+    const store = await emptySharedStore();
     const guard = createGuard({ store });
     const registry = taskRegistry();
     const run = awayRunner({
@@ -318,7 +316,7 @@ describe("awayRunner", () => {
   });
 
   it("reports a harness that fails as an error, in the consumer voice", async () => {
-    const store = memoryStore();
+    const store = await emptySharedStore();
     const run = awayRunner(deps(store, defineHarness({
       name: "broken",
       async *run() {
@@ -333,7 +331,7 @@ describe("awayRunner", () => {
   });
 
   it("reports a stop when the engine aborts the run", async () => {
-    const store = memoryStore();
+    const store = await emptySharedStore();
     const controller = new AbortController();
     const run = awayRunner(deps(store, defineHarness({
       name: "slow",
@@ -355,7 +353,7 @@ describe("awayRunner", () => {
   });
 
   it("thinks on the composition's OWN brief when one is supplied, assembled for the firing ctx", async () => {
-    const store = memoryStore();
+    const store = await emptySharedStore();
     let seen: string | undefined;
     const run = awayRunner({
       store,
@@ -376,7 +374,7 @@ describe("awayRunner", () => {
   });
 
   it("hands that hook the default assembly and the guard's directions", async () => {
-    const store = memoryStore();
+    const store = await emptySharedStore();
     let handed: { assembled: string; directions: readonly string[] } | undefined;
     let seen: string | undefined;
     const run = awayRunner({
@@ -404,7 +402,7 @@ describe("awayRunner", () => {
   });
 
   it("falls back to the default assembly when the hook declines — an away run is never promptless", async () => {
-    const store = memoryStore();
+    const store = await emptySharedStore();
     let seen: string | undefined;
     const run = awayRunner({
       store,
@@ -427,7 +425,7 @@ describe("awayRunner", () => {
   });
 
   it("assembles its own brief when the host supplied none: instructions plus the guard's directions", async () => {
-    const store = memoryStore();
+    const store = await emptySharedStore();
     let seen: string | undefined;
     const run = awayRunner({
       store,
@@ -449,7 +447,7 @@ describe("awayRunner", () => {
   });
 
   it("mounts the automation owner's DURABLE workspace: a note one run writes, the next run reads", async () => {
-    const store = memoryStore();
+    const store = await emptySharedStore();
     const guard = createGuard({ store });
     const write = awayRunner({
       harness: defineHarness({

@@ -13,12 +13,10 @@
  * less than "same" is the feature not existing — a green suite around a resume
  * that returns half a reply is exactly the failure mode this repo keeps naming.
  */
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import type { Principal } from "../src/core/index.js";
 import { defineHarness } from "../src/harnesses/index.js";
-import { createStore, type VendoStore } from "../src/store/index.js";
+import { type VendoStore } from "../src/store/index.js";
+import { emptySharedStore } from "../src/store/backends.test-util.js";
 import {
   DefaultChatTransport,
   readUIMessageStream,
@@ -36,16 +34,6 @@ afterEach(async () => {
 
 const principal: Principal = { kind: "user", subject: "user_resume" };
 const OTHER: Principal = { kind: "user", subject: "user_stranger" };
-
-async function tempStore(): Promise<VendoStore> {
-  const dataDir = await mkdtemp(join(tmpdir(), "vendo-resume-"));
-  const store = createStore({ dataDir });
-  cleanups.push(async () => {
-    await store.close();
-    await rm(dataDir, { recursive: true, force: true });
-  });
-  return store;
-}
 
 function gate(): { promise: Promise<void>; open: () => void } {
   let open!: () => void;
@@ -112,7 +100,7 @@ const textOf = (message: UIMessage | undefined): string =>
 describe("stream resume (blueprint §4.1 item 5)", () => {
   it("a client that drops mid-turn and reconnects ends with the same message as one that never dropped", async () => {
     // 1. The reference: an uninterrupted run.
-    const clean = await tempStore();
+    const clean = await emptySharedStore();
     const cleanGate = gate();
     cleanGate.open();
     const cleanVendo = vendoWith(beatingHarness(cleanGate.promise), clean);
@@ -125,8 +113,10 @@ describe("stream resume (blueprint §4.1 item 5)", () => {
     }));
     expect(textOf(uninterrupted)).toBe("One. Two. Three. Four.");
 
-    // 2. The same turn, interrupted.
-    const store = await tempStore();
+    // 2. The same turn, interrupted. Its own engine: the reference deployment
+    // above is still live, and a second store on the file's engine would empty
+    // the transcript this run is about to be compared against.
+    const store = await emptySharedStore({ engine: "interrupted" });
     const midTurn = gate();
     const vendo = vendoWith(beatingHarness(midTurn.promise), store);
     const transport = transportFor(vendo);
@@ -165,7 +155,7 @@ describe("stream resume (blueprint §4.1 item 5)", () => {
   }, 60_000);
 
   it("answers 204 — not an error, not another principal's turn — when there is nothing to resume", async () => {
-    const store = await tempStore();
+    const store = await emptySharedStore();
     const open = gate();
     open.open();
     const vendo = vendoWith(beatingHarness(open.promise), store);

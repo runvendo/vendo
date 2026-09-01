@@ -1,6 +1,3 @@
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import {
   VENDO_APP_FORMAT,
   type AccessLevel,
@@ -10,7 +7,8 @@ import {
   type RunContext,
   type ToolRegistry,
 } from "../src/core/index.js";
-import { appAccess, createStore, postgresAppDatabase, workspaceStore, type VendoStore } from "../src/store/index.js";
+import { appAccess, postgresAppDatabase, workspaceStore, type VendoStore } from "../src/store/index.js";
+import { emptySharedStore } from "../src/store/backends.test-util.js";
 import { createAppSql } from "../src/apps/index.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createVendo, type Vendo } from "../src/server.js";
@@ -56,16 +54,6 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
   vi.unstubAllEnvs();
 });
-
-async function tempStore(): Promise<VendoStore> {
-  const dataDir = await mkdtemp(join(tmpdir(), "vendo-orgs-multi-party-"));
-  const store = createStore({ dataDir });
-  cleanups.push(async () => {
-    await store.close().catch(() => undefined);
-    await rm(dataDir, { recursive: true, force: true });
-  });
-  return store;
-}
 
 /** Whose request this is — set per call, the way a real session would. */
 let acting: Principal = dana;
@@ -143,7 +131,7 @@ describe("two principals, one org, over the real composition", () => {
   let vendo: Vendo;
 
   beforeEach(async () => {
-    store = await tempStore();
+    store = await emptySharedStore();
     vendo = await boot(store);
   });
 
@@ -302,7 +290,7 @@ describe("two principals, one org, over the real composition", () => {
 
 describe("§9.6: enforcement is never key-conditional", () => {
   it("resolves an existing grant identically with no key at all", async () => {
-    const store = await tempStore();
+    const store = await emptySharedStore();
     const vendo = await boot(store, { key: false });
     await seedApp(store, seeded("app_keyless", "Keyless"), ORG);
     // A grant row written directly (as a keyed deployment would have) so the

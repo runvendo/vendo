@@ -14,13 +14,10 @@
  * against its own embedded Postgres, and composing per test spent the file's
  * whole budget on boots rather than on assertions.
  */
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { paintedIn, SCREEN_FILE } from "../src/apps/index.js";
 import type { AppId, Json, Principal, RiskLabel, RunContext, ToolDefinition } from "../src/core/index.js";
 import { defineHarness } from "../src/harnesses/index.js";
-import { createStore, type VendoStore } from "../src/store/index.js";
+import { emptySharedStore } from "../src/store/backends.test-util.js";
 import type { LanguageModel } from "ai";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createVendo, type CreateVendoConfig, type Vendo } from "../src/server.js";
@@ -35,17 +32,6 @@ const cleanups: Array<() => Promise<void>> = [];
 afterAll(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 });
-
-async function tempStore(): Promise<VendoStore> {
-  const dataDir = await mkdtemp(join(tmpdir(), "vendo-remix-wiring-"));
-  const store = createStore({ dataDir });
-  cleanups.push(async () => {
-    await store.close();
-    await rm(dataDir, { recursive: true, force: true });
-  });
-  await store.ensureSchema();
-  return store;
-}
 
 /** What the generated file binds an envelope name to: the host's own function,
  *  already wrapped as a tool. `ran` is how a test tells "the guard let it
@@ -78,13 +64,16 @@ const wiring = (ran: string[]): CreateVendoConfig["remixWiring"] => ({
   },
 });
 
-async function compose(remixWiring?: CreateVendoConfig["remixWiring"]): Promise<Vendo> {
+/** `engine` names a database of this composition's own. The two stacks below are
+ *  built at once and both stay live for the whole block, so they may not share
+ *  one — a shared engine would also mean two resets racing each other. */
+async function compose(remixWiring?: CreateVendoConfig["remixWiring"], engine?: string): Promise<Vendo> {
   return createVendo({
     // Never reached: nothing here drives a turn, and a real model would make
     // this test measure a provider instead of the composition.
     models: { default: {} as LanguageModel },
     principal: async () => principal,
-    store: await tempStore(),
+    store: await emptySharedStore({ ...(engine === undefined ? {} : { engine }) }),
     guard: { policy: { rules: [{ match: { risk: "write" }, action: "block" }] } },
     ...(remixWiring === undefined ? {} : { remixWiring }),
   });
@@ -105,7 +94,7 @@ describe("the generated wiring, in a composition", () => {
   // carry — vitest's 30s HOOK default is tighter than a single composition needs
   // on a loaded machine, which reads as a product failure when it is only queue.
   beforeAll(async () => {
-    [wired, bare] = await Promise.all([compose(wiring(ran)), compose()]);
+    [wired, bare] = await Promise.all([compose(wiring(ran), "wired"), compose(undefined, "bare")]);
   }, 180_000);
 
   it("adds the wiring's tools to the one registry, and nothing else", async () => {
@@ -173,7 +162,7 @@ async function paintPort(remixWiring?: CreateVendoConfig["remixWiring"]): Promis
   const vendo = createVendo({
     models: { default: {} as LanguageModel },
     principal: async () => principal,
-    store: await tempStore(),
+    store: await emptySharedStore(),
     harness: defineHarness({
       name: "remix-port-probe",
       async *run(turn) {

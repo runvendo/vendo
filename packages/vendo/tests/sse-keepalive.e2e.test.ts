@@ -12,12 +12,10 @@
  *   2. a normal client sees EXACTLY the message sequence it saw before — a
  *      keepalive is transport framing, not an event.
  */
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { SSE_KEEPALIVE_FRAME, type Principal } from "../src/core/index.js";
 import { defineHarness } from "../src/harnesses/index.js";
-import { createStore, type VendoStore } from "../src/store/index.js";
+import { type VendoStore } from "../src/store/index.js";
+import { emptySharedStore } from "../src/store/backends.test-util.js";
 import { readUIMessageStream, type LanguageModel, type UIMessage, type UIMessageChunk } from "ai";
 import { afterEach, describe, expect, it } from "vitest";
 import { createVendo } from "../src/server.js";
@@ -28,16 +26,6 @@ afterEach(async () => {
 });
 
 const principal: Principal = { kind: "user", subject: "user_keepalive" };
-
-async function tempStore(): Promise<VendoStore> {
-  const dataDir = await mkdtemp(join(tmpdir(), "vendo-keepalive-"));
-  const store = createStore({ dataDir });
-  cleanups.push(async () => {
-    await store.close();
-    await rm(dataDir, { recursive: true, force: true });
-  });
-  return store;
-}
 
 /** A turn that stalls where a real one stalls: before its first token (the
  *  provider call) and again mid-flight (a slow tool). The test drives both
@@ -107,7 +95,7 @@ function readFrames(response: Response): { frames: string[]; next: () => Promise
 
 describe("the SSE keepalive on the production wire", () => {
   it("puts a frame on the wire before the model has produced anything, and again through a slow tool call", async () => {
-    const store = await tempStore();
+    const store = await emptySharedStore();
     const firstToken = gate();
     const afterTool = gate();
     const vendo = vendoWith(gatedHarness({ firstToken: firstToken.promise, afterTool: afterTool.promise }), store);
@@ -139,7 +127,7 @@ describe("the SSE keepalive on the production wire", () => {
   }, 60_000);
 
   it("leaves a normal client's message sequence byte-for-byte unchanged", async () => {
-    const store = await tempStore();
+    const store = await emptySharedStore();
     const open = gate();
     open.open();
     const vendo = vendoWith(gatedHarness({ firstToken: open.promise, afterTool: open.promise }), store);

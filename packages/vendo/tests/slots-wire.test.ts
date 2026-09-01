@@ -1,11 +1,8 @@
 // The slot registry's two routes, driven through the real route table: which
 // slots a host's surfaces mount is reported by the surfaces themselves, so the
 // write and the read are the same seam and are proved together here.
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { SLOT_DESCRIPTION_MAX_CHARS, type Principal } from "../src/core/index.js";
-import { createStore, type VendoStore } from "../src/store/index.js";
+import { emptySharedStore } from "../src/store/backends.test-util.js";
 import { afterEach, describe, expect, it } from "vitest";
 import { createVendo } from "../src/server.js";
 
@@ -17,16 +14,6 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 });
 
-async function tempStore(): Promise<VendoStore> {
-  const dataDir = await mkdtemp(join(tmpdir(), "vendo-slots-"));
-  const store = createStore({ dataDir });
-  cleanups.push(async () => {
-    await store.close();
-    await rm(dataDir, { recursive: true, force: true });
-  });
-  return store;
-}
-
 const request = (method: string, path: string, body?: unknown): Request =>
   new Request(`https://host.test/api/vendo${path}`, {
     method,
@@ -36,7 +23,7 @@ const request = (method: string, path: string, body?: unknown): Request =>
 
 describe("POST /slots · GET /slots", () => {
   it("round-trips a page's reported slots, and a renamed label lands in place", async () => {
-    const store = await tempStore();
+    const store = await emptySharedStore();
     const vendo = createVendo({ principal: async () => principal, store });
 
     const reported = await vendo.handler(request("POST", "/slots", {
@@ -62,7 +49,7 @@ describe("POST /slots · GET /slots", () => {
   });
 
   it("round-trips the description a host wrote, and refuses one past the cap", async () => {
-    const store = await tempStore();
+    const store = await emptySharedStore();
     const vendo = createVendo({ principal: async () => principal, store });
     const description = "main dashboard area, where users keep KPI views";
 
@@ -90,7 +77,7 @@ describe("POST /slots · GET /slots", () => {
   });
 
   it("refuses a body that is not a list of {id, label}", async () => {
-    const store = await tempStore();
+    const store = await emptySharedStore();
     const vendo = createVendo({ principal: async () => principal, store });
 
     for (const body of [{ slots: "hero" }, { slots: [{ id: "hero" }] }, { slots: [null] }]) {
@@ -101,7 +88,7 @@ describe("POST /slots · GET /slots", () => {
   });
 
   it("is not mounted at all when the deployment set apps: false", async () => {
-    const store = await tempStore();
+    const store = await emptySharedStore();
     const vendo = createVendo({ principal: async () => principal, store, apps: false });
 
     expect((await vendo.handler(request("GET", "/slots"))).status).toBe(404);
@@ -109,7 +96,7 @@ describe("POST /slots · GET /slots", () => {
   });
 
   it("refuses a request the host resolved no identity for", async () => {
-    const store = await tempStore();
+    const store = await emptySharedStore();
     const vendo = createVendo({ principal: async () => null, store });
 
     const response = await vendo.handler(request("GET", "/slots"));

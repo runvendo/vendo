@@ -10,6 +10,7 @@ import { VendoError, type ToolResult } from "../../src/core/index.js";
 import { createGuard } from "../../src/guard/index.js";
 import { APPROVAL_WAIT_MS, defineHarness } from "../../src/harnesses/index.js";
 import { createStore, threadMessageStore, type VendoStore } from "../../src/store/index.js";
+import { emptySharedStore } from "../../src/store/backends.test-util.js";
 import type { UIMessage } from "ai";
 import { describe, expect, it } from "vitest";
 import { agent, type VendoAgent } from "../../src/turn/agent.js";
@@ -54,7 +55,7 @@ const speaker = (text: string) => defineHarness({
 
 describe("the turn is the drainer of record", () => {
   it("persists a turn nobody awaited and nobody tapped", async () => {
-    const store = memoryStore();
+    const store = await emptySharedStore();
     const support = agent({ name: "support", harness: speaker("Filed under done."), store });
 
     // Neither awaited nor read: exactly what a caller who only wanted the work
@@ -70,7 +71,7 @@ describe("the turn is the drainer of record", () => {
   }, 20_000);
 
   it("refuses a second reader, and finishes for a turn whose events nobody reads", async () => {
-    const support = agent({ name: "support", harness: speaker("done"), store: memoryStore() });
+    const support = agent({ name: "support", harness: speaker("done"), store: await emptySharedStore() });
 
     const turn = support.chat("go", { as: "u_42" });
     expect(await collect(turn.events)).toContainEqual({ type: "text", delta: "done" });
@@ -87,7 +88,7 @@ describe("the turn is the drainer of record", () => {
 
 describe("a turn's ids", () => {
   it("are readable before it completes, and are the ones the result carries", async () => {
-    const support = agent({ name: "support", harness: speaker("done"), store: memoryStore() });
+    const support = agent({ name: "support", harness: speaker("done"), store: await emptySharedStore() });
 
     const turn = support.chat("go", { as: "u_42" });
     expect(turn.threadId).toMatch(/^thr_/);
@@ -105,7 +106,7 @@ describe("a turn's ids", () => {
           yield { type: "error" as const, message: "The ledger is unreachable." };
         },
       }),
-      store: memoryStore(),
+      store: await emptySharedStore(),
     });
 
     const turn = support.chat("go", { as: "u_42" });
@@ -122,7 +123,7 @@ describe("a turn's ids", () => {
   });
 
   it("names the turn on the rows the turn wrote, so a caller can join them", async () => {
-    const store = memoryStore();
+    const store = await emptySharedStore();
     const guard = createGuard({ store });
     const turn = agent({
       name: "support",
@@ -156,7 +157,7 @@ describe("the thread a turn runs on", () => {
 
   it("is new when the id is omitted, and the same one when it is handed back", async () => {
     const seen = { messages: 0 };
-    const support = agent({ name: "support", harness: peeker(seen), store: memoryStore() });
+    const support = agent({ name: "support", harness: peeker(seen), store: await emptySharedStore() });
 
     const first = support.chat("first", { as: "u_42" });
     await first;
@@ -207,7 +208,7 @@ describe("a park ENDS the turn", () => {
   it("answers interrupted with the parked call, without waiting out the approval clock", async () => {
     const ran = { count: 0 };
     const asked = { reason: "" };
-    const support = parking(memoryStore(), ran, asked);
+    const support = parking(await emptySharedStore(), ran, asked);
 
     const startedAt = Date.now();
     const result = await support.chat("Refund invoice 7.", { as: "u_42" });
@@ -226,7 +227,7 @@ describe("a park ENDS the turn", () => {
 
   it("tells a PRESENT user's agent that the ask is pending, not that nobody is around", async () => {
     const asked = { reason: "" };
-    await parking(memoryStore(), { count: 0 }, asked).chat("Refund invoice 7.", { as: "u_42" });
+    await parking(await emptySharedStore(), { count: 0 }, asked).chat("Refund invoice 7.", { as: "u_42" });
 
     expect(asked.reason).not.toMatch(/nobody is here/);
     expect(asked.reason).toMatch(/needs approval/i);
@@ -254,7 +255,7 @@ describe("a park ENDS the turn", () => {
         inputSchema: { type: "object" },
         execute: () => ({ invoices: 2 }),
       })],
-      store: memoryStore(),
+      store: await emptySharedStore(),
     });
 
     await support.run("List the invoices.", { as: "u_42" });
@@ -265,7 +266,7 @@ describe("a park ENDS the turn", () => {
 
 describe("resume", () => {
   it("re-dispatches the approved call byte for byte and carries the turn on", async () => {
-    const store = memoryStore();
+    const store = await emptySharedStore();
     const ran = { count: 0 };
     const asked = { reason: "" };
     let turns = 0;
@@ -322,7 +323,7 @@ describe("resume", () => {
         },
       }),
       tools: [refundTool(ran)],
-      store: memoryStore(),
+      store: await emptySharedStore(),
     });
 
     const result = await support.chat("Refund invoice 7.", { as: "u_42" });

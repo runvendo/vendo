@@ -10,7 +10,8 @@ import {
   type ToolRegistry,
 } from "../src/core/index.js";
 import { createGuard, type VendoGuard } from "../src/guard/index.js";
-import { createStore, createStoreOps } from "../src/store/index.js";
+import { createStoreOps } from "../src/store/index.js";
+import { emptySharedStore } from "../src/store/backends.test-util.js";
 import { afterEach, describe, expect, it } from "vitest";
 import { createByoApprovals } from "../src/byo-approvals.js";
 
@@ -96,9 +97,7 @@ function withoutAbandonApprovals(guard: VendoGuard): VendoGuard {
 async function harness(options: { hideAbandonApprovals?: boolean } = {}) {
   const root = await mkdtemp(join(tmpdir(), "vendo-byo-approvals-"));
   cleanups.push(async () => rm(root, { recursive: true, force: true }));
-  const store = createStore({ dataDir: join(root, ".data") });
-  cleanups.push(async () => store.close());
-  await store.ensureSchema();
+  const store = await emptySharedStore();
   // Every write-class call asks — the gate the pack's approval envelope rides.
   const guard = createGuard({ store, policy: { rules: [{ match: { risk: "write" }, action: "ask" }] } });
   const host = messagingHost();
@@ -224,9 +223,7 @@ describe.sequential("existing-agents — parked BYO guarded calls", () => {
   it("keeps the executed outcome readable when the resumed call itself fails", async () => {
     const root = await mkdtemp(join(tmpdir(), "vendo-byo-approvals-"));
     cleanups.push(async () => rm(root, { recursive: true, force: true }));
-    const store = createStore({ dataDir: join(root, ".data") });
-    cleanups.push(async () => store.close());
-    await store.ensureSchema();
+    const store = await emptySharedStore();
     const guard = createGuard({ store, policy: { rules: [{ match: { risk: "write" }, action: "ask" }] } });
     let fail = false;
     const flaky: ToolRegistry = {
@@ -264,9 +261,7 @@ describe.sequential("existing-agents — parked BYO guarded calls", () => {
   it("answers pending, never not-found, to a read that lands mid-resume", async () => {
     const root = await mkdtemp(join(tmpdir(), "vendo-byo-approvals-"));
     cleanups.push(async () => rm(root, { recursive: true, force: true }));
-    const store = createStore({ dataDir: join(root, ".data") });
-    cleanups.push(async () => store.close());
-    await store.ensureSchema();
+    const store = await emptySharedStore();
     const guard = createGuard({ store, policy: { rules: [{ match: { risk: "write" }, action: "ask" }] } });
     // The decision transition removes the approval from `pending` BEFORE the
     // resume subscriber runs the call and writes the outcome row. A watcher

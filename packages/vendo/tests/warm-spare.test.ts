@@ -18,7 +18,6 @@
  * boundary; the SDK loop inside the box is scripted, because a test cannot run a
  * model.
  */
-import { mkdtemp, rm } from "node:fs/promises";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -26,7 +25,8 @@ import type { LanguageModel, UIMessage } from "ai";
 import type { Principal } from "../src/core/index.js";
 import { createSessionRoutes } from "../box/turn-routes.mjs";
 import { claudeCode, disposeSessionMachines } from "../src/harnesses/claude-code/index.js";
-import { createStore, type VendoStore } from "../src/store/index.js";
+import { type VendoStore } from "../src/store/index.js";
+import { emptySharedStore } from "../src/store/backends.test-util.js";
 import { afterEach, describe, expect, it } from "vitest";
 import { liveDoor } from "../src/agent-doubles.test-util.js";
 import { createVendo, type Vendo } from "../src/server.js";
@@ -136,14 +136,9 @@ function fakeSandbox(): {
 }
 
 async function compose(sandbox: unknown): Promise<Vendo> {
-  const dataDir = await mkdtemp(join(tmpdir(), "vendo-spare-"));
-  const store: VendoStore = createStore({ dataDir });
+  const store: VendoStore = await emptySharedStore();
   const door = await liveDoor();
   cleanups.push(door.close);
-  cleanups.push(async () => {
-    await store.close();
-    await rm(dataDir, { recursive: true, force: true });
-  });
   return createVendo({
     // Never reached: the thinker is the scripted box, not a provider.
     models: { default: {} as LanguageModel },

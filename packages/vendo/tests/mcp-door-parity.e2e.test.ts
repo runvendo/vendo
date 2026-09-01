@@ -170,7 +170,17 @@ describe("parity gate — the MCP door vs the in-process projection", () => {
     await inTap;
     // The turn saw a plain denial — never a throw (contract §1.1).
     expect(inHost.observed).toEqual([`${WRITE_TOOL}:denied`]);
-    expect((await toolRows(inHost.store, WRITE_TOOL)).every((row) => row.outcome !== "ok")).toBe(true);
+    // Nothing ran, in the two halves that can each fail on their own. `every`
+    // over the tool-call rows was the old reading and it could never fail: a
+    // call that never ran writes NO tool-call row, so the list it quantified
+    // over was always empty. A refused write leaves approval rows only
+    // (measured: `approval/-` and `approval/pending-approval`), and those are
+    // the same rows an EXECUTED call leaves — so the approval half proves the
+    // call was seen and refused rather than silently dropped, and the tool-call
+    // half is what proves it never ran. Executed, the second one holds
+    // `tool-call/ok`.
+    expect(await toolRows(inHost.store, WRITE_TOOL, "approval")).not.toHaveLength(0);
+    expect(await toolRows(inHost.store, WRITE_TOOL)).toEqual([]);
 
     let doorSaid = "";
     const doorHost = await composedHostOverDoor(async (door) => {
@@ -186,7 +196,8 @@ describe("parity gate — the MCP door vs the in-process projection", () => {
     // it in process — not the door's "go somewhere else and retry".
     expect(doorSaid).toBe("You turned this down.");
     expect(doorSaid).not.toContain("retry");
-    expect((await toolRows(doorHost.store, WRITE_TOOL)).every((row) => row.outcome !== "ok")).toBe(true);
+    expect(await toolRows(doorHost.store, WRITE_TOOL, "approval")).not.toHaveLength(0);
+    expect(await toolRows(doorHost.store, WRITE_TOOL)).toEqual([]);
   }, 40_000);
 
   it("the door IS reachable with a per-turn credential a harness minted — and it lists the TURN's equipped surface", async () => {
@@ -312,7 +323,9 @@ describe("parity gate — the MCP door vs the in-process projection", () => {
     expect(mirroredToolParts(stream)).toContain(`tool-output-available:${WRITE_TOOL}`);
     expect(mirroredToolParts(stream)).not.toContain(`tool-output-denied:${WRITE_TOOL}`);
     expect(stream).toContain("nobody is here to give it");
-    expect((await toolRows(doorHost.store, WRITE_TOOL)).every((row) => row.outcome !== "ok")).toBe(true);
+    // Seen and refused, never run — the same two halves as the denied case.
+    expect(await toolRows(doorHost.store, WRITE_TOOL, "approval")).not.toHaveLength(0);
+    expect(await toolRows(doorHost.store, WRITE_TOOL)).toEqual([]);
     // The listing came from the turn's OWN ctx (divergence 5) — `descriptors(ctx)`
     // is where §12 withholds, and the curated loadout decides the rest.
     expect(listed).toContain(READ_TOOL);

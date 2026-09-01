@@ -9,6 +9,7 @@
  */
 import { defineHarness } from "../../src/harnesses/index.js";
 import { createStore } from "../../src/store/index.js";
+import { emptySharedStore } from "../../src/store/backends.test-util.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { agent, e2b, postgres } from "../../src/turn/index.js";
 
@@ -36,7 +37,7 @@ afterEach(() => {
 describe("the symbols a boot error names", () => {
   it("says where claudeCode and anthropic live — the two the no-model error hands out", async () => {
     withoutRung();
-    const support = agent({ name: "support", store: memoryStore() });
+    const support = agent({ name: "support", store: await emptySharedStore() });
 
     await expect(support.run("do a thing")).rejects.toThrow(
       /`harness: claudeCode\(\)`, importing `claudeCode` from `@vendoai\/vendo\/claude-code`/,

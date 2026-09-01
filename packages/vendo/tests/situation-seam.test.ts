@@ -10,11 +10,9 @@
  * every message ahead of the stable prompt is what kept the provider's cache
  * cold. The system half staying snapshot-free is itself asserted below.
  */
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import type { Principal } from "../src/core/index.js";
-import { createStore, type VendoStore } from "../src/store/index.js";
+import { type VendoStore } from "../src/store/index.js";
+import { emptySharedStore } from "../src/store/backends.test-util.js";
 import type { LanguageModel, UIMessage } from "ai";
 import { afterEach, describe, expect, it } from "vitest";
 import { createVendo, type Vendo } from "../src/server.js";
@@ -74,12 +72,7 @@ function recordingModel(seen: SeenPrompt[]): LanguageModel {
 }
 
 async function compose(): Promise<{ vendo: Vendo; seen: SeenPrompt[] }> {
-  const dataDir = await mkdtemp(join(tmpdir(), "vendo-situation-"));
-  const store: VendoStore = createStore({ dataDir });
-  cleanups.push(async () => {
-    await store.close();
-    await rm(dataDir, { recursive: true, force: true });
-  });
+  const store: VendoStore = await emptySharedStore();
   const seen: SeenPrompt[] = [];
   const vendo = createVendo({
     models: { default: recordingModel(seen) },

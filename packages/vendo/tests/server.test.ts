@@ -19,7 +19,8 @@ import type { SandboxAdapter } from "../src/apps/index.js";
 import type { Connector } from "../src/actions/index.js";
 import type { ConnectionsService } from "../src/connections.js";
 import { VERSION as WIRE_VERSION } from "../src/wire/shared.js";
-import { appStore, createStore, hostedStore, secretStore, storeSecrets, type VendoStore } from "../src/store/index.js";
+import { appStore, createStore, hostedStore, secretStore, storeSecrets } from "../src/store/index.js";
+import { emptySharedStore } from "../src/store/backends.test-util.js";
 import { createHmac, randomBytes } from "node:crypto";
 import { exportJWK, generateKeyPair, SignJWT } from "jose";
 import type { LanguageModel } from "ai";
@@ -38,28 +39,6 @@ afterEach(async () => {
   vi.restoreAllMocks();
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 });
-
-/** Temp-dir PGlite store with registered teardown.
- *
- * Teardown does NOT call ensureSchema(). It used to, to dodge a close-race back
- * when createVendo kicked schema readiness off without awaiting it — but
- * construction is pure now (`composeReady`: "Construction stays PURE — no I/O,
- * no timers"), the `ready()` latch fires on the first handler touch, and every
- * caller of it awaits. So there is nothing in flight to wait for.
- *
- * That call was not free. `createStore` is lazy, so a store a test never
- * touches costs 2.3ms; the teardown ensureSchema() forced a full initdb +
- * migration on it, measured at 4354.9ms — ~1900x, to prepare a database
- * moments before deleting it. */
-async function tempStore(prefix: string): Promise<VendoStore> {
-  const dataDir = await mkdtemp(join(tmpdir(), prefix));
-  const store = createStore({ dataDir });
-  cleanups.push(async () => {
-    await store.close();
-    await rm(dataDir, { recursive: true, force: true });
-  });
-  return store;
-}
 
 const principal: Principal = { kind: "user", subject: "user_wire" };
 const ctx: RunContext = {
@@ -153,7 +132,7 @@ async function setup(
   resolver: Mock<() => Promise<Principal | null>> = vi.fn(async () => principal),
   options: Pick<Partial<CreateVendoConfig>, "guard" | "development"> = {},
 ): Promise<{ vendo: Vendo; resolver: typeof resolver }> {
-  const store = await tempStore("vendo-wire-");
+  const store = await emptySharedStore();
   const vendo = createVendo({
     models: { default: {} as LanguageModel },
     principal: resolver,
@@ -391,7 +370,7 @@ describe("09 §3 public wire", () => {
     // So the signal stays, in the server log, and the caller hears exactly what
     // a caller of a non-existent app hears.
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    const store = await tempStore("vendo-wire-b4-");
+    const store = await emptySharedStore();
     const vendo = createVendo({ models: { default: {} as LanguageModel }, principal: async () => principal, store });
     stubRouteBlocks(vendo);
     await store.ensureSchema();
@@ -416,7 +395,7 @@ describe("09 §3 public wire", () => {
     // pinned in wire/apps.pending-probe.test.ts. The record shape mirrors the
     // runtime's #532 write exactly (records-door put; a failed doc has no ui
     // payload).
-    const store = await tempStore("vendo-wire-d2-");
+    const store = await emptySharedStore();
     const vendo = createVendo({ models: { default: {} as LanguageModel }, principal: async () => principal, store });
     stubRouteBlocks(vendo);
     await store.ensureSchema();
@@ -451,7 +430,7 @@ describe("09 §3 public wire", () => {
     //
     // A §9.2 viewer GRANT is what makes the caller a viewer here, which is also
     // the first time this path is proven for someone who is not the owner.
-    const store = await tempStore("vendo-wire-viewer-failed-");
+    const store = await emptySharedStore();
     vi.stubEnv("VENDO_API_KEY", "vnd_viewer_failed");
     const vendo = createVendo({ models: { default: {} as LanguageModel }, principal: async () => principal, store });
     stubRouteBlocks(vendo);
@@ -684,7 +663,7 @@ describe("09 §3 public wire", () => {
       resume: vi.fn(async () => { throw new Error("not called"); }),
       destroy: vi.fn(async () => { throw new Error("not called"); }),
     };
-    const store = await tempStore("vendo-wire-custom-");
+    const store = await emptySharedStore();
     const statusFor = async (
       env: { E2B_API_KEY: string; VENDO_API_KEY: string },
       sandbox?: SandboxAdapter,
@@ -947,7 +926,7 @@ describe("09 §3 public wire", () => {
       }
       return Response.json({ id: "share_1", doc: app("app_share"), createdAt: new Date().toISOString() });
     }));
-    const store = await tempStore("vendo-apps-cloud-");
+    const store = await emptySharedStore();
     await store.ensureSchema();
     await store.records("vendo_apps").put({
       id: "app_share",
@@ -1562,7 +1541,7 @@ describe("09 §2.1 — host-identity presets (auth)", () => {
   it.each(["principal", "actAs", "oauth"] as const)(
     "throws VendoError(validation) at compose time when auth is combined with %s",
     async (key) => {
-      const store = await tempStore("vendo-auth-mix-");
+      const store = await emptySharedStore();
       const seams = {
         principal: { principal: async () => null },
         actAs: { actAs: async () => null },
@@ -1586,14 +1565,12 @@ describe("09 §2.1 — host-identity presets (auth)", () => {
   );
 
   it("refuses to compose when neither auth nor principal is configured", async () => {
-    const store = await tempStore("vendo-auth-none-");
+    const store = await emptySharedStore();
     let thrown: unknown;
     try {
       createVendo({ models: { default: {} as LanguageModel }, store });
     } catch (error) {
       thrown = error;
-    } finally {
-      await store.close();
     }
     expect(thrown).toBeInstanceOf(VendoError);
     expect((thrown as VendoError).code).toBe("validation");
@@ -1603,7 +1580,7 @@ describe("09 §2.1 — host-identity presets (auth)", () => {
 
   it("auth fills the principal seam — one real wire request resolves the host session", async () => {
     vi.stubEnv("AUTH_SECRET", authJsSecret);
-    const store = await tempStore("vendo-auth-principal-");
+    const store = await emptySharedStore();
     const vendo = createVendo({ models: { default: {} as LanguageModel }, store, auth: authJs() });
     const seen: Principal[] = [];
     vi.spyOn(vendo.apps, "list").mockImplementation(async (listCtx) => {
@@ -1619,7 +1596,7 @@ describe("09 §2.1 — host-identity presets (auth)", () => {
 
   it("auth's oauth half opens the MCP door — mcp: true needs no separate oauth key", async () => {
     vi.stubEnv("AUTH_SECRET", authJsSecret);
-    const store = await tempStore("vendo-auth-door-");
+    const store = await emptySharedStore();
     const vendo = createVendo({ models: { default: {} as LanguageModel }, store, auth: authJs(), mcp: true });
     await store.ensureSchema();
     const res = await vendo.handler(new Request("https://host.test/.well-known/oauth-protected-resource/api/vendo/mcp"));
@@ -1628,7 +1605,7 @@ describe("09 §2.1 — host-identity presets (auth)", () => {
   });
 
   it("an auth preset WITHOUT an oauth half leaves the door seam unset — mcp: true still throws", async () => {
-    const store = await tempStore("vendo-auth-no-oauth-");
+    const store = await emptySharedStore();
     expect(() => createVendo({
       models: { default: {} as LanguageModel },
       store,
@@ -1639,7 +1616,7 @@ describe("09 §2.1 — host-identity presets (auth)", () => {
 
   it("auth's actAs half is live — the doctor actAs probe round-trips a minted Auth.js session", async () => {
     vi.stubEnv("AUTH_SECRET", authJsSecret);
-    const store = await tempStore("vendo-auth-actas-");
+    const store = await emptySharedStore();
     // `development` because the probe this drives is a development-only route
     // now; the dev server `vendo doctor` targets gets it from NODE_ENV.
     const vendo = createVendo({ models: { default: {} as LanguageModel }, store, auth: authJs(), development: true });
@@ -1660,7 +1637,7 @@ describe("09 §2.1 — host-identity presets (auth)", () => {
 
   it("a DECLINED actAs mint answers act-as-declined, not act-as-not-configured (#873)", async () => {
     vi.stubEnv("AUTH_SECRET", authJsSecret);
-    const store = await tempStore("vendo-auth-actas-declined-");
+    const store = await emptySharedStore();
     // A subject→user resolver backed by a real user table declines the doctor's
     // synthetic subject — a correctly wired host, not a missing seam. The
     // probe route is development-only now, and the wire refuses a caller with
@@ -1682,7 +1659,7 @@ describe("09 §2.1 — host-identity presets (auth)", () => {
   });
 
   it("an ABSENT actAs seam still answers act-as-not-configured (#873)", async () => {
-    const store = await tempStore("vendo-auth-actas-absent-");
+    const store = await emptySharedStore();
     // The auth object resolves the caller (the wire refuses anonymity) but
     // wires NO actAs seam — the truly absent case E-AUTH-007 narrates.
     const vendo = createVendo({
@@ -1797,7 +1774,7 @@ export default function DesignCheck() {
       process.chdir(originalCwd);
       await rm(root, { recursive: true, force: true });
     });
-    const store = await tempStore("vendo-design-rules-store-");
+    const store = await emptySharedStore();
     await store.ensureSchema();
     const prompts: string[] = [];
     const vendo = createVendo({
@@ -1922,7 +1899,7 @@ export default function DesignCheck() {
       throw new Error(`unexpected fetch ${url}`);
     }));
 
-    const store = await tempStore("vendo-cloud-overrides-store-");
+    const store = await emptySharedStore();
     await store.ensureSchema();
     const prompts: string[] = [];
     // The semantics annotations reach whoever READS the query, so the fake model
@@ -1997,7 +1974,6 @@ export default function Ledger() {
       store,
       connectors: [],
     });
-    cleanups.push(async () => { await vendo.store.close(); });
 
     // The worker's query brief carries the shape card ("shape: { amount:
     // number:money.cents, … }") — that line is where a generation actually
@@ -2110,7 +2086,7 @@ describe("03 §3 prompt wiring (AGENT-1/2)", () => {
 describe("09 §3 conversational turn against the real composed store", () => {
   it("streams a turn, persists the thread through the routed vendo_threads table, and reads it back", async () => {
     const { MockLanguageModelV3, simulateReadableStream } = await import("ai/test");
-    const store = await tempStore("vendo-turn-");
+    const store = await emptySharedStore();
     const model = new MockLanguageModelV3({
       doStream: async () => ({
         stream: simulateReadableStream({
@@ -2244,7 +2220,7 @@ ${Array.from({ length: count }, (_, index) => `      <Text text="Section ${index
         };
       },
     });
-    const store = await tempStore("vendo-stream-turn-");
+    const store = await emptySharedStore();
     const vendo = createVendo({
       models: { default: model as unknown as LanguageModel },
       principal: async () => principal,
@@ -2315,7 +2291,7 @@ describe("ENG-252 agent.loadout through createVendo", () => {
       ],
       execute: async () => ({ status: "ok", output: {} }),
     };
-    const store = await tempStore("vendo-loadout-");
+    const store = await emptySharedStore();
     const vendo = createVendo({
       models: { default: model as unknown as LanguageModel },
       principal: async () => principal,
@@ -2418,7 +2394,7 @@ describe("surfaces.agent through createVendo", () => {
 
   it("offers the agent only its curated menu — and never gates Vendo's own vendo_* tools", async () => {
     await curatedRoot({ agent: { tools: ["host_listAccounts"] } });
-    const store = await tempStore("vendo-surfaces-agent-store-");
+    const store = await emptySharedStore();
     const recorder = recordingModel(["text"]);
     const vendo = createVendo({
       models: { default: await recorder.model() as unknown as LanguageModel },
@@ -2442,7 +2418,7 @@ describe("surfaces.agent through createVendo", () => {
 
   it("never materializes an off-menu tool-search hit into a callable tool", async () => {
     await curatedRoot({ agent: { tools: ["host_listAccounts"] } });
-    const store = await tempStore("vendo-surfaces-agent-search-store-");
+    const store = await emptySharedStore();
     const recorder = recordingModel(["search", "text"]);
     const vendo = createVendo({
       models: { default: await recorder.model() as unknown as LanguageModel },
@@ -2464,7 +2440,7 @@ describe("surfaces.agent through createVendo", () => {
 
   it("binds an explicit agent.loadout to the menu — host config chooses within it, never around it", async () => {
     await curatedRoot({ agent: { tools: ["host_listAccounts"] } });
-    const store = await tempStore("vendo-surfaces-agent-loadout-store-");
+    const store = await emptySharedStore();
     const recorder = recordingModel(["text"]);
     const vendo = createVendo({
       models: { default: await recorder.model() as unknown as LanguageModel },
@@ -2487,7 +2463,7 @@ describe("surfaces.agent through createVendo", () => {
 
   it("without a surfaces block the agent surface is unchanged", async () => {
     await curatedRoot(undefined);
-    const store = await tempStore("vendo-surfaces-agent-none-store-");
+    const store = await emptySharedStore();
     const recorder = recordingModel(["text"]);
     const vendo = createVendo({
       models: { default: await recorder.model() as unknown as LanguageModel },
@@ -2543,7 +2519,7 @@ export default function ${name}() {
 `;
 
   it("passes createVendo({ components }) registrations through to createApps", { timeout: 120_000 }, async () => {
-    const store = await tempStore("vendo-catalog-");
+    const store = await emptySharedStore();
     const model = await screenModel([
       { tool: "save_app", input: { content: metricScreen("CatalogApp") } },
       { say: "done" },
@@ -2578,7 +2554,7 @@ export default function ${name}() {
   });
 
   it("accepts the name-keyed registry form under the deprecated `catalog` alias, and ignores component references", { timeout: 120_000 }, async () => {
-    const store = await tempStore("vendo-registry-catalog-");
+    const store = await emptySharedStore();
     const model = await screenModel([
       { tool: "save_app", input: { content: metricScreen("RegistryApp") } },
       { say: "done" },
@@ -2691,7 +2667,7 @@ export default function DiskCatalogApp() {
 
 describe("10-mcp §5 — door claims only its four exact well-known paths (FIX H)", () => {
   async function mcpVendo(mcp: CreateVendoConfig["mcp"] = true): Promise<Vendo> {
-    const store = await tempStore("vendo-door-");
+    const store = await emptySharedStore();
     const vendo = createVendo({
       models: { default: {} as LanguageModel },
       principal: async () => null,
@@ -3002,7 +2978,7 @@ describe("10-mcp §5 — door claims only its four exact well-known paths (FIX H
 
 describe("10-mcp §5 — wellKnownVendoHandler (the Next.js app/.well-known/[...vendo]/route.ts adapter)", () => {
   async function mcpVendo(mcp: CreateVendoConfig["mcp"] = true): Promise<Vendo> {
-    const store = await tempStore("vendo-well-known-");
+    const store = await emptySharedStore();
     const vendo = createVendo({
       models: { default: {} as LanguageModel },
       principal: async () => null,
@@ -3364,7 +3340,7 @@ describe("unified try surface (Task 4) — profileDir + fetch seams", () => {
 
   it("reads the .vendo profile from profileDir, not the process cwd", async () => {
     const root = await tempProfile();
-    const store = await tempStore("vendo-profile-dir-store-");
+    const store = await emptySharedStore();
     const vendo = createVendo({
       models: { default: {} as LanguageModel },
       principal: async () => principal,
@@ -3380,7 +3356,7 @@ describe("unified try surface (Task 4) — profileDir + fetch seams", () => {
 
   it("threads config.fetch into route-tool execution; the real network is never touched", async () => {
     const root = await tempProfile();
-    const store = await tempStore("vendo-profile-fetch-store-");
+    const store = await emptySharedStore();
     vi.stubEnv("VENDO_BASE_URL", "https://host.example");
     const syntheticFetch = vi.fn(async () => new Response(
       JSON.stringify([{ id: "inv_1" }]),
@@ -3514,7 +3490,7 @@ describe("unified try surface (Task 15a) — in-memory profile", () => {
 
   it("composes from ONLY the in-memory profile: tools + overrides list, brief and theme ride the system prompt", async () => {
     await emptyCwd();
-    const store = await tempStore("vendo-profile-mem-store-");
+    const store = await emptySharedStore();
     const { model, prompts } = await promptCapture();
 
     const vendo = createVendo({
@@ -3547,7 +3523,7 @@ describe("unified try surface (Task 15a) — in-memory profile", () => {
 
   it("pieces are independent: in-memory profile.tools beat the profileDir tools.json while the unset theme + brief pieces are read from disk", async () => {
     const root = await diskProfile();
-    const store = await tempStore("vendo-profile-prec-store-");
+    const store = await emptySharedStore();
     const { model, prompts } = await promptCapture();
 
     const vendo = createVendo({
@@ -3578,7 +3554,7 @@ describe("unified try surface (Task 15a) — in-memory profile", () => {
     // honours that rule; the surface reader must too, or theme, brief, catalog
     // and knowledge all silently resolve to `.vendo/.vendo/…` and disappear.
     const root = await diskProfile();
-    const store = await tempStore("vendo-profile-dotdir-store-");
+    const store = await emptySharedStore();
     const { model, prompts } = await promptCapture();
 
     const vendo = createVendo({
@@ -3609,7 +3585,7 @@ describe("unified try surface (Task 15a) — in-memory profile", () => {
     // opened — proven by composing successfully despite the garbage bytes.
     await writeFile(join(root, ".vendo", "tools.json"), "{ not valid json, must never be read");
 
-    const store = await tempStore("vendo-profile-workerd-store-");
+    const store = await emptySharedStore();
     const vendo = createVendo({
       models: { default: {} as LanguageModel },
       principal: async () => principal,
@@ -3641,7 +3617,7 @@ describe("unified try surface (Task 15a) — in-memory profile", () => {
     }));
     await mkdir(join(root, ".vendo", "overrides.json"));
 
-    const store = await tempStore("vendo-profile-eisdir-store-");
+    const store = await emptySharedStore();
     const vendo = createVendo({
       models: { default: {} as LanguageModel },
       principal: async () => principal,
@@ -3658,7 +3634,7 @@ describe("unified try surface (Task 15a) — in-memory profile", () => {
     // The same minimal host, observed through the seam's outputs: the
     // descriptor list, and the system prompt (brief + theme surface).
     async function observe(profile?: CreateVendoConfig["profile"]): Promise<{ names: string[]; system: string }> {
-      const store = await tempStore("vendo-profile-equiv-store-");
+      const store = await emptySharedStore();
       const { model, prompts } = await promptCapture();
       const vendo = createVendo({
         models: { default: model },
@@ -3687,7 +3663,7 @@ describe("unified try surface (Task 15a) — in-memory profile", () => {
 
   it("profile.policy configures the guard in-memory: posture leaves \"unconfigured\" and a blocking rule actually enforces through guardedTools", async () => {
     await emptyCwd();
-    const store = await tempStore("vendo-profile-policy-store-");
+    const store = await emptySharedStore();
 
     const vendo = createVendo({
       models: { default: {} as LanguageModel },
@@ -3726,7 +3702,7 @@ describe("unified try surface (Task 15a) — in-memory profile", () => {
     const explicit = createVendo({
       models: { default: {} as LanguageModel },
       principal: async () => principal,
-      store: await tempStore("vendo-profile-policy-prec-"),
+      store: await emptySharedStore(),
       guard: { policy: { rules: [{ match: {}, action: "block", note: "explicit config wins" }] } },
       profile: {
         tools: [profileTool("host_invoices_list")],
@@ -3745,7 +3721,9 @@ describe("unified try surface (Task 15a) — in-memory profile", () => {
     const unset = createVendo({
       models: { default: {} as LanguageModel },
       principal: async () => principal,
-      store: await tempStore("vendo-profile-policy-unset-"),
+      // Its own engine: `explicit` above is still composed, and a second store
+      // on the file's engine would empty the database it just audited through.
+      store: await emptySharedStore({ engine: "unset-policy" }),
       profile: { tools: [profileTool("host_invoices_list")] },
     });
     expect(unset.guard.status().posture).toBe("unconfigured");
@@ -3779,7 +3757,7 @@ describe("mid-build steering — POST /threads/:id/steer (§10.2)", () => {
         yield { type: "text" as const, delta: " — done." };
       },
     };
-    const store = await tempStore("vendo-steer-");
+    const store = await emptySharedStore();
     const vendo = createVendo({
       models: { default: {} as LanguageModel },
       principal: resolver,

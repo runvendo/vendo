@@ -22,12 +22,9 @@
  * an org: the `org:<id>` pool is derived, not resolved, so a break anywhere from
  * the `memberships` seam to the limiter's derivation reads as an unknown meter.
  */
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { genericJwtPreset } from "../src/actions/presets/index.js";
 import type { LimitUser, PermissionGrant } from "../src/core/index.js";
-import { createStore, type VendoStore } from "../src/store/index.js";
+import { emptySharedStore } from "../src/store/backends.test-util.js";
 import { afterEach, describe, expect, it } from "vitest";
 import { jwt } from "../src/auth-presets/jwt.js";
 import { createComposition } from "../src/compose-context.js";
@@ -66,22 +63,12 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 });
 
-async function realStore(): Promise<VendoStore> {
-  const dataDir = await mkdtemp(join(tmpdir(), "vendo-limits-pools-"));
-  const store = createStore({ dataDir });
-  cleanups.push(async () => {
-    await store.close();
-    await rm(dataDir, { recursive: true, force: true });
-  });
-  return store;
-}
-
 describe("limits — the host's pools reach the policy and the meter", () => {
   it("counts a teammate's spend against the shared meter, and the allow accrues to it too", async () => {
     let seen: { user: LimitUser; pooled: number } | undefined;
 
     const composition = createComposition({
-      store: await realStore(),
+      store: await emptySharedStore(),
       auth: jwt({ secret: SECRET, user: (subject) => users[subject] ?? null }),
       limits: async ({ user, count }) => {
         seen = { user, pooled: await count("message", { pool: "workspace" }) };
@@ -123,7 +110,7 @@ describe("limits — an asserted org is a pool with nothing wired for it", () =>
     let seen: { user: LimitUser; pooled: number } | undefined;
 
     const composition = createComposition({
-      store: await realStore(),
+      store: await emptySharedStore(),
       // Ana has NO `pools` of her own — the org is the only thing asserted about
       // her, so every pool the policy sees below can only have been derived.
       auth: jwt({

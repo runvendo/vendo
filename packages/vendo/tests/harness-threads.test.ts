@@ -8,11 +8,9 @@
  * is still released, whether the thread is deleted by hand or swept with its
  * session. A reused id must never inherit a dead thread's tools.
  */
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import type { Principal, RunContext, ToolDescriptor, ToolRegistry } from "../src/core/index.js";
-import { createStore, type VendoStore } from "../src/store/index.js";
+import { type VendoStore } from "../src/store/index.js";
+import { emptySharedStore } from "../src/store/backends.test-util.js";
 import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it } from "vitest";
 import { scriptedModel, textTurn, toolCallTurn, type ScriptedModel } from "../src/agent-doubles.test-util.js";
@@ -57,10 +55,7 @@ interface Composed {
  * starts active, and `probe_beta` is reachable only through `find_tools`.
  */
 async function compose(turns: Parameters<typeof scriptedModel>[0]): Promise<Composed> {
-  const dataDir = await mkdtemp(join(tmpdir(), "vendo-threads-door-"));
-  const store = createStore({ dataDir });
-  cleanups.push(async () => { await store.close(); await rm(dataDir, { recursive: true, force: true }); });
-  await store.ensureSchema();
+  const store = await emptySharedStore();
   const model = scriptedModel(turns);
   const vendo = createVendo({
     models: { default: model as unknown as LanguageModel },

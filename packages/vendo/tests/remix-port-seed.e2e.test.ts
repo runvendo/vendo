@@ -30,7 +30,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SCREEN_FILE, type SeedBaseline } from "../src/apps/index.js";
 import type { AppId, RunContext } from "../src/core/index.js";
-import { createStore, workspaceStore, type VendoStore } from "../src/store/index.js";
+import { workspaceStore, type VendoStore } from "../src/store/index.js";
+import { emptySharedStore } from "../src/store/backends.test-util.js";
 import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createVendo } from "../src/server.js";
@@ -145,9 +146,7 @@ async function deployment(baselines: readonly SeedBaseline[], steps: Array<(prom
   const root = await mkdtemp(join(tmpdir(), "vendo-remix-port-"));
   cleanups.push(async () => rm(root, { recursive: true, force: true }));
   await mkdir(join(root, ".vendo", "remixable"), { recursive: true });
-  const store: VendoStore = createStore({ dataDir: join(root, ".data") });
-  await store.ensureSchema();
-  cleanups.push(async () => store.close());
+  const store: VendoStore = await emptySharedStore();
   /** The host redeploys: new baselines on disk, a fresh composition, the SAME
    *  store — the shape `drift-reseed.fixture.test.ts` uses to reach a re-seed. */
   const compose = async (

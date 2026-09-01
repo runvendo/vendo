@@ -16,11 +16,8 @@
  * blob seam under the workspace is held open so the test can STAND inside the
  * closing phase instead of racing it.
  */
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import type { FilesAdapter, Principal, VendoLogEvent } from "../src/core/index.js";
-import { createStore } from "../src/store/index.js";
+import { emptySharedStore } from "../src/store/backends.test-util.js";
 import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createVendo, type Vendo } from "../src/server.js";
@@ -71,8 +68,7 @@ interface Deployment {
 }
 
 async function deployment(): Promise<Deployment> {
-  const dataDir = await mkdtemp(join(tmpdir(), "vendo-finished-turn-"));
-  const store = createStore({ dataDir });
+  const store = await emptySharedStore();
 
   // One gate per turn a test starts, minted UP FRONT so a test can release a
   // turn before its thinker has reached the park.
@@ -90,8 +86,6 @@ async function deployment(): Promise<Deployment> {
     // held — keeps the turn, and the suite, from ending.
     for (const gate of gates) gate.open();
     releaseSyncBack();
-    await store.close();
-    await rm(dataDir, { recursive: true, force: true });
   });
 
   const blobs = new Map<string, Uint8Array>();

@@ -3,7 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Principal, RunContext, ToolDescriptor } from "../src/core/index.js";
 import { createGuard } from "../src/guard/index.js";
-import { createStore, workspaceStore } from "../src/store/index.js";
+import { createStore, workspaceStore, type VendoStore } from "../src/store/index.js";
+import { emptySharedStore } from "../src/store/backends.test-util.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { orgPolicyPath, orgPolicyResolver, workspacePolicySource } from "../src/org-policy.js";
 
@@ -132,7 +133,9 @@ describe("org policy over the REAL workspace", () => {
     for (const cleanup of cleanups.splice(0)) await cleanup();
   });
 
-  const realStore = async () => {
+  /** An engine of the test's OWN — two cases below CLOSE the store to prove a
+   *  read never reached it, which the file's shared one may not survive. */
+  const closableStore = async (): Promise<VendoStore> => {
     const dataDir = await mkdtemp(join(tmpdir(), "vendo-org-policy-store-"));
     const store = createStore({ dataDir });
     cleanups.push(async () => {
@@ -144,7 +147,7 @@ describe("org policy over the REAL workspace", () => {
   };
 
   it("is SILENT for an org with no policy file — no rules, no failure reported", async () => {
-    const store = await realStore();
+    const store = await emptySharedStore();
     const failures: string[] = [];
     const resolve = orgPolicyResolver(
       workspacePolicySource(store),
@@ -156,7 +159,7 @@ describe("org policy over the REAL workspace", () => {
   });
 
   it("caches the absent answer, so the TTL engages instead of reading per call", async () => {
-    const store = await realStore();
+    const store = await closableStore();
     const source = workspacePolicySource(store);
 
     expect(await source("maple")).toBeUndefined();
@@ -177,7 +180,7 @@ describe("org policy over the REAL workspace", () => {
    *  no policy". `parseOrgPolicyFile` was unreachable in production: no org's
    *  policy was ever loaded, anywhere, and the failure was silent. */
   it("APPLIES a rule an admin actually wrote, all the way to a guard decision", async () => {
-    const store = await realStore();
+    const store = await emptySharedStore();
     const admin: Principal = { kind: "user", subject: "user_admin" };
     const fs = await workspaceStore(store).open(admin, {
       memberships: [{ org: "maple", admin: true }],
@@ -222,7 +225,7 @@ describe("org policy over the REAL workspace", () => {
    *  "this org set no policy" hides an admin's rules behind an id nobody
    *  looked at. */
   it("reports an org id that is not addressable as a mount, rather than calling it silence", async () => {
-    const store = await realStore();
+    const store = await emptySharedStore();
     const failures: string[] = [];
     const resolve = orgPolicyResolver(
       workspacePolicySource(store),
@@ -239,7 +242,7 @@ describe("org policy over the REAL workspace", () => {
    *  policy file goes". An admin whose rules are unreachable for that reason
    *  must hear about it. */
   it("reports something OTHER THAN A FILE at the policy path", async () => {
-    const store = await realStore();
+    const store = await emptySharedStore();
     const admin: Principal = { kind: "user", subject: "user_admin" };
     const fs = await workspaceStore(store).open(admin, {
       memberships: [{ org: "maple", admin: true }],
@@ -259,7 +262,7 @@ describe("org policy over the REAL workspace", () => {
   });
 
   it("still REPORTS a read that genuinely fails", async () => {
-    const store = await realStore();
+    const store = await closableStore();
     const source = workspacePolicySource(store);
     // Warm the workspace façade on one org, then break the store underneath it:
     // an UNCACHED org now hits a workspace that exists but cannot answer, which

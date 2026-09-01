@@ -1,6 +1,3 @@
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { createApps } from "../src/apps/index.js";
 import {
   VENDO_APP_FORMAT,
@@ -11,7 +8,8 @@ import {
   type ToolRegistry,
 } from "../src/core/index.js";
 import { createGuard } from "../src/guard/index.js";
-import { createStore, createStoreOps } from "../src/store/index.js";
+import { createStoreOps } from "../src/store/index.js";
+import { emptySharedStore } from "../src/store/backends.test-util.js";
 import { screenSource } from "./screen-fixture.js";
 import { afterEach, describe, expect, it } from "vitest";
 import { createByoApprovals } from "../src/byo-approvals.js";
@@ -99,11 +97,7 @@ function messagingHost(): {
 }
 
 async function harness() {
-  const root = await mkdtemp(join(tmpdir(), "vendo-parked-resolution-"));
-  cleanups.push(async () => rm(root, { recursive: true, force: true }));
-  const store = createStore({ dataDir: join(root, ".data") });
-  cleanups.push(async () => store.close());
-  await store.ensureSchema();
+  const store = await emptySharedStore();
   // Every write-class call asks — the gate that parks the press in the first place.
   const guard = createGuard({ store, policy: { rules: [{ match: { risk: "write" }, action: "ask" }] } });
   const host = messagingHost();

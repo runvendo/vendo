@@ -6,11 +6,8 @@
  * SAME host on the NEW shape boots and works identically. Additive-first means
  * nothing shipped breaks — a claim only a side-by-side can make.
  */
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import type { Principal } from "../src/core/index.js";
-import { createStore, type VendoStore } from "../src/store/index.js";
+import { emptySharedStore } from "../src/store/backends.test-util.js";
 import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CREATE_VENDO_CONFIG_KEYS, DEPRECATED_CONFIG_KEYS, resetDeprecationWarnings } from "../src/config-keys.js";
@@ -24,16 +21,6 @@ afterEach(async () => {
 });
 
 const principal: Principal = { kind: "user", subject: "user_config" };
-
-async function tempStore(): Promise<VendoStore> {
-  const dataDir = await mkdtemp(join(tmpdir(), "vendo-config-"));
-  const store = createStore({ dataDir });
-  cleanups.push(async () => {
-    await store.close();
-    await rm(dataDir, { recursive: true, force: true });
-  });
-  return store;
-}
 
 const hostTool = (name: string) => ({
   name,
@@ -53,7 +40,7 @@ function warnings(): { lines: string[] } {
 
 describe("the `tools` slot (§10) — the host's own declared tools", () => {
   it("composes the same tools the deprecated `profile.tools` did", async () => {
-    const store = await tempStore();
+    const store = await emptySharedStore();
     const vendo = createVendo({
       models: { default: {} as LanguageModel },
       principal: async () => principal,
@@ -68,13 +55,15 @@ describe("the `tools` slot (§10) — the host's own declared tools", () => {
     const old = createVendo({
       models: { default: {} as LanguageModel },
       principal: async () => principal,
-      store: await tempStore(),
+      store: await emptySharedStore(),
       profile: { tools: [hostTool("host_invoices_list")] },
     });
     const next = createVendo({
       models: { default: {} as LanguageModel },
       principal: async () => principal,
-      store: await tempStore(),
+      // Its own engine: `old` is still composed and about to be read, and a
+      // second store on the file's engine would be `old`'s under another name.
+      store: await emptySharedStore({ engine: "new-shape" }),
       tools: [hostTool("host_invoices_list")],
     });
     const namesOf = async (vendo: Awaited<ReturnType<typeof createVendo>>) =>
@@ -87,7 +76,7 @@ describe("the `tools` slot (§10) — the host's own declared tools", () => {
     const vendo = createVendo({
       models: { default: {} as LanguageModel },
       principal: async () => principal,
-      store: await tempStore(),
+      store: await emptySharedStore(),
       tools: [hostTool("host_from_slot")],
       profile: { tools: [hostTool("host_from_profile")] },
     });
@@ -105,7 +94,7 @@ describe("the `tools` slot (§10) — the host's own declared tools", () => {
     const vendo = createVendo({
       models: { default: {} as LanguageModel },
       principal: async () => principal,
-      store: await tempStore(),
+      store: await emptySharedStore(),
       tools: [{
         name: "check_report",
         description: "Check one compliance report.",
@@ -131,7 +120,7 @@ describe("the model knobs that are GONE — a boot error naming the seat", () =>
     const config = {
       ...removed,
       principal: async () => principal,
-      store: await tempStore(),
+      store: await emptySharedStore(),
     } as Parameters<typeof createVendo>[0];
     // A silently dropped model key is a deployment thinking with the wrong
     // model, or an apps lane the host believes is off. Refuse instead.
@@ -143,7 +132,7 @@ describe("the model knobs that are GONE — a boot error naming the seat", () =>
     const vendo = createVendo({
       models: { default: {} as LanguageModel },
       principal: async () => principal,
-      store: await tempStore(),
+      store: await emptySharedStore(),
       profile: { tools: [hostTool("host_invoices_list")] },
     });
     expect(typeof vendo.handler).toBe("function");
@@ -157,7 +146,7 @@ describe("the model knobs that are GONE — a boot error naming the seat", () =>
       createVendo({
         models: { default: {} as LanguageModel },
         principal: async () => principal,
-        store: await tempStore(),
+        store: await emptySharedStore(),
         profile: { tools: [hostTool("host_invoices_list")] },
       });
     }
@@ -169,7 +158,7 @@ describe("the model knobs that are GONE — a boot error naming the seat", () =>
     createVendo({
       models: { default: {} as LanguageModel },
       principal: async () => principal,
-      store: await tempStore(),
+      store: await emptySharedStore(),
       tools: [hostTool("host_invoices_list")],
     });
     expect(lines.filter((line) => line.includes("deprecated"))).toEqual([]);

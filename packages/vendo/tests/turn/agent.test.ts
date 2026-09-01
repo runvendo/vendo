@@ -3,6 +3,7 @@ import type { AuditEvent, Principal, ToolRegistry } from "../../src/core/index.j
 import type { VendoGuard } from "../../src/guard/index.js";
 import { defineHarness, harnessAdapters } from "../../src/harnesses/index.js";
 import { createStore, threadStore } from "../../src/store/index.js";
+import { emptySharedStore } from "../../src/store/backends.test-util.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { agent, agentComposition, e2b, postgres, provideCloudAdapters, withDefaultTemplate } from "../../src/turn/agent.js";
 import { tool } from "../../src/turn/tools.js";
@@ -187,7 +188,7 @@ describe("egress at box boot", () => {
     agent({
       name: "support",
       harness,
-      store: memoryStore(),
+      store: await emptySharedStore(),
       guard,
       sandbox,
       egress: ["api.stripe.com"],
@@ -204,7 +205,7 @@ describe("egress at box boot", () => {
     const guard = fakeGuard();
     const harness = boxy();
     const sandbox = fakeSandbox();
-    agent({ name: "support", harness, store: memoryStore(), guard, sandbox, egress: "all" });
+    agent({ name: "support", harness, store: await emptySharedStore(), guard, sandbox, egress: "all" });
     const injected = harnessAdapters(harness).sandbox as SandboxAdapter;
     await injected.create({ env: {}, allowedDomains: ["api.anthropic.com"] });
     expect(guard.reports[0]?.detail).toEqual({ egress: "all" });

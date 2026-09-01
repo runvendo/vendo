@@ -4,12 +4,10 @@
  * database afterwards — no stub on either side, so the door and the store cannot
  * disagree about what "deleted" means.
  */
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { genericJwtPreset } from "../src/actions/presets/index.js";
 import type { PermissionGrant, Principal } from "../src/core/index.js";
-import { createStore, type VendoStore } from "../src/store/index.js";
+import { type VendoStore } from "../src/store/index.js";
+import { emptySharedStore } from "../src/store/backends.test-util.js";
 import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it } from "vitest";
 import { jwt } from "../src/auth-presets/jwt.js";
@@ -66,12 +64,7 @@ async function bearer(): Promise<Record<string, string>> {
 }
 
 async function compose(): Promise<{ vendo: Vendo; store: VendoStore }> {
-  const dataDir = await mkdtemp(join(tmpdir(), "vendo-thread-delete-"));
-  const store: VendoStore = createStore({ dataDir });
-  cleanups.push(async () => {
-    await store.close();
-    await rm(dataDir, { recursive: true, force: true });
-  });
+  const store: VendoStore = await emptySharedStore();
   const vendo = createVendo({
     models: { default: quietModel() },
     auth: jwt({ secret: SECRET }),

@@ -23,13 +23,11 @@
  * asks about what the thread STORES, and after a compaction those are different
  * sizes.
  */
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import type { Principal, ToolDescriptor, ToolRegistry } from "../src/core/index.js";
 import { vendo as vendoHarness } from "../src/harnesses/index.js";
 import { readCompactionState } from "../src/harnesses/vendo/index.js";
-import { createStore, harnessStateStore, type VendoStore } from "../src/store/index.js";
+import { harnessStateStore, type VendoStore } from "../src/store/index.js";
+import { emptySharedStore } from "../src/store/backends.test-util.js";
 import type { UIMessage } from "ai";
 import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
 import { afterEach, describe, expect, it } from "vitest";
@@ -123,13 +121,7 @@ interface Composed {
 }
 
 async function compose(): Promise<Composed> {
-  const dataDir = await mkdtemp(join(tmpdir(), "vendo-compaction-state-"));
-  const store = createStore({ dataDir });
-  cleanups.push(async () => {
-    await store.close();
-    await rm(dataDir, { recursive: true, force: true });
-  });
-  await store.ensureSchema();
+  const store = await emptySharedStore();
   const model = reportingModel();
   const vendo = createVendo({
     models: { default: model as never },

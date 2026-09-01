@@ -15,7 +15,7 @@
  * cannot run a model — so what the script does to that disk is exactly what a
  * model's Write tool would do.
  */
-import { mkdtemp, readFile, rm, stat, writeFile, chmod, mkdir } from "node:fs/promises";
+import { readFile, stat, writeFile, chmod, mkdir } from "node:fs/promises";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -30,7 +30,8 @@ import {
 import type { SandboxAdapter } from "../src/apps/index.js";
 import { createSessionRoutes } from "../box/turn-routes.mjs";
 import { claudeCode } from "../src/harnesses/claude-code/index.js";
-import { appAccess, createStore, type VendoStore } from "../src/store/index.js";
+import { appAccess, type VendoStore } from "../src/store/index.js";
+import { emptySharedStore } from "../src/store/backends.test-util.js";
 import { afterEach, describe, expect, it } from "vitest";
 import { liveDoor } from "../src/agent-doubles.test-util.js";
 import { createVendo, type Vendo } from "../src/server.js";
@@ -65,16 +66,7 @@ afterEach(async () => {
   for (const root of boxRoots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 
-async function tempStore(): Promise<VendoStore> {
-  const dataDir = await mkdtemp(join(tmpdir(), "vendo-orgs-materialize-"));
-  const store = createStore({ dataDir });
-  cleanups.push(async () => {
-    await store.close().catch(() => undefined);
-    await rm(dataDir, { recursive: true, force: true });
-  });
-  await store.ensureSchema();
-  return store;
-}
+
 
 const seeded = (id: string, name: string): AppDocument => ({
   format: VENDO_APP_FORMAT,
@@ -222,7 +214,7 @@ describe("a team file reaches the claudeCode() sandbox", () => {
       mode = await stat(disk).then((entry) => entry.mode & 0o777, () => undefined);
       box.emit({ type: "text", delta: "read it" });
     });
-    const store = await tempStore();
+    const store = await emptySharedStore();
     const vendo = await boot(store, sandbox);
     await seedTeamApp(store, vendo, "editor");
 
@@ -252,7 +244,7 @@ describe("a team file reaches the claudeCode() sandbox", () => {
       await writeFile(mine, "kim's note");
       box.emit({ type: "text", delta: "updated" });
     });
-    const store = await tempStore();
+    const store = await emptySharedStore();
     const vendo = await boot(store, sandbox);
     await seedTeamApp(store, vendo, "editor");
 
@@ -274,7 +266,7 @@ describe("a team file reaches the claudeCode() sandbox", () => {
       await writeFile(disk, "page: vandalised").catch(() => undefined);
       box.emit({ type: "text", delta: "tried" });
     });
-    const store = await tempStore();
+    const store = await emptySharedStore();
     const vendo = await boot(store, sandbox);
     await seedTeamApp(store, vendo, "viewer");
 
@@ -292,7 +284,7 @@ describe("a team file reaches the claudeCode() sandbox", () => {
       present = await stat(disk).then(() => true, () => false);
       box.emit({ type: "text", delta: "nothing to see" });
     });
-    const store = await tempStore();
+    const store = await emptySharedStore();
     const vendo = await boot(store, sandbox);
     await store.records("vendo_apps").put({
       id: APP,
@@ -320,7 +312,7 @@ describe("a team file reaches the claudeCode() sandbox", () => {
       await writeFile(disk, "# rewritten by the box").catch(() => undefined);
       box.emit({ type: "text", delta: "poked host" });
     });
-    const store = await tempStore();
+    const store = await emptySharedStore();
     const vendo = await boot(store, sandbox);
 
     acting = kim;

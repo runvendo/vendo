@@ -12,12 +12,10 @@
  * the whole "sealed bundles need no network" promise rests on, and it is a
  * HEADER rather than a meta tag because `frame-ancestors` only exists there.
  */
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { sealBundleBlobs } from "../src/apps/index.js";
 import { VENDO_APP_FORMAT, type AppBundle, type AppId, type Principal } from "../src/core/index.js";
-import { createStore, storeFiles } from "../src/store/index.js";
+import { storeFiles } from "../src/store/index.js";
+import { emptySharedStore } from "../src/store/backends.test-util.js";
 import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it } from "vitest";
 import { createVendo, type Vendo } from "../src/server.js";
@@ -38,13 +36,7 @@ afterEach(async () => {
 });
 
 async function setup(): Promise<{ vendo: Vendo; bundle: AppBundle }> {
-  const dataDir = await mkdtemp(join(tmpdir(), "vendo-bundle-route-"));
-  const store = createStore({ dataDir });
-  cleanups.push(async () => {
-    await store.close();
-    await rm(dataDir, { recursive: true, force: true });
-  });
-  await store.ensureSchema();
+  const store = await emptySharedStore();
   // THE REAL SEAL: the same writer the build door lands a box's output through.
   const bundle = await sealBundleBlobs(
     APP,

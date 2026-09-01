@@ -3,11 +3,9 @@
  * DECLARES — this is where `createVendo`'s boot turns declarations into records,
  * and where a firing's brain is registered by name.
  */
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { agent, type VendoAgent } from "../src/turn/index.js";
-import { createStore, createStoreOps, type VendoStore } from "../src/store/index.js";
+import { createStoreOps, type VendoStore } from "../src/store/index.js";
+import { emptySharedStore } from "../src/store/backends.test-util.js";
 import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { armDevTicker, CODE_AUTOMATION_OWNER } from "../src/compose-automations.js";
@@ -20,16 +18,6 @@ afterEach(async () => {
 });
 
 const model = {} as LanguageModel;
-
-async function tempStore(): Promise<VendoStore> {
-  const dataDir = await mkdtemp(join(tmpdir(), "vendo-compose-automations-"));
-  const store = createStore({ dataDir });
-  cleanups.push(async () => {
-    await store.close();
-    await rm(dataDir, { recursive: true, force: true });
-  });
-  return store;
-}
 
 const named = (name: string): VendoAgent => agent({ name, model });
 
@@ -49,7 +37,7 @@ const ownerCtx = {
 
 describe("boot reconcile — `.on()` declarations become records", () => {
   it("arms what the code declares, and does it once however many boots there are", async () => {
-    const store = await tempStore();
+    const store = await emptySharedStore();
     const support = named("support");
     support.on("0 9 * * 1", "summarize the week and email ops");
 
@@ -64,7 +52,7 @@ describe("boot reconcile — `.on()` declarations become records", () => {
   });
 
   it("disarms what the code stopped saying — including an agent dropped from `agents: []`", async () => {
-    const store = await tempStore();
+    const store = await emptySharedStore();
     const support = named("support");
     support.on("0 9 * * 1", "summarize the week and email ops");
     const armed = await compose({ models: { default: model }, principal: async () => null, store, agents: [support] });
@@ -82,7 +70,7 @@ describe("boot reconcile — `.on()` declarations become records", () => {
   });
 
   it("leaves a record a PERSON disarmed alone — the kill switch survives a redeploy", async () => {
-    const store = await tempStore();
+    const store = await emptySharedStore();
     const support = named("support");
     support.on("0 9 * * 1", "summarize the week and email ops");
     const vendo = await compose({ models: { default: model }, principal: async () => null, store, agents: [support] });
@@ -102,7 +90,7 @@ describe("the named-runner map — registered at BOOT, looked up at fire time", 
   // proven HERE is the boot register loop that feeds it. It throws at COMPOSE, not at 2am, when
   // a firing that looked the name up would already have reached the wrong brain.
   it("refuses to compose when two agents in `agents: []` wear one name", async () => {
-    const store = await tempStore();
+    const store = await emptySharedStore();
     expect(() => createVendo({
       models: { default: model },
       principal: async () => null,
@@ -115,7 +103,7 @@ describe("the named-runner map — registered at BOOT, looked up at fire time", 
     // The adopted agent brings the store (`store` is one of AGENT_OWNED_KEYS), so
     // this composition must NOT also pass one — that conflict is refused earlier,
     // and passing both would never reach the runner map this test is about.
-    const agentWithStore = agent({ name: "support", model, store: await tempStore() });
+    const agentWithStore = agent({ name: "support", model, store: await emptySharedStore() });
     expect(() => createVendo({
       models: { default: model },
       principal: async () => null,
@@ -125,7 +113,7 @@ describe("the named-runner map — registered at BOOT, looked up at fire time", 
   });
 
   it("refuses a value `agent()` did not build, naming the fix", async () => {
-    const store = await tempStore();
+    const store = await emptySharedStore();
     expect(() => createVendo({
       models: { default: model },
       principal: async () => null,
@@ -175,7 +163,7 @@ describe("a store that will not hold automations does not take the deployment wi
     const vendo = createVendo({
       models: { default: model },
       principal: async () => ({ kind: "user", subject: "user_reconcile" }),
-      store: refuse(await tempStore(), "vendo_automations"),
+      store: refuse(await emptySharedStore(), "vendo_automations"),
       agents: [support],
     });
 

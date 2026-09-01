@@ -20,9 +20,6 @@
  * door honouring a marker nobody sets, or composition setting a marker the door
  * ignores.
  */
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import {
   STORE_WIRE_TURN_OPS,
   VENDO_STORE_WIRE_FORMAT,
@@ -33,7 +30,8 @@ import {
   type StoreOps,
 } from "../src/core/index.js";
 import { defineHarness } from "../src/harnesses/index.js";
-import { createStore, createStoreOps, type VendoStore } from "../src/store/index.js";
+import { createStoreOps, type VendoStore } from "../src/store/index.js";
+import { emptySharedStore } from "../src/store/backends.test-util.js";
 import type { LanguageModel, UIMessage } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ChannelLink } from "../src/channel-links.js";
@@ -123,10 +121,7 @@ interface Deployment {
 }
 
 async function deploy(): Promise<Deployment> {
-  const dataDir = await mkdtemp(join(tmpdir(), "vendo-turn-opening-"));
-  const backing = createStore({ dataDir });
-  cleanups.push(async () => { await backing.close(); await rm(dataDir, { recursive: true, force: true }); });
-  await backing.ensureSchema();
+  const backing = await emptySharedStore();
   const log: string[] = [];
   const vendo = createVendo({
     models: { default: {} as LanguageModel },

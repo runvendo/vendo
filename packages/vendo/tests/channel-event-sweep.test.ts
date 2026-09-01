@@ -1,7 +1,5 @@
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { createStore, type VendoStore } from "../src/store/index.js";
+import { type VendoStore } from "../src/store/index.js";
+import { emptySharedStore } from "../src/store/backends.test-util.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ChannelEventLog } from "../src/channel-links.js";
 
@@ -25,17 +23,6 @@ afterEach(async () => {
   vi.useRealTimers();
 });
 
-async function freshStore(): Promise<VendoStore> {
-  const dataDir = await mkdtemp(join(tmpdir(), "vendo-channel-sweep-"));
-  const store: VendoStore = createStore({ dataDir });
-  cleanups.push(async () => {
-    await store.close();
-    await rm(dataDir, { recursive: true, force: true });
-  });
-  await store.ensureSchema();
-  return store;
-}
-
 const rows = (store: VendoStore, conversation: string): Promise<number> =>
   store.records("vendo_channel_events").list({ refs: { conversation } }).then((page) => page.records.length);
 
@@ -52,7 +39,7 @@ describe("the delivery log's sweep", () => {
     // row, and it ran INLINE inside the claim — so once an hour, per
     // conversation, the person whose text triggered it waited out seven serial
     // hosted round trips before their turn could even start.
-    const store = await freshStore();
+    const store = await emptySharedStore();
     const day = 24 * 60 * 60_000;
     for (const id of ["evt_a", "evt_b", "evt_c"]) {
       expect(await new ChannelEventLog(store).claim(id, "conv_block")).toBe(true);
@@ -84,7 +71,7 @@ describe("the delivery log's sweep", () => {
     // THE FAILURE THIS PINS: with ONE process-wide sweep clock, the chatty
     // conversation below consumes the interval and the quiet one's expired rows
     // are never pruned again — they accumulate for the life of the process.
-    const store = await freshStore();
+    const store = await emptySharedStore();
     const log = new ChannelEventLog(store);
     const day = 24 * 60 * 60_000;
 
@@ -111,7 +98,7 @@ describe("the delivery log's sweep", () => {
   it("still sweeps a conversation only once per interval, not once per message", async () => {
     // The other half of the bargain: the reason this became a sweep at all is
     // that a burst of texts must not each pay for a full list-and-delete pass.
-    const store = await freshStore();
+    const store = await emptySharedStore();
     const log = new ChannelEventLog(store);
 
     for (const id of ["evt_1", "evt_2", "evt_3", "evt_4"]) {

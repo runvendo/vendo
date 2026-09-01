@@ -5,7 +5,8 @@
 import { VendoError } from "../../src/core/index.js";
 import type { VendoGuard } from "../../src/guard/index.js";
 import { defineHarness } from "../../src/harnesses/index.js";
-import { createStore, threadStore } from "../../src/store/index.js";
+import { threadStore } from "../../src/store/index.js";
+import { emptySharedStore } from "../../src/store/backends.test-util.js";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { agent } from "../../src/turn/agent.js";
@@ -13,8 +14,6 @@ import { startRun } from "../../src/turn/away.js";
 import type { RunEvent } from "../../src/turn/turn.js";
 import { tool } from "../../src/turn/tools.js";
 
-let stores = 0;
-const memoryStore = () => createStore({ dataDir: `memory://agents-run-${stores++}` });
 
 const readTool = () => tool({
   name: "invoices_list",
@@ -58,7 +57,7 @@ const collect = async (events: AsyncIterable<RunEvent>): Promise<RunEvent[]> => 
 
 describe("run()", () => {
   it("reports what the run left behind: what it said, the ids, the calls and the usage", async () => {
-    const store = memoryStore();
+    const store = await emptySharedStore();
     const support = agent({
       name: "support",
       harness: defineHarness({
@@ -96,7 +95,7 @@ describe("run()", () => {
   });
 
   it("runs as the AGENT itself when the caller names no subject", async () => {
-    const store = memoryStore();
+    const store = await emptySharedStore();
     const support = agent({
       name: "support",
       harness: defineHarness({
@@ -116,7 +115,7 @@ describe("run()", () => {
   });
 
   it("streams the five event types while the run is still going", async () => {
-    const store = memoryStore();
+    const store = await emptySharedStore();
     const support = agent({
       name: "support",
       harness: defineHarness({
@@ -161,7 +160,7 @@ describe("run()", () => {
           yield { type: "text" as const, delta: "Two invoices." };
         },
       }),
-      store: memoryStore(),
+      store: await emptySharedStore(),
     });
 
     const running = support.run("Check the invoices.", { as: "u_42" });
@@ -182,7 +181,7 @@ describe("run()", () => {
           yield { type: "text" as const, delta: "Two invoices." };
         },
       }),
-      store: memoryStore(),
+      store: await emptySharedStore(),
     });
 
     const running = support.run("Check the invoices.", { as: "u_42" });
@@ -218,7 +217,7 @@ describe("run()", () => {
           yield { type: "text" as const, delta: "Two invoices." };
         },
       }),
-      store: memoryStore(),
+      store: await emptySharedStore(),
     });
 
     const running = support.run("Check the invoices.", { as: "u_42" });
@@ -242,7 +241,7 @@ describe("run()", () => {
   });
 
   it("a run nobody was there to approve is INTERRUPTED, carrying the calls to answer for", async () => {
-    const store = memoryStore();
+    const store = await emptySharedStore();
     const support = agent({
       name: "support",
       harness: defineHarness({
@@ -268,7 +267,7 @@ describe("run()", () => {
   });
 
   it("fills a typed output from the schema, and hands a bad shape back to the model", async () => {
-    const store = memoryStore();
+    const store = await emptySharedStore();
     const attempts: unknown[] = [];
     const support = agent({
       name: "support",
@@ -305,7 +304,7 @@ describe("run()", () => {
         },
       }),
       tools: [readTool()],
-      store: memoryStore(),
+      store: await emptySharedStore(),
     });
 
     await support.run("What can you do?", { as: "u_42" });
@@ -314,7 +313,7 @@ describe("run()", () => {
   });
 
   it("stops at the default budget of 20 tool calls", async () => {
-    const store = memoryStore();
+    const store = await emptySharedStore();
     let attempted = 0;
     const support = agent({
       name: "support",
@@ -340,7 +339,7 @@ describe("run()", () => {
   });
 
   it("honors an explicit maxToolCalls", async () => {
-    const store = memoryStore();
+    const store = await emptySharedStore();
     let attempted = 0;
     const support = agent({
       name: "support",
@@ -377,7 +376,7 @@ describe("run()", () => {
           yield { type: "text" as const, delta: "should not arrive" };
         },
       }),
-      store: memoryStore(),
+      store: await emptySharedStore(),
     });
 
     const result = await support.run("Stop me.", { as: "u_42", signal: controller.signal });
@@ -386,7 +385,7 @@ describe("run()", () => {
   });
 
   it("continues a thread this subject owns, and refuses one they do not", async () => {
-    const store = memoryStore();
+    const store = await emptySharedStore();
     let seen = 0;
     const support = agent({
       name: "support",
@@ -417,7 +416,7 @@ describe("run()", () => {
     let thought = false;
     const running = startRun({
       name: "support",
-      store: memoryStore(),
+      store: await emptySharedStore(),
       guard: permissive(),
       tools: { descriptors: async () => [], execute: async () => ({ status: "ok", output: {} }) },
       doorReady: Promise.reject(new Error("the door never bound")),
@@ -435,7 +434,7 @@ describe("run()", () => {
   });
 
   it("a run nobody awaits cannot take the host process down", async () => {
-    const store = memoryStore();
+    const store = await emptySharedStore();
     const support = agent({
       name: "support",
       harness: defineHarness({
@@ -486,7 +485,7 @@ describe("run()", () => {
         },
       }),
       guard,
-      store: memoryStore(),
+      store: await emptySharedStore(),
     });
 
     const owned = support.run("first", { as: "u_42" });

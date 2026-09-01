@@ -12,11 +12,9 @@
 // It now carries the same house discipline: at most 200 entries per report,
 // each id and label 1–256 characters (wire/slots.ts). The cases below pin that
 // a ceiling exists and answers `validation`, not the particular numbers.
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import type { Principal } from "../src/core/index.js";
-import { createStore, eraseStore, storeFiles, type VendoStore } from "../src/store/index.js";
+import { eraseStore, storeFiles } from "../src/store/index.js";
+import { emptySharedStore } from "../src/store/backends.test-util.js";
 import { afterEach, describe, expect, it } from "vitest";
 import { createVendo } from "../src/server.js";
 
@@ -31,16 +29,6 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 });
 
-async function tempStore(): Promise<VendoStore> {
-  const dataDir = await mkdtemp(join(tmpdir(), "vendo-slots-risk-"));
-  const store = createStore({ dataDir });
-  cleanups.push(async () => {
-    await store.close();
-    await rm(dataDir, { recursive: true, force: true });
-  });
-  return store;
-}
-
 const request = (method: string, path: string, body?: unknown): Request =>
   new Request(`https://host.test/api/vendo${path}`, {
     method,
@@ -50,7 +38,7 @@ const request = (method: string, path: string, body?: unknown): Request =>
 
 describe("POST /slots bounds its input like every other write on this wire", () => {
   it("refuses a report with an implausible number of entries", async () => {
-    const store = await tempStore();
+    const store = await emptySharedStore();
     const vendo = createVendo({ principal: async () => principal, store });
 
     // No page mounts ten thousand slots. One request writes ten thousand rows.
@@ -67,7 +55,7 @@ describe("POST /slots bounds its input like every other write on this wire", () 
   }, 120_000);
 
   it("refuses a slot descriptor far larger than any id or label a page carries", async () => {
-    const store = await tempStore();
+    const store = await emptySharedStore();
     const vendo = createVendo({ principal: async () => principal, store });
 
     // A megabyte in ONE label — four times the /box row ceiling, stored verbatim
@@ -86,7 +74,7 @@ describe("POST /slots bounds its input like every other write on this wire", () 
     // and the MCP door (packages/vendo/src/mcp/door.ts:520) both refuse an ephemeral
     // principal outright; whether this surface should too is a spec decision —
     // this case only asks that SOMETHING bound it.
-    const store = await tempStore();
+    const store = await emptySharedStore();
     const vendo = createVendo({ principal: async () => visitor, store });
 
     const flood = Array.from({ length: 10_000 }, (_, index) => ({
@@ -106,7 +94,7 @@ describe("the slot registry's decay is a read filter, and the row is kept", () =
     // approvals). The registry is one row per (subject, slot), refreshed in
     // place rather than appended, so a subject's rows are bounded by the slots
     // it has actually rendered; `erase.bySubject` is what removes them (below).
-    const store = await tempStore();
+    const store = await emptySharedStore();
     const vendo = createVendo({ principal: async () => principal, store });
 
     await vendo.handler(request("POST", "/slots", { slots: [{ id: "retired", label: "Retired" }] }));
@@ -141,7 +129,7 @@ describe("axes that hold (regression cover, not findings)", () => {
     // `rowId` percent-encodes both halves (slots.ts:51), and `encodeURIComponent`
     // escapes ':' as %3A and '%' as %25 — so the pair cannot be shifted, and the
     // read is scoped by `refs.subject` regardless (slots.ts:82).
-    const store = await tempStore();
+    const store = await emptySharedStore();
     const shift = async (subject: string, slot: { id: string; label: string }) => {
       const vendo = createVendo({ principal: async () => ({ kind: "user", subject }), store });
       await vendo.handler(request("POST", "/slots", { slots: [slot] }));
@@ -159,7 +147,7 @@ describe("axes that hold (regression cover, not findings)", () => {
   }, 60_000);
 
   it("takes the subject's slot rows with the erase cascade", async () => {
-    const store = await tempStore();
+    const store = await emptySharedStore();
     const vendo = createVendo({ principal: async () => principal, store });
     await vendo.handler(request("POST", "/slots", { slots: [{ id: "hero", label: "Hero" }] }));
 

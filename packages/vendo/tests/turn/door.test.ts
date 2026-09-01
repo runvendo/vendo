@@ -24,6 +24,7 @@ import { createSessionRoutes } from "../../box/turn-routes.mjs";
 import { createClaudeSession, VENDO_MCP_SERVER } from "../../src/harnesses/claude-code/claude-turn.js";
 import { harnessAdapters } from "../../src/harnesses/index.js";
 import { createStore } from "../../src/store/index.js";
+import { emptySharedStore } from "../../src/store/backends.test-util.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { agent } from "../../src/turn/agent.js";
 import { DOOR_PATH } from "../../src/turn/door.js";
@@ -185,7 +186,7 @@ describe("the door ladder", () => {
 
   it("machine \"local\" with neither serves its own door on loopback — a subprocess can always dial 127.0.0.1", async () => {
     const harness = claudeCode({ machine: "local" });
-    const support = agent({ name: "support", harness, store: memoryStore(), tools: [refund] });
+    const support = agent({ name: "support", harness, store: await emptySharedStore(), tools: [refund] });
     // `session()` awaits the bind, so by the time any turn reads the URL it is real.
     await support.session("u_42");
     const url = harnessAdapters(harness).toolDoor?.url;
@@ -274,7 +275,7 @@ describe("what the box is actually handed", () => {
     const support = agent({
       name: "support",
       harness: claudeCode(),
-      store: memoryStore(),
+      store: await emptySharedStore(),
       tools: [refund],
       sandbox: adapter,
       door: { baseUrl: live.origin },
@@ -305,7 +306,7 @@ describe("what the box is actually handed", () => {
     const support = agent({
       name: "support",
       harness: claudeCode(),
-      store: memoryStore(),
+      store: await emptySharedStore(),
       tools: [refund],
       sandbox: adapter,
       door: { baseUrl: live.origin },
@@ -356,7 +357,7 @@ describe("what the box is actually handed", () => {
     const support = agent({
       name: "support",
       harness: claudeCode(),
-      store: memoryStore(),
+      store: await emptySharedStore(),
       tools: [refund],
       sandbox: adapter,
       door: { baseUrl: live.origin },

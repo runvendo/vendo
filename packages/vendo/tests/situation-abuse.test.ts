@@ -10,12 +10,9 @@
  * back where it lands — the ctx a host tool is handed, and the system prompt the
  * model was actually given. No stub on either side.
  */
-import { mkdtemp, rm } from "node:fs/promises";
 import type { Principal, RunContext, ToolDescriptor, ToolRegistry } from "../src/core/index.js";
 import { defineHarness } from "../src/harnesses/index.js";
-import { createStore, type VendoStore } from "../src/store/index.js";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { emptySharedStore } from "../src/store/backends.test-util.js";
 import type { LanguageModel, UIMessage } from "ai";
 import { afterEach, describe, expect, it } from "vitest";
 import { createVendo, guard, type Vendo } from "../src/server.js";
@@ -27,16 +24,6 @@ afterEach(async () => {
 
 const principal: Principal = { kind: "user", subject: "user_situation_abuse" };
 const READ_TOOL = "maple_invoices_list";
-
-async function tempStore(): Promise<VendoStore> {
-  const dataDir = await mkdtemp(join(tmpdir(), "vendo-situation-abuse-"));
-  const store = createStore({ dataDir });
-  cleanups.push(async () => {
-    await store.close();
-    await rm(dataDir, { recursive: true, force: true });
-  });
-  return store;
-}
 
 /** Records every system prompt it is asked to think with, then says one line.
  *  (Same probe as situation-seam.test.ts.) */
@@ -78,7 +65,7 @@ function recordingModel(seen: string[]): LanguageModel {
 }
 
 async function compose(): Promise<{ vendo: Vendo; seen: string[] }> {
-  const store = await tempStore();
+  const store = await emptySharedStore();
   const seen: string[] = [];
   const vendo = createVendo({
     models: { default: recordingModel(seen) },
@@ -127,7 +114,7 @@ const userMessage = (id: string, text: string): UIMessage =>
 
 describe("situation channel — adversarial body.context", () => {
   it("does not let a __proto__ key smuggle host-invisible properties onto ctx.context", async () => {
-    const store = await tempStore();
+    const store = await emptySharedStore();
     const observed: RunContext[] = [];
     const harness = defineHarness({
       name: "ctx-probe",
@@ -176,7 +163,7 @@ describe("situation channel — adversarial body.context", () => {
     // The host resolves logged-out visitors to an ephemeral principal of its
     // own. The situation channel is open to them, and `Directions` is the
     // guard's mandatory-policy section (03-agent §3).
-    const store = await tempStore();
+    const store = await emptySharedStore();
     const seen: string[] = [];
     const vendo = createVendo({
       models: { default: recordingModel(seen) },

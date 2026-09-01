@@ -6,7 +6,8 @@
 import { VendoError, type ApprovalRequest, type RunContext, type Turn } from "../../src/core/index.js";
 import { createGuard, type VendoGuard } from "../../src/guard/index.js";
 import { defineHarness } from "../../src/harnesses/index.js";
-import { createStore, threadMessageStore, threadStore } from "../../src/store/index.js";
+import { threadMessageStore, threadStore } from "../../src/store/index.js";
+import { emptySharedStore } from "../../src/store/backends.test-util.js";
 import { mkdtemp, rm, writeFile, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -14,8 +15,6 @@ import { afterEach, describe, expect, it } from "vitest";
 import { agent } from "../../src/turn/agent.js";
 import { tool } from "../../src/turn/tools.js";
 
-let stores = 0;
-const memoryStore = () => createStore({ dataDir: `memory://agents-session-${stores++}` });
 
 const principal = { kind: "user" as const, subject: "u_42" };
 
@@ -41,7 +40,7 @@ afterEach(async () => {
 
 describe("session", () => {
   it("opens a thread the store recognizes", async () => {
-    const store = memoryStore();
+    const store = await emptySharedStore();
     const support = agent({ name: "support", harness: speaks("hi"), store });
     const session = await support.session("u_42");
     expect(session.threadId).toMatch(/^thr_/);
@@ -49,7 +48,7 @@ describe("session", () => {
   });
 
   it("streams a turn and the transcript truth is the runtime's — persisted, both sides", async () => {
-    const store = memoryStore();
+    const store = await emptySharedStore();
     const support = agent({ name: "support", harness: speaks("hello from the harness"), store });
     const session = await support.session("u_42");
     const response = await session.stream("hello from the user");
@@ -69,7 +68,7 @@ describe("session", () => {
     // a proxy over the real façade, and a wrap that swallowed the commit would
     // lose the app. What the composed path paints is the umbrella's to prove
     // (`packages/vendo` render-wrap-slot.test.ts, screen-floor-door.e2e.test.ts).
-    const store = memoryStore();
+    const store = await emptySharedStore();
     const builder = defineHarness({
       name: "builder",
       async *run(turn) {
@@ -87,7 +86,7 @@ describe("session", () => {
   });
 
   it("a second turn hands the harness the whole prior conversation", async () => {
-    const store = memoryStore();
+    const store = await emptySharedStore();
     let seen: readonly unknown[] = [];
     const peek = defineHarness({
       name: "peek",
@@ -104,7 +103,7 @@ describe("session", () => {
   });
 
   it("resumes an existing thread by id, so a session per HTTP request keeps the conversation", async () => {
-    const store = memoryStore();
+    const store = await emptySharedStore();
     let seen: readonly unknown[] = [];
     const peek = defineHarness({
       name: "peek",
@@ -128,7 +127,7 @@ describe("session", () => {
   });
 
   it("refuses to resume a thread that is not this subject's", async () => {
-    const store = memoryStore();
+    const store = await emptySharedStore();
     const support = agent({ name: "support", harness: speaks("hi"), store });
     const mine = await support.session("u_42");
     await expect(support.session("u_99", { threadId: mine.threadId })).rejects.toMatchObject({
@@ -147,7 +146,7 @@ describe("session", () => {
     const support = agent({
       name: "support",
       harness: peek,
-      store: memoryStore(),
+      store: await emptySharedStore(),
       instructions: "Answer as the Acme desk.",
     });
     const session = await support.session("u_42", { user: { name: "Dana", plan: "pro" } });
@@ -160,7 +159,7 @@ describe("session", () => {
   });
 
   it("hands the system hook the default assembly and the guard's directions, and uses its answer verbatim", async () => {
-    const store = memoryStore();
+    const store = await emptySharedStore();
     let system: string | undefined;
     let handed: { assembled: string; directions: readonly string[] } | undefined;
     let venue: string | undefined;
@@ -194,7 +193,7 @@ describe("session", () => {
   });
 
   it("falls back to the default assembly when the hook declines, so a conditional cannot strip the rules", async () => {
-    const store = memoryStore();
+    const store = await emptySharedStore();
     let system: string | undefined;
     const peek = defineHarness({
       name: "peek",
@@ -236,7 +235,7 @@ describe("session", () => {
         await turn.tools.call("probe", {});
       },
     });
-    const support = agent({ name: "support", harness: caller, store: memoryStore(), tools: [probe] });
+    const support = agent({ name: "support", harness: caller, store: await emptySharedStore(), tools: [probe] });
     const session = await support.session("u_42", {
       user: { plan: "pro" },
       context: { helpers: () => "check-time" },
@@ -266,7 +265,7 @@ describe("session", () => {
         body = await turn.skills.load("product-docs");
       },
     });
-    const support = agent({ name: "support", harness: peek, store: memoryStore(), skills: [dir] });
+    const support = agent({ name: "support", harness: peek, store: await emptySharedStore(), skills: [dir] });
     const session = await support.session("u_42");
     await (await session.stream("hi")).text();
     expect(listed.map((s) => s.name)).toContain("product-docs");
@@ -300,7 +299,7 @@ describe("session", () => {
         return () => {};
       },
     };
-    const support = agent({ name: "support", harness: speaks("hi"), store: memoryStore(), guard });
+    const support = agent({ name: "support", harness: speaks("hi"), store: await emptySharedStore(), guard });
     const session = await support.session("u_42");
     const events: unknown[] = [];
     session.on("approval", (req) => {
@@ -321,7 +320,7 @@ describe("session", () => {
   });
 
   it("delivers an approval ONLY to the conversation that parked it, and a foreign session cannot decide it", async () => {
-    const store = memoryStore();
+    const store = await emptySharedStore();
     const guard = createGuard({ store, policy: "cautious" });
     const writer = tool({
       name: "writer",
@@ -388,7 +387,7 @@ describe("session", () => {
  */
 describe("an interactive session turn waits for the tap", () => {
   it("blocks on the card, then runs the call and answers with its result", async () => {
-    const store = memoryStore();
+    const store = await emptySharedStore();
     const guard = createGuard({ store, policy: "cautious" });
     const order: string[] = [];
     const writer = tool({

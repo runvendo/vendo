@@ -7,12 +7,10 @@
  * through the real read path — a delegation now has a `thr_*` row with the
  * delegated task in it.
  */
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import type { Principal } from "../src/core/index.js";
 import { defineHarness } from "../src/harnesses/index.js";
-import { createStore, type VendoStore } from "../src/store/index.js";
+import { type VendoStore } from "../src/store/index.js";
+import { emptySharedStore } from "../src/store/backends.test-util.js";
 import type { LanguageModel, Tool, ToolCallOptions } from "ai";
 import { afterEach, describe, expect, it } from "vitest";
 import { vendoTools } from "../src/ai-sdk.js";
@@ -64,10 +62,7 @@ function nonSqlStore(backing: VendoStore): VendoStore {
 async function compose(
   wrap: (store: VendoStore) => VendoStore = (store) => store,
 ): Promise<{ store: VendoStore; tools: Record<string, Tool> }> {
-  const dataDir = await mkdtemp(join(tmpdir(), "vendo-delegate-"));
-  const store = createStore({ dataDir });
-  cleanups.push(async () => { await store.close(); await rm(dataDir, { recursive: true, force: true }); });
-  await store.ensureSchema();
+  const store = await emptySharedStore();
   const vendo = createVendo({
     models: { default: model },
     principal: async () => principal,

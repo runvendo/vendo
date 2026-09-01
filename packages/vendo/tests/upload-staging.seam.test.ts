@@ -3,12 +3,10 @@
  * read back through the REAL workspace store — no mock on either side, so the
  * door and the workspace cannot disagree about where a dropped file landed.
  */
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { genericJwtPreset } from "../src/actions/presets/index.js";
 import { UPLOAD_HEADER, type FilesAdapter, type PermissionGrant, type Principal } from "../src/core/index.js";
-import { createStore, type VendoStore } from "../src/store/index.js";
+import { type VendoStore } from "../src/store/index.js";
+import { emptySharedStore } from "../src/store/backends.test-util.js";
 import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it } from "vitest";
 import { jwt } from "../src/auth-presets/jwt.js";
@@ -70,12 +68,7 @@ async function bearer(): Promise<Record<string, string>> {
 }
 
 async function compose(files?: FilesAdapter): Promise<{ vendo: Vendo; seen: string[] }> {
-  const dataDir = await mkdtemp(join(tmpdir(), "vendo-upload-staging-"));
-  const store: VendoStore = createStore({ dataDir });
-  cleanups.push(async () => {
-    await store.close();
-    await rm(dataDir, { recursive: true, force: true });
-  });
+  const store: VendoStore = await emptySharedStore();
   const seen: string[] = [];
   const vendo = createVendo({
     models: { default: recordingModel(seen) },

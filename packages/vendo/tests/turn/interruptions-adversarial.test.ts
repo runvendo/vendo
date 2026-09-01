@@ -6,7 +6,8 @@
  * states the behaviour the slice CLAIMS; a red one is a defect.
  */
 import { defineHarness } from "../../src/harnesses/index.js";
-import { createStore, type VendoStore } from "../../src/store/index.js";
+import { type VendoStore } from "../../src/store/index.js";
+import { emptySharedStore } from "../../src/store/backends.test-util.js";
 import {
   VendoError,
   type Decisions,
@@ -14,23 +15,12 @@ import {
   type ToolCall,
   type ToolResult,
 } from "../../src/core/index.js";
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { agent, agentComposition, type VendoAgent } from "../../src/turn/agent.js";
 import { createTurns, type Turns } from "../../src/turn/interruptions.js";
 import { tool } from "../../src/turn/tools.js";
 import type { TurnResult } from "../../src/turn/turn.js";
 
-let stores = 0;
-const memoryStore = (): VendoStore => createStore({ dataDir: `memory://agents-adversarial-${stores++}` });
-
-const open: VendoStore[] = [];
-const keep = (store: VendoStore): VendoStore => {
-  open.push(store);
-  return store;
-};
-afterEach(async () => {
-  for (const store of open.splice(0)) await store.close().catch(() => {});
-});
 
 interface Ran {
   count: number;
@@ -127,7 +117,7 @@ const rewriteCreatedAt = async (store: VendoStore, id: string, createdAt: string
 describe("exactly once, pushed harder", () => {
   it("runs the approved call once across eight simultaneous resumes", async () => {
     const ran = { count: 0 };
-    const support = parking(keep(memoryStore()), ran);
+    const support = parking(await emptySharedStore(), ran);
     const turns = turnsOf(support, "u_42");
     const asked = await interrupted(support.chat("Refund invoice 7.", { as: "u_42" }));
     const decisions: Decisions = { [asked.interruptions[0]!.id]: "approve" };
@@ -148,7 +138,7 @@ describe("exactly once, pushed harder", () => {
     // Two `agent()` calls = two guards, two registries, two bound tool sets.
     // Nothing in memory is shared; the only common ground is the store, which
     // is exactly what two processes share.
-    const store = keep(memoryStore());
+    const store = await emptySharedStore();
     const parkedRan = { count: 0 };
     const otherRan = { count: 0 };
     const first = parking(store, parkedRan);
@@ -168,7 +158,7 @@ describe("exactly once, pushed harder", () => {
 
   it("never runs the second of two approved calls twice when resumes race", async () => {
     const ran = { count: 0 };
-    const support = parking(keep(memoryStore()), ran, 2);
+    const support = parking(await emptySharedStore(), ran, 2);
     const turns = turnsOf(support, "u_42");
     const asked = await interrupted(support.chat("Refund invoice 7 and invoice 8.", { as: "u_42" }));
     expect(asked.interruptions).toHaveLength(2);
@@ -197,7 +187,7 @@ describe("a subject only ever sees its own", () => {
 
   it("hides an interrupted turn from every neighbouring spelling of its owner", async () => {
     const ran = { count: 0 };
-    const support = parking(keep(memoryStore()), ran);
+    const support = parking(await emptySharedStore(), ran);
     const asked = await interrupted(support.chat("Refund invoice 7.", { as: "u_42" }));
 
     for (const subject of hostile) {
@@ -216,7 +206,7 @@ describe("a subject only ever sees its own", () => {
 
 describe("a turn that belongs to another agent", () => {
   it("is not offered by an agent that did not park it", async () => {
-    const store = keep(memoryStore());
+    const store = await emptySharedStore();
     const opsRan = { count: 0 };
     const supportRan = { count: 0 };
     const ops = parking(store, opsRan, 1, "ops");
@@ -231,7 +221,7 @@ describe("a turn that belongs to another agent", () => {
   }, 60_000);
 
   it("cannot be answered through a different agent's registry", async () => {
-    const store = keep(memoryStore());
+    const store = await emptySharedStore();
     const opsRan = { count: 0 };
     const supportRan = { count: 0 };
     const ops = parking(store, opsRan, 1, "ops");
@@ -255,7 +245,7 @@ describe("a turn that belongs to another agent", () => {
   }, 60_000);
 
   it("does not burn the person's yes on an agent that has no such tool", async () => {
-    const store = keep(memoryStore());
+    const store = await emptySharedStore();
     const opsRan = { count: 0 };
     const ops = parking(store, opsRan, 1, "ops");
     // A second agent over the same store with a DIFFERENT tool surface.
@@ -292,7 +282,7 @@ describe("the lane filter", () => {
 
   it("keeps an app action, an automation firing and a turn-less check out of the list", async () => {
     const ran = { count: 0 };
-    const support = parking(keep(memoryStore()), ran);
+    const support = parking(await emptySharedStore(), ran);
     const turnId = "trn_00000000000000000000000000000001";
 
     await parkOn(support, { ...base("u_42"), appId: "app_x" as never, turnId: turnId as never }, "c_app");
@@ -312,7 +302,7 @@ describe("the lane filter", () => {
 
   it("does not resume an app-lane park through the chat lane", async () => {
     const ran = { count: 0 };
-    const support = parking(keep(memoryStore()), ran);
+    const support = parking(await emptySharedStore(), ran);
     const turnId = "trn_00000000000000000000000000000002";
     await parkOn(support, { ...base("u_42"), appId: "app_x" as never, turnId: turnId as never }, "c_app2");
 
@@ -338,7 +328,7 @@ describe("the seven days", () => {
 
   it("refuses an expired ask on EVERY face, not only on turns.resume", async () => {
     const ran = { count: 0 };
-    const support = shortLived(keep(memoryStore()), ran, 1);
+    const support = shortLived(await emptySharedStore(), ran, 1);
     const turns = turnsOf(support, "u_42");
     const asked = await interrupted(support.chat("Refund invoice 7.", { as: "u_42" }));
 
@@ -353,7 +343,7 @@ describe("the seven days", () => {
   }, 60_000);
 
   it("is expired exactly at createdAt + ttl, and alive one second inside it", async () => {
-    const store = keep(memoryStore());
+    const store = await emptySharedStore();
     const ran = { count: 0 };
     const support = shortLived(store, ran, 60_000);
     const turns = turnsOf(support, "u_42");
@@ -371,7 +361,7 @@ describe("the seven days", () => {
   }, 60_000);
 
   it("answers the live ask of a turn whose other ask expired", async () => {
-    const store = keep(memoryStore());
+    const store = await emptySharedStore();
     const ran = { count: 0 };
     const support = agent({
       name: "support",
@@ -403,7 +393,7 @@ describe("the seven days", () => {
   }, 60_000);
 
   it("cannot be handed an unreadable createdAt in the first place", async () => {
-    const store = keep(memoryStore());
+    const store = await emptySharedStore();
     const ran = { count: 0 };
     const support = shortLived(store, ran, 60_000);
     const asked = await interrupted(support.chat("Refund invoice 7.", { as: "u_42" }));
@@ -424,7 +414,7 @@ describe("the seven days", () => {
 
 describe("the decision map", () => {
   const parkOne = async (ran: Ran) => {
-    const support = parking(keep(memoryStore()), ran);
+    const support = parking(await emptySharedStore(), ran);
     const asked = await interrupted(support.chat("Refund invoice 7.", { as: "u_42" }));
     return { turns: turnsOf(support, "u_42"), asked, id: asked.interruptions[0]!.id };
   };
@@ -528,7 +518,7 @@ describe("two turns running at once on one thread", () => {
       name: "support",
       harness: paired(barrier(2)),
       tools: [refundTool(ran)],
-      store: keep(memoryStore()),
+      store: await emptySharedStore(),
     });
     // One thread, opened by a turn that asks for nothing.
     const opened = await support.chat("What is my balance?", { as: "u_42" });
@@ -562,7 +552,7 @@ describe("two turns running at once on one thread", () => {
 describe("nothing the spec cut crept back in", () => {
   it("exposes exactly list and resume", async () => {
     const ran = { count: 0 };
-    const support = parking(keep(memoryStore()), ran);
+    const support = parking(await emptySharedStore(), ran);
     const turns = turnsOf(support, "u_42");
     expect(Object.keys(turns).sort()).toEqual(["list", "resume"]);
     expect((turns as unknown as Record<string, unknown>).get).toBeUndefined();
@@ -571,7 +561,7 @@ describe("nothing the spec cut crept back in", () => {
 
   it("never emits an input interruption", async () => {
     const ran = { count: 0 };
-    const support = parking(keep(memoryStore()), ran);
+    const support = parking(await emptySharedStore(), ran);
     const asked = await interrupted(support.chat("Refund invoice 7.", { as: "u_42" }));
     const listed = await turnsOf(support, "u_42").list({ status: "interrupted" });
     expect(asked.interruptions.every((one) => one.type === "approval")).toBe(true);

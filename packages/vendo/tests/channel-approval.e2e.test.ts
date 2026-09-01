@@ -1,11 +1,8 @@
 import { createServer, type Server } from "node:http";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import type { AddressInfo } from "node:net";
 import type { Principal, ToolDescriptor, ToolRegistry } from "../src/core/index.js";
 import { defineHarness } from "../src/harnesses/index.js";
-import { createStore, type VendoStore } from "../src/store/index.js";
+import { emptySharedStore } from "../src/store/backends.test-util.js";
 import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { channelInboundSecret } from "../src/channels.js";
@@ -127,16 +124,6 @@ const paying = defineHarness({
   },
 });
 
-async function tempStore(): Promise<VendoStore> {
-  const dataDir = await mkdtemp(join(tmpdir(), "vendo-channel-approval-"));
-  const store = createStore({ dataDir });
-  cleanups.push(async () => {
-    await store.close();
-    await rm(dataDir, { recursive: true, force: true });
-  });
-  return store;
-}
-
 async function waitFor(check: () => boolean): Promise<void> {
   while (!check()) await new Promise((resolve) => setTimeout(resolve, 25));
 }
@@ -151,7 +138,7 @@ describe.sequential("consent over text", () => {
     const vendo: Vendo = createVendo({
       models: { default: {} as LanguageModel },
       principal: async () => principal,
-      store: await tempStore(),
+      store: await emptySharedStore(),
       harness: paying as never,
       // Every write-class call asks — the mutation gate this whole test is about.
       guard: guard({ policy: { rules: [{ match: { risk: "write" }, action: "ask" }] } }),
@@ -230,7 +217,7 @@ describe.sequential("consent over text", () => {
     const vendo: Vendo = createVendo({
       models: { default: {} as LanguageModel },
       principal: async () => principal,
-      store: await tempStore(),
+      store: await emptySharedStore(),
       harness: paying as never,
       guard: guard({ policy: { rules: [{ match: { risk: "write" }, action: "ask" }] } }),
       channels: { text: true },
@@ -287,7 +274,7 @@ describe.sequential("consent over text", () => {
     const vendo: Vendo = createVendo({
       models: { default: {} as LanguageModel },
       principal: async () => principal,
-      store: await tempStore(),
+      store: await emptySharedStore(),
       harness: paying as never,
       guard: guard({ policy: { rules: [{ match: { risk: "write" }, action: "ask" }] } }),
       channels: { text: true },
@@ -338,7 +325,7 @@ describe.sequential("consent over text", () => {
     const vendo: Vendo = createVendo({
       models: { default: {} as LanguageModel },
       principal: async () => principal,
-      store: await tempStore(),
+      store: await emptySharedStore(),
       harness: paying as never,
       guard: guard({ policy: { rules: [{ match: { risk: "write" }, action: "ask" }] } }),
       channels: { text: true },

@@ -9,11 +9,9 @@
  * request, the real `vendo.handler` answers it, and the bytes are read back out
  * of the real workspace store. `fetch` is the only double, and it is a wire.
  */
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import type { Principal } from "../src/core/index.js";
-import { createStore, type VendoStore } from "../src/store/index.js";
+import { type VendoStore } from "../src/store/index.js";
+import { emptySharedStore } from "../src/store/backends.test-util.js";
 import { createVendoClient, type VendoClient } from "../src/ui/index.js";
 import { afterEach, describe, expect, it } from "vitest";
 import { createVendo, type Vendo } from "../src/server.js";
@@ -28,13 +26,7 @@ afterEach(async () => {
 });
 
 async function seam(): Promise<{ client: VendoClient; vendo: Vendo }> {
-  const dataDir = await mkdtemp(join(tmpdir(), "vendo-user-files-client-"));
-  const store: VendoStore = createStore({ dataDir });
-  cleanups.push(async () => {
-    await store.close();
-    await rm(dataDir, { recursive: true, force: true });
-  });
-  await store.ensureSchema();
+  const store: VendoStore = await emptySharedStore();
   const vendo = createVendo({
     principal: async request => {
       const subject = request.headers.get(USER_HEADER);

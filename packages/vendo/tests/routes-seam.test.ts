@@ -5,12 +5,9 @@
 // really hands it over. So this drives the REAL composed floor: a one-line
 // spread that stopped happening would show up here as a screen that ships a
 // link to nowhere, which is the exact failure the check exists to end.
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import type { AppId, Principal, RunContext } from "../src/core/index.js";
 import type { VendoRouteMap } from "../src/core/apps/index.js";
-import { createStore, type VendoStore } from "../src/store/index.js";
+import { emptySharedStore } from "../src/store/backends.test-util.js";
 import { afterEach, describe, expect, it } from "vitest";
 import { createVendo } from "../src/server.js";
 
@@ -37,18 +34,8 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 });
 
-async function tempStore(): Promise<VendoStore> {
-  const dataDir = await mkdtemp(join(tmpdir(), "vendo-routes-"));
-  const store = createStore({ dataDir });
-  cleanups.push(async () => {
-    await store.close();
-    await rm(dataDir, { recursive: true, force: true });
-  });
-  return store;
-}
-
 const paint = async (to: string) => {
-  const vendo = createVendo({ principal: async () => principal, store: await tempStore(), routes });
+  const vendo = createVendo({ principal: async () => principal, store: await emptySharedStore(), routes });
   // `saves: false` — the read half of the same floor: every stage is identical,
   // and the verdict is what is under test, not the row a passing paint earns.
   return vendo.apps.floor(ctx, { saves: false })
@@ -77,7 +64,7 @@ describe("createVendo({ routes }) refuses a pattern the resolver cannot fill", (
   // generation to provide the value. Silence, again. So it is refused at
   // REGISTRATION, where a host reads it once and fixes it.
   const compose = (routes: VendoRouteMap) => async () =>
-    createVendo({ principal: async () => principal, store: await tempStore(), routes });
+    createVendo({ principal: async () => principal, store: await emptySharedStore(), routes });
 
   it("refuses a suffix after the parameter, naming the route and the segment", async () => {
     await expect(compose({

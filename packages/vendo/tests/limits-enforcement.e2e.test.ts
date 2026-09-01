@@ -14,9 +14,6 @@
  * schema the chat surface reads it through. A hand-written expectation here
  * would let the producer and the consumer drift apart with the suite green.
  */
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { automationsInternals } from "../src/automations/index.js";
 import {
   VENDO_MAKE_TOOL,
@@ -28,7 +25,7 @@ import {
   type StoreOps,
 } from "../src/core/index.js";
 import { memoryStoreOps } from "../src/core/conformance/index.js";
-import { createStore, type VendoStore } from "../src/store/index.js";
+import { emptySharedStore } from "../src/store/backends.test-util.js";
 import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it } from "vitest";
 import { readSse, scriptedModel, textTurn, toolCallTurn, type ScriptedModel } from "../src/agent-doubles.test-util.js";
@@ -53,14 +50,6 @@ interface Composed {
   chat: (text: string) => Promise<Chunk[]>;
 }
 
-async function tempStore(): Promise<VendoStore> {
-  const dataDir = await mkdtemp(join(tmpdir(), "vendo-limits-"));
-  const store = createStore({ dataDir });
-  cleanups.push(async () => { await store.close(); await rm(dataDir, { recursive: true, force: true }); });
-  await store.ensureSchema();
-  return store;
-}
-
 async function compose(options: {
   limits: LimitsCallback;
   turns: Parameters<typeof scriptedModel>[0];
@@ -69,7 +58,7 @@ async function compose(options: {
   const vendo = createVendo({
     models: { default: model as unknown as LanguageModel },
     principal: async () => principal,
-    store: await tempStore(),
+    store: await emptySharedStore(),
     limits: options.limits,
   } as CreateVendoConfig);
   const chat = async (text: string): Promise<Chunk[]> => readSse(await vendo.handler(
@@ -294,7 +283,7 @@ describe("vendo.usage() — the tally a host's own overage job reads", () => {
     const vendo = createVendo({
       models: { default: {} as LanguageModel },
       principal: async () => principal,
-      store: Object.assign(await tempStore(), { ops: meterless as StoreOps }),
+      store: Object.assign(await emptySharedStore(), { ops: meterless as StoreOps }),
     } as CreateVendoConfig);
 
     await expect(vendo.usage({ since: new Date(0) })).rejects.toThrow(/no usage meter/);

@@ -6,7 +6,7 @@
  */
 import type { Guard, Principal, RunContext, ToolCall, ToolResult } from "../../src/core/index.js";
 import { defineHarness } from "../../src/harnesses/index.js";
-import { createStore, type VendoStore } from "../../src/store/index.js";
+import { emptySharedStore } from "../../src/store/backends.test-util.js";
 import { describe, expect, it } from "vitest";
 import { agent, agentComposition } from "../../src/turn/agent.js";
 import {
@@ -18,13 +18,6 @@ import {
   type MemoryAdapter,
 } from "../../src/turn/memory.js";
 import { resolveSystem } from "../../src/turn/prompt.js";
-
-let stores = 0;
-const freshStore = async (): Promise<VendoStore> => {
-  const store = createStore({ dataDir: `memory://agents-memory-${stores++}` });
-  await store.ensureSchema();
-  return store;
-};
 
 const inert = () => defineHarness({ name: "inert", async *run() {} });
 
@@ -50,7 +43,7 @@ const texts = (memories: readonly Memory[]): string[] => memories.map((memory) =
 
 describe("the store-backed memory", () => {
   it("never crosses users — through every one of the five verbs", async () => {
-    const memory = storeMemory(await freshStore());
+    const memory = storeMemory(await emptySharedStore());
     const hers = await memory.remember(alice, "Prefers window seats");
     await memory.remember(bob, "Prefers the aisle");
 
@@ -68,7 +61,7 @@ describe("the store-backed memory", () => {
   });
 
   it("deletes and clears the subject's OWN rows", async () => {
-    const memory = storeMemory(await freshStore());
+    const memory = storeMemory(await emptySharedStore());
     const first = await memory.remember(alice, "Prefers window seats");
     await memory.remember(alice, "Wife's name is Mia");
     await memory.delete(alice, first.id);
@@ -78,7 +71,7 @@ describe("the store-backed memory", () => {
   });
 
   it("recalls the most recent, oldest first, and keeps the rest in storage", async () => {
-    const memory = storeMemory(await freshStore());
+    const memory = storeMemory(await emptySharedStore());
     const stale = ["one", "two", "three", "four", "five"];
     for (const text of stale) await memory.remember(alice, text);
     await tick();
@@ -94,7 +87,7 @@ describe("the store-backed memory", () => {
   });
 
   it("recalls in the order they were made", async () => {
-    const memory = storeMemory(await freshStore());
+    const memory = storeMemory(await emptySharedStore());
     await memory.remember(alice, "Prefers window seats");
     await tick();
     await memory.remember(alice, "Moved to Berlin");
@@ -102,7 +95,7 @@ describe("the store-backed memory", () => {
   });
 
   it("keeps a sentence, not a transcript — counted in code points", async () => {
-    const memory = storeMemory(await freshStore());
+    const memory = storeMemory(await emptySharedStore());
     const kept = await memory.remember(alice, `${"a".repeat(MEMORY_TEXT_MAX_CHARS)}bbb`);
     expect(kept.text).toHaveLength(MEMORY_TEXT_MAX_CHARS);
     // Surrogate pairs are one code point each: a cut between the halves would
@@ -115,7 +108,7 @@ describe("the store-backed memory", () => {
 
 describe("the remember tool", () => {
   it("writes for the turn's own principal, never one it is handed", async () => {
-    const memory = storeMemory(await freshStore());
+    const memory = storeMemory(await emptySharedStore());
     const remember = rememberTool(memory);
     // `subject` is not in the schema; passing it anyway is the attack, and it
     // reaches nothing — the row's owner is the ctx's principal, always.
@@ -127,13 +120,13 @@ describe("the remember tool", () => {
   });
 
   it("refuses a memory with nothing in it", async () => {
-    const remember = rememberTool(storeMemory(await freshStore()));
+    const remember = rememberTool(storeMemory(await emptySharedStore()));
     await expect(remember.execute({ text: "  " }, ctxFor(alice), call({ text: "  " })))
       .rejects.toThrow(/remember needs `text`/);
   });
 
   it("is listed, graded and guarded like any other tool", async () => {
-    const store = await freshStore();
+    const store = await emptySharedStore();
     const composition = agentComposition(agent({ name: "support", harness: inert(), store, memory: true }));
     const descriptor = (await composition!.tools.descriptors()).find((d) => d.name === "remember");
     expect(descriptor?.risk).toBe("write");
@@ -150,7 +143,7 @@ describe("the remember tool", () => {
 });
 
 describe("memory in the per-turn prompt", () => {
-  const withMemory = async (): Promise<MemoryAdapter> => storeMemory(await freshStore());
+  const withMemory = async (): Promise<MemoryAdapter> => storeMemory(await emptySharedStore());
 
   it("puts a remembered fact in the NEXT turn's system prompt, and only its owner's", async () => {
     const memory = await withMemory();
@@ -186,7 +179,7 @@ describe("memory in the per-turn prompt", () => {
 
 describe("agent({ memory })", () => {
   it("unset is no memory at all: no block, no tool, no adapter", async () => {
-    const store = await freshStore();
+    const store = await emptySharedStore();
     const composition = agentComposition(agent({ name: "support", harness: inert(), store }));
     expect(composition?.memory).toBeUndefined();
     expect((await composition!.tools.descriptors()).map((d) => d.name)).not.toContain("remember");
@@ -194,7 +187,7 @@ describe("agent({ memory })", () => {
   });
 
   it("`true` writes through the composition's OWN store", async () => {
-    const store = await freshStore();
+    const store = await emptySharedStore();
     const composition = agentComposition(agent({ name: "support", harness: inert(), store, memory: true }));
     await composition!.memory?.remember(alice, "Prefers window seats");
     expect(texts(await storeMemory(store).list(alice))).toEqual(["Prefers window seats"]);
@@ -212,7 +205,7 @@ describe("agent({ memory })", () => {
       delete: async () => {},
       clear: async () => {},
     };
-    const store = await freshStore();
+    const store = await emptySharedStore();
     const composition = agentComposition(agent({ name: "support", harness: inert(), store, memory: byo }));
     expect(composition?.memory).toBe(byo);
 
@@ -245,7 +238,7 @@ describe("memory through chat() — the verb the quickstart uses", () => {
           yield { type: "text" as const, delta: "ok" };
         },
       }),
-      store: await freshStore(),
+      store: await emptySharedStore(),
       memory: true,
     });
 
@@ -276,7 +269,7 @@ describe("memory through run() — the unattended lane", () => {
             yield { type: "text" as const, delta: "ok" };
           },
         }),
-        store: await freshStore(),
+        store: await emptySharedStore(),
         ...(memory ? { memory: true } : {}),
       }),
     };

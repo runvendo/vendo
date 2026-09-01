@@ -9,9 +9,6 @@
  * disagree about the layout, the bytes land wrong or not at all, which is exactly
  * what a stubbed counterparty could never tell us.
  */
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import {
   VENDO_APP_FORMAT,
   WORKSPACE_INLINE_MAX_BYTES,
@@ -25,7 +22,8 @@ import {
   type WorkspaceFs,
 } from "../src/core/index.js";
 import { commitApp, type AppSourceSeam } from "../src/apps/index.js";
-import { createStore, workspaceStore, type VendoStore } from "../src/store/index.js";
+import { workspaceStore, type VendoStore } from "../src/store/index.js";
+import { emptySharedStore } from "../src/store/backends.test-util.js";
 import { afterEach, describe, expect, it } from "vitest";
 
 const cleanups: Array<() => Promise<void>> = [];
@@ -41,17 +39,6 @@ const ctx: RunContext = {
   presence: "present",
   sessionId: "s1",
 };
-
-async function tempStore(): Promise<VendoStore> {
-  const dataDir = await mkdtemp(join(tmpdir(), "vendo-appsource-"));
-  const store = createStore({ dataDir });
-  await store.ensureSchema();
-  cleanups.push(async () => {
-    await store.close();
-    await rm(dataDir, { recursive: true, force: true });
-  });
-  return store;
-}
 
 /** A tiny in-memory blob seam — the SAME `FilesAdapter` shape the workspace rows
  *  spill through, so an oversized source file uses the mechanism that exists. */
@@ -125,7 +112,7 @@ const openWorkspace = (store: VendoStore, blobs?: FilesAdapter): Promise<Workspa
 
 describe("app source: commit (contract §3.2)", () => {
   it("lands changed source in the row, byte for byte", async () => {
-    const store = await tempStore();
+    const store = await emptySharedStore();
     await seedApp(store);
     const seam = seamOver(store);
 
@@ -145,7 +132,7 @@ describe("app source: commit (contract §3.2)", () => {
   }, 60_000);
 
   it("spills a file past the inline cap through the workspace's own blob seam", async () => {
-    const store = await tempStore();
+    const store = await emptySharedStore();
     await seedApp(store);
     const blobs = memoryBlobs();
     const seam = seamOver(store, blobs);
@@ -168,7 +155,7 @@ describe("app source: commit (contract §3.2)", () => {
   }, 60_000);
 
   it("drops a deleted file and leaves the hot path to the render seam", async () => {
-    const store = await tempStore();
+    const store = await emptySharedStore();
     await seedApp(store);
     const seam = seamOver(store);
 
@@ -198,7 +185,7 @@ describe("app source: commit (contract §3.2)", () => {
    * silently dropped.
    */
   it("materializes an ORG-owned app in its ORG mount, even when the personal mount is writable too", async () => {
-    const store = await tempStore();
+    const store = await emptySharedStore();
     const ORG = "maple";
     const membership = { org: ORG, display: "Maple Bank", teams: ["support"], admin: true };
     const orgCtx: RunContext = { ...ctx, memberships: [membership] };
@@ -240,7 +227,7 @@ describe("app source: commit (contract §3.2)", () => {
    * and that gate answers about the caller's own mount.
    */
   it("refuses a commit against a personal app owned by someone else", async () => {
-    const store = await tempStore();
+    const store = await emptySharedStore();
     const STRANGER = "user_stranger";
     await store.records("vendo_apps").put({
       id: APP,

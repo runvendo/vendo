@@ -22,7 +22,7 @@ import { join } from "node:path";
 import { VENDO_TOOLS_FORMAT, type ExtractedTool } from "../src/actions/index.js";
 import { VendoError, type Principal, type RunContext } from "../src/core/index.js";
 import { createGuard, guard as guardRules } from "../src/guard/index.js";
-import { createStore, type VendoStore } from "../src/store/index.js";
+import { emptySharedStore } from "../src/store/backends.test-util.js";
 import type { LanguageModel, UIMessage } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { resetDeprecationWarnings } from "../src/config-keys.js";
@@ -38,17 +38,6 @@ afterEach(async () => {
   vi.restoreAllMocks();
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 });
-
-async function tempStore(prefix: string): Promise<VendoStore> {
-  const dataDir = await mkdtemp(join(tmpdir(), prefix));
-  const store = createStore({ dataDir });
-  cleanups.push(async () => {
-    await store.close();
-    await rm(dataDir, { recursive: true, force: true });
-  });
-  await store.ensureSchema();
-  return store;
-}
 
 const routeTool = (name: string, extras: Partial<ExtractedTool> = {}): ExtractedTool => ({
   name,
@@ -141,7 +130,7 @@ describe("guard: one slot, two arms, the same decisions main made", () => {
     const vendo = createVendo({
       models: { default: {} as LanguageModel },
       principal: async () => principal,
-      store: await tempStore("vendo-coherence-spec-"),
+      store: await emptySharedStore(),
       guard: guardRules({ policy: RULES }),
     });
     expect(await decisions(vendo)).toEqual(MAIN_DECISIONS);
@@ -154,7 +143,7 @@ describe("guard: one slot, two arms, the same decisions main made", () => {
     const vendo = createVendo({
       models: { default: {} as LanguageModel },
       principal: async () => principal,
-      store: await tempStore("vendo-coherence-bare-"),
+      store: await emptySharedStore(),
       guard: { policy: RULES },
     });
     expect(await decisions(vendo)).toEqual(MAIN_DECISIONS);
@@ -165,7 +154,7 @@ describe("guard: one slot, two arms, the same decisions main made", () => {
     // guard, so the rules it was built with are the rules in force.
     await dotVendo();
     stubHostFetch();
-    const store = await tempStore("vendo-coherence-instance-");
+    const store = await emptySharedStore();
     const built = createGuard({ store, policy: RULES });
     const vendo = createVendo({
       models: { default: {} as LanguageModel },
@@ -180,7 +169,7 @@ describe("guard: one slot, two arms, the same decisions main made", () => {
   it("the approval TTL rides the guard, so an instance keeps the knob", async () => {
     // RED: read `parkedCallTtlMs` off config again and a host that passes a
     // built guard silently gets the 60-minute default instead of its own.
-    const store = await tempStore("vendo-coherence-ttl-");
+    const store = await emptySharedStore();
     expect(createGuard({ store, approvals: { parkedCallTtlMs: 90_000 } }).approvals.parkedCallTtlMs)
       .toBe(90_000);
     expect(createGuard({ store }).approvals.parkedCallTtlMs).toBe(60 * 60_000);
@@ -196,7 +185,6 @@ describe("guard: one slot, two arms, the same decisions main made", () => {
   // server.ts's `createGuard` call, and the second call below runs clean because
   // the limit in force is the default the host never chose.
   const breakerVendo = async (
-    prefix: string,
     breakers: { maxCallsPerMinute?: number; maxWritesPerRun?: number },
   ): Promise<Vendo> => {
     await dotVendo();
@@ -204,13 +192,13 @@ describe("guard: one slot, two arms, the same decisions main made", () => {
     return createVendo({
       models: { default: {} as LanguageModel },
       principal: async () => principal,
-      store: await tempStore(prefix),
+      store: await emptySharedStore(),
       guard: guardRules({ breakers }),
     });
   };
 
   it("the host's call-rate breaker is the one in force", async () => {
-    const vendo = await breakerVendo("vendo-coherence-rate-", { maxCallsPerMinute: 1 });
+    const vendo = await breakerVendo({ maxCallsPerMinute: 1 });
     // One session, two distinct calls — a repeat of the same call id is a replay
     // the guard dedupes, which would never reach the breaker at all.
     const session: RunContext = {
@@ -223,7 +211,7 @@ describe("guard: one slot, two arms, the same decisions main made", () => {
   });
 
   it("the host's write budget is the one in force", async () => {
-    const vendo = await breakerVendo("vendo-coherence-writes-", { maxWritesPerRun: 1 });
+    const vendo = await breakerVendo({ maxWritesPerRun: 1 });
     const session: RunContext = {
       principal, venue: "chat", presence: "present", sessionId: "ses_writes",
     };
@@ -272,7 +260,7 @@ async function promptFor(overrides: Partial<Parameters<typeof createVendo>[0]>):
   const vendo = createVendo({
     models: { default: recordingModel(seen) },
     principal: async () => principal,
-    store: await tempStore("vendo-coherence-prompt-"),
+    store: await emptySharedStore(),
     ...overrides,
   } as Parameters<typeof createVendo>[0]);
   const message = { id: "m1", role: "user", parts: [{ type: "text", text: "hi" }] } as UIMessage;
@@ -309,7 +297,7 @@ describe("instructions: one prose story, in the section brief always had", () =>
     // Filling a slot twice is a boot error, never one side silently losing.
     const { agent } = await import("../src/turn/index.js");
     const { vendo: vendoHarness } = await import("../src/harnesses/index.js");
-    const store = await tempStore("vendo-coherence-adopt-");
+    const store = await emptySharedStore();
     const composed = agent({ name: "support", harness: vendoHarness(), store, instructions: PROSE });
     expect(() => createVendo({
       models: { default: {} as LanguageModel },
@@ -379,7 +367,7 @@ describe("connectedAccounts and connectors are two keys, two products", () => {
     const vendo = createVendo({
       models: { default: {} as LanguageModel },
       principal: async () => principal,
-      store: await tempStore("vendo-coherence-accounts-"),
+      store: await emptySharedStore(),
       connectedAccounts: ["gmail"],
     });
     const names = (await vendo.actions.descriptors()).map((descriptor) => descriptor.name);
@@ -399,7 +387,7 @@ describe("connectedAccounts and connectors are two keys, two products", () => {
     const vendo = createVendo({
       models: { default: {} as LanguageModel },
       principal: async () => principal,
-      store: await tempStore("vendo-coherence-strings-"),
+      store: await emptySharedStore(),
       connectors: ["gmail"],
     });
     const names = (await vendo.actions.descriptors()).map((descriptor) => descriptor.name);
@@ -428,7 +416,7 @@ describe("connectedAccounts and connectors are two keys, two products", () => {
     const vendo = createVendo({
       models: { default: {} as LanguageModel },
       principal: async () => principal,
-      store: await tempStore("vendo-coherence-mixed-"),
+      store: await emptySharedStore(),
       connectedAccounts: ["gmail"],
       connectors: [acmeConnector],
     });
@@ -445,7 +433,7 @@ describe("connectedAccounts and connectors are two keys, two products", () => {
     const vendo = createVendo({
       models: { default: {} as LanguageModel },
       principal: async () => principal,
-      store: await tempStore("vendo-coherence-none-"),
+      store: await emptySharedStore(),
       connectedAccounts: [],
     });
     const names = (await vendo.actions.descriptors()).map((descriptor) => descriptor.name);
@@ -460,7 +448,7 @@ describe("connectedAccounts and connectors are two keys, two products", () => {
     const vendo = createVendo({
       models: { default: {} as LanguageModel },
       principal: async () => principal,
-      store: await tempStore("vendo-coherence-nokey-"),
+      store: await emptySharedStore(),
       connectedAccounts: ["gmail", "slack"],
     });
     expect(vendo.connections.posture).toBe(false);

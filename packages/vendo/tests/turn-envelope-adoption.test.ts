@@ -14,9 +14,6 @@
  * The ops are counted at the handle, where one op IS one wire call for a hosted
  * deployment (`hostedStoreOps` posts once per op).
  */
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import {
   STORE_WIRE_TURN_OPS,
   VENDO_STORE_WIRE_FORMAT,
@@ -28,7 +25,8 @@ import {
   type StoreOps,
 } from "../src/core/index.js";
 import { defineHarness } from "../src/harnesses/index.js";
-import { createStore, createStoreOps, type VendoStore } from "../src/store/index.js";
+import { createStoreOps, type VendoStore } from "../src/store/index.js";
+import { emptySharedStore } from "../src/store/backends.test-util.js";
 import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it } from "vitest";
 import { scriptedModel, textTurn } from "../src/agent-doubles.test-util.js";
@@ -114,10 +112,7 @@ interface Deployment {
 }
 
 async function deploy(level: number, harness?: Harness<never>): Promise<Deployment> {
-  const dataDir = await mkdtemp(join(tmpdir(), "vendo-turn-envelope-"));
-  const backing = createStore({ dataDir });
-  cleanups.push(async () => { await backing.close(); await rm(dataDir, { recursive: true, force: true }); });
-  await backing.ensureSchema();
+  const backing = await emptySharedStore();
   const seen: string[] = [];
   const vendo = createVendo({
     models: { default: scriptedModel([textTurn("one"), textTurn("two")]) as unknown as LanguageModel },

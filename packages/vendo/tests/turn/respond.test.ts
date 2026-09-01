@@ -8,6 +8,7 @@
  */
 import { defineHarness } from "../../src/harnesses/index.js";
 import { createStore } from "../../src/store/index.js";
+import { emptySharedStore } from "../../src/store/backends.test-util.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { agent } from "../../src/turn/agent.js";
 // Through the BARREL: the header a host reads the thread id from is this
@@ -69,7 +70,7 @@ describe("agent() composition", () => {
     const model = { modelId: "fake", specificationVersion: "v2" } as never;
 
     const handed = await seatOf(
-      agent({ name: "support", harness: peek, model, store: memoryStore() }),
+      agent({ name: "support", harness: peek, model, store: await emptySharedStore() }),
       () => seen,
     );
 
@@ -88,7 +89,7 @@ describe("agent() composition", () => {
     });
 
     const handed = await seatOf(
-      agent({ name: "support", harness: peek, store: memoryStore() }),
+      agent({ name: "support", harness: peek, store: await emptySharedStore() }),
       () => seen,
     ) as { provider: string; modelId: string };
 
@@ -107,7 +108,7 @@ describe("agent() composition", () => {
       },
     });
     const model = { modelId: "fake", specificationVersion: "v2" } as never;
-    const support = agent({ name: "support", harness: peek, model, store: memoryStore() });
+    const support = agent({ name: "support", harness: peek, model, store: await emptySharedStore() });
 
     await (await support.respond("u_42", "hi")).text();
 
@@ -123,7 +124,7 @@ describe("the five things a host is told to fix", () => {
 
   it("neither an explicit model nor a rung — the default brain has nothing to think with", async () => {
     withRung(false);
-    const support = agent({ name: "support", store: memoryStore() });
+    const support = agent({ name: "support", store: await emptySharedStore() });
 
     await expect(support.respond("u_42", "hi")).rejects.toThrow(/agent\(\{ model \}\) is required/);
     await expect(support.run("do a thing")).rejects.toThrow(/harness: claudeCode\(\)/);
@@ -145,7 +146,7 @@ describe("the five things a host is told to fix", () => {
   });
 
   it("an unknown thread — a foreign one reads the same as one that never existed", async () => {
-    const store = memoryStore();
+    const store = await emptySharedStore();
     const support = agent({ name: "support", harness: speaks("hi"), store });
     const mine = await support.session("u_42");
 
@@ -158,7 +159,7 @@ describe("the five things a host is told to fix", () => {
 
 describe("respond()", () => {
   it("returns the UI message stream with the conversation's id on the header", async () => {
-    const store = memoryStore();
+    const store = await emptySharedStore();
     const support = agent({ name: "support", harness: speaks("hello from the harness"), store });
 
     const response = await support.respond("u_42", "hello");
@@ -169,7 +170,7 @@ describe("respond()", () => {
   });
 
   it("session.stream() stamps the same header — one code path, both surfaces", async () => {
-    const store = memoryStore();
+    const store = await emptySharedStore();
     const support = agent({ name: "support", harness: speaks("hi"), store });
     const session = await support.session("u_42");
 
@@ -179,7 +180,7 @@ describe("respond()", () => {
   });
 
   it("continues the conversation the header handed back", async () => {
-    const store = memoryStore();
+    const store = await emptySharedStore();
     let seen: readonly unknown[] = [];
     const peek = defineHarness({
       name: "peek",
@@ -199,7 +200,7 @@ describe("respond()", () => {
   });
 
   it("carries the same ctx a session's turn does — the user facts and the tool context", async () => {
-    const store = memoryStore();
+    const store = await emptySharedStore();
     const seen: unknown[] = [];
     const support = agent({
       name: "support",

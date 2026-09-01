@@ -6,12 +6,10 @@
  * bug was ~700 lines of correct primitives with zero production callers. A unit
  * test of a helper cannot tell you a composition wired it.
  */
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import type { Connector } from "../src/actions/index.js";
 import type { FilesAdapter, Principal, ToolDescriptor, ToolRegistry } from "../src/core/index.js";
-import { createStore, type VendoStore } from "../src/store/index.js";
+import { type VendoStore } from "../src/store/index.js";
+import { emptySharedStore } from "../src/store/backends.test-util.js";
 import { vendo as vendoHarness } from "../src/harnesses/index.js";
 import { defineHarness } from "../src/harnesses/index.js";
 import type { LanguageModel, UIMessage } from "ai";
@@ -26,15 +24,7 @@ afterEach(async () => {
 
 const principal: Principal = { kind: "user", subject: "user_harness" };
 
-async function tempStore(prefix: string): Promise<VendoStore> {
-  const dataDir = await mkdtemp(join(tmpdir(), prefix));
-  const store = createStore({ dataDir });
-  cleanups.push(async () => {
-    await store.close();
-    await rm(dataDir, { recursive: true, force: true });
-  });
-  return store;
-}
+
 
 /**
  * A store the way a HOST supplies one: the whole public `VendoStore` surface,
@@ -106,7 +96,7 @@ interface Composed {
 async function compose(
   overrides: Partial<Parameters<typeof createVendo>[0]> = {},
 ): Promise<Composed> {
-  const store = await tempStore("vendo-harness-");
+  const store = await emptySharedStore();
   const host = hostTools();
   const vendo = createVendo({
     // Never reached: every harness in this file is scripted. A model would make
@@ -325,7 +315,7 @@ describe("createVendo({ harness }) — a turn served through the composed runtim
    *    anything. Boot stays up either way — this is a per-turn refusal.
    */
   it("refuses POST /threads loudly when the store has neither SQL nor ops", async () => {
-    const backing = await tempStore("vendo-harness-nonsql-");
+    const backing = await emptySharedStore();
     const { vendo } = await compose({
       store: nonSqlStore(backing),
       harness: scriptedHarness(async function* () {

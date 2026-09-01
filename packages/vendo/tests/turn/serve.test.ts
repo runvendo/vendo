@@ -6,14 +6,16 @@
  */
 import { defineHarness } from "../../src/harnesses/index.js";
 import { createStore, type VendoStore } from "../../src/store/index.js";
+import { emptySharedStore } from "../../src/store/backends.test-util.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { VendoAgent } from "../../src/turn/agent.js";
 import { agent } from "../../src/turn/agent.js";
 import { serve } from "../../src/turn/serve.js";
 import { tool } from "../../src/turn/tools.js";
 
-let stores = 0;
-const memoryStore = (): VendoStore => createStore({ dataDir: `memory://agents-serve-${stores++}` });
+/** An engine of this test's OWN — for the one case that closes it. Everything
+ *  else here takes the file's shared store. */
+const closableStore = (): VendoStore => createStore({ dataDir: "memory://agents-serve-closable" });
 
 /** An agent whose brain does nothing but sign the visitors' book, so a firing is
  *  observable as "this name's runner ran". */
@@ -46,7 +48,7 @@ describe("serve()", () => {
   it("a declaration is INERT until serve(): nothing is stored and nothing fires", async () => {
     fakeTicker();
     const fired: string[] = [];
-    const store = memoryStore();
+    const store = await emptySharedStore();
     const support = spy("support", fired, store);
     support.on({ at: "2020-01-01T00:00:00.000Z" }, "summarize the week and email ops");
 
@@ -58,7 +60,7 @@ describe("serve()", () => {
   });
 
   it("reconciles the declaration into an armed record owned by the code", async () => {
-    const store = memoryStore();
+    const store = await emptySharedStore();
     const support = spy("support", [], store);
     support.on("0 9 * * 1", "summarize the week and email ops");
 
@@ -78,7 +80,7 @@ describe("serve()", () => {
   it("a due schedule fires through the agent's own runner, as the code owner", async () => {
     fakeTicker();
     const fired: string[] = [];
-    const store = memoryStore();
+    const store = await emptySharedStore();
     const support = spy("support", fired, store);
     // Already past at boot, so the first tick is the due one — the clock the
     // engine reads, rather than a wall-clock wait.
@@ -101,7 +103,7 @@ describe("serve()", () => {
   it("close() stops the ticker: a due schedule no longer fires", async () => {
     fakeTicker();
     const fired: string[] = [];
-    const store = memoryStore();
+    const store = await emptySharedStore();
     const support = spy("support", fired, store);
     support.on({ at: "2020-01-01T00:00:00.000Z" }, "summarize the week and email ops");
 
@@ -117,7 +119,7 @@ describe("serve()", () => {
   it("each agent brings its own runner, and a firing reaches the one it named", async () => {
     fakeTicker();
     const fired: string[] = [];
-    const store = memoryStore();
+    const store = await emptySharedStore();
     const support = spy("support", fired, store);
     const billing = spy("billing", fired, store);
     billing.on({ at: "2020-01-01T00:00:00.000Z" }, "chase the overdue invoices");
@@ -131,7 +133,7 @@ describe("serve()", () => {
 
   it("a secondary's firing parks on the DEPLOYMENT's guard, so the card is collected", async () => {
     fakeTicker();
-    const store = memoryStore();
+    const store = await emptySharedStore();
     // The deployment's composition is the FIRST agent's, tools included. Billing
     // brings a brain and its own store, and reaches support's tool.
     const support = agent({
@@ -153,7 +155,11 @@ describe("serve()", () => {
     });
     const billing = agent({
       name: "billing",
-      store: memoryStore(),
+      // A NAMED engine, which is a different database entirely: on the file's
+      // unnamed one this would be the deployment's own store under another
+      // variable, and every assertion below would be about a card parked where
+      // it was already looking.
+      store: await emptySharedStore({ engine: "billing" }),
       harness: defineHarness({
         name: "caller",
         async *run(turn) {
@@ -194,7 +200,7 @@ describe("serve()", () => {
   });
 
   it("a boot reconcile that fails REJECTS rather than handing back a dead runtime", async () => {
-    const store = memoryStore();
+    const store = closableStore();
     const support = spy("support", [], store);
     support.on("0 9 * * 1", "summarize the week and email ops");
     await store.ensureSchema();

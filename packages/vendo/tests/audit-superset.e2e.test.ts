@@ -27,12 +27,10 @@
  * UNKNOWN part type is a failure: a new persisted part is a new claim about which
  * plane it belongs to, and someone has to make it on purpose.
  */
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import type { Principal, ToolDescriptor, ToolRegistry } from "../src/core/index.js";
 import { defineHarness } from "../src/harnesses/index.js";
-import { createStore, type VendoStore } from "../src/store/index.js";
+import { type VendoStore } from "../src/store/index.js";
+import { emptySharedStore } from "../src/store/backends.test-util.js";
 import type { LanguageModel, UIMessage } from "ai";
 import { afterEach, describe, expect, it } from "vitest";
 import { createVendo, type Vendo } from "../src/server.js";
@@ -48,16 +46,6 @@ const THREAD = "thr_superset";
 const READ_TOOL = "maple_invoices_list";
 const WRITE_TOOL = "maple_payments_send";
 const FAILING_TOOL = "maple_reports_read";
-
-async function tempStore(): Promise<VendoStore> {
-  const dataDir = await mkdtemp(join(tmpdir(), "vendo-superset-"));
-  const store = createStore({ dataDir });
-  cleanups.push(async () => {
-    await store.close();
-    await rm(dataDir, { recursive: true, force: true });
-  });
-  return store;
-}
 
 /**
  * Three host tools, one per outcome class the turn needs: a read that runs
@@ -173,7 +161,7 @@ interface TurnResult {
 
 /** ONE composed turn carrying every routing class in §3's table. */
 async function runTheTurn(): Promise<TurnResult> {
-  const store = await tempStore();
+  const store = await emptySharedStore();
   const results: Record<string, string> = {};
 
   const harness = defineHarness({
@@ -460,7 +448,7 @@ describe("the unattended failure card (design §3)", () => {
   }
 
   async function awayFixture(): Promise<AwayFixture> {
-    const store = await tempStore();
+    const store = await emptySharedStore();
     const executed: string[] = [];
     const outcomes: string[] = [];
     const harness = defineHarness({

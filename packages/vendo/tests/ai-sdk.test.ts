@@ -8,7 +8,7 @@ import {
   vendoApprovalRefSchema,
   type Principal,
 } from "../src/core/index.js";
-import { createStore } from "../src/store/index.js";
+import { emptySharedStore } from "../src/store/backends.test-util.js";
 import type { LanguageModel, Tool, ToolCallOptions } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { vendoTools } from "../src/ai-sdk.js";
@@ -43,12 +43,10 @@ const callOptions = (toolCallId: string): ToolCallOptions => ({ toolCallId, mess
 
 async function compose(): Promise<{ vendo: Vendo; fetchSpy: ReturnType<typeof vi.fn> }> {
   const root = await mkdtemp(join(tmpdir(), "vendo-ai-sdk-root-"));
-  const dataDir = await mkdtemp(join(tmpdir(), "vendo-ai-sdk-store-"));
   const previousCwd = process.cwd();
   cleanups.push(async () => {
     process.chdir(previousCwd);
     await rm(root, { recursive: true, force: true });
-    await rm(dataDir, { recursive: true, force: true });
   });
   await mkdir(join(root, ".vendo"));
   await writeFile(join(root, ".vendo", "tools.json"), JSON.stringify({
@@ -68,9 +66,7 @@ async function compose(): Promise<{ vendo: Vendo; fetchSpy: ReturnType<typeof vi
   }));
   vi.stubGlobal("fetch", fetchSpy);
   process.chdir(root);
-  const store = createStore({ dataDir });
-  cleanups.push(async () => { await store.close(); });
-  await store.ensureSchema();
+  const store = await emptySharedStore();
   const vendo = createVendo({
     models: { default: {} as LanguageModel },
     principal: async () => principal,

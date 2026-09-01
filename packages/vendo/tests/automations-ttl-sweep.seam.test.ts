@@ -16,9 +16,6 @@
  * of — the producer and the consumer have to be the real ones, over one real
  * store, for this to prove anything.
  */
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { automationsInternals } from "../src/automations/index.js";
 import type {
   AutomationId,
@@ -27,7 +24,8 @@ import type {
   ToolDescriptor,
   ToolRegistry,
 } from "../src/core/index.js";
-import { createStore, type VendoStore } from "../src/store/index.js";
+import { type VendoStore } from "../src/store/index.js";
+import { emptySharedStore } from "../src/store/backends.test-util.js";
 import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it } from "vitest";
 import { createVendo, type Vendo } from "../src/server.js";
@@ -61,12 +59,7 @@ const host: ToolRegistry = {
  *  `enable` is called with no authoring call, so nothing is consented and every
  *  power is captured as a pending ask (the leftover path). */
 async function armedWithPendingAsks(): Promise<{ vendo: Vendo; id: AutomationId; askIds: string[] }> {
-  const dataDir = await mkdtemp(join(tmpdir(), "vendo-ttl-sweep-"));
-  const store: VendoStore = createStore({ dataDir });
-  cleanups.push(async () => {
-    await store.close();
-    await rm(dataDir, { recursive: true, force: true });
-  });
+  const store: VendoStore = await emptySharedStore();
   const vendo = createVendo({
     models: { default: {} as LanguageModel },
     principal: async () => principal,

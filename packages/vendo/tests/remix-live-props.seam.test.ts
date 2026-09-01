@@ -49,7 +49,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { SeedBaseline } from "../src/apps/index.js";
 import type { AppDocument, Principal } from "../src/core/index.js";
-import { createStore } from "../src/store/index.js";
+import { emptySharedStore } from "../src/store/backends.test-util.js";
 import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it } from "vitest";
 import { createVendo } from "../src/server.js";
@@ -208,9 +208,7 @@ async function deployment() {
     join(root, ".vendo", "remixable", `${baseline.slot}.json`),
     JSON.stringify(baseline, null, 2),
   );
-  const store = createStore({ dataDir: join(root, ".data") });
-  await store.ensureSchema();
-  cleanups.push(async () => store.close());
+  const store = await emptySharedStore();
   process.chdir(root);
   return createVendo({
     models: { default: scripted() },

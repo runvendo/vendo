@@ -19,14 +19,12 @@
  * approvals queue, and the parking behaviour is already pinned next door.
  */
 import { createHash } from "node:crypto";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { UPLOAD_HEADER } from "../src/core/index.js";
 import { defineHarness } from "../src/harnesses/index.js";
-import { createStore, FILES_STORE_MAX_BYTES, type VendoStore } from "../src/store/index.js";
+import { FILES_STORE_MAX_BYTES, type VendoStore } from "../src/store/index.js";
+import { emptySharedStore } from "../src/store/backends.test-util.js";
 import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it } from "vitest";
 import { createVendo, type Vendo } from "../src/server.js";
@@ -55,12 +53,7 @@ interface Host {
 }
 
 async function composedHost(options?: { uploadMaxBytes?: number }): Promise<Host> {
-  const dataDir = await mkdtemp(join(tmpdir(), "vendo-files-seam-"));
-  const store: VendoStore = createStore({ dataDir });
-  cleanups.push(async () => {
-    await store.close();
-    await rm(dataDir, { recursive: true, force: true });
-  });
+  const store: VendoStore = await emptySharedStore();
   let subject = ALICE;
   const vendo = createVendo({
     models: { default: {} as LanguageModel },

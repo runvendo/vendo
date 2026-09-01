@@ -9,14 +9,13 @@
 import type { ToolDescriptor, ToolRegistry } from "../../src/core/index.js";
 import type { VendoGuard } from "../../src/guard/index.js";
 import { defineHarness } from "../../src/harnesses/index.js";
-import { createStore, threadStore } from "../../src/store/index.js";
+import { threadStore } from "../../src/store/index.js";
+import { emptySharedStore } from "../../src/store/backends.test-util.js";
 import { describe, expect, it } from "vitest";
 import { agent } from "../../src/turn/agent.js";
 import { startRun } from "../../src/turn/away.js";
 import { tool } from "../../src/turn/tools.js";
 
-let stores = 0;
-const memoryStore = () => createStore({ dataDir: `memory://agents-unattended-${stores++}` });
 
 const readTool = () => tool({
   name: "invoices_list",
@@ -42,7 +41,7 @@ describe("run() — the budget bounds a run whose calls PARK", () => {
   // meant the budget bounded nothing and a looping model minted one approval
   // card per attempt (25 cards against a budget of 20, reported `ok`).
   it("spends the budget on parked calls too, and stops rather than minting cards forever", async () => {
-    const store = memoryStore();
+    const store = await emptySharedStore();
     const support = agent({
       name: "support",
       harness: looper(5),
@@ -73,7 +72,7 @@ describe("run() — the brief", () => {
           yield { type: "text" as const, delta: "ok" };
         },
       }),
-      store: memoryStore(),
+      store: await emptySharedStore(),
     });
     await support.run("go", options);
     return seen;
@@ -100,7 +99,7 @@ describe("run() — the brief", () => {
 
 describe("run() — an already-aborted signal", () => {
   it("does no work at all: no thread, no harness, just the stop", async () => {
-    const store = memoryStore();
+    const store = await emptySharedStore();
     let thought = false;
     const support = agent({
       name: "support",
@@ -169,7 +168,7 @@ describe("run() — a guard that fails while parking", () => {
   it("reports the failure, not a card nobody has", async () => {
     const result = await startRun({
       name: "support",
-      store: memoryStore(),
+      store: await emptySharedStore(),
       guard: brokenGuard(),
       tools: registry,
       harness: looper(1),

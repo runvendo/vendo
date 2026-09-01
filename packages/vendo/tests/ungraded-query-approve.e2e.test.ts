@@ -1,6 +1,3 @@
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { createApps } from "../src/apps/index.js";
 import {
   VENDO_APP_FORMAT,
@@ -12,7 +9,7 @@ import {
   type ToolRegistry,
 } from "../src/core/index.js";
 import { createGuard } from "../src/guard/index.js";
-import { createStore } from "../src/store/index.js";
+import { emptySharedStore } from "../src/store/backends.test-util.js";
 import { screenSource } from "./screen-fixture.js";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -72,11 +69,7 @@ function insightsHost(): { tools: ToolRegistry; reads: () => number } {
 }
 
 async function harness() {
-  const root = await mkdtemp(join(tmpdir(), "vendo-ungraded-query-"));
-  cleanups.push(async () => rm(root, { recursive: true, force: true }));
-  const store = createStore({ dataDir: join(root, ".data") });
-  cleanups.push(async () => store.close());
-  await store.ensureSchema();
+  const store = await emptySharedStore();
   // NO policy at all — the bare guard whose `ungraded` default is the point.
   const guard = createGuard({ store });
   const host = insightsHost();

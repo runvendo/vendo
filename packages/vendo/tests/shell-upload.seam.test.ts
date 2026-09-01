@@ -6,9 +6,6 @@
  * the same guard-bound registry a turn executes on. A harness that mocked either
  * side could never catch the two disagreeing about where the bytes are.
  */
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { genericJwtPreset } from "../src/actions/presets/index.js";
 import {
   UPLOAD_HEADER,
@@ -17,7 +14,8 @@ import {
   type Principal,
   type RunContext,
 } from "../src/core/index.js";
-import { createStore, type VendoStore } from "../src/store/index.js";
+import { type VendoStore } from "../src/store/index.js";
+import { emptySharedStore } from "../src/store/backends.test-util.js";
 import { afterEach, describe, expect, it } from "vitest";
 import { jwt } from "../src/auth-presets/jwt.js";
 import { createVendo, type Vendo } from "../src/server.js";
@@ -48,12 +46,7 @@ async function bearer(): Promise<Record<string, string>> {
 }
 
 async function compose(): Promise<Vendo> {
-  const dataDir = await mkdtemp(join(tmpdir(), "vendo-shell-seam-"));
-  const store: VendoStore = createStore({ dataDir });
-  cleanups.push(async () => {
-    await store.close();
-    await rm(dataDir, { recursive: true, force: true });
-  });
+  const store: VendoStore = await emptySharedStore();
   return createVendo({ store, auth: jwt({ secret: SECRET }) });
 }
 
