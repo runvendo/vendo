@@ -30,7 +30,8 @@ pass needs `ANTHROPIC_API_KEY` in the environment plus a `claude` binary on
 degrades gracefully — the AI pass self-skips, init exits green, and the
 deterministic structural checks still run. The layer split leans on exactly
 that: layer 1 is the structural clean room (zero model credentials), and the
-full AI sweep (layer 2 scoring + AI polish) runs on the Mac mini.
+full AI sweep (layer 2 scoring + AI polish) is run on demand, by whoever
+changed init extraction.
 
 ## Local Vendo injection
 
@@ -93,13 +94,20 @@ the orchestrating environment; Vendo-specific wiring never belongs here.
 
 Run `pnpm build` first: the harness imports `@vendoai/vendo/core` at load, so a cold
 checkout fails before the first repo is cloned. Then, on demand — the sweep
-never runs in CI. Layer 1 is free — the structural clean room, no model
-credentials — so run
-`pnpm corpus run --layer 1 --json --strict` before any PR that touches init
+never runs in CI, and it gates no PR. Layer 1 is free — the structural clean
+room, no model credentials — so
+`pnpm corpus run --layer 1 --json --strict` is the cheap one to reach for when
+you have changed init extraction and want to know what it did
 (`--strict` makes a hard structural failure exit nonzero);
 `corpus/scripts/corpus-trend.mjs` appends a trend delta versus the previous
-scorecard. The costed half — layer 2 scoring, the init AI polish pass, and
-`pnpm corpus ai` — runs on the Mac mini before releases.
+scorecard.
+
+The costed half — layer 2 scoring, the init AI polish pass, and `pnpm corpus
+ai` — is not tied to the release cycle. Run it when you CHANGE INIT
+EXTRACTION — the extraction prompts, the judgment pass, the rubric, or the
+schema they write — because that is the only thing whose quality it can
+report on. There is no standing pre-release ritual: a release that did not
+touch extraction learns nothing from a sweep, and a sweep is model spend.
 
 ## Judgment channel matrix
 
@@ -173,6 +181,7 @@ failures and exits 0; `--strict` returns nonzero when any run failed.
   `${CORPUS_<REPO>_<KEY>}` placeholders in a manifest `envTemplate`.
 - No model credentials for layer 1: it is the structural clean room and needs
   no `ANTHROPIC_API_KEY`/`OPENAI_API_KEY`. LLM-costed runs (layer 2 and
-  `corpus ai`) happen on the Mac mini or locally.
+  `corpus ai`) are run by hand, wherever there is a credential, when init
+  extraction changed.
 
 Run a filtered sweep with `pnpm corpus run umami taxonomy --layer 1`.

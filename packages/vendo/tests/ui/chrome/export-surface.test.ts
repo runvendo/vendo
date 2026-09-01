@@ -108,10 +108,10 @@ const tsc = require.resolve("typescript/bin/tsc");
 // protocol-facts.test.ts) lists every *.ts under packages/ and then reads each
 // one, so a fixture written into packages/ui and deleted a moment later made
 // that read die with ENOENT — a test in another package failing for no reason
-// of its own. Only `ai-dual` runs every package on one runner in one tree, so
-// it was the only job where the two could overlap, which made it a ~1-in-8
-// mystery that reddened unrelated PRs. One temp dir per worker also retires the
-// pid and random suffix the old names needed to stay unique in a shared dir.
+// of its own. The overlap only happens where every package runs on one runner
+// in one tree, which made it a ~1-in-8 mystery that reddened unrelated PRs. One
+// temp dir per worker also retires the pid and random suffix the old names
+// needed to stay unique in a shared dir.
 const scratch = mkdtempSync(join(tmpdir(), "vendo-chrome-surface-"));
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 

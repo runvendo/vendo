@@ -30,7 +30,7 @@
  * compiles a package roughly ten times the size — twice, once per case —
  * synchronously inside a vitest worker. That starves vitest's own reporter IPC
  * and the shard exits 1 with every test passing
- * (`[vitest-worker]: Timeout calling "onTaskUpdate"`, monorepo.yml:313).
+ * (`[vitest-worker]: Timeout calling "onTaskUpdate"`, monorepo.yml:321).
  * Building here was always redundant: turbo.json's `test` task declares
  * `dependsOn: ["^build", "build"]`, so dist is on disk before this file runs.
  */

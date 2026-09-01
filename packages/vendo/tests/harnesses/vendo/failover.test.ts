@@ -208,8 +208,8 @@ describe("ordered provider failover", () => {
  * seat into a refusal — so the gate names the one spec this file does NOT model
  * instead, and the ladder answers as whatever the primary already is.
  *
- * Both assertions run on either major, because the seats here are plain objects:
- * asking the SDK to DRIVE a v4 model is the ai-dual lane's job, not this file's.
+ * Both assertions run on either major, because the seats here are plain objects.
+ * Asking the SDK to actually DRIVE a v4 model is out of this file's scope.
  */
 describe("either live model spec can be a rung", () => {
   const seat = (specificationVersion: string) => ({

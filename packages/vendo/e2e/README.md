@@ -2,16 +2,19 @@
 
 Nothing here runs in CI (Yousef's call, 2026-08-06: zero browser in CI —
 headless CI mis-resolves `:focus-visible` and `light-dark()`, which several of
-these specs assert directly). The browser suite is the LOCAL pre-PR gate.
+these specs assert directly). It does not gate a PR either: this is an
+ON-DEMAND tool, for when you need to SEE a UI change or diagnose one. Reach for
+it deliberately, not because a PR happens to touch UI.
 
 | Tier | Command | What it is |
 |---|---|---|
 | **smoke** | `pnpm --filter @vendoai/vendo test:ui` | `smoke.spec.ts` only. 13 tests, ~35s. The things that must never silently stop working. |
-| **full pre-PR** | `pnpm --filter @vendoai/vendo test:browser` | everything in `e2e/`. |
+| **full** | `pnpm --filter @vendoai/vendo test:browser` | everything in `e2e/`. |
 
 The harness is served **production-built** (`vite build` + `vite preview`, ~3.4s).
-`VENDO_HARNESS_DEV=1` puts the dev server back for interactive debugging. A gate
-that only ever ran on a dev server cannot promise it verified what ships.
+`VENDO_HARNESS_DEV=1` puts the dev server back for interactive debugging. A run
+that only ever happened on a dev server cannot tell you what ships, so a result
+worth reporting comes from the production-built harness.
 
 ## Honest coverage table
 

@@ -17,7 +17,8 @@ generated UI in a sandboxed, brand-native surface.
 
 ## Commands
 
-- `pnpm install` · `pnpm build` · `pnpm test` · `pnpm test:affected` (scoped to changed packages — the local default) · `pnpm typecheck` · `pnpm lint` (turbo-cached)
+- `pnpm install` · `pnpm typecheck` · `pnpm lint` (turbo-cached) — the local loop
+- `pnpm build` · `pnpm test` · `pnpm test:affected` (changed packages only) — on demand, not required before a PR
 - Demo: `pnpm --filter demo-bank dev` (Maple)
 
 ## Vendo Cloud
@@ -49,11 +50,13 @@ generated UI in a sandboxed, brand-native surface.
 - Vendo-facing API/SDK/CLI design additionally routes through the
   **vendo-dx** skill (on top of api-design-dx).
 - Never commit to `main`; branch and open a PR.
-- UI-affecting changes are verified in a real browser. Tests and typecheck
-  alone don't count.
-- Local gate = `pnpm build && pnpm test:affected && pnpm typecheck && pnpm lint`
-  on the touched scope. The FULL suite runs only in CI — the PR's green `ci`
-  check is the gate of record; never run the full suite locally.
+- Local gate = `pnpm typecheck && pnpm lint`, plus the test FILES covering what
+  you touched, run directly (`pnpm --filter <pkg> exec vitest run <files>
+  --minWorkers=1 --maxWorkers=2` — always set both). Nothing else is required
+  before a PR. The PR's green `ci` check is the gate of record; running whole
+  package suites locally only duplicates it minutes early.
+- The browser suite is an on-demand tool, not a gate: reach for it when you
+  need to SEE a UI change or diagnose one, not because a PR touches UI.
 - `vendo-web` is archived. The Cloud half now lives in the private monorepo
   and consumes these packages as `workspace:*`, so it moves in lockstep with
   every release automatically — no downstream bump step.
@@ -92,16 +95,15 @@ generated UI in a sandboxed, brand-native surface.
   aggregate job is named `ci`; the required checks on main are `ci`,
   `integration`, `conformance`, and `audit`, and renaming any of those job
   names breaks merges. No browser runs in CI (2026-08-06) — headless
-  mis-resolves `:focus-visible` and `light-dark()`, so the Playwright suites
-  stay a LOCAL pre-PR gate.
-- Iterating on a browser spec is two-speed. While you are editing, start ONE
-  warm hot-reloading harness (`VENDO_HARNESS_DEV=1` plus a pinned
+  mis-resolves `:focus-visible` and `light-dark()`, so the Playwright suites run
+  locally, on demand, and gate nothing.
+- WHEN you do run a browser spec, it is two-speed. While you are editing, start
+  ONE warm hot-reloading harness (`VENDO_HARNESS_DEV=1` plus a pinned
   `VENDO_HARNESS_PORT`) and rerun specs against it with the same two variables —
   reuse is dev-mode-only, so every rerun skips the build and starts in seconds.
-  Then one run WITHOUT the flag — a fresh production build — is the proof of
-  record, and the only result worth reporting. A production run never reuses a
-  server: `vite preview` serves whatever was built last, so a reused one greens
-  the previous build.
+  If you are going to report a result, take it from one run WITHOUT the flag: a
+  production run never reuses a server, because `vite preview` serves whatever
+  was built last, so a reused one greens the previous build.
 - An agent proves a browser flow by SCRIPTING it, never by stepping through it
   click-by-click: write one throwaway Playwright script for the whole flow, run
   it once, judge the screenshot/video artifacts — one model turn instead of
@@ -116,8 +118,9 @@ generated UI in a sandboxed, brand-native surface.
   ~27 vitest workers at once on a 12-core laptop (load average ~150) and the
   full-stack suites in `packages/vendo` then miss their 30s budget on work that
   takes 5s alone. A timeout is a hang-detector; do not raise one to buy headroom
-  the machine never had. Locally, run `pnpm test:affected` — same caps, scoped to
-  changed packages; never run the full suite on a laptop.
+  the machine never had. Locally you should be running test FILES, not package
+  suites, so this rarely binds; when you do reach for `pnpm test:affected`, it
+  carries the same caps. Never run the full suite on a laptop.
 - Turbo's bound is only the OUTER layer. Each package's vitest sizes its own
   worker pool to the CPU count, so 4 packages at a time meant ~60 processes and
   ~13GB on a 12-core laptop, and an OOM kill on a 15GB runner — the PGlite

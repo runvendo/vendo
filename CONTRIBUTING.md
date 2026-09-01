@@ -18,7 +18,9 @@ The demo host apps live under `examples/`.
 ## Making changes
 
 - Branch from `main`; open a PR against `main`.
-- `pnpm build && pnpm test && pnpm typecheck && pnpm lint` must pass.
+- `pnpm typecheck && pnpm lint` must pass, and so must the test files covering
+  what you changed. CI runs the full suite on your PR, so running whole package
+  suites locally first is optional.
 - `pnpm lint` blocks on four things: the dependency guard, the portability
   gate, `eslint.blocking.config.mjs` over `packages/*`, and each `examples/*`
   app's own eslint. A rule joins the blocking config only when `packages/*`
@@ -30,7 +32,8 @@ The demo host apps live under `examples/`.
   a merge; it exists so a rule can be judged from real counts before it goes
   blocking. Run it after `pnpm build` — knip loads each package's vite/vitest
   config, and those import built `dist/`.
-- UI-affecting changes need before/after screenshots in the PR.
+- Before/after screenshots on a UI change are welcome and often the fastest way
+  to review one, but they are not required.
 - Keep PRs focused; small is reviewable.
 
 ## What happens to your PR

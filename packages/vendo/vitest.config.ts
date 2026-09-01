@@ -31,53 +31,25 @@ export default defineConfig({
       // Ratcheted line-coverage floor (ENG-255): set at/just below the measured
       // value so it can only rise. Regression below this fails CI.
       //
-      // A glob entry is an ADDITIVE check, never an exclusion: its files are
-      // held to the glob AND go on counting in the global number. That is why
-      // the CLI fold parked src/cli/ in `exclude` instead of handing it a glob
-      // of 0 — an exclusion was the only thing that could keep the then-78
-      // global measuring its pre-fold file set. This is the re-ratchet that
-      // exclusion was placed for, so src/cli/ comes back in with a floor.
+      // ONE number over the whole package, deliberately. The per-glob entries
+      // that used to sit beside it (src/apps, src/cli, src/core, src/core/apps,
+      // src/sandbox, src/ui) were each a fold's incoming floor carried across so
+      // a merge could not weaken a gate as a side effect; the folds are done, and
+      // what they left behind was six numbers nobody could read off a run — the
+      // text reporter prints one row per DIRECTORY and each of those globs spans
+      // several, so the aggregate the threshold checked never appeared in the
+      // log. A floor nobody can measure is a floor nobody can raise.
       //
-      // Measured on main, coverage-merge of run 33328955194 (the fold commit),
-      // 94.51 global without the CLI; the CLI itself last measured 93.57 as
-      // @vendoai/cli in run 33318885615, one commit earlier, over a src/ whose
-      // 71 files and 66 test files the fold moved across unchanged. A 93.57
-      // sixth of the tree blended into a 94.51 rest cannot land below 93.57, so
-      // the global goes 78 -> 93 and the CLI takes 92 — each keeping the point
-      // or so of slack the ui floor argues for: a floor with no room is a floor
-      // everyone learns to bypass.
-      //
-      // src/apps/** and src/sandbox/** are the app-generation code S11d folded
-      // in, held at the 88 it arrived with so a fold cannot weaken a gate as a
-      // side effect. They do NOT re-ratchet here: the text reporter prints one
-      // row per directory and each of those globs spans several, so the
-      // aggregate the threshold actually checks never appears in the log. They
-      // rise when someone measures them, not before.
-      //
-      // src/core/**, src/core/apps/** and src/ui/** are the same rule for the
-      // core+ui fold: each arrives at the floor its own package last enforced —
-      // @vendoai/core's global 94 and its src/apps/** 88, @vendoai/ui's 92 — so
-      // three configs become one without a number moving. The global stays 93:
-      // it is now measured over a bigger tree, and both incoming halves last
-      // measured above it, so blending them in cannot pull it under.
+      // 93 is measured: coverage-merge of run 33328955194, 94.51 global without
+      // the CLI, blended with the CLI's own 93.57 (run 33318885615). Slack is on
+      // purpose — a floor with no room is a floor everyone learns to bypass.
       //
       // Off inside a shard, which sees a fraction of the files: coverage-merge
-      // replays the blobs and enforces these against the whole suite. This gate
-      // lives here rather than in a CLI override because
-      // `--coverage.thresholds.lines=0` reaches only the top-level key — the
-      // per-glob entries kept their 88 and reddened all eight shards the day
-      // S11d added them, with every test passing.
-      thresholds: process.env.VITEST_SHARD
-        ? {}
-        : {
-            lines: 93,
-            "src/apps/**": { lines: 88 },
-            "src/cli/**": { lines: 92 },
-            "src/core/**": { lines: 94 },
-            "src/core/apps/**": { lines: 88 },
-            "src/sandbox/**": { lines: 88 },
-            "src/ui/**": { lines: 92 },
-          },
+      // replays the blobs and enforces this against the whole suite. The switch
+      // is VITEST_SHARD rather than a `--coverage.thresholds.lines=0` override
+      // because an override reaches exactly one key and silently stops covering
+      // any floor added later.
+      thresholds: process.env.VITEST_SHARD ? {} : { lines: 93 },
     },
     // Two environments in one package since the ui fold: everything composes the
     // Node stack except tests/ui, which renders React and needs a DOM. Projects

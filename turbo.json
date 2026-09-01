@@ -1,14 +1,5 @@
 {
   "$schema": "https://turbo.build/schema.json",
-  // The docs-rot suites live in @vendoai/vendo but READ docs-site/** and
-  // README.md — @vendoai/vendo's registry codes against their troubleshooting
-  // pages, every docs.vendo.run URL the CLI prints against a real file. Those
-  // paths are OUTSIDE the package, and a turbo `inputs` glob cannot escape its
-  // package directory, so the global hash is the only thing that can see them.
-  // Without this a docs-only edit replays a cached green and the tripwire that
-  // exists to catch a retired page never fires. Broader than the one task that
-  // needs it, and deliberately so: correctness over cache depth.
-  "globalDependencies": ["docs-site/**", "README.md"],
   "tasks": {
     "build": { "dependsOn": ["^build"], "outputs": ["dist/**", ".next/**", "!.next/cache/**"] },
     // The screen engine's WebAssembly is copied out of the wasmfile dependency at
@@ -21,6 +12,45 @@
     "test": { "dependsOn": ["^build", "build"], "env": ["CI", "POSTGRES_URL", "VITEST_MIN_FORKS", "VITEST_MAX_FORKS", "VITEST_MIN_THREADS", "VITEST_MAX_THREADS"] },
     "test:ui": { "dependsOn": ["^build", "build"], "env": ["CI", "VITEST_MIN_FORKS", "VITEST_MAX_FORKS", "VITEST_MIN_THREADS", "VITEST_MAX_THREADS"] },
     "test:coverage": { "dependsOn": ["^build", "build"], "outputs": ["coverage/**"], "env": ["CI", "POSTGRES_URL", "VITEST_MIN_FORKS", "VITEST_MAX_FORKS", "VITEST_MIN_THREADS", "VITEST_MAX_THREADS"] },
+    // The docs-rot suites live in @vendoai/vendo but READ docs-site/** and
+    // README.md — the registry codes against their troubleshooting pages, every
+    // docs.vendo.run URL the CLI prints against a real file. Without those paths
+    // in the hash a docs-only edit replays a cached green and the tripwire that
+    // exists to catch a retired page never fires.
+    //
+    // SCOPED here, not `globalDependencies`: a global dependency is in EVERY
+    // package's hash, so one docs typo invalidated every package's build,
+    // typecheck, lint and test. @vendoai/vendo is the only package that reads
+    // them, and these two are its only tasks that run those suites — `test:ui`
+    // is `playwright test`, which does not run in CI at all. `$TURBO_DEFAULT$`
+    // keeps the package's own files in the hash; `$TURBO_ROOT$/` is what lets an
+    // `inputs` glob escape the package directory at all (turbo 2.10.1, which is
+    // what `^2.1.0` resolves to in this lockfile).
+    //
+    // THE CACHE IS ONLY HALF OF IT. The affected set ci.yml's `cone` job
+    // computes is the package GRAPH and never reads a task's `inputs`, so this
+    // scoping moves docs-site from "fans out to everything" to "fans out to
+    // nothing". `cone` carries the other half — a docs change there forces the
+    // full suite explicitly. Change one without the other and a docs-only PR
+    // cones to zero packages and merges green: that is #1139.
+    //
+    // Both paths are ROOT paths: packages/vendo/tests reaches them by walking up
+    // out of the package, which is the repo root in BOTH projections.
+    //
+    // A `pkg#task` entry REPLACES the generic one rather than merging with it,
+    // so `dependsOn`, `env` and `outputs` are restated in full below. Keep them
+    // in step with the two tasks above.
+    "@vendoai/vendo#test": {
+      "dependsOn": ["^build", "build"],
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/docs-site/**", "$TURBO_ROOT$/README.md"],
+      "env": ["CI", "POSTGRES_URL", "VITEST_MIN_FORKS", "VITEST_MAX_FORKS", "VITEST_MIN_THREADS", "VITEST_MAX_THREADS"]
+    },
+    "@vendoai/vendo#test:coverage": {
+      "dependsOn": ["^build", "build"],
+      "outputs": ["coverage/**"],
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/docs-site/**", "$TURBO_ROOT$/README.md"],
+      "env": ["CI", "POSTGRES_URL", "VITEST_MIN_FORKS", "VITEST_MAX_FORKS", "VITEST_MIN_THREADS", "VITEST_MAX_THREADS"]
+    },
     // The install seam packs the WHOLE publish set off disk and runs the real
     // CLI, so its inputs are every packages/* dist — none of which turbo can
     // see, because the fixture deliberately declares no workspace dependency

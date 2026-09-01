@@ -13,8 +13,8 @@ import { openScenario } from "./helpers.js";
  *   - token effectiveness / theme divergence → theme.spec.ts
  *   - bounded height chain → height-chain.spec.ts
  *   - affordances + voice feature verification → verification-eng225/229.spec.ts
- * The axe / keyboard / raw-interaction / screenshot specs stay the LOCAL pre-PR
- * gate — headless CI mis-resolves :focus-visible outlines and light-dark(),
+ * The axe / keyboard / raw-interaction / screenshot specs run LOCALLY and on
+ * demand — headless CI mis-resolves :focus-visible outlines and light-dark(),
  * which those specs assert directly. The full suite runs locally via
  * `pnpm --filter @vendoai/vendo test:browser`.
  */
