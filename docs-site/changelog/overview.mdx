@@ -4,6 +4,37 @@ sidebarTitle: "Changelog"
 description: "Weekly release notes for the Vendo SDK and runtime: new features, updates, and fixes, newest first."
 ---
 
+<Update label="August 30, 2026" description="Week of August 24 – August 30">
+
+## Updates
+
+**One package: the block packages fold into `@vendoai/vendo`.** The separately published `@vendoai/core` and `@vendoai/ui` are retired, along with the earlier block packages for knowledge, automations, MCP, agents, store, actions, and telemetry. Each retired package's barrel is republished whole at a subpath of `@vendoai/vendo`, so nothing you imported changed shape or name.
+
+Migration is a specifier rewrite and nothing else:
+
+| Retired import | New import |
+| --- | --- |
+| `@vendoai/core` | `@vendoai/vendo/core` |
+| `@vendoai/core` apps contracts | `@vendoai/vendo/core/apps` |
+| `@vendoai/ui` | `@vendoai/vendo/ui` |
+| `@vendoai/ui/chrome` | `@vendoai/vendo/ui/chrome` |
+
+```ts
+// Before
+import { useVendoChat } from "@vendoai/ui";
+import type { VendoLogger } from "@vendoai/core";
+
+// After
+import { useVendoChat } from "@vendoai/vendo/ui";
+import type { VendoLogger } from "@vendoai/vendo/core";
+```
+
+After the rewrite, drop the retired packages from `package.json`. `@vendoai/vendo` is the one dependency left, and it also carries the `vendo` bin, so `npm install @vendoai/vendo && npx vendo init` stays the whole install.
+
+`vendo sync` keeps accepting the retired spellings. A codebase mid-migration that still imports `Remixable` or hooks from `@vendoai/ui` scans exactly as before, so the rewrite does not have to land in one commit.
+
+</Update>
+
 <Update label="July 17, 2026" description="Week of July 14 – July 20">
 
 ## New features

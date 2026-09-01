@@ -37,7 +37,7 @@ Delete the directory. It holds only Vendo state: the extracted contract, the fil
 
 Remove the `predev` and `prebuild` sync hooks (`vendo sync --no-ai`, `vendo sync --strict --no-ai`). If init prepended them to a script you already had, delete just the Vendo segment.
 
-Uninstall `@vendoai/vendo`, the `vendoai` alias if present, and a direct `@vendoai/vendo/ui` if you added one for chrome imports.
+Uninstall `@vendoai/vendo` and the `vendoai` alias if present. If your app predates the package consolidation, also remove the retired `@vendoai/ui` or `@vendoai/core` if either is still in `package.json`.
 
 Init's provider step also installed `ai` and one `@ai-sdk/*` provider. Remove them only if nothing else in your app imports them.
 

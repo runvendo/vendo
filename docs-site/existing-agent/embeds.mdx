@@ -143,6 +143,6 @@ const envelope = parseVendoToolEnvelope(output);
 if (envelope?.kind === "vendo/app-ref@1") saveForLater(envelope.appId);
 ```
 
-It is a runtime value, not a type, so it ships from `@vendoai/vendo/core` — add that package to import it.
+It is a runtime value, not a type, so it ships from the `@vendoai/vendo/core` subpath rather than the type-only root. No extra install: the subpath is part of `@vendoai/vendo`.
 
 Malformed output returns `null` too. The tool pack is the only writer, so a bad shape is a bug there, not something your chat should half-render.

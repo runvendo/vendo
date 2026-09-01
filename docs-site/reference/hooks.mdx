@@ -10,7 +10,7 @@ Headless React hooks that read from the same wire the built-in chrome uses. Pair
 import { useThreads, useApprovals, useVendoThread } from "@vendoai/vendo/ui";
 ```
 
-Every hook here is also re-exported from `@vendoai/vendo/react`, which is the import that needs no direct `@vendoai/vendo/ui` dependency — with one exception. `useApprovalModal` ships only on `@vendoai/vendo/ui/chrome`:
+Every hook here is also re-exported from `@vendoai/vendo/react`, so either subpath works, with one exception. `useApprovalModal` ships only on `@vendoai/vendo/ui/chrome`:
 
 ```ts
 import { useApprovalModal } from "@vendoai/vendo/ui/chrome";
