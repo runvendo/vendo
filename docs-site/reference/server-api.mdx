@@ -17,7 +17,7 @@ description: "Every server-side symbol: the createVendo composition and the Vend
 | `@vendoai/vendo/extract` | The extraction stages the CLI drives |
 | `@vendoai/vendo` | `agent()`, the standalone backend agent |
 
-Type imports come from the umbrella, not the block packages. Importing the same type from `@vendoai/vendo/core` is a `TS2307` under strict linking, because it is not your dependency.
+Type imports come from the umbrella. The former block packages are retired: importing the same type from `@vendoai/core` is a `TS2307` under strict linking, because that package is no longer your dependency. Its barrel now ships whole at `@vendoai/vendo/core`, with the apps contracts at `@vendoai/vendo/core/apps`.
 
 The split between the root and `/server` matters. `createVendo` and the types shaped for its config live on `/server`; the bulk of the types, including `HostOAuthAdapter`, live on the root.
 
