@@ -1,5 +1,11 @@
 # @vendoai/vendo
 
+## 0.62.1
+
+### Patch Changes
+
+- 00b3b20: Maintenance release validating the rebuilt release pipeline; no functional change.
+
 ## 0.62.0
 
 ### Minor Changes
