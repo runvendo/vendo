@@ -42,8 +42,10 @@ const vendo = createVendo({
 
 Those names scope three things at once — the tools the agent sees, the accounts the connect surface offers, and the catalog it advertises — so they can never drift apart.
 
+An empty array is a choice, not silence: `connectedAccounts: []` scopes the connect surface to nothing, while leaving the key unset lets `VENDO_API_KEY` advertise the whole catalog.
+
 <Note>
-  Service names used to go in `connectors`. They still work there for one more minor and warn once; `connectors` is for [connector objects](/capabilities/connectors), where **you** hold the one credential.
+  Service names used to go in `connectors`. They still work there for one more minor and warn once; `connectors` is for [connector objects](/capabilities/connectors), where **you** hold the one credential. Naming a service in both keys is refused at boot rather than merged, because which key scopes the connect surface would be a guess.
 </Note>
 
 ## The connect card
