@@ -164,16 +164,45 @@ async function writeThemeDraft(root: string, flow: SyncFlowResult, output: Outpu
   output.log(`theme: ${filled.length} slot${filled.length === 1 ? "" : "s"} filled by the AI pass (${filled.join(", ")}) → .vendo/theme.json`);
 }
 
-/** The footer's "what moved", read off the report this run just printed. The
- *  footer REPORTS the outcome; it never decides it. */
-function whatMoved(flow: SyncFlowResult): string | undefined {
+/** The footer's "what moved", read off the report and judgment tallies this
+ *  run just produced. The footer REPORTS the outcome; it never decides it.
+ *  Exported so the register stays covered without driving a full pretty TTY. */
+export function whatMoved(flow: SyncFlowResult): string | undefined {
   const moved: string[] = [];
   const { added, removed, changed } = flow.report.tools;
   if (added.length > 0) moved.push(`+${added.length} tool${added.length === 1 ? "" : "s"}`);
   if (removed.length > 0) moved.push(`-${removed.length} tool${removed.length === 1 ? "" : "s"}`);
   if (changed.length > 0) moved.push(`~${changed.length} changed`);
+
+  // Judgment tallies — only present when the pass returned `status: "judged"`.
+  // Non-zero ones speak for themselves; a judged run with none still says
+  // "0 findings" — count-style like its neighbors, not a bare adjective — so
+  // it cannot read as a keyless structural-only footer (#1174).
+  const { hardened, schemasInferred, looseningsApproved, queued } = flow.judged;
+  const wasJudged = hardened !== undefined;
+  let judgmentSaid = false;
+  if (hardened !== undefined && hardened > 0) {
+    moved.push(`${hardened} field${hardened === 1 ? "" : "s"} hardened`);
+    judgmentSaid = true;
+  }
+  if (schemasInferred !== undefined && schemasInferred > 0) {
+    moved.push(`${schemasInferred} schema${schemasInferred === 1 ? "" : "s"} inferred`);
+    judgmentSaid = true;
+  }
+  if (looseningsApproved !== undefined && looseningsApproved > 0) {
+    moved.push(`${looseningsApproved} loosening${looseningsApproved === 1 ? "" : "s"} applied`);
+    judgmentSaid = true;
+  }
+  if (wasJudged && !judgmentSaid && queued === 0) {
+    moved.push("0 findings");
+  }
+
   if ((flow.baselines?.pushed.length ?? 0) + (flow.components?.pushed.length ?? 0) > 0) {
     moved.push("pushed to Cloud");
+  }
+  // Queued loosenings need the user later — last fragment they read.
+  if (queued > 0) {
+    moved.push(`${queued} loosening${queued === 1 ? "" : "s"} queued`);
   }
   return moved.length === 0 ? undefined : moved.join(" · ");
 }

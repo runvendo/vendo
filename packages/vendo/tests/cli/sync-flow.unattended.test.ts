@@ -73,6 +73,8 @@ beforeEach(() => {
     evidenceless: 0,
     advisoriesClamped: 0,
     inconsistentRisk: 0,
+    schemasInferred: 0,
+    schemasRejected: 0,
   });
   runProseStages.mockResolvedValue({});
 });
@@ -105,6 +107,13 @@ describe("the loosening review never blocks an unattended run", () => {
     const result = await initFlow({ root, output, yes: true, interactive: true, confirm });
 
     expect(result.judged.ran).toBe(true);
+    // Tallies surface onto the flow so the sync footer can report them (#1174).
+    expect(result.judged).toMatchObject({
+      queued: 2,
+      looseningsApproved: 0,
+      hardened: 0,
+      schemasInferred: 0,
+    });
     expect(runJudgmentPass).toHaveBeenCalledTimes(1);
     const passed = runJudgmentPass.mock.calls[0]![0] as { loosenings: string; confirm?: unknown };
     expect(passed.loosenings).toBe("queue");
@@ -125,6 +134,20 @@ describe("the loosening review never blocks an unattended run", () => {
     const passed = runJudgmentPass.mock.calls[0]![0] as { loosenings: string; confirm?: unknown };
     expect(passed.loosenings).toBe("queue");
     expect(passed.confirm).toBeUndefined();
+  });
+
+  it("leaves judgment tallies unset on a structural-only pass", async () => {
+    runJudgmentPass.mockResolvedValueOnce({ status: "structural-only", unjudged: 3 });
+    const root = await projectWithTools();
+    const result = await initFlow({
+      root,
+      output: silentOutput(),
+      yes: true,
+      interactive: true,
+    });
+    expect(result.judged.ran).toBe(true);
+    expect(result.judged.hardened).toBeUndefined();
+    expect(result.judged.queued).toBe(0);
   });
 
   it("still reviews inline when a human is actually there", async () => {
