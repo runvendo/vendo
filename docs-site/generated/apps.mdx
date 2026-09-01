@@ -88,6 +88,10 @@ Every save is compiled, scanned, type checked, run once, and its tree validated.
 
 By default a screen runs in a sealed sandbox. Approve a version and it runs as real code in your own page, which [in-client venue & approvals](/generated/in-client-venue) covers.
 
+## Where an app keeps data
+
+An app's own rows live in a real SQL database of its own, reached with the `vendo_apps_sql` tool. `shared.` tables are common to all of the app's users; `mine.` tables are one per person. [App databases](/generated/app-database) covers the tool, the two namespaces, and the fence between users.
+
 ## Every copy is its own app
 
 <Frame caption="Import and fork each mint a fresh app_ id.">

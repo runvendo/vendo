@@ -1,0 +1,115 @@
+---
+title: "App databases"
+description: "Every generated app keeps its data in a real SQL database of its own, reached through one tool, with shared. and mine. as the whole permission model."
+sidebarTitle: "App databases"
+---
+
+Every generated app keeps its data in a real SQL database of its own. One tool reaches it, and two table namespaces are the entire permission model.
+
+## One tool, one statement
+
+`vendo_apps_sql` runs one SQL statement against the app's own database and answers with `{ columns, rows, rowCount }`.
+
+| Argument | Meaning |
+| --- | --- |
+| `sql` | **Required.** One SQL statement, with `?` where a parameter goes |
+| `params` | One value per `?`, in order. Every value that came from a person belongs here, never pasted into the SQL |
+| `appId` | The app whose database this is. Optional from inside a running app, where the platform already knows it. An agent working on an app from outside passes it |
+
+A statement is one of `SELECT`, `WITH`, `INSERT`, `UPDATE`, `DELETE`, `CREATE TABLE`, `ALTER TABLE`, or `DROP TABLE`. Session, role, schema, and catalog verbs are refused.
+
+The tool's own description states the live dialect, Postgres or SQLite, because generated SQL is written for one. SQL that sticks to the common subset (`TEXT`, `INTEGER`, `REAL`, `PRIMARY KEY`, ordinary joins) travels between the two; a vendor-specific type or function does not.
+
+---
+
+## Two namespaces, no third
+
+| Namespace | Who sees it |
+| --- | --- |
+| `shared.<table>` | One table, every user of the app. A catalog, a leaderboard |
+| `mine.<table>` | Per-user. Each person's rows are theirs alone. Notes, settings, orders |
+
+A bare table name is refused with what happened, why, and the fix:
+
+```text refusal
+"notes" is not a table this app can reach. Every table lives in
+shared. (all users) or mine. (per-user). Did you mean mine.notes?
+```
+
+---
+
+## `mine.` is a separate table per person
+
+`mine.notes` is not one table filtered per caller. Each person gets their own physical table, so ordinary SQL keeps its ordinary meaning:
+
+- A `PRIMARY KEY` is unique per person, not across the app.
+- A `UNIQUE` constraint is per person.
+- Delete-then-write-by-key statements have no reachable target in anyone else's rows.
+
+Schema changes that touch `mine.` are recorded once and replayed for each user who writes, so every person's copy has the same shape. Reading a `mine.` table you have never written answers empty rather than creating anything.
+
+The fence is enforced at the tool, by name resolution, never by generated SQL and never by a database privilege. `mine.x` and `shared.x` are the only addresses that exist; the physical names they resolve to cannot be written or guessed from inside a statement. Generated SQL never scopes anything and cannot.
+
+---
+
+## Inside a screen
+
+A screen loads its own rows with `useQuery`. A `SELECT` grades as a read per call, so the tool is queryable even though its authored risk is write.
+
+```tsx app.tsx focus={4,13}
+import { useQuery, tools, Stack, Row, Text, Button } from "@vendo/screen";
+
+export default function Notes() {
+  const notes = useQuery("vendo_apps_sql", { sql: "SELECT id, body FROM mine.notes ORDER BY id DESC" });
+
+  return (
+    <Stack gap={12}>
+      <Text text="My notes" variant="heading" />
+      {notes.rows.map((row) => (
+        <Row key={row.id}>
+          <Text text={row.body} />
+          <Button label="Delete" onClick={() => tools.vendo_apps_sql({ sql: "DELETE FROM mine.notes WHERE id = ?", params: [row.id] })} />
+        </Row>
+      ))}
+    </Stack>
+  );
+}
+```
+
+Writes go through `tools.vendo_apps_sql(…)` from a handler, like every other write a screen makes.
+
+---
+
+## Where the database lives
+
+`createVendo({ appDatabase })` is the adapter slot. Unset with a store wired, every app gets its own fenced schema inside that store's Postgres, and there is nothing to configure.
+
+```ts vendo.ts highlight={5}
+import { createVendo, postgres } from "@vendoai/vendo/server";
+
+export const vendo = createVendo({
+  auth: authJs(),
+  store: postgres(process.env.DATABASE_URL),
+  // no appDatabase: line — every app gets its own fenced schema in this Postgres
+});
+```
+
+A store with no SQL behind it composes no adapter, and the tool is not offered. A call that reaches a deployment without one answers `unavailable`, naming the three ways to get a database: pass a `store` whose Postgres backs every app, pass `appDatabase` yourself, or set `VENDO_API_KEY`.
+
+Passing your own `AppDatabase` adapter always wins. The adapter executes and decides nothing: every rule that makes `mine.` one person's rows lives above the adapter seam, so two implementations cannot disagree about who sees what.
+
+---
+
+## Migrating from the app-data tools
+
+The app-data family is gone, replaced whole by the SQL database:
+
+| Removed | Replacement |
+| --- | --- |
+| `vendo_apps_data_list`, `vendo_apps_data_put`, `vendo_apps_data_delete` | `vendo_apps_sql`, one statement per call |
+| Storage declarations on the app document (`storage`, `StorageDecl`) | None. An app creates its own tables with `CREATE TABLE shared.<name>` or `mine.<name>` |
+| The 256 KB per-record and 5 MB per-file caps | No per-record cap. Table count is capped by the adapter where the backing needs one |
+
+Nothing carries records over automatically. An app that kept data in the old collections recreates it as `shared.` or `mine.` tables on its next edit.
+
+Calls left on the old `appData.*` wire operations answer `not-implemented` (HTTP 501) naming the operation, so a stale integration fails loudly instead of silently.
