@@ -4,6 +4,42 @@ sidebarTitle: "Changelog"
 description: "Weekly release notes for the Vendo SDK and runtime: new features, updates, and fixes, newest first."
 ---
 
+<Update label="August 27, 2026" description="Week of August 24 – August 30">
+
+## Updates
+
+**`VendoPalette` is deleted.** The component rendered nothing itself: its whole job was a `⌘K` binding plus a command list the host had to draw. It is gone, along with `VendoCommand`, `HotkeyChord`, `PaletteHotkey`, and the command-set half of the overlay registry (`registerConversationCommands` / `getConversationCommands`).
+
+The built-in `⌘K` goes with it. Vendo now binds no keyboard shortcut at all, so your app keeps every chord it owns. If you want one back, wire your own listener to the seam that was already there:
+
+```tsx
+import { openVendoConversation } from "@vendoai/vendo/ui/chrome";
+
+useEffect(() => {
+  const onKeyDown = (event: KeyboardEvent) => {
+    if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "k") return;
+    event.preventDefault();
+    openVendoConversation({ toggle: true });
+  };
+  window.addEventListener("keydown", onKeyDown);
+  return () => window.removeEventListener("keydown", onKeyDown);
+}, []);
+```
+
+`openVendoConversation` and every one of its options stay: `prompt`, `send`, `newConversation`, `appId`, `toggle`, and `close`. See [Mount the surface](/product/mount-the-surface#drive-it-yourself).
+
+`vendo doctor` no longer counts `<VendoPalette` as a visible surface. A host whose only surface marker was the palette now fails [E-WIRE-006](/production/troubleshooting/e-wire-006), correctly, since that host had nothing on screen.
+
+**The component registry has one name: `components`.** The same object was `createVendo({ catalog })` on the server and `<VendoProvider components>` in the browser. `components` is now the canonical `createVendo` key:
+
+```ts
+createVendo({ components: registry });   // was: catalog: registry
+```
+
+`catalog` still works as a deprecated alias, and setting both throws at composition rather than silently picking a winner. `vendo sync` reads either spelling out of your source, so a repo mid-rename never syncs an empty `.vendo/catalog.json`. The `.vendo/catalog.json` file, `profile.catalog`, and the merge order are unchanged. See [Handler options](/reference/handler-options).
+
+</Update>
+
 <Update label="July 17, 2026" description="Week of July 14 – July 20">
 
 ## New features
