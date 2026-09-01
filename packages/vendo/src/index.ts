@@ -5,7 +5,7 @@ export type * from "./core/index.js";
 export type * from "./core/apps/index.js";
 export type { VendoStore } from "./store/index.js";
 export type { Thread, ThreadSummary } from "./threads.js";
-// What `vendo.putUserFile` answers, and what the ui client's `files.upload`
+// What `vendo.putUserFile` answers, and what the UI client's `files.upload`
 // mirrors: where the file landed and how big it was.
 export type { UploadedFile } from "./harness-turn.js";
 export type {
