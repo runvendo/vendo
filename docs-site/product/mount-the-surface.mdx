@@ -147,8 +147,29 @@ const overlay = useVendoOverlay();
 The `thread` prop swaps in your own thread component. The overlay stays the
 shell: portal, scrim, focus, and the mobile sheet.
 
-Vendo binds no keyboard shortcut of its own — your app keeps every chord it
-already owns. For a `⌘K`, hand your own listener `overlay.toggle`.
+Vendo binds no keyboard shortcut of its own, so your app keeps every chord it
+already owns. To give the panel a `⌘K`, wire your own listener to
+`openVendoConversation`. It ships on `@vendoai/vendo/ui/chrome`, needs no ref
+to the overlay, and returns `false` when no overlay is mounted:
+
+```tsx
+import { useEffect } from "react";
+import { openVendoConversation } from "@vendoai/vendo/ui/chrome";
+
+useEffect(() => {
+  const onKeyDown = (event: KeyboardEvent) => {
+    if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "k") return;
+    event.preventDefault();
+    openVendoConversation({ toggle: true });
+  };
+  window.addEventListener("keydown", onKeyDown);
+  return () => window.removeEventListener("keydown", onKeyDown);
+}, []);
+```
+
+`toggle: true` closes the panel when it is already open, which is what a chord
+wants. The other options — `prompt`, `send`, `newConversation`, `appId`, and
+`close` — work here too, so the same seam drives a host command menu.
 
 <Frame caption="With no conversation yet, the panel opens compact.">
   <img
