@@ -5,10 +5,35 @@
 import { log } from "./core/index.js";
 import type { VendoComposition } from "./compose-context.js";
 
+const SWEEP_TIMER = Symbol.for("vendo.background-ttl-sweep");
+
+/** Arm the newest composition's background sweep and retire the previous one -
+ *  ADOPT, never duplicate (#1250). Next dev re-evaluates route modules on
+ *  every recompile, and each evaluation arms its own composition's sweep; after
+ *  hours of recompiles a dev server carried dozens of live intervals, all
+ *  hitting the hosted store with no browser open (field: linkwarden
+ *  2026-08-13). The ticker half of the same report ships this exact pattern
+ *  (`armDevTicker`): arming stops the predecessor's interval and starts the
+ *  newcomer's, keeping exactly one sweep, bound to the composition actually
+ *  serving requests. The slot rides globalThis via Symbol.for so it survives
+ *  module re-evaluation. DEVELOPMENT only — see the caller's gate: production
+ *  compositions are built once, and legitimately concurrent handles each keep
+ *  their own sweep. */
+export function armBackgroundSweep(start: () => () => void, host: Record<symbol, unknown> = globalThis as unknown as Record<symbol, unknown>): void {
+  const previousStop = host[SWEEP_TIMER];
+  if (typeof previousStop === "function") (previousStop as () => void)();
+  host[SWEEP_TIMER] = start();
+}
+
 /** The sweep pass, and the unref'd timer that drives it on a long-lived host. */
 export const composeSweep = (composition: VendoComposition): Pick<VendoComposition,
   "runSweep" | "sweepEnabled" | "startBackgroundSweep"> => {
   const { store, guard, byoApprovals, parkedCallTtlMs, sweepConfig, sweepNow } = composition;
+  // The same derivation compose-wire's `development` uses (compose-automations
+  // repeats it): an explicit config.development wins; otherwise NODE_ENV.
+  const development = composition.config.development !== undefined
+    ? composition.config.development !== false
+    : composition.isDevelopmentEnv;
   const runSweep = async (): Promise<void> => {
     // Existing-agents Lane B — expire orphaned parked BYO calls on the same
     // cadence (deny path, idempotent); disabled by parkedCallTtlMs 0.
@@ -46,19 +71,39 @@ export const composeSweep = (composition: VendoComposition): Pick<VendoCompositi
     // illegal in Workers global scope, and a process that never serves a
     // request has nothing to sweep.
     startBackgroundSweep = (): void => {
-      const sweepTimer = setInterval(() => {
-        runSweep().catch((error: unknown) => {
-          log({
-            code: "vendo.ttl-sweep-retry",
-            level: "warn",
-            message: `[vendo] TTL sweep failed; will retry next interval: ${error instanceof Error ? error.message : String(error)}`,
+      let sweepTimer: ReturnType<typeof setInterval> | undefined;
+      const startInterval = (): void => {
+        sweepTimer = setInterval(() => {
+          runSweep().catch((error: unknown) => {
+            log({
+              code: "vendo.ttl-sweep-retry",
+              level: "warn",
+              message: `[vendo] TTL sweep failed; will retry next interval: ${error instanceof Error ? error.message : String(error)}`,
+            });
           });
+        }, sweepConfig.intervalMs);
+        (sweepTimer as unknown as { unref?: () => void }).unref?.();
+      };
+      // Adopt, never duplicate (#1250): a DEV re-evaluation re-arms on every
+      // route-module recompile, so arming stops the previous composition's
+      // interval first. Development ONLY, like armDevTicker: a production
+      // composition is built once, and legitimately concurrent handles (a host
+      // holding two createVendo handles is one deployment — boot-summary) must
+      // each keep their own sweeps; a global adopt there would permanently
+      // silence the first handle's TTL reclaim.
+      if (development) {
+        armBackgroundSweep((): (() => void) => {
+          startInterval();
+          return (): void => {
+            if (sweepTimer !== undefined) clearInterval(sweepTimer);
+          };
         });
-      }, sweepConfig.intervalMs);
-      (sweepTimer as unknown as { unref?: () => void }).unref?.();
+      } else {
+        startInterval();
+      }
       const closeStore = store.close.bind(store);
       store.close = async (): Promise<void> => {
-        clearInterval(sweepTimer);
+        if (sweepTimer !== undefined) clearInterval(sweepTimer);
         await closeStore();
       };
     };
