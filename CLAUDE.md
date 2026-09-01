@@ -6,10 +6,14 @@ generated UI in a sandboxed, brand-native surface.
 
 ## Layout
 
-- `packages/` — the ten `@vendoai/*` blocks + the `@vendoai/vendo` umbrella and
-  `vendoai` alias. The behavior contract is the exported types/zod schemas and
-  the test suites — there are no prose contract docs; layering enforced by
-  `scripts/dependency-guard.mjs` in `pnpm lint`
+- `packages/` — two published packages: the `@vendoai/vendo` umbrella and the
+  `vendoai` alias. The ten blocks are no longer packages of their own — they
+  folded into the umbrella and survive as its subpath exports (`/core`, `/ui`,
+  `/store`, `/actions`, `/guard`, `/apps`, `/automations`, `/knowledge`, `/mcp`,
+  `/telemetry`), backed by directories under `packages/vendo/src/`. The behavior
+  contract is the exported types/zod schemas and the test suites — there are no
+  prose contract docs; layering enforced by `scripts/dependency-guard.mjs` in
+  `pnpm lint`
 - `examples/` — the demo host `demo-bank` (Maple) and the framework integration
   examples (`ai-sdk-agent`, `mastra-agent`, `claude-code-plugin`)
 - `corpus/` — init-extraction corpus harness (`pnpm corpus`)
@@ -94,22 +98,36 @@ generated UI in a sandboxed, brand-native surface.
   test's own timeout. The test timeout is the hang-detector; a tighter inner
   budget is a second, invisible speed limit that reports a product bug when
   the machine is merely busy.
-- The full suite is CI's job now (`.github/workflows/ci.yml`), fanned out over
-  a shared turbo remote cache: `typecheck-lint` (build + typecheck + lint),
-  `test-shards` (9 intra-package vitest shards for the big three — vendo×4,
-  store×3, ui×2), `test-rest` (the other packages in 2 turbo groups: guard +
-  actions, then everything else expressed as negations so a new package joins
-  the day it is created), and `coverage-merge`, which replays the shards' blob
-  reports and enforces the per-package coverage floors — a floor is only
+- The full suite is CI's job now, fanned out over a shared turbo remote cache,
+  and the two repos run it from two files: public's `.github/workflows/ci.yml`
+  and private's `.github/workflows/monorepo.yml`. Public: `typecheck-lint`
+  (build + typecheck + lint), `test-shards` (10 vitest shards of
+  `@vendoai/vendo` — the folds left it the only sharded package),
+  `test-rest` (every other package in ONE turbo run, expressed as a negation so
+  a new package joins the day it is created), `integration-legs` (the
+  dev-server fixtures over five legs), and `coverage-merge`, which replays the
+  shards' blob reports and enforces the coverage floor — a floor is only
   meaningful against the whole suite, so the per-shard runs set `VITEST_SHARD`,
-  which drops the thresholds in each package's vitest config, and the gate moves
+  which drops the thresholds in the package's vitest config, and the gate moves
   to the merge. It is an env var and not a CLI override because an override
-  reaches one key at a time and silently stops covering a floor added later. The
-  aggregate job is named `ci`; the required checks on main are `ci`,
-  `integration`, `conformance`, and `audit`, and renaming any of those job
-  names breaks merges. No browser runs in CI (2026-08-06) — headless
-  mis-resolves `:focus-visible` and `light-dark()`, so the Playwright suites run
-  locally, on demand, and gate nothing.
+  reaches one key at a time and silently stops covering a floor added later.
+  One floor is left: `packages/vendo`'s `lines: 93`. Private mirrors the 10
+  shards but collects NO coverage on them and never sets `VITEST_SHARD` — it
+  has no `coverage-merge`, so the floor is enforced in exactly one place,
+  public's, which is the only run where the merged number is the real one.
+  Private also folds public's `test-rest` and `integration-legs` into ONE
+  matrix, still called `test-rest`, over five legs — `unit` (the `test:coverage`
+  packages), `automations`, `node`, `doors`, and `rest`, which is a directory
+  glob over `fixtures/*`, `examples/*` and `corpus/hosts/*` MINUS the four
+  named legs, so a new fixture joins the day it is created there too. One job
+  per leg is what took that lane off the critical path: separate runners are
+  separate CPUs and separate ports, so the dev-server suites' `--concurrency=1`
+  stops being a queue. The aggregate job is named `ci` publicly and `monorepo`
+  privately; the required checks on public main are `ci`, `integration`,
+  `conformance`, and `audit`, and renaming any of those job names breaks
+  merges. No browser runs in CI (2026-08-06) — headless mis-resolves
+  `:focus-visible` and `light-dark()`, so the Playwright suites run locally, on
+  demand, and gate nothing.
 - WHEN you do run a browser spec, it is two-speed. While you are editing, start
   ONE warm hot-reloading harness (`VENDO_HARNESS_DEV=1` plus a pinned
   `VENDO_HARNESS_PORT`) and rerun specs against it with the same two variables —
@@ -126,18 +144,22 @@ generated UI in a sandboxed, brand-native surface.
   script so the flow is never stepped twice.
 - `--continue` and a turbo concurrency bound are the standing rule wherever the
   suite runs: `--continue` so one red package never hides every other package's
-  result; the bound (2 in CI's `test-rest`, 4 in the root `test` /
-  `test:affected` / `test:coverage` scripts) because unbounded parallelism runs
-  ~27 vitest workers at once on a 12-core laptop (load average ~150) and the
-  full-stack suites in `packages/vendo` then miss their 30s budget on work that
-  takes 5s alone. A timeout is a hang-detector; do not raise one to buy headroom
-  the machine never had. Locally you should be running test FILES, not package
-  suites, so this rarely binds; when you do reach for `pnpm test:affected`, it
-  carries the same caps. Never run the full suite on a laptop.
+  result; the bound (2 in CI's `test-rest`, 1 on its dev-server legs, 4 in the
+  root `test` / `test:affected` / `test:coverage` scripts) because unbounded
+  parallelism runs ~27 vitest workers at once on a 12-core laptop (load average
+  ~150) and the full-stack suites in `packages/vendo` then miss their 30s
+  budget on work that takes 5s alone. A timeout is a hang-detector; do not
+  raise one to buy headroom the machine never had. Locally you should be
+  running test FILES, not package suites, so this rarely binds; when you do
+  reach for `pnpm test:affected`, it carries the same caps. Never run the full
+  suite on a laptop.
 - Turbo's bound is only the OUTER layer. Each package's vitest sizes its own
   worker pool to the CPU count, so 4 packages at a time meant ~60 processes and
   ~13GB on a 12-core laptop, and an OOM kill on a 15GB runner — the PGlite
-  suites (`store`, `guard`, the fixtures) boot an embedded Postgres per worker.
+  suites boot an embedded Postgres per worker. They are no longer their own
+  packages: the store and guard suites live inside `@vendoai/vendo` now
+  (`packages/vendo/src/store`, `src/guard`), so that weight lands on the vendo
+  shards, and the rest of it is the fixtures.
   `VITEST_MIN_FORKS/MAX_FORKS` and `VITEST_MIN_THREADS/MAX_THREADS` cap the
   inner layer at 2 workers — set in the root `test` / `test:affected` /
   `test:coverage` scripts locally, and at job level on `test-shards`,
