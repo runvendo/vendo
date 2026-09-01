@@ -13,6 +13,10 @@
       "types": "./dist/node-bridge.d.ts",
       "default": "./dist/node-bridge.js"
     },
+    "./shared-store": {
+      "types": "./dist/shared-store.d.ts",
+      "default": "./dist/shared-store.js"
+    },
     "./stream-turns": {
       "types": "./dist/stream-turns.d.ts",
       "default": "./dist/stream-turns.js"
@@ -20,17 +24,22 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "test": "vitest run",
+    "test:coverage": "vitest run",
+    "typecheck": "tsc -p tsconfig.test.json"
   },
   "peerDependencies": {
     "@modelcontextprotocol/sdk": ">=1.29.0 <2",
+    "@vendoai/vendo": "workspace:*",
     "ai": ">=6.0.0 <7",
     "zod": ">=3.25.0 <5"
   },
   "devDependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@types/node": "^22.0.0",
+    "@vendoai/vendo": "workspace:*",
     "ai": "6.0.28",
-    "typescript": "^5.6.0"
+    "typescript": "^5.6.0",
+    "vitest": "^3.2.6"
   }
 }

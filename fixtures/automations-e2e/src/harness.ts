@@ -1,6 +1,7 @@
 /** The automations harness: composes REAL blocks the way the umbrella does —
- * real PGlite store, real guard, real actions against the live fixture host
- * app, real apps runtime — around @vendoai/vendo/automations under test.
+ * the file's real PGlite store, real guard, real actions against the live
+ * fixture host app, real apps runtime — around @vendoai/vendo/automations under
+ * test.
  *
  * The unit is the RECORD. An automation is not an app any more: it is a row a
  * principal owns, created through the ONE create operation every authoring door
@@ -9,12 +10,10 @@
  * an ActAs that logs into the fixture, and raw SQL access (store.raw()) for the
  * vendo_automations / vendo_runs / vendo_grants asserts.
  */
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { inject } from "vitest";
 import { type ActAs, type AgentRunner, type AgentRunners, type AppDocument, type AutomationRecord, type CreateAutomation, type CreateAutomationInput, DEFAULT_RUNNER_NAME, type PolicyConfig, type Principal, type RiskResolver, type RunContext, serviceToolSlug, type ToolRegistry, USE_SERVICE_TOOL } from "@vendoai/vendo/core";
-import { createStore, type VendoStore } from "@vendoai/vendo/store";
+import type { VendoStore } from "@vendoai/vendo/store";
+import { emptySharedStore } from "@vendoai-fixtures/test-kit/shared-store";
 import { createGuard, type VendoGuard } from "@vendoai/vendo/guard";
 import { createActions } from "@vendoai/vendo/actions";
 import { connectorDiscoveryRegistry } from "@vendoai/vendo";
@@ -244,9 +243,13 @@ export const appsAutomationsSeam = (
 });
 
 export async function createStack(options: StackOptions = {}): Promise<Stack> {
-  const dataDir = await mkdtemp(join(tmpdir(), "vendo-automations-e2e-"));
-  const store = createStore({ dataDir });
-  await store.ensureSchema();
+  // The FILE's one PGlite store, emptied for this stack. A boot plus its
+  // migrations is ~700ms, and this suite paid one at each of 53 call sites to
+  // prepare a database the test then wrote a handful of rows into; everything
+  // composed below it is in-memory wiring and stays per-stack. A test that needs
+  // a database of its own — the restart-durability proofs in `rerun-ledger` and
+  // `per-automation-attack` — composes one by hand and does not come through here.
+  const store = await emptySharedStore();
   const guard = createGuard({
     store,
     ...(options.policy === undefined ? {} : { policy: options.policy }),
@@ -311,10 +314,10 @@ export async function createStack(options: StackOptions = {}): Promise<Stack> {
       const result = await raw.query(query, params);
       return result.rows as never;
     },
-    async close() {
-      await store.close();
-      await rm(dataDir, { recursive: true, force: true });
-    },
+    // The file's shared engine outlives every stack in it, and the next
+    // `createStack` is what empties it. Kept because every suite here closes in
+    // a `finally`, and because it is the seam for anything a stack does own.
+    async close() {},
   };
 }
 

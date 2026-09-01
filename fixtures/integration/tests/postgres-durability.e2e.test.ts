@@ -1,9 +1,12 @@
 /** J9 — POSTGRES DURABILITY: the core journeys on real Postgres + a restart drill.
  *
- * Every other journey backs the composed store with a per-test PGlite temp dir.
- * This one runs the SAME whole-product flows (chat-generates-app + an away
- * automation) against REAL Postgres — the production backend — through the public
- * wire, then proves durability across a serving-process restart:
+ * Every other journey backs the composed store with the file's shared in-memory
+ * PGlite engine, emptied per stack. This one is the exception the harness keys
+ * on `storeUrl`: it OWNS its store and really closes it, because closing and
+ * reopening is the proof. It runs the SAME whole-product flows
+ * (chat-generates-app + an away automation) against REAL Postgres — the
+ * production backend — through the public wire, then proves durability across a
+ * serving-process restart:
  *
  *   - commit real writes over the wire (an app row, an away run) on Postgres,
  *   - tear the serving stack down entirely (wire server + connection pool gone —

@@ -17,10 +17,11 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { nodeBridge } from "@vendoai-fixtures/test-kit/node-bridge";
+import { emptySharedStore } from "@vendoai-fixtures/test-kit/shared-store";
 import { type Principal } from "@vendoai/vendo/core";
 import { VENDO_TOOLS_FORMAT } from "@vendoai/vendo/actions";
 import type { HostOAuthAdapter } from "@vendoai/vendo/mcp";
-import { createStore, type VendoStore } from "@vendoai/vendo/store";
+import type { VendoStore } from "@vendoai/vendo/store";
 import { createVendo, type CreateVendoConfig, type Vendo } from "@vendoai/vendo/server";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -81,8 +82,10 @@ afterEach(async () => {
 async function createUmbrella(
   options: { withActAs?: boolean; principalReturnsNull?: boolean } = {},
 ): Promise<Umbrella> {
-  const dataDir = await mkdtemp(join(tmpdir(), "vendo-umbrella-store-"));
-  const store: VendoStore = createStore({ dataDir });
+  // This file's one PGlite store, emptied for this umbrella — eight umbrellas,
+  // one per test, used to mean eight ~700ms boots. `seedApp` below relies on the
+  // schema being ready, which an already-ensured shared engine simply is.
+  const store: VendoStore = await emptySharedStore();
   const oauth: HostOAuthAdapter = {
     // Auto consent: the fixture host has already authenticated SUBJECT.
     async authorize() {
@@ -148,9 +151,9 @@ async function createUmbrella(
     endpoint: `${origin}${MCP_PATH}`,
     actAs,
     async close() {
+      // The store is the file's and the next `createUmbrella` empties it, so
+      // only this umbrella's own server is torn down here.
       await new Promise<void>((resolve, reject) => httpServer.close((error) => (error ? reject(error) : resolve())));
-      await store.close();
-      await rm(dataDir, { recursive: true, force: true });
     },
   };
   open.push(umbrella);

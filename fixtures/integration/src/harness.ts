@@ -4,7 +4,7 @@
  * whole-product journeys through the PUBLIC WIRE over real HTTP.
  *
  * What a stack is:
- *   - a per-test PGlite store in a temp dir (isolation),
+ *   - the FILE's one PGlite store, emptied for this stack (isolation),
  *   - `createVendo({ models: { default: model }, principal, store, actAs, policy })` — nothing else is
  *     hand-wired; store/guard/actions/apps/automations are composed by the umbrella,
  *   - host tools loaded through the real `.vendo/tools.json` contract (createVendo
@@ -17,10 +17,7 @@
  * `stack.sql` (raw SQL over the public vendo_* tables for side-effect asserts). The
  * harness itself also reads `vendo.store`. Journeys otherwise use the wire only.
  */
-import { mkdtemp, rm } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { inject } from "vitest";
 import { zipSync } from "fflate";
 import type { Connector } from "@vendoai/vendo/actions";
@@ -35,8 +32,9 @@ import {
 } from "@vendoai/vendo/core";
 import { automationsInternals } from "@vendoai/vendo/automations";
 import { createMcpDoor, type McpDoorConfig, type HostOAuthAdapter, type McpDoor } from "@vendoai/vendo/mcp";
-import { createStore, type VendoStore } from "@vendoai/vendo/store";
+import { createStore } from "@vendoai/vendo/store";
 import { createVendo, type CreateVendoConfig, type Vendo } from "@vendoai/vendo/server";
+import { emptySharedStore } from "@vendoai-fixtures/test-kit/shared-store";
 import {
   scriptedModel,
   textTurn,
@@ -217,7 +215,9 @@ export interface StackOptions {
    * Consent is still resolved at emit time from env/config (J11). */
   telemetry?: boolean;
   /** Back the composed store with real Postgres (createStore({ url })) instead of
-   * the default per-test PGlite temp dir. Used by the J9 durability journey. */
+   * the file's shared PGlite engine. Used by the J9 durability journey, whose
+   * whole proof is closing this stack and finding the rows on a fresh
+   * connection — so this stack OWNS its store and really closes it. */
   storeUrl?: string;
   /** External connectors composed into the umbrella (04-actions §3) — the
    * connected-accounts journeys pass a composioConnector aimed at a stub. */
@@ -283,10 +283,24 @@ export async function createStack(options: StackOptions = {}): Promise<Stack> {
   process.env.VENDO_BASE_URL = fixtureBaseUrl();
   process.env.VENDO_TICK_SECRET ??= "integration-tick-secret";
 
-  const dataDir = await mkdtemp(join(tmpdir(), "vendo-integration-"));
-  const store = options.storeUrl === undefined
-    ? createStore({ dataDir })
-    : createStore({ url: options.storeUrl });
+  // The FILE's one PGlite store, emptied for this stack. A boot plus its
+  // migrations is ~700ms, and this suite paid one at each of 39 call sites to
+  // prepare a database the journey then wrote a handful of rows into. A
+  // `storeUrl` stack owns its store instead: that one is a real Postgres the J9
+  // durability journey closes and reopens, which is the one thing an emptied
+  // shared engine cannot stand in for.
+  //
+  // A `development` stack gets an engine OF ITS OWN, and that is not a taste
+  // call. Development composition arms a scheduler ticker (compose-automations
+  // `startDevAutomationsTicker`) that is adopted per PROCESS and torn down by
+  // nothing this harness can reach — so it keeps firing `automations.start()`
+  // against whatever database its composition holds for the rest of the file,
+  // straight through the tests that come after. Pointed at a private engine it
+  // ticks over rows nobody reads.
+  const ownsStore = options.storeUrl !== undefined;
+  const store = options.storeUrl !== undefined
+    ? createStore({ url: options.storeUrl })
+    : await emptySharedStore(options.development === true ? { engine: "development" } : {});
   // Open the DB up front so `store.raw()` (the SQL-assert seam) is usable
   // immediately; createVendo also calls ensureSchema (idempotent).
   await store.ensureSchema();
@@ -403,14 +417,23 @@ export async function createStack(options: StackOptions = {}): Promise<Stack> {
       return (await raw.query(query, params)).rows as never;
     },
     async close() {
-      // The data dir goes in a finally: a server that refuses to close, or a
-      // PGlite close that rejects, must not strand the scratch directory —
-      // that is what grew /tmp by one dir per stack for every red run.
+      // The shared store is NOT closed: the next stack in this file is handed
+      // the same engine, emptied. Only a `storeUrl` stack owns its store, and
+      // its pool goes even if the server refuses to shut down.
+      //
+      // KNOWN, BOUNDED LEAK: `composeSweep` tears its background TTL sweep down
+      // by wrapping `store.close`, and that is its only handle — so not closing
+      // the store leaves this stack's sweeper running, and its wrapper chained
+      // onto the shared store, for the rest of the file. Safe on a real clock
+      // and only there: the interval is unref'd, it ticks every 60s, and its TTL
+      // is 60 minutes, so it finds nothing before the file ends and both it and
+      // the engine die with the file. A file that fakes timers or moves the
+      // system clock breaks every one of those reasons at once and must take an
+      // engine of its own — see the header of test-kit's shared-store.ts.
       try {
         await new Promise<void>((resolve, reject) => httpServer.close((error) => (error ? reject(error) : resolve())));
-        await store.close();
       } finally {
-        await rm(dataDir, { recursive: true, force: true });
+        if (ownsStore) await store.close();
       }
     },
   };

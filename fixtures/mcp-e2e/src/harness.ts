@@ -1,7 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { inject } from "vitest";
 import { type AppDocument, type PolicyConfig, type Principal, sha256Hex, type ToolRegistry } from "@vendoai/vendo/core";
 import type {
@@ -11,7 +8,8 @@ import { createActions } from "@vendoai/vendo/actions";
 import { createApps, sealBundleBlobs, SCREEN_FILE, type AppsRuntime } from "@vendoai/vendo/apps";
 import { createGuard, type VendoGuard } from "@vendoai/vendo/guard";
 import { createMcpDoor, type McpDoorConfig, type HostOAuthAdapter } from "@vendoai/vendo/mcp";
-import { createStore, storeFiles, type VendoStore } from "@vendoai/vendo/store";
+import { storeFiles, type VendoStore } from "@vendoai/vendo/store";
+import { emptySharedStore } from "@vendoai-fixtures/test-kit/shared-store";
 
 export const SUBJECT = "user_1";
 export const FIXTURE_APP_ID = "app_mcp_fixture";
@@ -158,9 +156,10 @@ export async function resetFixture(): Promise<void> {
 }
 
 export async function createStack(options: StackOptions = {}): Promise<Stack> {
-  const dataDir = await mkdtemp(join(tmpdir(), "vendo-mcp-e2e-"));
-  const store = createStore({ dataDir });
-  await store.ensureSchema();
+  // The FILE's one PGlite store, emptied for this stack — a boot plus its
+  // migrations is ~700ms, and everything below it (the door, the two seeded app
+  // rows, the sealed bundle) is written fresh per stack on top of the empty one.
+  const store = await emptySharedStore();
   const guard = createGuard({
     store,
     policy: options.policy ?? {
@@ -292,9 +291,9 @@ export async function createStack(options: StackOptions = {}): Promise<Stack> {
       return (await raw.query(query, params)).rows as never;
     },
     async close() {
+      // The door's server is this stack's; the store is the file's and the next
+      // `createStack` is what empties it, so it is not closed here.
       await new Promise<void>((resolve, reject) => httpServer.close((error) => (error ? reject(error) : resolve())));
-      await store.close();
-      await rm(dataDir, { recursive: true, force: true });
     },
   };
   return stack;

@@ -121,7 +121,14 @@ const postgres = (url: string): Backend => ({
  *
  *  NOT for tests that prove store CREATION — a store with no schema yet,
  *  `ensureSchema` itself, closing or erasing the engine. Those want an engine of
- *  their own, which `backends().make()` still gives them. */
+ *  their own, which `backends().make()` still gives them.
+ *
+ *  SECOND COPY: `fixtures/test-kit/src/shared-store.ts`. This file is in `src/`
+ *  and not in the published `dist`, and the fixture suites consume
+ *  `@vendoai/vendo` as a built package with no source alias, so they cannot
+ *  import it and carry their own. Change the reset SQL or the identity rules
+ *  here and change them there too — that copy keys on the engine name alone
+ *  (no fixture configures encryption) and is otherwise this one. */
 export async function emptySharedStore(
   options: Pick<StoreConfig, "encryption"> & {
     /** Which engine to hand back. Unset is the file's one engine; a name is a
@@ -136,12 +143,20 @@ export async function emptySharedStore(
   let shared = sharedStores.get(key);
   if (!shared) {
     const dataDir = `memory://vendo-shared-test-store-${sharedStores.size}`;
-    shared = (async () => {
+    const booting = (async () => {
       const store = createStore({ ...config, dataDir });
       await store.ensureSchema();
       return { store, raw: store.raw() as SharedStore["raw"] };
     })();
-    sharedStores.set(key, shared);
+    // A failed boot must not poison the key: left in the map, the rejected
+    // promise is handed to every later call in the file, so one flaky boot reads
+    // as every remaining test failing on the FIRST test's error. Same
+    // de-registration `db.ts:236-239` does for its shared-PGlite registry.
+    booting.catch(() => {
+      if (sharedStores.get(key) === booting) sharedStores.delete(key);
+    });
+    sharedStores.set(key, booting);
+    shared = booting;
   }
   const { store, raw } = await shared;
   await raw.query(EMPTY);

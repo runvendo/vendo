@@ -1,6 +1,6 @@
 /** The red-team mini-umbrella harness: a superset of the wave-4 automations
- * harness that composes the SAME real blocks (real PGlite store, real guard,
- * real actions against the live fixture host app, real apps runtime, real
+ * harness that composes the SAME real blocks (the file's real PGlite store, real
+ * guard, real actions against the live fixture host app, real apps runtime, real
  * automations engine) and then hands adversarial suites the extra primitives
  * they need to attack the composed system — away contexts, forged artifacts,
  * tampered .vendoapp bytes, and the run-token proxy surface.
@@ -12,13 +12,11 @@
  * Everything the automations harness exported is re-exported here unchanged so
  * suites can `import { ... } from "./harness.js"` exactly as they would there.
  */
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { inject } from "vitest";
 import { unzipSync, zipSync, type Unzipped, type Zippable } from "fflate";
 import { type ActAs, type AgentRunner, type AgentRunners, type AppDocument, type AppId, type AutomationRecord, type CreateAutomation, DEFAULT_RUNNER_NAME, type PolicyConfig, type Principal, type RiskResolver, type RunContext, serviceToolSlug, type ToolRegistry, USE_SERVICE_TOOL } from "@vendoai/vendo/core";
-import { createStore, type VendoStore } from "@vendoai/vendo/store";
+import type { VendoStore } from "@vendoai/vendo/store";
+import { emptySharedStore } from "@vendoai-fixtures/test-kit/shared-store";
 import { createGuard, type Judge, type VendoGuard } from "@vendoai/vendo/guard";
 import { createActions } from "@vendoai/vendo/actions";
 import { connectorDiscoveryRegistry } from "@vendoai/vendo";
@@ -223,9 +221,10 @@ export interface StackOptions {
 }
 
 export async function createStack(options: StackOptions = {}): Promise<Stack> {
-  const dataDir = await mkdtemp(join(tmpdir(), "vendo-redteam-e2e-"));
-  const store = createStore({ dataDir });
-  await store.ensureSchema();
+  // The FILE's one PGlite store, emptied for this stack — a boot plus its
+  // migrations is ~700ms, and everything composed below it is in-memory wiring
+  // that stays per-stack, so an attack still faces a system built from scratch.
+  const store = await emptySharedStore();
   const guard = createGuard({
     store,
     ...(options.policy === undefined ? {} : { policy: options.policy }),
@@ -299,10 +298,10 @@ export async function createStack(options: StackOptions = {}): Promise<Stack> {
       const result = await raw.query(query, params);
       return result.rows as never;
     },
-    async close() {
-      await store.close();
-      await rm(dataDir, { recursive: true, force: true });
-    },
+    // The file's shared engine outlives every stack in it, and the next
+    // `createStack` is what empties it. Kept because every suite here closes in
+    // a `finally`, and because it is the seam for anything a stack does own.
+    async close() {},
   };
 }
 

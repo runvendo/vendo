@@ -407,6 +407,9 @@ importers:
       '@types/node':
         specifier: ^22.0.0
         version: 22.20.0
+      '@vendoai-fixtures/test-kit':
+        specifier: workspace:*
+        version: link:../test-kit
       ai:
         specifier: ^6.0.0
         version: 6.0.28(zod@3.25.76)
@@ -589,6 +592,9 @@ importers:
       '@types/node':
         specifier: ^22.0.0
         version: 22.20.0
+      '@vendoai-fixtures/test-kit':
+        specifier: workspace:*
+        version: link:../test-kit
       ai:
         specifier: ^6.0.0
         version: 6.0.28(zod@3.25.76)
@@ -614,12 +620,18 @@ importers:
       '@types/node':
         specifier: ^22.0.0
         version: 22.20.0
+      '@vendoai/vendo':
+        specifier: workspace:*
+        version: link:../../packages/vendo
       ai:
         specifier: 6.0.28
         version: 6.0.28(zod@3.25.76)
       typescript:
         specifier: ^5.6.0
         version: 5.9.3
+      vitest:
+        specifier: ^3.2.6
+        version: 3.2.7(@types/debug@4.1.13)(@types/node@22.20.0)(jiti@2.7.0)(jsdom@29.1.1(@noble/hashes@2.2.0))(lightningcss@1.32.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.9.0)
 
   genbench:
     dependencies:

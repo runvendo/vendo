@@ -96,6 +96,10 @@ describe("kill switch (runs.stop)", () => {
       // Stopping an already-terminal run conflicts.
       await expect(stack.automations.runs.stop(runId, ctx)).rejects.toMatchObject({ code: "conflict" });
     } finally {
+      // `releaseHold` is the whole fence now: `close()` no longer closes the
+      // store, so a run still blocked in the hold tool would keep writing to the
+      // engine the next test is handed. Safe because this file holds ONE test —
+      // a second one must also drain `emitted` here, not just unblock it.
       releaseHold();
       await stack.close();
     }
