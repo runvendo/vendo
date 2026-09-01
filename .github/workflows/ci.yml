@@ -8,7 +8,7 @@ on:
   # merge_group or the queue waits forever for a check that will never report —
   # including on the PR that would fix it. All four live in this file and this
   # is the only workflow that needs it; the other three (mintlify-automerge,
-  # release, version-packages) provide no required check.
+  # release, tag-and-release) provide no required check.
   merge_group:
 
 permissions:
@@ -192,6 +192,15 @@ jobs:
       # merge_group event, where the source branch name is gone (github.ref is
       # the queue's own gh-readonly-queue/... branch) but the head commit
       # message is not.
+      #
+      # DORMANT SINCE VERSIONING MOVED. There is no version PR on this repo any
+      # more: `changeset version` runs in the private monorepo and the bump
+      # arrives here as a PUSH to main, which the last line forces heavy — so the
+      # full suite now runs against the exact tree tag-and-release.yml then tags
+      # and publishes, which is strictly the better place for it. The two cases
+      # are kept rather than deleted because they are the whole reason `heavy`
+      # exists, they cost nothing while nothing matches them, and a rollback of
+      # the move needs them back on the day it happens.
       - name: Heavy jobs or not
         id: heavy
         env:
@@ -874,7 +883,8 @@ jobs:
           # The version PR, same as the heavy jobs — but decided here rather than
           # taken from the cone job's output. This is a REQUIRED check, and a
           # `needs: cone` would let a failed cone SKIP it, which branch
-          # protection reads as a pass.
+          # protection reads as a pass. Dormant for the same reason the cone
+          # job's copy is: no version PR is opened on this repo any more.
           case "$HEAD_REF" in changeset-release/*)
             echo "changesets version PR; conformance skipped"
             echo "skip=true" >> "$GITHUB_OUTPUT"; exit 0 ;;

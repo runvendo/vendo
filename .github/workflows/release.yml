@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       publish:
-        # version-packages.yml sets this, dispatching at the tag it just pushed:
+        # tag-and-release.yml sets this, dispatching at the tag it just pushed:
         # a GITHUB_TOKEN tag push can never fire the `push: tags` trigger above,
         # and a dispatch can. Leave it off for a hand-run dry run.
         description: Publish for real

@@ -48,23 +48,31 @@ travels in two steps, and only the first one involves you.
 - **It is then imported inward**, into the private repo, by a maintainer. This
   needs nothing from you and leaves no trace on your PR.
 
-That second step is deliberately not automatic. An import writes to the private
-repo from a public source, so the maintainer who reviewed the change is the
-right person to decide when it crosses — not a timer.
+That second step never merges itself. An import writes to the private repo from
+a public source, so a maintainer — not a timer — is what puts your change in.
+The import may be *proposed* automatically once your PR is merged here, but it
+lands only when someone approves and merges it on the inside.
 
 Maintainers: run the `upstream-import` workflow on `runvendo/vendo-cloud` via
 `workflow_dispatch`, passing this PR's number as the `pr` input. It lands on
-`oss/upstream-pr` and opens a PR there; nothing merges itself into the private
-repo.
+`oss/upstream-pr` and opens a PR there for review.
 
 ## Releases
 
-Releases are tag-driven and CI-only: pushing a `v*` tag runs
-`.github/workflows/release.yml`, which publishes the lockstep `@vendoai/*`
+Releases are automatic and CI-only, and nothing about them needs a maintainer
+at a keyboard. When a version change lands on `main`,
+`.github/workflows/tag-and-release.yml` pushes the matching `v*` tag and hands
+it to `.github/workflows/release.yml`, which publishes the lockstep `@vendoai/*`
 group to npm via OIDC trusted publishing — no npm tokens exist, in CI or
-anywhere else. Feature PRs include a changeset (`pnpm changeset`); the
-Version Packages PR accumulates the bumps between releases. Maintainers'
-full release runbook lives in the private repo.
+anywhere else.
+
+Feature PRs include a changeset (`pnpm changeset`) describing the bump they
+warrant — that part is yours, and it travels inward with your change. The
+version bump itself is cut in the private monorepo, where the changesets are
+consumed and the CHANGELOGs written; the result reaches this repo as an
+ordinary sync commit, and `.github/workflows/tag-and-release.yml` tags it and
+hands it to `release.yml`. Nothing on this repo opens a version PR.
+Maintainers' full release runbook lives in the private repo.
 
 ## Reporting bugs / requesting features
 

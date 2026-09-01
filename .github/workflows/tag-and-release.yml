@@ -1,0 +1,124 @@
+name: Tag and Release
+
+# TAG AND PUBLISH ONLY. Versioning does not happen on this repo any more.
+#
+# The version bump is produced in the private monorepo, by its own
+# `Version Packages` workflow: `changeset version` runs there, on a
+# `changeset-release/main` branch, and rides ONE reusable
+# "chore: version packages" PR against private main. Merging that PR is what
+# releases. The bump then arrives HERE the way every other change does — as a
+# Copybara projection push to main — and this workflow's only job is to notice
+# that `packages/vendo/package.json` names a version with no tag, tag it, and
+# hand it to release.yml.
+#
+# WHY IT MOVED. When versioning ran here, the CHANGELOGs, the bumped
+# package.json versions and the emptied .changeset/ existed on this repo and
+# nowhere else, and an hourly poll in the private repo had to import them back
+# through Copybara's CHANGE_REQUEST mode — a second human-merged PR per release
+# with stale-baseline conflicts of its own. Versioning where the changesets are
+# authored deletes that leg entirely. Nothing imports back automatically now.
+#
+# There is no changesets action here, no version PR, and no auto-merge. What
+# stayed is everything the publish interlock depends on, unchanged — the two
+# comments below are incident records, not decoration.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  # Pushing the release tag.
+  contents: write
+  # Dispatching release.yml is an Actions write.
+  actions: write
+
+# Serialized, never cancelled: two runs racing the same tag is the one thing
+# this file must not do.
+concurrency:
+  group: tag-and-release
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    if: github.repository == 'runvendo/vendo'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      # UNGATED, and the remote's tags are what it decides on — not whether this
+      # push looked like a release. That is what makes every push to main a retry
+      # of a half-finished release: a run that died before tagging has already
+      # consumed its changesets upstream, so nothing would ever release that
+      # version again, silently. Now the next push finds `v<version>` missing and
+      # finishes the job. If instead the tag went up and only the dispatch below
+      # failed, that run is red with the tag already in place, and the one-line
+      # repair is `gh workflow run release.yml --ref <tag> -f publish=true`.
+      #
+      # The existing-tag skip is also the correct answer for an ordinary commit
+      # (tag already pushed, nothing to do) and for any sync that leaves the
+      # umbrella version alone — which is most of them. `changeset tag` is
+      # deliberately not used to name it: in a workspace it writes one
+      # `<pkg>@<version>` tag per package, and release.yml — like every release so
+      # far — is keyed on the single lockstep `v<version>`. packages/vendo is the
+      # version of record (scripts/sync-version-constants.mjs reads the same file).
+      - name: Push the release tag
+        id: tag
+        env:
+          # The built-in token, spelled out, because a real credential's tag push
+          # DOES fire release.yml's `push: tags` trigger, and then the tag and the
+          # dispatch below each start a publish and the two collide on npm
+          # (2026-08-21 and again on v0.38.0: push run 32661101752 failed against
+          # dispatch 32661101524). GITHUB_TOKEN's silence is the interlock that
+          # makes the dispatch the single trigger — load-bearing, not incidental.
+          TAG_PUSH_URL: https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}
+        run: |
+          set -euo pipefail
+          # The working tree, which IS $GITHUB_SHA here. The old version of this
+          # step read `git show "$GITHUB_SHA:..."` because the changesets action
+          # had left the checkout on `changeset-release/main`, holding a version
+          # that was merely PROPOSED. There is no such action any more and no
+          # such branch on this repo, so the file on disk is main's tip.
+          tag="v$(jq -r .version < packages/vendo/package.json)"
+          # THE 0.x CEILING, final tripwire. The private Version Packages
+          # workflow refuses to propose a version that left 0.x; this refuses to
+          # tag or publish one that got past it. Vendo does not ship 1.0.0 until
+          # Yousef says so, and lifting the ceiling means deleting BOTH halves,
+          # on his word alone.
+          case "$tag" in
+            v0.*) ;;
+            *) echo "::error::$tag left 0.x — Yousef lifts the ceiling, not a release run."; exit 1 ;;
+          esac
+          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+            echo "$tag is already tagged — nothing to release"
+            exit 0
+          fi
+          git tag "$tag" "$GITHUB_SHA"
+          # The URL alone was NOT enough, and v0.38.0 proved it: actions/checkout
+          # persists its credential as `http.https://github.com/.extraheader:
+          # AUTHORIZATION: basic <checkout's token>`, and that header BEATS basic
+          # auth embedded in the URL — git sends both, GitHub honours the header.
+          # So the tag went up as a real identity and fired `push: tags`. Emptying
+          # the header for this one command is what actually forces the URL's
+          # token; the config itself is left alone for every other git call.
+          git -c http.https://github.com/.extraheader= push "$TAG_PUSH_URL" "refs/tags/$tag"
+          echo "pushed $tag -> $GITHUB_SHA"
+          echo "tag=$tag" >>"$GITHUB_OUTPUT"
+
+      # The tag push above used GITHUB_TOKEN, so release.yml's `push: tags`
+      # trigger did NOT fire (by GitHub's design) — dispatching it here is what
+      # turns a projected version bump into a published release. GitHub never
+      # triggers a workflow from anything pushed with GITHUB_TOKEN, and
+      # `workflow_dispatch` is the documented exception it MAY trigger; the tag
+      # push alone publishes nothing (v0.23.0 was tagged and published nothing).
+      # Dispatching release.yml also keeps it the top-level workflow of its run,
+      # which is what npm's trusted publisher config names for every @vendoai
+      # package (npm validates the calling workflow's filename, so `workflow_call`
+      # would break OIDC publishing). `--ref "$TAG"` pins the publish to the exact
+      # commit that was tagged, not to whatever main has drifted to.
+      - name: Publish the tag
+        if: steps.tag.outputs.tag != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: gh workflow run release.yml --ref "$TAG" -f publish=true

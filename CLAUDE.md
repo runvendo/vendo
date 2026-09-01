@@ -60,6 +60,19 @@ generated UI in a sandboxed, brand-native surface.
 - `vendo-web` is archived. The Cloud half now lives in the private monorepo
   and consumes these packages as `workspace:*`, so it moves in lockstep with
   every release automatically — no downstream bump step.
+- Versions are computed in the private monorepo's CI, never in the public repo.
+  Every push to private `main` refreshes one standing `chore: version packages`
+  PR from `changeset-release/main`, which runs `changeset version` and arms its
+  own auto-merge; merging it is the release. The bump then reaches the public
+  repo as an ordinary sync, and the public repo tags `v<version>` and publishes
+  on version change — it opens no version PR of its own. Feature PRs still carry
+  a changeset (`pnpm changeset`). Coming back the other way, an hourly job opens
+  an import PR whenever public main holds a commit this repo did not write;
+  docs-only imports (the Mintlify bot's) merge themselves, everything else waits
+  for a human.
+  Privately, that version PR is fast-laned through every required check — it is
+  a `packages/**` diff and would otherwise drag the whole estate through a full
+  run — and `changeset-release/main` is the branch name each workflow keys on.
 
 ## Tests
 
