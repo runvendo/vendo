@@ -108,6 +108,7 @@
             "group": "Generated UI & apps",
             "pages": [
               "generated/apps",
+              "generated/app-database",
               "generated/host-components"
             ],
             "icon": "window-restore"
