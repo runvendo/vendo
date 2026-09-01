@@ -310,20 +310,29 @@ type SlotKey = keyof ThemeSlotValues;
 /**
  * The shadcn theme-variable vocabulary (ui.shadcn.com/docs/theming), mapped
  * only where the shadcn semantic IS the Vendo slot semantic. Notably absent:
- * shadcn's `--accent` (a hover wash, not the brand color — `--primary` is),
- * `--muted` (a muted surface, not muted text), `--secondary`, `--popover`,
- * `--input`, `--ring`, `--chart-*`, `--sidebar-*`. Each name is also accepted
- * with the Tailwind-v4 `@theme` namespace prefix (`--color-primary`, ...).
+ * shadcn's `--muted` (a muted surface, not muted text), `--secondary`,
+ * `--popover`, `--input`, `--ring`, `--chart-*`, `--sidebar-*`. Each name is
+ * also accepted with the Tailwind-v4 `@theme` namespace prefix
+ * (`--color-primary`, ...).
+ *
+ * After each shadcn name, Vendo's own slot name is accepted as a fallback
+ * spelling (`--text`, `--surface`, `--accent`, ...), so a Tailwind-v4 host
+ * that names its tokens after the slots they configure still extracts
+ * exactly. The shadcn name is tried FIRST, so an existing shadcn sheet keeps
+ * today's reads even where the vocabularies collide — shadcn's hover-wash
+ * `--accent` only wins when no `--primary` exists, where it is the best
+ * available brand signal. An alias whose value does not resolve to a color is
+ * treated as absent, never terminal: the next spelling still gets its read.
  */
 const EXACT_COLOR_TOKENS: ReadonlyArray<[SlotKey, string[]]> = [
   ["background", ["--background"]],
-  ["text", ["--foreground"]],
-  ["surface", ["--card"]],
-  ["accent", ["--primary"]],
+  ["text", ["--foreground", "--text"]],
+  ["surface", ["--card", "--surface"]],
+  ["accent", ["--primary", "--accent"]],
   ["accentText", ["--primary-foreground"]],
-  ["mutedText", ["--muted-foreground"]],
+  ["mutedText", ["--muted-foreground", "--muted-text"]],
   ["border", ["--border"]],
-  ["danger", ["--destructive"]],
+  ["danger", ["--destructive", "--danger"]],
 ];
 
 /** Non-color conventions: shadcn `--radius`; Tailwind v4 `--font-*` and
@@ -376,9 +385,16 @@ function readExact(vars: CssVarDecl[]): ExactReads {
   };
 
   for (const [slot, names] of EXACT_COLOR_TOKENS) {
-    const decl = lastLightDecl(vars, names);
-    const resolved = decl === undefined ? null : resolveCssVarRefs(decl.value, vars);
-    put(slot, decl, resolved === null ? null : normalizeColor(resolved));
+    // An alias whose value cannot be resolved to a color is treated as absent
+    // (color.ts's law), not terminal — the next spelling still gets its read.
+    for (const name of names) {
+      const decl = lastLightDecl(vars, [name]);
+      const resolved = decl === undefined ? null : resolveCssVarRefs(decl.value, vars);
+      const value = resolved === null ? null : normalizeColor(resolved);
+      if (value === null) continue;
+      put(slot, decl, value);
+      break;
+    }
   }
   for (const [slot, names] of FONT_TOKENS) {
     const decl = lastLightDecl(vars, names);
