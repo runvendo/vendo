@@ -306,17 +306,11 @@ export default function S() { while (true) {} return <Text text="never" />; }`);
     expect(error.message).toContain("did not finish inside 2000ms");
   });
 
-  // Quarantined 2026-08-11: deterministic-red on the release workflow's serial
-  // single-runner pass while green on sharded CI — on a loaded runner the 5M-row
-  // allocation can trip the 2000ms boot budget before the per-VM heap limit, so
-  // the error kind races between "budget" and "boot". Root-cause + un-skip
-  // tracked in the follow-up issue; do not delete: this guards engine survival.
-  it.skip("raises an out-of-memory screen as a catchable failure, and the engine survives it", () => {
+  it("raises an out-of-memory screen as a catchable failure, and the engine survives it", () => {
     const error = failsBoot(`
 import { Text } from "@vendo/screen";
 export default function S() {
-  const rows = [];
-  for (let index = 0; index < 5000000; index += 1) rows.push({ index: index, label: "row " + index });
+const rows = new Array(50000000).fill(0); // fill avoids JavaScript loop iterations so the heap limit is exceeded before the boot budget.
   return <Text text={String(rows.length)} />;
 }`);
 
