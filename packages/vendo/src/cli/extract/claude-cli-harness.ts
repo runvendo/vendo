@@ -50,11 +50,19 @@ interface ExecResult {
   code: number;
 }
 
-type Exec = (args: string[], options: { cwd: string; env: NodeJS.ProcessEnv }) => Promise<ExecResult>;
+type Exec = (
+  args: string[],
+  options: { cwd: string; env: NodeJS.ProcessEnv },
+  stdinPayload?: string,
+) => Promise<ExecResult>;
 
-function execClaude(args: string[], options: { cwd: string; env: NodeJS.ProcessEnv }): Promise<ExecResult> {
+function execClaude(
+  args: string[],
+  options: { cwd: string; env: NodeJS.ProcessEnv },
+  stdinPayload?: string,
+): Promise<ExecResult> {
   return new Promise((resolve) => {
-    execFile(
+    const child = execFile(
       "claude",
       args,
       { cwd: options.cwd, env: options.env, timeout: RUN_TIMEOUT_MS, maxBuffer: MAX_BUFFER_BYTES },
@@ -63,6 +71,18 @@ function execClaude(args: string[], options: { cwd: string; env: NodeJS.ProcessE
         resolve({ stdout, stderr, code });
       },
     );
+    // The prompt rides stdin, never argv. Windows CreateProcess caps the WHOLE
+    // command line at 32,767 chars, so a large stage prompt — the skeptic re-ask
+    // over a big catalog is the one that gets there — throws ENAMETOOLONG before
+    // the child starts, while the same prompt is far under the limit on macOS
+    // (~256KB) and Linux (~2MB). `claude -p` with no positional prompt reads
+    // stdin, so this removes the ceiling on every platform.
+    if (stdinPayload !== undefined && child.stdin !== null) {
+      // The child can exit before the write drains; a broken pipe here must not
+      // outrank the real exit-code error reported by the execFile callback.
+      child.stdin.on("error", () => undefined);
+      child.stdin.end(stdinPayload);
+    }
   });
 }
 
@@ -141,7 +161,7 @@ export function claudeCliHarness(options: ClaudeCliHarnessOptions = {}): Extract
     async run(input: ExtractionRunInput): Promise<string> {
       const model = extractionModelPin(input.env);
       const args = [
-        "-p", input.instructions,
+        "-p",
         "--allowedTools", ...rootScopedToolRules(input.root),
         "--disallowedTools", ...DISALLOWED_TOOLS,
         "--setting-sources", "",
@@ -154,7 +174,7 @@ export function claudeCliHarness(options: ClaudeCliHarnessOptions = {}): Extract
       // would otherwise have used. Gateway fuel (if applicable) wins last.
       const merged = { ...process.env, ...input.env };
       const overlay = await resolveGatewayFuelOverlay(merged, probe);
-      const result = await exec(args, { cwd: input.root, env: { ...merged, ...overlay } });
+      const result = await exec(args, { cwd: input.root, env: { ...merged, ...overlay } }, input.instructions);
       if (result.code !== 0) {
         throw new Error(`claude exited with code ${result.code}: ${result.stderr.trim() || "(no stderr)"}`);
       }

@@ -40,21 +40,44 @@ describe("claudeCliHarness", () => {
 
   it("invokes claude headless with print mode, the exact tool allowlist/denylist, and isolated settings", async () => {
     let capturedArgs: string[] = [];
+    let capturedStdin: string | undefined;
     const harness = claudeCliHarness({
-      exec: async (args) => {
+      exec: async (args, _options, stdinPayload) => {
         capturedArgs = args;
+        capturedStdin = stdinPayload;
         return { stdout: "the result", stderr: "", code: 0 };
       },
     });
     const text = await harness.run({ root: "/host/root", env: {}, instructions: "go read the codebase" });
     expect(text).toBe("the result");
+    expect(capturedStdin).toBe("go read the codebase");
     expect(capturedArgs).toEqual([
-      "-p", "go read the codebase",
+      "-p",
       "--allowedTools", "Read(//host/root/**)", "Glob(//host/root/**)", "Grep(//host/root/**)",
       "--disallowedTools",
       "Bash", "Write", "Edit", "WebFetch", "WebSearch", "Task", "TodoWrite", "NotebookEdit", "KillShell", "BashOutput",
       "--setting-sources", "",
     ]);
+  });
+
+  it("keeps the prompt out of argv entirely — Windows caps a command line at 32,767 chars", async () => {
+    let capturedArgs: string[] = [];
+    let capturedStdin: string | undefined;
+    const harness = claudeCliHarness({
+      exec: async (args, _options, stdinPayload) => {
+        capturedArgs = args;
+        capturedStdin = stdinPayload;
+        return { stdout: "ok", stderr: "", code: 0 };
+      },
+    });
+    // Comfortably past the Windows CreateProcess ceiling. Passed as an argv
+    // element this throws ENAMETOOLONG before the child starts — the failure
+    // that silently discarded a whole judge batch on a large catalog.
+    const huge = "x".repeat(64 * 1024);
+    await harness.run({ root: "/host/root", env: {}, instructions: huge });
+    expect(capturedStdin).toBe(huge);
+    expect(capturedArgs.join(" ")).not.toContain(huge);
+    expect(capturedArgs.join("").length).toBeLessThan(32_767);
   });
 
   it("confines reads to the root — a bare tool name would auto-allow Read on ANY path", async () => {
