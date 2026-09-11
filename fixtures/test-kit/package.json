@@ -40,6 +40,6 @@
     "@vendoai/vendo": "workspace:*",
     "ai": "6.0.28",
     "typescript": "^5.6.0",
-    "vitest": "^3.2.6"
+    "vitest": "^4.1.11"
   }
 }

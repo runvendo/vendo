@@ -20,6 +20,6 @@
     "@vendoai-fixtures/test-kit": "workspace:*",
     "ai": "^6.0.0",
     "typescript": "^5.6.0",
-    "vitest": "^3.2.6"
+    "vitest": "^4.1.11"
   }
 }
