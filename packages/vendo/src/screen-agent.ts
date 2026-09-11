@@ -212,7 +212,8 @@ export const ESCALATE_TOOL = "escalate";
  * (`apps` persistence/open.ts `paintedScreenSurface`) — it RE-RUNS the screen and
  * answers with the flattened tree plus the compiled module, deliberately, because
  * that is what a caller mounts. The `app.tsx` a run starts from reaches the model
- * as {@link ScreenInput.source} instead, and only for a remix.
+ * as {@link ScreenInput.source} instead, when the app already has saved screen
+ * source.
  */
 const EDIT_TOOLS: readonly string[] = ["vendo_apps_open"];
 
@@ -330,10 +331,10 @@ export interface ScreenInput {
    *  in the same bytes the box rung is handed. Knowledge, not instruction, so it
    *  sits with the job description rather than with the deployment's voice. */
   briefing?: string;
-  /** The `app.tsx` this run starts from — a REMIX's ported source, and nothing
-   *  else's ({@link ScreenAssemblerDeps.storedScreen} answers only for a seeded
-   *  row, `replayFrom` only for a re-seed). Absent on every other edit, whose
-   *  first message stays the ask alone. See {@link startingSource}. */
+  /** The `app.tsx` this run starts from, when the app has saved screen source.
+   *  {@link ScreenAssemblerDeps.storedScreen} supplies the saved source for an
+   *  accessible app; {@link replayFrom} separately supplies a one-run re-seed
+   *  source. See {@link startingSource}. */
   source?: string;
   /** Is there a builder behind an escalation ({@link ScreenAssemblerDeps.canBuild})?
    *  The door out is equipped only where the answer is yes: a deployment with no
@@ -684,9 +685,9 @@ const judgeScreen = async (
  * A message rather than a section of the brief: the brief heads a cached prefix
  * shared by every assembly, and this is one app's file.
  *
- * REMIXES ONLY. `source` is filled from the source this run starts on, which
- * exists for a seeded row and nothing else — an ordinary edit's first message is
- * still the ask, byte for byte.
+ * SAVED SCREEN SOURCE. `source` is filled from the screen this run starts on,
+ * whether that source came from a seeded row or an ordinary saved app. When
+ * present, the first message puts that source in front of the model before the ask.
  */
 const startingSource = (source: string | undefined): string =>
   source === undefined ? "" : `This app already has a screen: the host's own component, ported into this
@@ -1279,7 +1280,7 @@ export async function assembleScreen(
     messages: [{
       id: `screen_${input.appId}`,
       role: "user",
-      parts: [{ type: "text", text: `${startingSource(input.source)}${input.request}` }],
+      parts: [{ type: "text", text: `You are writing app ${input.appId}.\n\n${startingSource(input.source)}${input.request}` }],
     }],
     // The listings are read ONCE and handed back verbatim: a closed loadout has
     // nothing to discover, so re-reading them mid-run would be a second projection
@@ -1611,15 +1612,12 @@ export function screenAssembler(deps: ScreenAssemblerDeps): ScreenAssembler {
       // save is the single landing, so a replay that never saves leaves the
       // stored screen untouched. Only a re-seed publishes one.
       let start = deps.replayFrom?.(request.appId);
-      // Otherwise the app's own stored screen — a REMIX's and nothing else
-      // (`storedScreen`, compose-apps.ts). Read whether or not the workspace
+      // Otherwise the app's own stored screen. Read it whether or not the workspace
       // already holds a copy, because this is ALSO what goes in front of the
       // model ({@link startingSource}) and the loop cannot read the workspace
-      // itself. Asking only when the workspace was empty meant a remix's SECOND
-      // edit arrived with no code at all in front of it, and an ask with nothing
-      // to change is answered out of the catalog — the one thing a fork exists
-      // not to do, and what a live session's fourth attempt did (2026-08-18),
-      // taking the first wish's edit with it.
+      // itself. The saved row is the source of truth for the screen the person already
+      // has, while the workspace may contain a newer save from this run. The source is
+      // read here specifically so it can also be placed in front of the model.
       const held = start === undefined && await base.exists(checkout);
       start ??= await deps.storedScreen?.(request.appId, ctx);
       // Blank is not a screen — `open()` reads it the same way — and an empty

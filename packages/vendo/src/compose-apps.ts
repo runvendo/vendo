@@ -93,18 +93,15 @@ const appsScreenSeam = (
       // The SAME guard-bound registry. There is no second choke point.
       tools: boundTools,
       workspace: screenWorkspace,
-      // A remix starts as the host's PORTED component, already stored on the
-      // row. The agent checks it out before its first edit, so the model edits
-      // that code instead of writing a replacement from nothing.
-      //
-      // A REMIX AND NOTHING ELSE — `seed` is what says the row holds source the
-      // loop did not write. An ordinary app's edit keeps starting from whatever
-      // its workspace already holds, exactly as it did before this slot existed;
-      // widening the checkout to every app is a change to every edit, and this
-      // is not the change that earns it.
+      // The app's saved screen is the starting source for an edit. The lookup
+      // remains behind `composition.apps.get(appId, screenCtx)`, so the same
+      // access check that protects the app row also protects the source handed
+      // to the screen agent. Both ordinary saved apps and seeded remixes use
+      // this path; a re-seed's one-run replacement still comes through
+      // `replayFrom` below.
       storedScreen: async (appId, screenCtx) => {
         const document = await composition.apps.get(appId, screenCtx);
-        return document?.seed === undefined ? undefined : document.source?.[SCREEN_FILE]?.text;
+        return document?.source?.[SCREEN_FILE]?.text;
       },
       // A RE-SEED's replay starts from the host's NEW port, published by
       // `reseed` for that replay only and gone once read. An ordinary edit

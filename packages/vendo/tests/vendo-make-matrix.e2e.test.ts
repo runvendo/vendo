@@ -462,6 +462,17 @@ describe("the ask-type matrix — every `vendo_make` ask type, one deployment", 
       .toEqual(new Set([`vendo-view:${created!.id}`]));
     // The repaint is a real second paint, not the first one counted twice.
     expect(walked.views.length).toBeGreaterThan(1);
+
+    const screenPrompts = walked.prompts.filter(
+      (prompt) => prompt.includes(SCREEN_BRIEF_MARKER),
+    );
+    expect(screenPrompts).toHaveLength(4);
+
+    const editPrompt = screenPrompts[2]!;
+    expect(editPrompt).toContain(created!.id);
+    expect(editPrompt).toContain("function Spending()");
+    expect(editPrompt).toContain("This month");
+
     // ONE ENGINE: no brain answered either half of this.
     expect(nonScreenPrompts(walked.prompts)).toHaveLength(0);
   }, 60_000);
