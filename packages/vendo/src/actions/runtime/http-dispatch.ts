@@ -200,6 +200,14 @@ export function hostRequest(
   return { request: { url, method, body } };
 }
 
+/** How long one host call may take, transport and body together. Nothing
+ *  above this seam bounds a tool call — the turn awaits the outcome, and the
+ *  turn's own abort never reaches a host fetch — so a host route that never
+ *  answers (a stuck upstream, a half-open socket) held the tool call, and the
+ *  turn with it, open for as long as the process lived. The same bound the MCP
+ *  connector puts on its round-trip (`connectors/mcp.ts`). */
+export const HOST_REQUEST_TIMEOUT_MS = 30_000;
+
 /** The request itself. Every failure — transport, status, body — comes back as
  *  an outcome, so the caller's audit enrichment always runs. `headers` carries
  *  whatever the caller authenticates with; the JSON envelope is set here. */
@@ -212,11 +220,20 @@ export async function fetchHostTool(
 ): Promise<ToolOutcome> {
   setHeader(headers, "accept", "application/json");
   if (body !== undefined) setHeader(headers, "content-type", "application/json");
+  // One clock over the request AND the body read: a host that answers the
+  // headers and then stalls the body is the same hang to the turn awaiting it.
+  const controller = new AbortController();
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, HOST_REQUEST_TIMEOUT_MS);
   try {
     const request = fetchImpl ?? defaultFetch;
     const response = await request(url, {
       method,
       headers,
+      signal: controller.signal,
       ...(body !== undefined ? { body } : {}),
     });
     const text = await response.text();
@@ -239,6 +256,16 @@ export async function fetchHostTool(
     }
     return { status: "ok", output: { status: response.status, text } };
   } catch (cause) {
+    // Named as the bound, not as the abort: the runtime's own sentence ("This
+    // operation was aborted") says nothing about who aborted it or why.
+    if (timedOut) {
+      return error(
+        "network-error",
+        `${method} ${requestTarget(url)} did not answer within ${HOST_REQUEST_TIMEOUT_MS / 1_000}s`,
+      );
+    }
     return error("network-error", cause instanceof Error ? cause.message : `Network request failed for ${tool}`);
+  } finally {
+    clearTimeout(timer);
   }
 }

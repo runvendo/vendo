@@ -618,6 +618,37 @@ describe("host HTTP execution", () => {
     });
   });
 
+  it("bounds a host call that never answers, so a hung host API cannot hold the turn open", async () => {
+    // Nothing above this seam bounds a tool call: the turn awaits the outcome
+    // and the turn's own abort never reaches a host fetch. A host route that
+    // never responds (a stuck upstream, a half-open socket) therefore pinned
+    // the tool call — and the turn — for as long as the process lived. The
+    // fetch below settles ONLY if the dispatch hands it an abort signal.
+    vi.useFakeTimers();
+    try {
+      const hung = createActions({
+        tools: [routeTool("host_hung")],
+        baseUrl: "http://unused.test",
+        fetch: (_input, init) => new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => reject(new Error("This operation was aborted")));
+        }),
+      });
+      const outcome = hung.execute({ id: "5", tool: "host_hung", args: {} }, ctx);
+      let settled = false;
+      void outcome.then(() => { settled = true; }, () => { settled = true; });
+      // The documented bound (HOST_REQUEST_TIMEOUT_MS): one host call, transport
+      // and body together, may take this long and no longer.
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(settled).toBe(true);
+      await expect(outcome).resolves.toMatchObject({
+        status: "error",
+        error: { code: "network-error", message: expect.stringContaining("did not answer within 30s") },
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("expands array path arguments as individually encoded catch-all segments", async () => {
     const request = vi.fn<(input: URL, init?: RequestInit) => Promise<Response>>(async () => new Response(JSON.stringify({ ok: true }), {
       headers: { "content-type": "application/json" },
