@@ -121,7 +121,7 @@ function authImportLine(auth: AuthWire | null): string {
     environment, so the scaffold never touches key material — and the flagship
     id that provider's ladder resolves (dev-creds/model.ts DEFAULT_MODELS). */
 const MODEL_PROVIDERS: Record<EnvKeyProvider, { specifier: string; model: string }> = {
-  anthropic: { specifier: "@ai-sdk/anthropic", model: "claude-sonnet-4-6" },
+  anthropic: { specifier: "@ai-sdk/anthropic", model: "claude-sonnet-5" },
   openai: { specifier: "@ai-sdk/openai", model: "gpt-5" },
   google: { specifier: "@ai-sdk/google", model: "gemini-2.5-flash" },
 };

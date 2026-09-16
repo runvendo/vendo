@@ -482,7 +482,7 @@ describe("vendoModel (the vendo model family entry)", () => {
     expect(await resolvedId(vendoModel(undefined, {
       env: { ...BYO.anthropic },
       importModule: scriptedProvider("createAnthropic"),
-    }))).toBe("claude-sonnet-4-6");
+    }))).toBe("claude-sonnet-5");
     expect(await resolvedId(vendoModel(undefined, {
       env: { ...BYO.openai },
       importModule: scriptedProvider("createOpenAI"),
@@ -501,7 +501,7 @@ describe("vendoModel (the vendo model family entry)", () => {
       slot: "apps",
       env: { ...BYO.anthropic },
       importModule: scriptedProvider("createAnthropic"),
-    }))).toBe("claude-sonnet-4-6");
+    }))).toBe("claude-sonnet-5");
     expect(await resolvedId(vendoModel(undefined, {
       slot: "apps",
       env: { ...BYO.openai },

@@ -1412,7 +1412,7 @@ function providerKey(root: string, options: InitOptions): ScaffoldModel | null {
  *
  * Vendo Cloud (a usable key in hand) → null. The runtime ladder resolves the
  * model from `VENDO_API_KEY` on its own (packages/vendo/src/harnesses/inference/resolve.ts),
- * so writing `anthropic("claude-sonnet-4-6")` here would override the answer the
+ * so writing `anthropic("claude-sonnet-5")` here would override the answer the
  * user just gave with whatever key was lying around in their shell — and the
  * comment beside it would name a key the wiring does not read.
  *
@@ -2076,7 +2076,7 @@ export async function runInit(input: InitOptions): Promise<number> {
     // line contradicted the line directly above it. And it names what the key
     // alone no longer does — advising the bare variable was the whole bug.
     if (credential.rung === "none" && modelLanded === null) {
-      output.log("No model key yet: select one in your composition — models: { default: anthropic(\"claude-sonnet-4-6\") } — with ANTHROPIC_API_KEY in .env.local, or run `vendo login` for a free dev key (VENDO_API_KEY). A provider key alone no longer selects a model.");
+      output.log("No model key yet: select one in your composition — models: { default: anthropic(\"claude-sonnet-5\") } — with ANTHROPIC_API_KEY in .env.local, or run `vendo login` for a free dev key (VENDO_API_KEY). A provider key alone no longer selects a model.");
     }
 
     await warnOffContractAi(root, output);

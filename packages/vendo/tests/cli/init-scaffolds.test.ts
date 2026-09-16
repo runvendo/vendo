@@ -335,7 +335,7 @@ describe("the models line a detected provider key writes", () => {
   it("writes the import and the config line exactly once into the composition", () => {
     const composition = compositionModuleSource({ serverActions: false, auth: null, models: anthropicKey });
     expect(composition).toContain(`import { anthropic } from "@ai-sdk/anthropic";\n`);
-    expect(composition).toContain(`  models: { default: anthropic("claude-sonnet-4-6") }, // ANTHROPIC_API_KEY supplies the key\n`);
+    expect(composition).toContain(`  models: { default: anthropic("claude-sonnet-5") }, // ANTHROPIC_API_KEY supplies the key\n`);
     expect(composition.match(/@ai-sdk\/anthropic/g)).toHaveLength(1);
     expect(composition.match(/models:/g)).toHaveLength(1);
     // The import leads the file — the same order the runtime-neutral scaffold

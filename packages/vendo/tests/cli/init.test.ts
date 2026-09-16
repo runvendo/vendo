@@ -839,7 +839,7 @@ describe("vendo init (zero-question)", () => {
     const compositionPath = join("lib", "vendo.ts");
     const composition = await readFile(join(root, compositionPath), "utf8");
     expect(composition).toContain(`import { anthropic } from "@ai-sdk/anthropic";`);
-    expect(composition).toContain(`  models: { default: anthropic("claude-sonnet-4-6") }, // ANTHROPIC_API_KEY supplies the key`);
+    expect(composition).toContain(`  models: { default: anthropic("claude-sonnet-5") }, // ANTHROPIC_API_KEY supplies the key`);
     expect(composition.match(/@ai-sdk\/anthropic/g)).toHaveLength(1);
     expect(composition.match(/models:/g)).toHaveLength(1);
 
@@ -855,7 +855,7 @@ describe("vendo init (zero-question)", () => {
     const sink = output();
     expect(await run(root, sink, { installProvider: async () => 0 })).toBe(0);
     const route = await readFile(join(root, "lib", "vendo.ts"), "utf8");
-    expect(route).toContain(`models: { default: anthropic("claude-sonnet-4-6") }`);
+    expect(route).toContain(`models: { default: anthropic("claude-sonnet-5") }`);
   });
 
   /** `vendo init --byo` asks for a provider key and lands it in .env.local — but
@@ -885,7 +885,7 @@ describe("vendo init (zero-question)", () => {
     const compositionPath = join("lib", "vendo.ts");
     const composition = await readFile(join(root, compositionPath), "utf8");
     expect(composition).toContain(`import { anthropic } from "@ai-sdk/anthropic";`);
-    expect(composition).toContain(`  models: { default: anthropic("claude-sonnet-4-6") }, // ANTHROPIC_API_KEY supplies the key`);
+    expect(composition).toContain(`  models: { default: anthropic("claude-sonnet-5") }, // ANTHROPIC_API_KEY supplies the key`);
     // Exactly once, and the run says where — never the dead-end advice.
     expect(composition.match(/models:/g)).toHaveLength(1);
     const logs = sink.logs.join("\n");
@@ -979,7 +979,7 @@ describe("vendo init (zero-question)", () => {
 
     const composition = await readFile(join(root, "lib", "vendo.ts"), "utf8");
     expect(composition).toContain(`import { anthropic } from "@ai-sdk/anthropic";`);
-    expect(composition).toContain(`  models: { default: anthropic("claude-sonnet-4-6") }, // ANTHROPIC_API_KEY supplies the key`);
+    expect(composition).toContain(`  models: { default: anthropic("claude-sonnet-5") }, // ANTHROPIC_API_KEY supplies the key`);
     expect(composition).toContain('mcp: serviceKey === "" ? true : { serviceAuth: { keys: [serviceKey] } },');
     // One selection per host, across BOTH files init wrote on this path.
     expect(`${route}${composition}`.match(/models:/g)).toHaveLength(1);
@@ -1014,6 +1014,7 @@ describe("vendo init (zero-question)", () => {
     expect(await run(root, sink)).toBe(0);
     const logs = sink.logs.join("\n");
     expect(logs).toContain("No model key yet");
+    expect(logs).toContain('models: { default: anthropic("claude-sonnet-5") }');
     expect(logs).toContain("vendo login");
     // The Cloud offer runs FIRST (before theme capture and the wired summary);
     // the end of the run keeps only the short one-line reminder.
@@ -2930,7 +2931,7 @@ describe("the models answer decides the wiring", () => {
       env: { ANTHROPIC_API_KEY: "sk-ant-test" },
     })).toBe(0);
     const composition = await readFile(join(root, "lib", "vendo.ts"), "utf8");
-    expect(composition).toContain('models: { default: anthropic("claude-sonnet-4-6") }, // ANTHROPIC_API_KEY supplies the key');
+    expect(composition).toContain('models: { default: anthropic("claude-sonnet-5") }, // ANTHROPIC_API_KEY supplies the key');
     expect(JSON.parse(await readFile(join(root, ".vendo", "install.json"), "utf8")))
       .toMatchObject({ modelKey: "ANTHROPIC_API_KEY" });
 

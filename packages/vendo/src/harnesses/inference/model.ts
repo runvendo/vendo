@@ -95,7 +95,7 @@ const DEFAULT_MODELS: Record<string, ProviderSpec> = {
   anthropic: {
     module: "@ai-sdk/anthropic",
     factory: "createAnthropic",
-    model: "claude-sonnet-4-6",
+    model: "claude-sonnet-5",
     fast: "claude-haiku-4-5",
     install: "npm install @ai-sdk/anthropic@^3",
   },
