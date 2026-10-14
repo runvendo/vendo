@@ -42,7 +42,7 @@
   },
   "devDependencies": {
     "@ai-sdk/provider": "3.0.2",
-    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@modelcontextprotocol/sdk": "^1.31.0",
     "@tailwindcss/postcss": "^4",
     "@testing-library/react": "^16.0.0",
     "@types/node": "^20",
